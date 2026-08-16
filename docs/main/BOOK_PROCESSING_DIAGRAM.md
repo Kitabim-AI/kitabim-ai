@@ -75,7 +75,7 @@ flowchart TD
     %% History dictionary extraction — admin-triggered only, no scanner claims idle
     %% work for it and it never touches the page/book milestone columns above
     subgraph HistoryExtraction ["History Dictionary Extraction — admin-trigger only, independent of the milestone pipeline (history_extraction_enabled, default true)"]
-        S_HX["Admin: POST /books/{id}/extract-history"] -->|Enqueue directly| J_HX[History Extraction Job]
+        S_HX["Admin: POST /api/admin/books/{id}/extract-history"] -->|Enqueue directly| J_HX[History Extraction Job]
     end
     J_HX -->|"Stage candidate terms + facts<br/>(or submit batch job when<br/>gemini_batch_history_extraction_enabled)"| HXQ[(history_dictionary_staging)]
     S_HXP["Batch History Poller Scanner<br/>every 1 min"] -.->|Poll batch_history_extraction_jobs| J_HX
@@ -105,7 +105,7 @@ flowchart TD
 > - **Extraction (`knowledge_graph_job`) is manual-trigger-only.** `graph_scanner.py` exists and is unit-tested, but `services/worker/worker.py` does not register it in `WorkerSettings.cron_jobs`, so it never runs on a schedule today. Combined with `knowledge_graph_enabled` defaulting to `false` in `system_configs`, extraction currently only happens via the admin "Reprocess Graph" action, which enqueues `knowledge_graph_job` directly with the admin-supplied `scope`.
 > - **Entity resolution (`graph_resolution_scanner` → `graph_resolution_job`) *is* scheduled**, every 5 minutes, and is gated by the same `knowledge_graph_enabled` flag (the scanner returns before claiming anything when it isn't `"true"`). It never enqueues extraction — it only drains `graph_resolution_queue` rows that a previous extraction run inserted, so with extraction off it has nothing to do.
 
-> **History dictionary extraction note:** `history_extraction_job` is **manual-trigger-only** and, unlike knowledge-graph extraction, has no backfill scanner at all — only an admin action (`POST /api/books/{book_id}/extract-history`) enqueues it, gated by `history_extraction_enabled` (`true` by default). It stages candidate terms into `history_dictionary_staging` for admin review/approval (`/history-dictionary/staging/*` endpoints) rather than writing directly to the live `history_dictionary` table. It does not read or write any page/book milestone column, so it has no dependency on OCR/chunking/embedding completing and can run at any time after a book has pages with text. `batch_history_poller_scanner` (every 1 min, no-op unless `gemini_batch_history_extraction_enabled` has been used) polls the Gemini Batch API path the same way the OCR/embedding poller scanners do.
+> **History dictionary extraction note:** `history_extraction_job` is **manual-trigger-only** and, unlike knowledge-graph extraction, has no backfill scanner at all — only an admin action (`POST /api/admin/books/{book_id}/extract-history`) enqueues it, gated by `history_extraction_enabled` (`true` by default). It stages candidate terms into `history_dictionary_staging` for admin review/approval (`/history-dictionary/staging/*` endpoints) rather than writing directly to the live `history_dictionary` table. It does not read or write any page/book milestone column, so it has no dependency on OCR/chunking/embedding completing and can run at any time after a book has pages with text. `batch_history_poller_scanner` (every 1 min, no-op unless `gemini_batch_history_extraction_enabled` has been used) polls the Gemini Batch API path the same way the OCR/embedding poller scanners do.
 
 ---
 

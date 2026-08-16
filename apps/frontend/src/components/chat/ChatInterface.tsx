@@ -150,7 +150,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const { fontSize, setModal } = useAppContext();
   const isGlobal = type === 'global';
   const chatFontSize = fontSize;
-  const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNums: number[] } | null>(null);
+  const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNums: number[]; isGraph?: boolean; graphQuery?: string } | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : false);
   const inputRef = useRef<HTMLInputElement>(null);
   const readerOuterRef = useRef<HTMLDivElement>(null);
@@ -237,8 +237,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
   }, []);
 
-  const handleReferenceClick = (bookId: string, pageNums: number[]) => {
-    setSelectedReference({ bookId, pageNums });
+  const handleReferenceClick = (bookId: string, pageNums: number[], isGraph?: boolean, graphQuery?: string) => {
+    setSelectedReference({ bookId, pageNums, isGraph, graphQuery });
   };
 
   const currentCharacter = isGlobal

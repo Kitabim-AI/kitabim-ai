@@ -88,7 +88,7 @@ flowchart LR
   DB -.->|pipeline_events poll| WK
   BE <-->|PDFs / covers| GCS[(Google Cloud Storage / Local)]
   WK <-->|PDFs / covers| GCS
-  BE <-->|L0-L3 Cache| CACHE[(Redis Cache)]
+  BE <-->|L0-L2 Cache| CACHE[(Redis Cache)]
   BE --> N4J[(Neo4j<br/>Knowledge Graph)]
   WK --> N4J
 ```

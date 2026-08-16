@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from app.core import cache_config
 from app.core.config import settings
+from app.core.i18n import t
 from app.db.models import Book
 from app.services.cache_service import cache_service
 from app.utils.observability import log_json
@@ -668,7 +669,7 @@ async def graph_entity_lookup(question: str, top_k: int = 10) -> List[dict]:
                     "score": entity_scores.get(entity_id, 0.9),
                     "page": page_val,
                     "page_number": page_val,
-                    "title": "Knowledge Graph",
+                    "title": t("rag.knowledge_graph_title", default="بىلىم گىرافى"),
                     "volume": None,
                     "author": None,
                     "book_id": fact.get("book_id") or "knowledge_graph",

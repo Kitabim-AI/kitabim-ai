@@ -25,6 +25,8 @@ def build_answer_instructions(
     if persona_prompt:
         prefix = f"Persona: {persona_prompt}\n\n"
 
+    kg_label = t("rag.knowledge_graph_title", default="بىلىم گىرافى")
+
     if strict_no_answer:
         instructions = [
             "Primary Goal: Answer the user's question ONLY based on the provided context.",
@@ -92,7 +94,7 @@ def build_answer_instructions(
         ),
         _MULTI_VOLUME_INSTRUCTION,
         (
-            "Format citations in Uyghur as a markdown link.\n"
+            f"Format citations in Uyghur as a markdown link.\n"
             "   For page-based sources, the link URL MUST be in the format 'ref:book_id:page_number'.\n"
             "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
             "   For SUMMARY-marked sources (no Page field), use 'ref:book_id:summary' as the URL.\n"
@@ -101,6 +103,7 @@ def build_answer_instructions(
             "   Example (page): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
             "   Example (summary): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر) — قىسقىچە مەزمۇنى](ref:abc123:summary)\n"
             "   Example (Quran): **مەنبە:** [قۇرئان كەرىم، سۈرە فاتىھە، 1-ئايەت](ref:quran:1:1)\n"
+            f"   For Knowledge Graph sources (where title is '{kg_label}' or 'Knowledge Graph'), format citations in Uyghur using '{kg_label}' as the text label (e.g. **مەنبە:** [{kg_label}، 25-بەت](ref:graph:abc123:25) or **مەنبە:** [{kg_label}](ref:graph:abc123)). NEVER write the English string 'Knowledge Graph' in citations or text labels.\n"
             "   For catalog/author/metadata results that do not have a page number or summary (e.g., from get_book_author, get_books_by_author, or search_catalog), omit the 'ref:' link and cite inline as: **مەنبە:** book_title (author_name).\n"
             "   For dictionary results, omit the 'ref:' link and cite inline in Uyghur as: **مەنبە:** ئۇيغۇرچە لۇغەت، **مەنبە:** تارىخ لۇغىتى، **مەنبە:** ئىنگلىزچە-ئۇيغۇرچە لۇغەت، ياكى **مەنبە:** ئىملا سۆز تىزىملىكى."
         ),

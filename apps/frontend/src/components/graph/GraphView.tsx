@@ -88,7 +88,17 @@ const formatYear = (year: number, type: 'hijri' | 'gregorian', lang: string) => 
   return type === 'hijri' ? `${year} AH` : `${year} CE`;
 };
 
-export const GraphView: React.FC = () => {
+interface GraphViewProps {
+  initialBookId?: string;
+  initialQuery?: string;
+  isModal?: boolean;
+}
+
+export const GraphView: React.FC<GraphViewProps> = ({
+  initialBookId,
+  initialQuery,
+  isModal = false,
+}) => {
   const { t, language } = useI18n();
   const { theme } = useTheme();
   const isThemeDark = theme === 'dark';
@@ -100,7 +110,7 @@ export const GraphView: React.FC = () => {
   const [selectedEdgeTypes, setSelectedEdgeTypes] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'details' | 'filters' | 'reviews'>('filters');
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialQuery || '');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [nodeConnections, setNodeConnections] = useState<any[]>([]);
   const [mergeCandidate, setMergeCandidate] = useState<GraphNode | null>(null);
@@ -183,7 +193,11 @@ export const GraphView: React.FC = () => {
   const fetchGraphData = async (query = '', resetFilters = false) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/books/graph${query ? `?q=${encodeURIComponent(query)}` : ''}`);
+      const params = new URLSearchParams();
+      if (query) params.set('q', query);
+      if (initialBookId) params.set('book_id', initialBookId);
+      const paramStr = params.toString();
+      const res = await fetch(`/api/books/graph${paramStr ? `?${paramStr}` : ''}`);
       const graphData: GraphData = await res.json();
 
       // Color-code the nodes based on type
@@ -1169,8 +1183,8 @@ export const GraphView: React.FC = () => {
 
   return (
     <div className="flex-grow flex flex-col lg:h-full lg:overflow-hidden px-4 md:px-0" dir="rtl">
-      {/* Header Panel (Hidden in full screen mode to maximize canvas space) */}
-      {!isFullScreen && (
+      {/* Header Panel (Hidden in full screen or modal mode to maximize canvas space) */}
+      {!isFullScreen && !isModal && (
         <div className="pb-6 sm:pb-8 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 relative mb-6 sm:mb-8">
           <header className="space-y-3 sm:space-y-4">
             <div className="flex items-center gap-3 sm:gap-4 group">

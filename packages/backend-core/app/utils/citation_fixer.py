@@ -7,6 +7,7 @@ This module detects and fixes common malformation patterns.
 
 import re
 import logging
+from app.core.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,8 @@ def fix_malformed_citations(text: str) -> str:
     """
     if not text:
         return text
+
+    kg_label = t("rag.knowledge_graph_title", default="بىلىم گىرافى")
 
     # Pattern 0: Detect nested markdown like [display text]([link text](ref:ID:pages))
     # The LLM sometimes wraps a ref: URL inside another markdown link, e.g.:
@@ -102,5 +105,32 @@ def fix_malformed_citations(text: str) -> str:
         return result
 
     text = re.sub(pattern2, replace_pattern2, text)
+
+    def replace_pattern3(match):
+        prefix = match.group(1)
+        suffix = match.group(2)
+        ref_url = match.group(3)
+        if suffix.startswith(","):
+            suffix = "،" + suffix[1:]
+        return f"[{prefix}{kg_label}{suffix}]({ref_url})"
+
+    text = re.sub(
+        r"(?i)\[([^\]]*?\b)Knowledge Graph(\b[^\]]*?)\]\((ref:[^)]+)\)",
+        replace_pattern3,
+        text,
+    )
+
+    # Pattern 4: Detect unformatted raw "Knowledge Graph, N-بەت" or "Knowledge Graph" citations
+    # Example: "مەنبە: Knowledge Graph, 99-بەت" -> "مەنبە: [بىلىم گىرافى، 99-بەت](ref:graph:knowledge_graph:99)"
+    pattern4 = r"(?i)(?<!\[)Knowledge Graph(?:,\s*(\d+)-بەت|:\s*(\d+)-بەت|,\s*page\s*(\d+))?(?![^\[]*\])"
+
+    def replace_pattern4(match):
+        page = match.group(1) or match.group(2) or match.group(3)
+        if page:
+            return f"[{kg_label}، {page}-بەت](ref:graph:knowledge_graph:{page})"
+        return f"[{kg_label}](ref:graph:knowledge_graph)"
+
+    # Only replace Knowledge Graph when NOT already inside a markdown link
+    text = re.sub(pattern4, replace_pattern4, text)
 
     return text

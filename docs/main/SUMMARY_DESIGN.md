@@ -43,9 +43,10 @@ Summary generation is a post-pipeline, book-level (not page-level) stage: once a
 flowchart TD
     subgraph AutoTrigger ["Auto-trigger — once per book"]
         MANDATORY(["OCR + Chunking + Embedding<br/>all terminal for this book"])
-        DRIVER["PipelineDriver:<br/>marks book status=ready,<br/>pipeline_step=ready"]
-        NOSUM{"book_summaries row<br/>already exists?"}
-        ENQ1["enqueue summary_job<br/>(_job_id=summary:&lt;book_id&gt;)"]
+        CANDIDATE["PipelineDriver:<br/>compute fully_ready_ids<br/>(pre-update snapshot)"]
+        NOSUM{"book_summaries row<br/>already exists?<br/>(checked pre-update)"}
+        UPDATE["UPDATE Book SET<br/>status=ready, pipeline_step=ready<br/>(all fully_ready_ids), commit"]
+        ENQ1["enqueue summary_job<br/>(_job_id=summary:&lt;book_id&gt;)<br/>after commit, outside session"]
     end
 
     subgraph Backfill ["SummaryScanner — every 5 min, parallel path"]
@@ -54,24 +55,40 @@ flowchart TD
     end
 
     subgraph SummaryJobFlow ["SummaryJob"]
+        CONFIG{"gemini_chat_model &<br/>gemini_embedding_model<br/>set in system_configs?"}
+        LOADBOOK["Load Book row"]
+        NOBOOK{"book found?"}
         LOAD["Load all non-TOC page.text<br/>for the book, ordered by page_number"]
+        NOPAGES{"any page text found?"}
         SAMPLE["_sample_text: concatenate;<br/>if over max_chars, take<br/>first 40% + middle 20% + last 40%"]
         LLM["Gemini chat model:<br/>BOOK_SUMMARY_PROMPT<br/>(7-section structured Uyghur summary)"]
+        EMPTYCHK{"summary non-empty<br/>after strip()?"}
         EMBED["GeminiEmbeddings.aembed_documents"]
         UPSERT[("book_summaries:<br/>upsert(book_id, summary, embedding)")]
-        FAIL["exception propagates;<br/>no book_summaries row written<br/>(book status unaffected)"]
+        NOROW["log warning, return<br/>(no exception — arq records<br/>success; no row written)"]
+        EXC["exception propagates<br/>(arq marks job failed;<br/>no row written)"]
     end
 
-    MANDATORY --> DRIVER --> NOSUM
+    MANDATORY --> CANDIDATE
+    CANDIDATE --> UPDATE
+    CANDIDATE --> NOSUM
     NOSUM -- No --> ENQ1
     NOSUM -- Yes --> NOOP1["not re-enqueued"]
-    ENQ1 --> LOAD
+    UPDATE --> ENQ1
+    ENQ1 --> CONFIG
 
-    SCAN --> ENQ2 --> LOAD
+    SCAN --> ENQ2 --> CONFIG
 
-    LOAD --> SAMPLE --> LLM
-    LLM -->|success| EMBED --> UPSERT
-    LLM -->|exception, or empty pages/summary| FAIL
+    CONFIG -- missing --> EXC
+    CONFIG -- set --> LOADBOOK --> NOBOOK
+    NOBOOK -- no --> NOROW
+    NOBOOK -- yes --> LOAD --> NOPAGES
+    NOPAGES -- none --> NOROW
+    NOPAGES -- found --> SAMPLE --> LLM
+    LLM -->|raises| EXC
+    LLM -->|returns| EMPTYCHK
+    EMPTYCHK -- empty --> NOROW
+    EMPTYCHK -- non-empty --> EMBED --> UPSERT
 
     classDef idle fill:#e9edc9,stroke:#606c38
     classDef active fill:#fff3cd,stroke:#856404
@@ -79,9 +96,9 @@ flowchart TD
     classDef fail fill:#ffcccb,stroke:#d32f2f
 
     class MANDATORY,NOSUM idle
-    class DRIVER,ENQ1,SCAN,ENQ2,LOAD,SAMPLE,LLM,EMBED active
-    class UPSERT,NOOP1 done
-    class FAIL fail
+    class CANDIDATE,UPDATE,ENQ1,SCAN,ENQ2,CONFIG,LOADBOOK,NOBOOK,LOAD,NOPAGES,SAMPLE,LLM,EMPTYCHK,EMBED active
+    class UPSERT,NOOP1,NOROW done
+    class EXC fail
 ```
 
 ## Component Responsibilities

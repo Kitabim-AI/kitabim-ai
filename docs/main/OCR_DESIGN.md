@@ -109,6 +109,7 @@ flowchart TD
     end
 
     FLAG -- Yes --> SUBMIT --> BOJ --> POLL
+    SUBMIT -->|"submission exception<br/>(upload / batches.create failed)"| BFAIL
     POLL -->|running| BOJ
     POLL -->|succeeded: ingest| BOK --> EVENT
     POLL -->|"failed / cancelled / timeout"| BFAIL

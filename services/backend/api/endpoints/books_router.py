@@ -956,45 +956,33 @@ async def suggest_books(
 @router.get("/graph")
 async def get_global_graph(
     q: Optional[str] = Query(None, max_length=100),
+    book_id: Optional[str] = Query(None, max_length=100),
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
-    """Retrieve global knowledge graph data for public visualization."""
+    """Retrieve global or book-specific knowledge graph data for visualization."""
     from app.db.repositories.graph_repository import GraphRepository
 
     graph_repo = GraphRepository()
 
-    # We query relationships from Neo4j
-    if q and q.strip():
-        # Case insensitive filter by entity name
-        query = """
-        MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
-        WHERE toLower(s.canonical_name) CONTAINS toLower($q) OR toLower(t.canonical_name) CONTAINS toLower($q)
-        RETURN s.id AS source_id, s.canonical_name AS source_name, s.type AS source_type,
-               s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
-               s.context_summary AS source_context_summary,
-               r.id AS rel_id, r.rel_type AS rel_type, r.book_id AS rel_book_id, r.chunk_refs AS rel_chunk_refs, r.evidence AS rel_evidence,
-               r.year_hijri AS rel_year_hijri, r.year_gregorian AS rel_year_gregorian, r.century_gregorian AS rel_century_gregorian,
-               t.id AS target_id, t.canonical_name AS target_name, t.type AS target_type,
-               t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian,
-               t.context_summary AS target_context_summary
-        LIMIT 150
-        """
-        params = {"q": q.strip()}
-    else:
-        query = """
-        MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
-        RETURN s.id AS source_id, s.canonical_name AS source_name, s.type AS source_type,
-               s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
-               s.context_summary AS source_context_summary,
-               r.id AS rel_id, r.rel_type AS rel_type, r.book_id AS rel_book_id, r.chunk_refs AS rel_chunk_refs, r.evidence AS rel_evidence,
-               r.year_hijri AS rel_year_hijri, r.year_gregorian AS rel_year_gregorian, r.century_gregorian AS rel_century_gregorian,
-               t.id AS target_id, t.canonical_name AS target_name, t.type AS target_type,
-               t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian,
-               t.context_summary AS target_context_summary
-        LIMIT 150
-        """
-        params = {}
+    query = """
+    MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
+    WHERE ($q IS NULL OR toLower(s.canonical_name) CONTAINS toLower($q) OR toLower(t.canonical_name) CONTAINS toLower($q))
+      AND ($book_id IS NULL OR r.book_id = $book_id OR s.book_id = $book_id OR t.book_id = $book_id)
+    RETURN s.id AS source_id, s.canonical_name AS source_name, s.type AS source_type,
+           s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
+           s.context_summary AS source_context_summary,
+           r.id AS rel_id, r.rel_type AS rel_type, r.book_id AS rel_book_id, r.chunk_refs AS rel_chunk_refs, r.evidence AS rel_evidence,
+           r.year_hijri AS rel_year_hijri, r.year_gregorian AS rel_year_gregorian, r.century_gregorian AS rel_century_gregorian,
+           t.id AS target_id, t.canonical_name AS target_name, t.type AS target_type,
+           t.year_hijri AS target_year_hijri, t.year_gregorian AS target_year_gregorian, t.century_gregorian AS target_century_gregorian,
+           t.context_summary AS target_context_summary
+    LIMIT 150
+    """
+    params = {
+        "q": q.strip() if q and q.strip() else None,
+        "book_id": book_id.strip() if book_id and book_id.strip() else None,
+    }
 
     try:
         async with graph_repo._driver.session() as neo4j_session:

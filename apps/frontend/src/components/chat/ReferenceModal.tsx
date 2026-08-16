@@ -1,15 +1,18 @@
-import { BookOpen, ChevronLeft, ChevronRight, Clock, HardDrive, Loader2, X } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, Clock, HardDrive, Loader2, Network, X } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { MarkdownContent } from '../common/MarkdownContent';
+import { GraphView } from '../graph/GraphView';
 
 interface ReferenceModalProps {
   isOpen: boolean;
   onClose: () => void;
   bookId: string;
   pageNumbers: number[];
+  isGraph?: boolean;
+  graphQuery?: string;
 }
 
 const normalizeArabic = (text: string): string => {
@@ -26,9 +29,12 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
   onClose,
   bookId,
   pageNumbers,
+  isGraph = false,
+  graphQuery,
 }) => {
   const { t } = useI18n();
-  const isSummaryMode = pageNumbers.length === 0;
+  const isGraphMode = isGraph || bookId === 'graph' || bookId === 'knowledge_graph';
+  const isSummaryMode = !isGraphMode && pageNumbers.length === 0;
   const [currentPageNum, setCurrentPageNum] = useState<number>(pageNumbers[0] ?? 1);
   const [currentPageData, setCurrentPageData] = useState<any | null>(null);
   const [summaryData, setSummaryData] = useState<{ summary: string; generatedAt: string | null } | null>(null);
@@ -47,7 +53,15 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
     if (!isOpen || !bookId) return;
     setLoading(true);
     setCurrentPageData(null);
-    if (bookId === 'quran') {
+    if (isGraphMode) {
+      if (bookId && bookId !== 'graph' && bookId !== 'knowledge_graph') {
+        PersistenceService.getBookById(bookId)
+          .then(book => { setBookData(book); setLoading(false); })
+          .catch(() => { setLoading(false); });
+      } else {
+        setLoading(false);
+      }
+    } else if (bookId === 'quran') {
       const initialSurah = pageNumbers[0] ?? 1;
       const initialAyah = pageNumbers.slice(1)[0] ?? 1;
       setCurrentPageNum(initialAyah);
@@ -101,7 +115,7 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
         setLoading(false);
       });
     }
-  }, [isOpen, bookId, pageNumbers, isSummaryMode, t]);
+  }, [isOpen, bookId, pageNumbers, isSummaryMode, isGraphMode, t]);
 
   // No scroll-to-ayah needed when paginating ayahs directly
 
@@ -144,12 +158,30 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
         <div className="p-3.5 pb-2.5 sm:p-6 sm:pb-4 md:p-8 md:pb-6 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between bg-white/50 dark:bg-slate-900/50 shrink-0">
           <div className="flex items-center gap-2.5 sm:gap-4 md:gap-6 min-w-0">
             <div className="p-2 sm:p-3 md:p-4 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl sm:rounded-[24px] shadow-xl shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 shrink-0">
-              <BookOpen size={18} strokeWidth={2.5} className="sm:hidden" />
-              <BookOpen size={28} strokeWidth={2.5} className="hidden sm:block" />
+              {isGraphMode ? (
+                <>
+                  <Network size={18} strokeWidth={2.5} className="sm:hidden" />
+                  <Network size={28} strokeWidth={2.5} className="hidden sm:block" />
+                </>
+              ) : (
+                <>
+                  <BookOpen size={18} strokeWidth={2.5} className="sm:hidden" />
+                  <BookOpen size={28} strokeWidth={2.5} className="hidden sm:block" />
+                </>
+              )}
             </div>
             <div className="min-w-0">
               <h3 className="text-lg sm:text-2xl font-normal text-[#1a1a1a] dark:text-slate-100 mb-1 sm:mb-2 leading-tight flex items-center flex-wrap gap-2 text-right">
-                {loading ? t('common.loading') : (
+                {loading ? t('common.loading') : isGraphMode ? (
+                  <>
+                    <span className="truncate">{t('graph.title')}</span>
+                    {bookData?.title && (
+                      <span className="text-sm sm:text-lg text-slate-400 dark:text-slate-500 font-normal">
+                        («{bookData.title}»)
+                      </span>
+                    )}
+                  </>
+                ) : (
                   <>
                     <span className="truncate">{bookData?.title || t('chat.referenceTitle')}</span>
                     {bookData?.author && (
@@ -161,11 +193,15 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                 )}
               </h3>
               <div className="flex items-center gap-2 sm:gap-4 text-[#94a3b8] dark:text-slate-500 text-xs sm:text-sm font-normal uppercase tracking-wider">
-                {isSummaryMode && (
+                {isGraphMode ? (
+                  <span className="flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]">
+                    {t('graph.title')}
+                  </span>
+                ) : isSummaryMode ? (
                   <span className="flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8]">
                     {t('chat.bookSummary')}
                   </span>
-                )}
+                ) : null}
                 {bookData?.volume && (
                   <span className="flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full text-xs">
                     {t('book.volume', { volume: bookData.volume })}
@@ -184,8 +220,16 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-6 md:p-10 custom-scrollbar bg-[#f8fafc]/30 dark:bg-slate-950/40">
-          {isContentLoading ? (
+        <div className="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-6 md:p-8 custom-scrollbar bg-[#f8fafc]/30 dark:bg-slate-950/40">
+          {isGraphMode ? (
+            <div className="w-full h-full min-h-[500px] flex flex-col">
+              <GraphView
+                initialBookId={bookId !== 'graph' && bookId !== 'knowledge_graph' ? bookId : undefined}
+                initialQuery={graphQuery}
+                isModal={true}
+              />
+            </div>
+          ) : isContentLoading ? (
             <div className="h-64 flex flex-col items-center justify-center gap-6 opacity-40">
               <Loader2 size={48} className="animate-spin text-[#0369a1] dark:text-[#38bdf8]" />
               <p className="text-sm text-slate-400 dark:text-slate-500 font-normal uppercase tracking-widest">{t('common.loading')}</p>
