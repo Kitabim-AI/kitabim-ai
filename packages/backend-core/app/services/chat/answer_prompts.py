@@ -103,7 +103,7 @@ def build_answer_instructions(
             "   Example (page): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
             "   Example (summary): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر) — قىسقىچە مەزمۇنى](ref:abc123:summary)\n"
             "   Example (Quran): **مەنبە:** [قۇرئان كەرىم، سۈرە فاتىھە، 1-ئايەت](ref:quran:1:1)\n"
-            f"   For Knowledge Graph sources (where title is '{kg_label}' or 'Knowledge Graph'), format citations in Uyghur using '{kg_label}' as the text label (e.g. **مەنبە:** [{kg_label}، 25-بەت](ref:graph:abc123:25) or **مەنبە:** [{kg_label}](ref:graph:abc123)). NEVER write the English string 'Knowledge Graph' in citations or text labels.\n"
+            f"   For Knowledge Graph sources (where title contains '{kg_label}' or 'Knowledge Graph'), format citations using the title provided in the header (e.g. **مەنبە:** [«مۇغۇلىستان تارىخى» ({kg_label})، 25-بەت](ref:graph:abc123:25) or **مەنبە:** [{kg_label}](ref:graph:abc123)). NEVER write the English string 'Knowledge Graph' in citations or text labels.\n"
             "   For catalog/author/metadata results that do not have a page number or summary (e.g., from get_book_author, get_books_by_author, or search_catalog), omit the 'ref:' link and cite inline as: **مەنبە:** book_title (author_name).\n"
             "   For dictionary results, omit the 'ref:' link and cite inline in Uyghur as: **مەنبە:** ئۇيغۇرچە لۇغەت، **مەنبە:** تارىخ لۇغىتى، **مەنبە:** ئىنگلىزچە-ئۇيغۇرچە لۇغەت، ياكى **مەنبە:** ئىملا سۆز تىزىملىكى."
         ),

@@ -58,7 +58,7 @@ The rule: **endpoints call services, services call repositories, repositories ca
 
 All DB access goes through a repository. Repositories live in `packages/backend-core/app/db/repositories/`.
 
-**Base repository** (`repositories/base_repository.py`) provides generic async CRUD — extend it or use it directly:
+**Base repository** (`repositories/base_repository.py`) provides generic async CRUD — extend it or use it directly. The session is bound once in `__init__` (via `super().__init__(session, Model)`), not passed to each method call — every real repository (`books_repository.py`, `chunks_repository.py`, etc.) follows this shape:
 
 ```python
 from app.db.repositories.base_repository import BaseRepository
@@ -66,16 +66,19 @@ from app.db.models import MyModel
 
 class MyRepository(BaseRepository[MyModel]):
     # Inherits: get, get_all, create, update_one, delete_one, count, exists
+    # (all use self.session, set below)
 
-    async def find_by_name(self, session: AsyncSession, name: str) -> MyModel | None:
-        result = await session.execute(
+    def __init__(self, session: AsyncSession):
+        super().__init__(session, MyModel)
+
+    async def find_by_name(self, name: str) -> MyModel | None:
+        result = await self.session.execute(
             select(MyModel).where(MyModel.name == name)
         )
         return result.scalar_one_or_none()
 
     async def find_many(
         self,
-        session: AsyncSession,
         page: int = 1,
         page_size: int = 20,
         q: str | None = None,
@@ -83,46 +86,54 @@ class MyRepository(BaseRepository[MyModel]):
         stmt = select(MyModel)
         if q:
             stmt = stmt.where(MyModel.name.ilike(f"%{q}%"))
-        count_result = await session.execute(select(func.count()).select_from(stmt.subquery()))
+        count_result = await self.session.execute(select(func.count()).select_from(stmt.subquery()))
         total = count_result.scalar_one()
         stmt = stmt.order_by(MyModel.created_at.desc())
         stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-        result = await session.execute(stmt)
+        result = await self.session.execute(stmt)
         return result.scalars().all(), total
 ```
 
-**Bulk upsert pattern** (used in `chunks.py`):
-```python
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+Repository methods `flush()` — they do **not** `commit()`. The endpoint or job that opened the session owns the commit.
 
-async def bulk_upsert(self, session: AsyncSession, records: list[dict]) -> None:
+**Bulk upsert pattern** (`upsert_many` in `chunks_repository.py`):
+```python
+from sqlalchemy.dialects.postgresql import insert
+
+async def upsert_many(self, records: list[dict]) -> None:
     if not records:
         return
-    stmt = pg_insert(MyModel).values(records)
+    stmt = insert(MyModel).values(records)
     stmt = stmt.on_conflict_do_update(
         index_elements=["id"],
         set_={"value": stmt.excluded.value, "last_updated": func.now()},
     )
-    await session.execute(stmt)
-    await session.commit()
+    await self.session.execute(stmt)
+    await self.session.flush()
 ```
 
-**Vector similarity search** (used in `chunks.py` via pgvector):
+**Vector similarity search** (`similarity_search` in `chunks_repository.py`): SQLAlchemy 2.0 has no native pgvector operators, so this is raw SQL via `text()` with the `<=>` cosine-distance operator and bound params (never string-interpolate the embedding/user input), wrapped in a CTE so the HNSW index is used before joining book/page metadata:
+
 ```python
-from pgvector.sqlalchemy import Vector
+from sqlalchemy import text
 
-# In repository:
 async def similarity_search(
-    self, session: AsyncSession, embedding: list[float], book_id: str, top_k: int = 16
-) -> list[Chunk]:
-    result = await session.execute(
-        select(Chunk)
-        .where(Chunk.book_id == book_id)
-        .order_by(Chunk.embedding.cosine_distance(embedding))
-        .limit(top_k)
-    )
-    return result.scalars().all()
+    self, query_embedding: list[float], book_ids: list[str] | None = None,
+    limit: int = 12, threshold: float = 0.35,
+) -> list[dict]:
+    query = text("""
+        SELECT c.book_id, c.page_number, c.text,
+               1 - (c.embedding <=> CAST(:embedding AS vector(3072))) AS similarity
+        FROM chunks c
+        WHERE c.embedding IS NOT NULL
+        ORDER BY c.embedding <=> CAST(:embedding AS vector(3072))
+        LIMIT :limit
+    """)
+    result = await self.session.execute(query, {"embedding": str(query_embedding), "limit": limit})
+    return [dict(row._mapping) for row in result.fetchall()]
 ```
+
+The `chunks.embedding` column is `Vector(3072)` (gemini-embedding-2) — not the older 768-dim model some stale docs still cite.
 
 ---
 
@@ -163,31 +174,26 @@ await cache_service.delete_pattern(f"{cache_config.KEY_MY_LIST}*")
 
 The cache service has a built-in circuit breaker — Redis failures are swallowed and logged, never raised to callers.
 
-**Storage service** (`services/storage_service.py`):
+**Storage service** (`services/storage_service.py`) — a `StorageProvider` abstraction (`FileSystemStorageProvider` locally, `GCSStorageProvider` in GCP) chosen by `STORAGE_BACKEND` and exposed as the module-level singleton `storage`:
 
 ```python
-from app.services.storage_service import storage_service
+from app.services.storage_service import storage
 
 # Upload (works for both local filesystem and GCS)
-await storage_service.upload_file(
-    local_path=Path("/tmp/file.pdf"),
-    destination="books/my-book-id/file.pdf",
-    bucket="data",   # "data" or "media"
-)
+await storage.upload_file(local_path=Path("/tmp/file.pdf"), remote_path="books/my-book-id/file.pdf")
 
 # Download to local path
-await storage_service.download_file(
-    source="books/my-book-id/file.pdf",
-    local_path=Path("/tmp/file.pdf"),
-    bucket="data",
-)
+await storage.download_file(remote_path="books/my-book-id/file.pdf", local_path=Path("/tmp/file.pdf"))
 
 # Public URL
-url = storage_service.get_public_url("covers/my-book-id.jpg", bucket="media")
+url = storage.get_public_url("covers/my-book-id.jpg")
 
-# Signed URL (for private content)
-url = await storage_service.get_signed_url("books/my-book-id/file.pdf", bucket="data")
+# Delete / check existence
+await storage.delete_file("books/my-book-id/file.pdf")
+exists = storage.exists("books/my-book-id/file.pdf")
 ```
+
+There is no `bucket` argument and no `get_signed_url` — data-vs-media bucket routing happens internally in `GCSStorageProvider` (via `GCS_DATA_BUCKET` / `GCS_MEDIA_BUCKET`), and signed URLs are not implemented.
 
 **User service** (`services/user_service.py`) — key functions:
 ```python
@@ -302,11 +308,11 @@ async def enqueue_my_job(item_id: str) -> None:
     await redis.close()
 ```
 
-**Concurrency control with semaphore** (pattern from `ocr_job.py`):
+**Concurrency control with semaphore** (pattern from `ocr_job.py`, which reads the limit from `system_configs` at runtime rather than hardcoding it):
 ```python
 import asyncio
 
-MAX_CONCURRENT = 4
+MAX_CONCURRENT = int(await config_repo.get_value("ocr_max_parallel_pages", "4"))
 semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
 async def process_all_pages(page_ids: list[str]) -> None:
@@ -321,32 +327,35 @@ async def process_all_pages(page_ids: list[str]) -> None:
 
 ## Pipeline State Machine
 
-Books and pages progress through a pipeline. Constants are in `app/core/pipeline.py`:
+Books and pages progress through a pipeline. Constants are flat module-level strings in `app/core/pipeline.py` — there is no `PIPELINE_STEP` namespace/enum:
 
 ```python
-from app.core.pipeline import PIPELINE_STEP
-
-PIPELINE_STEP.OCR           # "ocr"
-PIPELINE_STEP.CHUNKING      # "chunking"
-PIPELINE_STEP.EMBEDDING     # "embedding"
-PIPELINE_STEP.SPELL_CHECK   # "spell_check"
-PIPELINE_STEP.READY         # "ready"
-PIPELINE_STEP.ERROR         # "error"
+from app.core.pipeline import (
+    PIPELINE_STEP_OCR,          # "ocr"
+    PIPELINE_STEP_CHUNKING,     # "chunking"
+    PIPELINE_STEP_EMBEDDING,    # "embedding"
+    PIPELINE_STEP_SPELL_CHECK,  # "spell_check"
+    PIPELINE_STEP_SUMMARY,      # "summary"
+)
 ```
 
-**Book milestone pattern** — each processing step updates the book's milestone field to track aggregate progress. After updating pages, call `book_milestone_service` to recompute:
+There is no `READY`/`ERROR` pipeline step — status is tracked separately via milestone constants: per-page (`PAGE_MILESTONE_IDLE / IN_PROGRESS / SUCCEEDED / FAILED / ERROR`) and per-book (`BOOK_MILESTONE_IDLE / IN_PROGRESS / COMPLETE / PARTIAL_FAILURE / FAILED`), also in `app/core/pipeline.py`.
+
+**Book milestone pattern** — each processing step updates its page milestone field; recompute the book-level aggregate via the `BookMilestoneService` class (not a standalone function):
 
 ```python
-from app.services.book_milestone_service import update_book_milestone
+from app.services.book_milestone_service import BookMilestoneService
 
-await update_book_milestone(session, book_id, PIPELINE_STEP.OCR)
+await BookMilestoneService.update_book_milestone_for_step(session, book_id, "ocr")
+# or recompute all steps at once:
+await BookMilestoneService.update_book_milestones(session, book_id)
 ```
 
-**Error recording** (`utils/errors.py`):
+**Error recording** (`utils/errors.py`) — takes an error `kind` as well as the message:
 ```python
 from app.utils.errors import record_book_error
 
-await record_book_error(session, book_id, "OCR failed on page 3: timeout")
+await record_book_error(session, book_id, kind="ocr_error", message="OCR failed on page 3: timeout")
 ```
 
 ---
@@ -366,11 +375,10 @@ e.g. `035_add_retry_count_to_pages.sql`
 - Include a rollback comment at the top if the change is reversible
 - Test locally before pushing
 
-**Apply a migration locally:**
+**Apply a migration locally:** Postgres runs standalone on the host at `localhost:5432` — it is **not** a `docker compose` service (containers reach it via `host.docker.internal:5432`). `./deploy/local/rebuild-and-restart.sh all` auto-applies any `.sql` file in `migrations/` not yet recorded in the `schema_migrations` tracking table. To apply one migration by hand without a full rebuild:
 ```bash
-# Connect to the running Postgres container and run the file
-docker exec -i $(docker compose ps -q postgres) \
-  psql -U postgres kitabim < packages/backend-core/migrations/035_my_change.sql
+psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" -v ON_ERROR_STOP=1 \
+  -f packages/backend-core/migrations/090_my_change.sql
 ```
 
 **After adding a column to the DB**, update:

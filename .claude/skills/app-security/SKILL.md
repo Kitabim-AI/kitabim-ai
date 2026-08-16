@@ -55,8 +55,9 @@ Internet → Nginx (TLS 1.2/1.3) → FastAPI middleware stack → Route handler
 ```
 
 **Security properties:**
-- Algorithm: `HS256` — symmetric, `JWT_SECRET_KEY` must never leave the server
-- `JWT_SECRET_KEY` validated at startup (`validate_jwt_secret()`): minimum 32 chars; app refuses to start if missing or too short
+- Algorithm: `HS256` — symmetric, JWT secrets must never leave the server
+- Tokens are signed with a `kid` (key ID) header, resolved against `settings.jwt_secrets` — a dict built from `JWT_SECRET_KEY` (keyed by `JWT_ACTIVE_KID`, default `v1`) plus any additional `kid:secret` pairs in `JWT_ROTATION_SECRETS` (comma-separated). This supports zero-downtime key rotation — see below.
+- All configured secrets validated at startup (`validate_jwt_secret()`): minimum 32 chars each; app refuses to start if any is missing or too short
 - Access tokens are **stateless** — validated by signature only; no DB lookup per request
 - Refresh tokens are **stateful** — stored in `refresh_tokens` table; invalidated on logout by deleting the row by `jti`
 - Token type is validated on decode (`expected_type="access"` or `"refresh"`) — prevents access tokens being used as refresh tokens and vice versa
@@ -124,7 +125,7 @@ OAuth popups communicate results back to the opener via `window.postMessage`. Th
 All middleware lives in `services/backend/main.py`. Order matters — they execute top-to-bottom.
 
 ### 1. `block_noisy_requests`
-Rejects requests to known scanner/crawler paths (`/api/v1/`, `/api/v2/`, `/api/s3/`, `/api/uploads/`, etc.) with `404` before they reach any handler. Add new blocked prefixes to `settings.security_block_path_prefixes` — not hardcoded in the middleware.
+Rejects requests to known scanner/crawler paths (`/api/v1/`, `/api/v2/`, `/api/s3/`, `/api/uploads/`, etc.) with `404` before they reach any handler. Add new blocked prefixes to `settings.security_block_prefixes` (`SECURITY_BLOCK_PREFIXES` env var) — not hardcoded in the middleware.
 
 ### 2. `enforce_app_id`
 All non-`GET`/`OPTIONS` requests must include `X-Kitabim-App-Id: <SECURITY_APP_ID>`. The `SECURITY_APP_ID` is rotated on every production deploy (`openssl rand -hex 16`), acting as a lightweight bot filter. It is **not** a security boundary on its own — authenticated endpoints still require a valid JWT.
@@ -224,14 +225,14 @@ await session.execute(text("SELECT * FROM books WHERE id = :id"), {"id": book_id
 ### File Upload Validation
 When adding file upload endpoints:
 - Validate MIME type from the file content (not just the extension or `Content-Type` header)
-- Validate file size against `settings.max_upload_size_mb` before reading into memory
+- Enforce a size cap by reading in bounded chunks rather than buffering the whole upload into memory first — see `read_limited_upload_bytes()` in `books_router.py`, which aborts with `413` once the configured byte limit is exceeded. Cover uploads use `settings.max_cover_upload_bytes` for this. There is no general `max_upload_size_mb` setting — note that the `/api/books/upload` PDF/DOCX endpoint currently has no equivalent size cap; don't assume one exists when adding a new upload path.
 - Never execute uploaded file content
-- Store in GCS under a UUID path — never use the original filename
+- Store under a random/UUID-style path — never use the original filename for the storage key
 
 ### LLM Prompt Injection
 User-supplied text flows into LLM prompts (RAG queries, OCR corrections). Guard against prompt injection:
-- The RAG prompt wraps user input in `Question: {question}` — the context and instructions blocks are server-controlled
-- Do not inject raw user text into the `{instructions}` or `{context}` blocks
+- The RAG chat agent (`packages/backend-core/app/services/chat/orchestrator.py`) uses `google.adk` `Runner`s: the server-controlled system prompt (`AGENT_SYSTEM_PROMPT` in `app/services/rag/agent/prompts.py`) is passed as the agent's `instruction`, and the user's question is sent separately as a `role="user"` `types.Content` message — never concatenated into the instruction text. Preserve this role separation when touching the orchestrator; don't fold user text back into the instruction string.
+- Retrieved book context/chunks are similarly passed as part of the user-turn content (see `_build_human_message` in `context_grading.py`), not injected into the instructions
 - Treat LLM output as untrusted content — strip/escape before rendering in HTML
 
 ---
@@ -251,9 +252,16 @@ User-supplied text flows into LLM prompts (RAG queries, OCR corrections). Guard 
 
 ### Secret Rotation Procedure
 
-**Rotating `JWT_SECRET_KEY`** (invalidates all active sessions):
+**Rotating `JWT_SECRET_KEY` gracefully (zero-downtime, preferred)**:
+1. Generate a new secret: `openssl rand -hex 32`
+2. Add it to `JWT_ROTATION_SECRETS` in `deploy/gcp/.env` as an additional `kid:secret` pair (comma-separated), e.g. `JWT_ROTATION_SECRETS=v1:<old-secret>,v2:<new-secret>` — keep the old `kid:secret` so tokens signed with it still decode
+3. Set `JWT_ACTIVE_KID=v2` so new tokens are signed with the new key
+4. Restart backend: `docker compose restart backend` — existing access/refresh tokens (signed `v1`) keep working until they expire naturally
+5. Once the old refresh token TTL has fully elapsed, remove the old `kid:secret` pair from `JWT_ROTATION_SECRETS`
+
+**Rotating `JWT_SECRET_KEY` immediately (invalidates all active sessions)** — use only when the key is suspected compromised:
 1. Generate: `openssl rand -hex 32`
-2. Update `deploy/gcp/.env` on the VM: `cp .env .env.backup && nano .env`
+2. Update `deploy/gcp/.env` on the VM: `cp .env .env.backup && nano .env` (replace `JWT_SECRET_KEY`, do not keep the old key in `JWT_ROTATION_SECRETS`)
 3. Delete all rows from `refresh_tokens` table (all sessions expire)
 4. Restart backend: `docker compose restart backend`
 5. Users will need to log in again
@@ -286,8 +294,9 @@ DELETE FROM refresh_tokens WHERE user_id = '<user_id>';
 # Audit for known vulnerabilities
 pip install pip-audit
 pip-audit -r services/backend/requirements.txt
-pip-audit -r packages/backend-core/requirements.txt
+pip-audit -r services/worker/requirements.worker.txt
 ```
+`packages/backend-core` has no `requirements.txt` of its own — it's shared code installed as part of the backend/worker environments, so auditing those two files covers it.
 
 ### npm dependencies (frontend)
 ```bash
@@ -297,7 +306,7 @@ npm audit fix   # only for non-breaking fixes
 ```
 
 ### Docker base images
-- Use pinned versions (`nginx:1.27-alpine`, `python:3.12-slim`) — never `latest`
+- Use pinned versions (`nginx:1.27-alpine`, `python:3.13-slim`) — never `latest`
 - Rebuild images regularly to pull OS security patches
 - Run `docker scout cves` or `trivy image` on built images before deployment
 
@@ -334,7 +343,7 @@ Before merging any new API endpoint:
 4. Review logs for the compromised token's `jti` (JWT ID) — trace what it accessed
 
 ### Suspected OAuth client secret compromise
-1. Revoke the secret in the provider console (Google/Facebook/Twitter)
+1. Revoke the secret in the provider console (Google/Facebook/Twitter/Instagram)
 2. Generate a new secret
 3. Update `deploy/gcp/.env`
 4. Restart backend
@@ -358,7 +367,7 @@ Before merging any new API endpoint:
 2. Generate new key
 3. Update `deploy/gcp/.env` → `GEMINI_API_KEY`
 4. Restart backend and worker
-5. Check circuit breaker status — it may be open from the abuse: `GET /api/admin/circuit-breakers`
+5. Check circuit breaker status — it may be open from the abuse: `GET /api/system-configs/circuit-breaker/status`
 
 ---
 

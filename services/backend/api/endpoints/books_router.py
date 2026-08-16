@@ -1572,12 +1572,22 @@ async def upload_pdf(
     temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}{ext}"
     hasher = hashlib.sha256()
 
+    total_bytes = 0
     try:
         with open(temp_path, "wb") as handle:
             while True:
                 chunk = await file.read(1024 * 1024)
                 if not chunk:
                     break
+                total_bytes += len(chunk)
+                if total_bytes > settings.max_book_upload_bytes:
+                    handle.close()
+                    temp_path.unlink(missing_ok=True)
+                    max_mb = settings.max_book_upload_bytes // (1024 * 1024)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File size exceeds maximum limit of {max_mb}MB",
+                    )
                 hasher.update(chunk)
                 handle.write(chunk)
 

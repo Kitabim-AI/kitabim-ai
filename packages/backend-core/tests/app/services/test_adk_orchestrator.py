@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from google.adk.agents.invocation_context import LlmCallsLimitExceededError
+
 from app.core.i18n import I18n
 from app.db.models import Conversation
 from app.services.chat.context import ChatRequestDTO
@@ -72,6 +74,31 @@ def test_lookup_synonyms_tool_included():
     """Formerly asserted against the deleted adk_agent.py::build_rag_agent();
     ALL_TOOLS is the live equivalent."""
     assert "lookup_synonyms" in {tool.__name__ for tool in ALL_TOOLS}
+
+
+def test_build_retrieval_agent_forwards_dictionary_term_hint():
+    """analyze_query_signals already extracts the exact dictionary term
+    (e.g. 'جىتە') — the retrieval agent must see that verbatim string as a
+    hint instead of re-deriving (and potentially re-spelling) it from the
+    raw question."""
+    agent = build_retrieval_agent(
+        model="gemini-2.5-flash",
+        intent_signals={
+            "intent": "dictionary",
+            "dictionary_subtype": "history_term",
+            "dictionary_term": "جىتە",
+        },
+    )
+    assert "جىتە" in agent.instruction
+    assert "do not re-extract or re-spell it" in agent.instruction
+
+
+def test_build_retrieval_agent_omits_dictionary_term_hint_when_absent():
+    agent = build_retrieval_agent(
+        model="gemini-2.5-flash",
+        intent_signals={"intent": "open"},
+    )
+    assert "Dictionary term already extracted" not in agent.instruction
 
 
 @pytest.mark.asyncio
@@ -499,6 +526,295 @@ def _configs_get_value_side_effect(overrides):
         return overrides.get(key, "text-embedding-004")
 
     return _get_value
+
+
+@pytest.mark.asyncio
+async def test_stream_response_configures_agent_max_llm_calls_from_system_config():
+    """rag_agent_max_llm_calls system_config must reach the retrieval agent's
+    RunConfig — this is the code-enforced backstop behind AGENT_SYSTEM_PROMPT's
+    prose 'at most 6 tool calls' limit, which the model can ignore."""
+    db_session = AsyncMock()
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id=None, is_global=True
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    inmemory_session_service = MagicMock()
+    inmemory_session_service.create_session = AsyncMock(
+        return_value=_mock_adk_session()
+    )
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(return_value=_empty_async_gen())
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    mock_analyze_query_signals = AsyncMock(return_value={"intent": "open"})
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({"rag_agent_max_llm_calls": "7"})
+    )
+
+    with patch(
+        "app.services.chat.orchestrator.ConversationRepository",
+        return_value=conv_repo,
+    ), patch(
+        "app.services.chat.orchestrator.SystemConfigsRepository",
+        return_value=mock_configs_repo,
+    ), patch(
+        "app.services.chat.orchestrator.RAGEvaluationsRepository",
+        return_value=eval_repo,
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
+    ), patch(
+        "app.services.chat.orchestrator.InMemorySessionService",
+        return_value=inmemory_session_service,
+    ), patch(
+        "app.services.chat.orchestrator.Runner", return_value=retrieval_runner
+    ), patch(
+        "app.services.chat.orchestrator.InMemoryRunner", return_value=answer_runner
+    ), patch(
+        "app.services.chat.orchestrator._extract_used_book_ids", return_value=[]
+    ), patch(
+        "app.services.chat.orchestrator._grade_context",
+        return_value=("", 0, 0),
+    ), patch(
+        "app.services.chat.orchestrator.build_retrieval_agent",
+        return_value=MagicMock(),
+    ), patch(
+        "app.services.chat.orchestrator.build_answer_agent", return_value=MagicMock()
+    ), patch(
+        "app.services.chat.orchestrator.fix_malformed_citations",
+        side_effect=lambda text: text,
+    ):
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="جىتە قەيەر؟",
+            user_id="user-1",
+            book_id=None,
+            is_global=True,
+        )
+
+        [event async for event in orchestrator.stream_response(dto, db_session)]
+
+    run_config = retrieval_runner.run_async.call_args.kwargs["run_config"]
+    assert run_config.max_llm_calls == 7
+
+
+@pytest.mark.asyncio
+async def test_stream_response_falls_back_to_default_max_llm_calls_on_bad_config():
+    """A missing/unparsable rag_agent_max_llm_calls row must not crash the
+    turn — fall back to the hardcoded default."""
+    db_session = AsyncMock()
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id=None, is_global=True
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    inmemory_session_service = MagicMock()
+    inmemory_session_service.create_session = AsyncMock(
+        return_value=_mock_adk_session()
+    )
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(return_value=_empty_async_gen())
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    mock_analyze_query_signals = AsyncMock(return_value={"intent": "open"})
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect(
+            {"rag_agent_max_llm_calls": "not-a-number"}
+        )
+    )
+
+    with patch(
+        "app.services.chat.orchestrator.ConversationRepository",
+        return_value=conv_repo,
+    ), patch(
+        "app.services.chat.orchestrator.SystemConfigsRepository",
+        return_value=mock_configs_repo,
+    ), patch(
+        "app.services.chat.orchestrator.RAGEvaluationsRepository",
+        return_value=eval_repo,
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
+    ), patch(
+        "app.services.chat.orchestrator.InMemorySessionService",
+        return_value=inmemory_session_service,
+    ), patch(
+        "app.services.chat.orchestrator.Runner", return_value=retrieval_runner
+    ), patch(
+        "app.services.chat.orchestrator.InMemoryRunner", return_value=answer_runner
+    ), patch(
+        "app.services.chat.orchestrator._extract_used_book_ids", return_value=[]
+    ), patch(
+        "app.services.chat.orchestrator._grade_context",
+        return_value=("", 0, 0),
+    ), patch(
+        "app.services.chat.orchestrator.build_retrieval_agent",
+        return_value=MagicMock(),
+    ), patch(
+        "app.services.chat.orchestrator.build_answer_agent", return_value=MagicMock()
+    ), patch(
+        "app.services.chat.orchestrator.fix_malformed_citations",
+        side_effect=lambda text: text,
+    ):
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="جىتە قەيەر؟",
+            user_id="user-1",
+            book_id=None,
+            is_global=True,
+        )
+
+        [event async for event in orchestrator.stream_response(dto, db_session)]
+
+    run_config = retrieval_runner.run_async.call_args.kwargs["run_config"]
+    assert run_config.max_llm_calls == 12
+
+
+@pytest.mark.asyncio
+async def test_stream_response_recovers_when_agent_exceeds_max_llm_calls():
+    """Regression test for the production trace where the retrieval agent
+    kept retrying a dictionary lookup under alternate spellings (جىتە ->
+    جەتە) well past its prompt-stated tool-call budget. When ADK's own
+    max_llm_calls enforcement raises LlmCallsLimitExceededError mid-run,
+    stream_response must not propagate it — it should log and proceed to
+    grading/synthesis with whatever observations were already gathered."""
+    db_session = AsyncMock()
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id=None, is_global=True
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    inmemory_session_service = MagicMock()
+    inmemory_session_service.create_session = AsyncMock(
+        return_value=_mock_adk_session()
+    )
+
+    tool_result_event = MagicMock()
+    tool_result_event.partial = False
+    tool_result_event.content = None
+    function_response = MagicMock()
+    function_response.id = "call-1"
+    function_response.name = "lookup_history_term"
+    function_response.response = {"found_count": 0}
+    tool_result_event.get_function_responses = MagicMock(
+        return_value=[function_response]
+    )
+
+    async def _flaky_run_async(*args, **kwargs):
+        yield tool_result_event
+        raise LlmCallsLimitExceededError(
+            "Max number of llm calls limit of `7` exceeded"
+        )
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = _flaky_run_async
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    mock_analyze_query_signals = AsyncMock(
+        return_value={
+            "intent": "dictionary",
+            "dictionary_subtype": "history_term",
+            "dictionary_term": "جىتە",
+        }
+    )
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({"rag_agent_max_llm_calls": "7"})
+    )
+
+    mock_grade_context = MagicMock(return_value=("graded context", 1, 1))
+
+    with patch(
+        "app.services.chat.orchestrator.ConversationRepository",
+        return_value=conv_repo,
+    ), patch(
+        "app.services.chat.orchestrator.SystemConfigsRepository",
+        return_value=mock_configs_repo,
+    ), patch(
+        "app.services.chat.orchestrator.RAGEvaluationsRepository",
+        return_value=eval_repo,
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze_query_signals,
+    ), patch(
+        "app.services.chat.orchestrator.InMemorySessionService",
+        return_value=inmemory_session_service,
+    ), patch(
+        "app.services.chat.orchestrator.Runner", return_value=retrieval_runner
+    ), patch(
+        "app.services.chat.orchestrator.InMemoryRunner", return_value=answer_runner
+    ), patch(
+        "app.services.chat.orchestrator._extract_used_book_ids", return_value=[]
+    ), patch(
+        "app.services.chat.orchestrator._grade_context", mock_grade_context
+    ), patch(
+        "app.services.chat.orchestrator.build_retrieval_agent",
+        return_value=MagicMock(),
+    ), patch(
+        "app.services.chat.orchestrator.build_answer_agent", return_value=MagicMock()
+    ), patch(
+        "app.services.chat.orchestrator.fix_malformed_citations",
+        side_effect=lambda text: text,
+    ):
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="باھادىرنامىدە تىلغا ئېلىغان جىتە قەيەرنى كۆرسىتىدۇ؟",
+            user_id="user-1",
+            book_id=None,
+            is_global=True,
+        )
+
+        # Must not raise — a runaway retrieval loop degrades gracefully
+        # instead of failing the whole turn.
+        events = [
+            event async for event in orchestrator.stream_response(dto, db_session)
+        ]
+
+    tool_result_events = [
+        e for e in events if isinstance(e, dict) and e.get("type") == "tool_result"
+    ]
+    assert len(tool_result_events) == 1
+    assert tool_result_events[0]["tool"] == "lookup_history_term"
+
+    # Grading ran with the one observation gathered before the limit hit.
+    graded_observations = mock_grade_context.call_args.args[0]
+    assert len(graded_observations) == 1
+    assert graded_observations[0]["tool"] == "lookup_history_term"
+
+    done_events = [e for e in events if isinstance(e, dict) and e.get("type") == "done"]
+    assert len(done_events) == 1
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,7 @@ You are implementing infrastructure changes: shell scripts, Docker configuration
 |---------------------|---------------|
 | One-time VM provisioning | `deploy/gcp/scripts/setup-vm.sh` (extend) |
 | Automated deploy pipeline | `deploy/gcp/scripts/deploy.sh` (extend or alongside) |
-| Env validation / safe deploy | `deploy/gcp/scripts/deploy_security_fixes.sh` |
+| Env validation / safe deploy | `deploy/gcp/scripts/deploy.sh` (no separate validation script exists — `FILL_IN` values are checked manually per `deploy/gcp/PRODUCTION_DEPLOYMENT.md`) |
 | Production Docker services | `deploy/gcp/docker-compose.yml` |
 | Local dev Docker services | `docker-compose.yml` (root) |
 | Nginx config | `deploy/gcp/nginx/conf.d/kitabim.conf` |
@@ -87,7 +87,7 @@ done
 ```bash
 MAX_ATTEMPTS=30
 ATTEMPT=0
-until curl -sf "https://kitabim.ai/api/health" > /dev/null 2>&1; do
+until curl -sf "https://kitabim.ai/health" > /dev/null 2>&1; do
     ATTEMPT=$((ATTEMPT + 1))
     if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
         echo -e "${RED}Health check failed after ${MAX_ATTEMPTS}s${NC}"
@@ -104,16 +104,17 @@ echo -e "${GREEN}✓ Backend healthy${NC}"
 
 When adding a new build step or deployment action to `deploy/gcp/scripts/deploy.sh`:
 
-1. **New service to build** — add after the existing build block:
+1. **New service to build** — add after the existing build block (actual `deploy.sh` uses plain `docker build` + a separate `docker push`, not `buildx --push`):
 ```bash
-echo -e "${BLUE}→ Building my-service${NC}"
-docker buildx build \
+docker build -f Dockerfile.my-service \
     --platform linux/amd64 \
-    --file Dockerfile.my-service \
-    --tag "${REGISTRY}/kitabim-my-service:${IMAGE_TAG}" \
-    --tag "${REGISTRY}/kitabim-my-service:latest" \
-    --push \
-    .
+    -t "${REGISTRY}/kitabim-my-service:${IMAGE_TAG}" \
+    -t "${REGISTRY}/kitabim-my-service:latest" \
+    --progress=plain .
+
+# ...later, alongside the other pushes:
+docker push "${REGISTRY}/kitabim-my-service:${IMAGE_TAG}"
+docker push "${REGISTRY}/kitabim-my-service:latest"
 ```
 
 2. **New SSH deploy step** — add inside the `gcloud compute ssh` heredoc:
@@ -155,7 +156,10 @@ my-service:
   depends_on:
     redis:
       condition: service_healthy
-  mem_limit: 512m
+  deploy:
+    resources:
+      limits:
+        memory: 512M
   restart: unless-stopped
 ```
 
@@ -171,25 +175,27 @@ my-service:
     - internal
   depends_on:
     - redis
-  mem_limit: 512m
   restart: always
   deploy:
     replicas: 1
+    resources:
+      limits:
+        memory: 512M
 ```
 
 **Rules:**
-- Always set `mem_limit` — never leave it unbounded
+- Always set a memory limit via `deploy.resources.limits.memory` — never leave it unbounded (the codebase does not use the top-level `mem_limit:` shorthand)
 - Always use `restart: always` in production, `restart: unless-stopped` in local
 - Never bind ports in production except Nginx — use `networks: internal`
-- Use `env_file: .env` in production (not individual `environment:` keys)
+- Use `env_file: .env` in production for secrets; per-service `environment:` overrides (e.g. `REDIS_URL`, `NEO4J_URL`) are still layered on top where a container needs a different value than what's in `.env`
 
 ---
 
 ## Nginx Configuration Conventions
 
-Config lives at `deploy/gcp/nginx/conf.d/kitabim.conf`. When adding a new route:
+Config lives at `deploy/gcp/nginx/conf.d/kitabim.conf`. Unlike the per-endpoint examples below might suggest, the actual config has **one blanket `location ^~ /api/` block** that proxies everything under `/api/` to the backend, with buffering already disabled (SSE-friendly) and 300s timeouts. A new backend endpoint under `/api/` needs **no nginx change at all** — it's already covered. Only add a new `location` block for something that needs genuinely different behavior (a different upstream, different timeouts, etc.):
 
-### New API proxy route
+### New API proxy route (only if it needs different behavior than the existing blanket `/api/` block)
 ```nginx
 location /api/my-endpoint/ {
     proxy_pass         http://backend:8000;
@@ -202,7 +208,8 @@ location /api/my-endpoint/ {
 }
 ```
 
-### New SSE / streaming route (disable buffering)
+### SSE / streaming (already handled)
+The existing `/api/` block already sets `proxy_buffering off`, `proxy_cache off`, `chunked_transfer_encoding on`, and `proxy_set_header Connection ''` for the whole API surface (this is what makes RAG chat SSE streaming work), so a dedicated streaming location is only needed if a route requires a longer timeout than the default 300s:
 ```nginx
 location /api/my-stream/ {
     proxy_pass             http://backend:8000;
@@ -217,7 +224,7 @@ location /api/my-stream/ {
 
 ### Static asset cache (versioned, immutable)
 ```nginx
-location ~* \.(js|css|woff2|png|ico)$ {
+location ~* ^/(?!api/).*\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
     proxy_pass http://frontend:80;
     add_header Cache-Control "public, max-age=31536000, immutable";
 }
@@ -227,10 +234,11 @@ location ~* \.(js|css|woff2|png|ico)$ {
 ```bash
 # Validate syntax (on VM)
 docker compose exec nginx nginx -t
-# Reload without downtime
+# Reload without downtime (used by the certbot renewal cron in setup-vm.sh)
 docker compose exec nginx nginx -s reload
-# Or from deploy.sh pattern:
-docker compose restart nginx
+# deploy.sh instead force-recreates nginx on every deploy (re-resolves upstream
+# IPs and applies port-mapping changes) rather than restarting/reloading:
+docker compose -f deploy/gcp/docker-compose.yml up -d --force-recreate nginx
 ```
 
 ---
@@ -265,7 +273,7 @@ All production migrations live in `packages/backend-core/migrations/NNN_descript
 
 When writing a new migration:
 ```sql
--- Migration: 036_my_change.sql
+-- Migration: 090_my_change.sql
 -- Description: Short description of what this changes
 -- Author: <name>
 -- Date: YYYY-MM-DD
@@ -289,11 +297,11 @@ COMMIT;
 - Always `IF NOT EXISTS` — idempotent migrations are safe to re-run
 - Wrap in `BEGIN; ... COMMIT;` for atomicity
 - `CREATE INDEX CONCURRENTLY` must be outside a transaction — omit `BEGIN/COMMIT` for those
-- Number sequentially — check the highest existing number first
+- Number sequentially — check the highest existing number first (89 as of this writing; each migration ships alongside a paired `NNN_rollback_description.sql`)
 
 **Run on production:**
 ```bash
-./scripts/run_migration_prod.sh 036
+./scripts/run_migration_prod.sh 090
 ```
 
 ---
@@ -313,7 +321,7 @@ MY_API_KEY=FILL_IN                # required secret
 MY_TIMEOUT_SECONDS=30             # tunable with a safe default
 ```
 
-The `deploy_security_fixes.sh` script greps for `FILL_IN` and aborts if any remain — so always add to the template and always fill before deploying.
+There is no automated script that greps for leftover `FILL_IN` values before a production deploy — `deploy/gcp/PRODUCTION_DEPLOYMENT.md` documents it as a manual checklist item instead. So always add new vars to the template, and always manually verify no `FILL_IN` remains in `deploy/gcp/.env` before running `deploy.sh`.
 
 ### Reading secrets in scripts (never hardcode)
 ```bash
@@ -329,6 +337,8 @@ PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" "$DB_NAME"
 ---
 
 ## GitHub Actions CI/CD — Implementation
+
+**Note: this does not exist yet.** There is currently no `.github/workflows/` directory in this repo — all testing and deployment is manual (`deploy/gcp/scripts/deploy.sh`, run by hand from a developer machine, per `deploy/gcp/PRODUCTION_DEPLOYMENT.md`). The pattern below is a reference for *if/when* CI/CD is introduced — it is not describing an existing convention to follow, and none of the values (secrets, workflow names) are real. If asked to actually stand this up, treat it as new infrastructure (use `/infra-designer` first) rather than "extending" something that already exists.
 
 ### Workflow file structure
 ```yaml
@@ -436,7 +446,7 @@ When adding a new metric to `scripts/monitor.sh` or `scripts/monitor-local.sh`:
 # New metric block — follows existing pattern
 echo ""
 echo "=== My New Metric ==="
-MY_VALUE=$(docker compose exec -T redis redis-cli MY_COMMAND 2>/dev/null || echo "N/A")
+MY_VALUE=$(docker exec redis redis-cli MY_COMMAND 2>/dev/null || echo "N/A")
 echo "Value: ${MY_VALUE}"
 
 # With threshold alerting
@@ -472,11 +482,11 @@ fi
 |---------|---------------|-----|
 | Hardcoding secrets in scripts | Leaks into git history | Always `source .env` or use `$SECRET` env var |
 | No `set -euo pipefail` | Errors are silently swallowed | Always first line after `#!/bin/bash` |
-| No `FILL_IN` check before prod deploy | Deploys with unset secrets | Extend `deploy_security_fixes.sh` validation |
+| No `FILL_IN` check before prod deploy | Deploys with unset secrets | Manually grep `deploy/gcp/.env` for `FILL_IN` before running `deploy.sh` — no automated check exists |
 | Port exposed directly on VM | Bypasses Nginx security headers and SSL | Route via Nginx proxy |
-| No `mem_limit` on Docker service | Service can OOM the VM | Always set limits matching the VM budget |
+| No memory limit on Docker service | Service can OOM the VM | Always set `deploy.resources.limits.memory` matching the VM budget |
 | Running migration without confirmation | Can't undo on prod | Require `yes` prompt; dry-run first |
 | Building images for wrong arch on M1 Mac | Fails on VM (linux/amd64) | Always `--platform linux/amd64` |
-| SSH key in CI stored as plain env var | Exposed in logs | Use GitHub Secrets; never `echo $SSH_KEY` |
-| No health check after deploy | Silent broken deploy | Always verify `/api/health` post-deploy |
+| SSH key in CI stored as plain env var | Exposed in logs | Use GitHub Secrets; never `echo $SSH_KEY` (N/A today — no CI exists yet) |
+| No health check after deploy | Silent broken deploy | Always verify `/health` post-deploy (the route is mounted at the app root, not under `/api/`) |
 | Editing `.env` directly on VM without backup | One typo kills prod | `cp .env .env.backup` before editing |

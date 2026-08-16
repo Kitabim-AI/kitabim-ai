@@ -21,6 +21,12 @@ const FacebookIcon = () => (
   </svg>
 );
 
+const XIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+  </svg>
+);
+
 export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer, bookId, bookTitle, bookAuthor, onClose }) => {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -38,10 +44,20 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleFacebook = async () => {
-    // Copy Q&A text to clipboard so user can paste into the FB post composer
-    await navigator.clipboard.writeText(qaText).catch(() => {});
+  const handleTwitter = () => {
+    const tweetText = [
+      question ? `Q: ${question.slice(0, 100)}` : '',
+      `A: ${previewAnswer.slice(0, 150)}`,
+      bookTitle ? `— Source: ${bookTitle}` : '',
+      shareUrl
+    ].filter(Boolean).join('\n\n');
 
+    const twitterUrl = `https://x.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+    window.open(twitterUrl, '_blank', 'noopener,noreferrer,width=550,height=420');
+  };
+
+  const handleFacebook = async () => {
+    await navigator.clipboard.writeText(qaText).catch(() => {});
     const fbUrl = bookId
       ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`${window.location.origin}/api/share/book/${bookId}`)}`
       : 'https://www.facebook.com/';
@@ -66,8 +82,8 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
         {/* Header */}
         <div className="flex items-center justify-between p-5 pb-4 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#1877F2]/10 dark:bg-[#38bdf8]/10 text-[#1877F2] dark:text-[#38bdf8] rounded-xl">
-              <FacebookIcon />
+            <div className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-xl">
+              <XIcon />
             </div>
             <span className="font-normal text-[#1a1a1a] dark:text-slate-100 uyghur-text">{t('share.shareQA')}</span>
           </div>
@@ -122,23 +138,31 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
         )}
 
         {/* Actions */}
-        <div className="flex gap-2 p-5 pt-0">
+        <div className="grid grid-cols-3 gap-2 p-5 pt-0">
           <button
             onClick={handleCopy}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[#1a1a1a] dark:text-slate-200 rounded-2xl text-sm font-normal transition-all active:scale-95"
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[#1a1a1a] dark:text-slate-200 rounded-2xl text-xs font-normal transition-all active:scale-95"
           >
-            {copied ? <Check size={16} className="text-emerald-500" strokeWidth={2.5} /> : <Copy size={16} strokeWidth={2.5} />}
+            {copied ? <Check size={15} className="text-emerald-500" strokeWidth={2.5} /> : <Copy size={15} strokeWidth={2.5} />}
             <span className="uyghur-text">
               {copied ? t('share.linkCopied') : t('share.copyLink')}
             </span>
           </button>
 
           <button
+            onClick={handleTwitter}
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-black hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-2xl text-xs font-normal transition-all active:scale-95 shadow-md"
+          >
+            <XIcon />
+            <span className="uyghur-text whitespace-nowrap">{t('share.postToX')}</span>
+          </button>
+
+          <button
             onClick={handleFacebook}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-2xl text-sm font-normal transition-all active:scale-95 shadow-lg shadow-[#1877F2]/30"
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-2xl text-xs font-normal transition-all active:scale-95 shadow-md shadow-[#1877F2]/30"
           >
             {fbClicked
-              ? <><Check size={16} strokeWidth={2.5} /><span className="uyghur-text whitespace-nowrap">{t('share.textCopied')}</span></>
+              ? <><Check size={15} strokeWidth={2.5} /><span className="uyghur-text whitespace-nowrap">{t('share.textCopied')}</span></>
               : <><FacebookIcon /><span className="uyghur-text whitespace-nowrap">{t('share.postToFacebook')}</span></>
             }
           </button>

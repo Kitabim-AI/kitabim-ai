@@ -16,7 +16,7 @@ You are designing and implementing backend API features for the kitabim-ai FastA
 | Framework | FastAPI (async) |
 | ORM | SQLAlchemy 2.0 async (`asyncpg` driver) |
 | Validation | Pydantic v2 |
-| Auth | JWT Bearer + OAuth (Google / Facebook / Twitter) |
+| Auth | JWT Bearer + OAuth (Google / Facebook / Twitter / Instagram) |
 | Cache | Redis via `cache_service` |
 | Queue | Redis-backed background jobs (worker service) |
 | DB | PostgreSQL |
@@ -36,7 +36,7 @@ services/backend/
     dependencies.py              # get_current_user, require_role, require_admin, require_editor, require_reader
     jwt_handler.py
     oauth_providers.py
-    providers/                   # Google, Facebook, Twitter
+    providers/                   # Google, Facebook, Twitter, Instagram
 
 packages/backend-core/app/
   core/

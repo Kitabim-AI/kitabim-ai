@@ -13,29 +13,46 @@ You are designing database schemas, migrations, and query patterns for the kitab
 
 | Extension | Purpose |
 |-----------|---------|
-| `pgvector` | 768-dim embeddings on `chunks` and `book_summaries` |
+| `pgvector` | `Vector(3072)` embeddings (Gemini `gemini-embedding-2`) on `chunks`, `book_summaries`, `quran` |
 | `uuid-ossp` | `uuid_generate_v4()` server-side default for user/token PKs |
-| `pg_trgm` | (available) trigram indexes for fuzzy text search |
+| `pg_trgm` | trigram indexes for fuzzy text search — actively used (`books.title`/`author`, `words`, `history_dictionary`, etc.) |
 
-**Existing tables:**
+**Existing tables** (30 total — verified against `models.py`):
 
 | Table | PK type | Purpose |
 |-------|---------|---------|
 | `books` | `String(64)` MD5 hash | Core book records + denormalized pipeline milestones |
 | `pages` | `Integer` autoincrement | Per-page OCR text + per-step milestone tracking |
-| `chunks` | `Integer` autoincrement | RAG chunks with `Vector(768)` embeddings |
-| `book_summaries` | `String(64)` (book FK, 1-to-1) | LLM summary + `Vector(768)` for hierarchical RAG |
+| `chunks` | `Integer` autoincrement | RAG chunks with `Vector(3072)` embeddings |
+| `book_summaries` | `String(64)` (book FK, 1-to-1) | LLM summary + `Vector(3072)` for hierarchical RAG |
+| `batch_ocr_jobs` | `String(64)` UUID | Tracks Gemini Batch API OCR requests |
+| `batch_embedding_jobs` | `String(64)` UUID | Tracks Gemini Batch API embedding requests |
+| `batch_history_extraction_jobs` | `String(64)` UUID | Tracks Gemini Batch API history-extraction requests |
 | `users` | `String(36)` UUID | OAuth users with role-based access |
 | `refresh_tokens` | `String(36)` UUID (jti) | JWT refresh token store |
 | `user_chat_usage` | `Integer` autoincrement | Daily chat counter per user |
 | `rag_evaluations` | `Integer` autoincrement | RAG query performance metrics |
 | `system_configs` | `String(100)` key | Hot-reloadable key/value config |
 | `pipeline_events` | `Integer` autoincrement | Transactional outbox for pipeline transitions |
-| `dictionary` | `Integer` autoincrement | Uyghur spell-check word list |
+| `words` | `Integer` autoincrement | Uyghur spell-check word list (renamed from `dictionary` in migration 058) |
+| `dictionary` | `Integer` autoincrement | Word definitions + audio (separate, newer table — not the spell-check list, don't conflate with `words`) |
 | `page_spell_issues` | `Integer` autoincrement | Per-word spell-check findings |
 | `auto_correct_rules` | `Integer` autoincrement | Word-level auto-correction rules |
 | `proverbs` | `Integer` autoincrement | Uyghur proverbs displayed in UI |
+| `quran` | `Integer` autoincrement | Uyghur/English/Arabic ayahs + `Vector(3072)` embedding |
 | `contact_submissions` | `Integer` autoincrement | Join Us form submissions |
+| `synonyms` | `Integer` autoincrement | Uyghur synonym dictionary, one row per headword |
+| `history_dictionary` | `Integer` autoincrement | Historical-term dictionary parsed from the history corpus |
+| `history_dictionary_staging` | `Integer` autoincrement | Staging queue for AI-extracted history-dictionary candidates pending admin review |
+| `names_dictionary` | `Integer` autoincrement | Uyghur person-names dictionary |
+| `english_uyghur_dictionary` | `Integer` autoincrement | English-Uyghur bilingual dictionary |
+| `conversations` | `String(36)` UUID | Multi-turn chat conversation sessions |
+| `conversation_messages` | `String(36)` UUID | Message turns inside a conversation |
+| `graph_resolution_queue` | `Integer` autoincrement | Claims Neo4j Entity nodes for the global resolution pass (Postgres owns queue state, Neo4j owns entity data) |
+| `graph_resolution_reviews` | `Integer` autoincrement | Admin review queue for ambiguous entity-resolution outcomes |
+| `graph_merge_log` | `Integer` autoincrement | Pre-merge snapshot of removed Entity nodes/edges, enabling unmerge |
+
+Note: the knowledge graph itself (Entity nodes, `RELATED_TO` edges, `profile_embedding` vector index) lives in Neo4j, not Postgres — the three `graph_*` tables above only coordinate/audit that resolution process.
 
 ---
 
@@ -146,13 +163,15 @@ Add an index on every column that appears in a `WHERE` clause of a frequently-ru
 - **Always index** `processed` boolean on outbox tables (`pipeline_events`)
 - **Always index** `last_updated` on tables polled by the stale watchdog
 - **Consider composite index** when two columns are always queried together (e.g. `(user_id, usage_date)` on `user_chat_usage`)
-- **`pgvector` cosine index** on `Vector` columns queried with `.cosine_distance()`:
+- **`pgvector` cosine index** on `Vector` columns queried with `.cosine_distance()`. Current tables use HNSW (better recall/latency than `ivfflat` at this scale); large `Vector(3072)` columns cast to `halfvec` for space efficiency:
 
 ```sql
-CREATE INDEX CONCURRENTLY chunks_embedding_cosine_idx
-    ON chunks USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100);
+CREATE INDEX CONCURRENTLY idx_chunks_embedding
+    ON chunks USING hnsw ((embedding::halfvec(3072)) halfvec_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 ```
+
+`book_summaries` still uses an older `ivfflat` index (`WITH (lists = 50)`) — prefer HNSW for any new vector column unless there's a specific reason to match that older pattern.
 
 ---
 
@@ -178,14 +197,14 @@ ocr_milestone: Mapped[str] = mapped_column(
 
 ## Vector Columns
 
-`pgvector` `Vector(768)` is used for semantic embeddings (Gemini `text-embedding-004`, 768 dimensions):
+`pgvector` `Vector(3072)` is used for semantic embeddings (Gemini `gemini-embedding-2`, 3072 dimensions):
 
 ```python
 from pgvector.sqlalchemy import Vector
 
-embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768), nullable=True)
+embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(3072), nullable=True)
 # Or non-nullable for tables that always have embeddings:
-embedding: Mapped[List[float]] = mapped_column(Vector(768), nullable=False)
+embedding: Mapped[List[float]] = mapped_column(Vector(3072), nullable=False)
 ```
 
 Always store embeddings as `nullable=True` during the pipeline (set to `None` initially, populated by the embedding job). Use `nullable=False` on summary tables where the embedding is always generated at insert time.
@@ -263,11 +282,15 @@ COMMIT;
 - One logical change per file — don't bundle unrelated changes
 - Name constraints explicitly: `{table}_{column(s)}_{type}` e.g. `pages_status_check`, `users_provider_provider_id_key`
 - For index creation on large tables, use `CREATE INDEX CONCURRENTLY` (outside a transaction block — omit `BEGIN/COMMIT`)
+- Also create a paired rollback file, `NNN_rollback_description.sql` — every recent migration ships one; see `packages/backend-core/migrations/README.md`
 
 **Apply locally:**
+
+Postgres runs standalone on the host (not a Docker Compose service) at `localhost:5432`, db `kitabim-ai`, user `kitabim`. `./deploy/local/rebuild-and-restart.sh all` auto-applies any pending `*.sql` files in `packages/backend-core/migrations/` (tracked via a `schema_migrations` table, rollback files skipped), so a rebuild is usually enough. To apply one migration manually:
+
 ```bash
-docker exec -i $(docker compose ps -q postgres) \
-    psql -U postgres kitabim < packages/backend-core/migrations/035_my_change.sql
+psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" \
+    -v ON_ERROR_STOP=1 -f packages/backend-core/migrations/090_my_change.sql
 ```
 
 ---

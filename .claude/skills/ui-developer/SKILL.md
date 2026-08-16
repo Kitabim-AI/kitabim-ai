@@ -36,13 +36,22 @@ apps/frontend/src/
     useBooks.ts              # Book list, pagination, sorting
     useChat.ts               # Chat messages, streaming, usage
     useBookActions.ts        # Upload, delete, open, process actions
+    useContentSearch.ts      # Full-text content search
+    useLookupSearch.ts       # Dictionary/name/term lookup search
+    usePendingCorrections.ts # Spell-check pending correction review
+    useScrollStabilizer.ts   # Keeps reader scroll position stable across content changes
+    useScrollToPage.ts       # Scroll-to-page-number in reader
+    useSpellCheck.ts         # Spell-check scan/run state
+    useSpellingCheck.ts      # Inline spelling suggestion checks
+    useUyghurInput.ts        # Uyghur keyboard/input helpers
   services/
     persistenceService.ts    # REST API calls — books, pages, summaries (uses authFetch)
     authService.ts           # Token mgmt, OAuth, authFetch, getAuthHeaders
-    geminiService.ts         # Gemini AI integration
+    geminiService.ts         # Chat streaming, OCR text extraction, conversations (backend AI endpoints)
     userService.ts           # User CRUD
     contactService.ts        # Contact form
     pdfService.ts            # PDF parsing
+    searchTabsService.ts     # Dictionary/name/term/proverb/Quran/spelling search tabs
   i18n/
     I18nContext.tsx          # useI18n() — t(key, params?)
     i18n.ts                  # Language type, translations loader
@@ -54,12 +63,14 @@ apps/frontend/src/
     ui/GlassPanel.tsx        # Reusable glass-morphism card wrapper
     common/Modal.tsx         # Confirm/alert modal (driven by AppContext modal state)
     common/NotificationContainer.tsx
-    library/                 # Home, LibraryView, BookCard, SearchOverlay
+    library/                 # HomeView, LibraryView, BookCard, SearchOverlay
     reader/                  # ReaderView, VirtualScrollReader, PageItem
-    chat/                    # ChatInterface, ReferenceModal
+    chat/                    # ChatInterface, ReferenceModal, AgentThinkingSteps
     admin/                   # AdminView, AdminTabs, StatsPanel, sub-panels
     spell-check/             # SpellCheckView, SpellCheckPanel, ReviewPanel, HighlightedText
-    pages/                   # JoinUsView
+    graph/                   # GraphView
+    share/                   # ShareModal, ShareChatModal
+    pages/                   # JoinUsView, DictionaryView, QuranView
     auth/                    # AuthButton
   tests/
     test-utils.tsx           # renderWithProviders — wraps with all providers
@@ -76,7 +87,7 @@ The single source of truth. Never replicate state that already lives here.
 
 Key fields:
 ```ts
-view         // current page: 'home'|'library'|'admin'|'reader'|'global-chat'|'join-us'|'spell-check'
+view         // current page: 'home'|'library'|'admin'|'reader'|'global-chat'|'join-us'|'spell-check'|'graph'|'dictionary'|'quran'
 setView      // navigate (pushes to history unless updateHistory=false)
 selectedBook // Book | null
 books        // current page of books
@@ -173,8 +184,12 @@ URL ↔ view mapping (defined in `AppContext.tsx`):
 /admin/users → admin (tab: users)
 /chat       → global-chat
 /spell-check → spell-check
+/graph      → graph
+/dictionary → dictionary
+/quran      → quran
 /reader     → reader (no direct URL entry, opened via book click)
 /join-us    → join-us
+/books/<id> → library (deep link from share, sets bookId)
 ```
 
 ---

@@ -287,7 +287,7 @@ PDF rendering uses `pdf.js` loaded from a CDN `<script>` tag at runtime (`pdfSer
 
 ### Infrastructure
 - **Local dev**: `docker-compose.yml` runs Redis, backend, worker, frontend, and Neo4j as containers; PostgreSQL runs standalone on the host.
-- **Production (GCP)**: `deploy/gcp/docker-compose.yml` runs the same services plus an Nginx reverse proxy for TLS termination, behind a single VM. It also defines an `ocr-service` container — present in the compose file and referenced by the worker's `depends_on`/`OCR_SERVICE_URL` env var, but not called anywhere in the current `packages/backend-core` or `services/worker` code (OCR goes through Gemini Vision, not this service); treat it as unverified/likely-legacy infra rather than an active part of the OCR path.
+- **Production (GCP)**: `deploy/gcp/docker-compose.yml` runs backend, worker, frontend, Redis, Neo4j, plus an Nginx reverse proxy for TLS termination behind a single Compute Engine VM.
 
 ---
 

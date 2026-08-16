@@ -33,7 +33,7 @@ pytest services/backend/tests/               # API endpoint/auth tests
 pytest services/worker/tests/               # worker job/scanner tests
 
 # Single file
-pytest packages/backend-core/tests/app/db/test_books_repository.py -v
+pytest packages/backend-core/tests/app/db/books_repository_test.py -v
 
 # With coverage
 pytest packages/backend-core/tests/ --cov=app --cov-report=term-missing
@@ -48,17 +48,17 @@ Mirror the source tree under each package's `tests/` directory:
 ```
 packages/backend-core/
   app/
-    db/repositories/books_repository.py  → tests/app/db/test_books_repository.py
-    services/user_service.py          → tests/app/services/test_user_service.py
-    utils/text.py                     → tests/app/utils/test_text.py
-    core/i18n.py                      → tests/app/core/test_i18n.py
+    db/repositories/books_repository.py  → tests/app/db/books_repository_test.py
+    services/user_service.py          → tests/app/services/user_service_test.py
+    utils/text.py                     → tests/app/utils/text_test.py
+    core/i18n.py                      → tests/app/core/i18n_test.py
 
 services/backend/
-  api/endpoints/books.py              → tests/api/endpoints/test_books.py
-  auth/jwt_handler.py                 → tests/auth/test_jwt_handler.py
+  api/endpoints/books_router.py       → tests/api/endpoints/books_router_test.py
+  auth/jwt_handler.py                 → tests/auth/jwt_handler_test.py
 ```
 
-**Naming:** `test_<module_name>.py` — always prefixed with `test_`.
+**Naming:** `<module_name>_test.py` — always suffixed with `_test.py` (project-wide convention since the June 2026 repository/router rename; see commit `7eb5fba`). A handful of newer files (e.g. `test_adk_orchestrator.py`, `test_retrieval_subset_matching.py`) still use the old `test_<module_name>.py` prefix — inconsistent with the norm, do not follow them for new tests.
 
 ---
 
@@ -119,7 +119,7 @@ session.execute.side_effect = [mock_res1, mock_res2, mock_res3]
 ```python
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from app.db.repositories.books import BooksRepository
+from app.db.repositories.books_repository import BooksRepository
 from app.db.models import Book
 
 @pytest.mark.asyncio
@@ -175,7 +175,7 @@ async def test_create_record():
 
 def test_get_repository_factory():
     """Test the factory function returns the correct type."""
-    from app.db.repositories.books import get_books_repository
+    from app.db.repositories.books_repository import get_books_repository
     session = AsyncMock()
     repo = get_books_repository(session)
     assert isinstance(repo, BooksRepository)
@@ -286,43 +286,57 @@ def test_raises_on_invalid_input():
 
 ### 4. Endpoint Tests
 
-Most endpoint tests are currently scaffolds. When writing real endpoint tests, use `httpx.AsyncClient` with the FastAPI `app` and override dependencies via `app.dependency_overrides`.
+Many endpoint test files are still bare scaffolds (`def test_books_basic(): assert True`). Where real tests exist, the convention is **not** `httpx.AsyncClient` — no endpoint test in the codebase uses `AsyncClient`/`TestClient` or `app.dependency_overrides`. Instead, tests call the router function directly (it's just an `async def`) and patch its module-level dependencies with `unittest.mock.patch`. Because `services/backend/api/` and `packages/backend-core/tests/app/` both use the bare package name `api`, tests use a `setup_paths()` helper to reset `sys.modules`/`sys.path` before importing, avoiding cache collisions between test runs.
 
 ```python
-import pytest
-from httpx import AsyncClient, ASGITransport
-from unittest.mock import AsyncMock, patch
-from main import app
-from app.api.deps import get_session, require_admin
+import sys
+from pathlib import Path
 
-@pytest.fixture
-def mock_session():
-    return AsyncMock()
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+BACKEND_DIR = str(Path(__file__).resolve().parents[3])
+BACKEND_CORE_DIR = str(
+    Path(__file__).resolve().parents[5] / "packages" / "backend-core"
+)
+
+
+def setup_paths():
+    # Force reload of api modules to avoid cache shadowing
+    for m in list(sys.modules.keys()):
+        if m == "api" or m.startswith("api."):
+            del sys.modules[m]
+    for p in [BACKEND_CORE_DIR, BACKEND_DIR]:
+        if p in sys.path:
+            sys.path.remove(p)
+        sys.path.insert(0, p)
+
 
 @pytest.mark.asyncio
-async def test_get_books_endpoint(mock_session):
-    app.dependency_overrides[get_session] = lambda: mock_session
-    app.dependency_overrides[require_admin] = lambda: {"id": "admin1", "role": "admin"}
+async def test_get_books_endpoint():
+    setup_paths()
+    from api.endpoints.books_router import get_books
 
-    try:
-        with patch("app.api.endpoints.books.BooksRepository") as mock_repo_cls:
-            mock_repo = mock_repo_cls.return_value
-            mock_repo.find_many = AsyncMock(return_value=[])
-            mock_repo.count = AsyncMock(return_value=0)
+    mock_repo = MagicMock()
+    mock_repo.find_many = AsyncMock(return_value=[])
+    mock_repo.count = AsyncMock(return_value=0)
 
-            async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
-            ) as client:
-                response = await client.get(
-                    "/api/books/",
-                    headers={"X-Kitabim-App-Id": "web"},
-                )
-            assert response.status_code == 200
-    finally:
-        app.dependency_overrides.clear()
+    with patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo):
+        result = await get_books(
+            page=1,
+            pageSize=20,
+            q=None,
+            category=None,
+            sortBy="title",
+            order=1,
+            current_user=MagicMock(),
+            session=AsyncMock(),
+        )
+
+    assert result.total == 0
 ```
 
-> **Note:** Endpoint tests need the FastAPI app instantiated. Run them from the `services/backend/` directory so imports resolve correctly.
+> **Note:** Call the endpoint function directly with plain args/kwargs rather than spinning up a client — auth/session dependencies are just function parameters, so pass mocks for them instead of overriding FastAPI dependencies. Patch repository/service classes at the router module's import path (`api.endpoints.<router>.<Name>`), same as service tests.
 
 ---
 

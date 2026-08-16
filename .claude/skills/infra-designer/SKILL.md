@@ -23,14 +23,20 @@ GCP VM: kitabim-prod (e2-standard-2, us-south1-c)
   │     ├── /static/* (immutable cache) ► frontend:80
   │     └── /* (SPA fallback) ──────────► frontend:80
   │
-  ├── Docker internal network (no ports exposed except Nginx 80/443)
-  │     ├── backend (FastAPI :8000) — 1 GB limit
-  │     ├── worker  (arq)           — 1 GB limit
-  │     ├── frontend (Nginx SPA)    — 256 MB limit
-  │     └── redis   (:6379)         — 512 MB limit, appendonly persistence
+  ├── Docker internal network (no ports exposed to the internet except Nginx 80/443;
+  │     Neo4j additionally binds 7474/7687 to 127.0.0.1 only, host-local, not internet-reachable)
+  │     ├── backend (FastAPI :8000)         — 1 GB limit — depends_on: redis, neo4j (both healthy)
+  │     ├── worker  (arq)                   — 1 GB limit — depends_on: redis, neo4j, ocr-service
+  │     ├── frontend (Nginx SPA)            — 256 MB limit
+  │     ├── redis   (:6379)                 — 512 MB limit, appendonly persistence
+  │     ├── neo4j   (bolt :7687, http :7474)— 4 GB limit, graph-data-science plugin enabled
+  │     └── ocr-service (Tesseract, :8000)  — 3 GB limit — defined in compose + wired into
+  │           worker's depends_on/OCR_SERVICE_URL, but not called anywhere in current
+  │           backend-core/worker code (OCR runs via Gemini Vision) — treat as unverified/legacy
   │
   ├── Volume: /mnt/kitabim-data (persistent disk /dev/sdb)
-  │     └── /app/data  ← shared between backend + worker
+  │     ├── /app/data          ← shared between backend + worker
+  │     └── /neo4j/data, /neo4j/logs  ← Neo4j graph DB storage
   │
   └── /etc/gcs/key.json  ← GCS service account key (on VM)
 
@@ -55,6 +61,7 @@ External Services (not on VM):
 | Artifact Registry | `us-south1-docker.pkg.dev/{PROJECT_ID}/kitabim` | Docker images |
 | SSL | Let's Encrypt (certbot) | Auto-renews via cron |
 | DNS | External (points to VM IP) | Not managed in GCP |
+| Neo4j | in-VM Docker container (`neo4j:5.26.0`) | Self-hosted — not a managed GCP service; GDS plugin enabled |
 
 ---
 
@@ -70,13 +77,19 @@ Developer machine
        │     └── kitabim-frontend:TAG + :latest
        ├── Push to Artifact Registry
        └── SSH to kitabim-prod
-             ├── Sync deploy/gcp/.env
-             ├── git pull origin/main
-             ├── docker pull (all 3 images)
-             ├── docker compose up -d (backend, worker, frontend)
-             ├── docker compose restart nginx
-             └── Health check: curl /api/health (30s timeout)
+             ├── Sync deploy/gcp/.env, docker-compose.yml, nginx/conf.d/kitabim.conf
+             ├── git pull --ff-only origin main
+             ├── docker system prune -af (frees disk; volumes untouched)
+             ├── Remove old backend/worker/frontend/nginx containers
+             ├── docker compose pull (backend, worker, frontend images + neo4j public image)
+             ├── docker compose up -d --no-deps (backend, worker, frontend, neo4j)
+             ├── docker compose up -d --force-recreate nginx
+             └── Health check: curl /health on backend, retried up to 10× (~30s)
 ```
+
+**Note**: `ocr-service` is never rebuilt or restarted by `deploy.sh` — there is no
+`Dockerfile.ocr` in the repo, and the image referenced in `docker-compose.yml`
+(`kitabim-ocr`) is not produced by any current build step.
 
 **IMAGE_TAG default**: `git rev-parse --short HEAD` (7-char git SHA)
 
@@ -94,7 +107,7 @@ Developer machine
 | Gemini API key | `.env` | Manual |
 | OAuth secrets | `.env` | Manual |
 
-Template for new secrets: `.env.template` with `FILL_IN` placeholders. The `deploy_security_fixes.sh` script validates no `FILL_IN` remains before deploying.
+Template for new secrets: `.env.template` with `FILL_IN` placeholders. There is currently no automated check that `deploy.sh` refuses to run with unfilled `FILL_IN` values — verify `.env` manually before deploying (the `deploy_security_fixes.sh` script that used to do this validation has been removed from the repo).
 
 ---
 
@@ -132,6 +145,7 @@ Work through these questions before writing any scripts or config:
 - VM goes down → all services go down (no redundancy currently — acceptable for this scale)
 - Cloud SQL goes down → backend + worker fail; Redis and frontend still up
 - Redis goes down → job queue lost; backend cache lost; auth cache lost (sessions re-validate from DB)
+- Neo4j goes down → backend and worker fail to *start* on a fresh deploy (`depends_on: condition: service_healthy`); once running, knowledge-graph / entity-semantic-matching features degrade
 - GCS goes down → file uploads fail; PDF processing fails; covers unavailable
 - Gemini API goes down → circuit breaker opens; RAG chat disabled; OCR pipeline stalls
 
@@ -203,6 +217,7 @@ When designing a CI/CD workflow, follow this structure:
 | VM → Cloud SQL | Private IP (VPC) | Connection string in `.env` only; never hardcode |
 | VM → GCS | Service account key | Minimum IAM: `storage.objectAdmin` on specific buckets |
 | VM → Gemini | API key in `.env` | Never log; circuit breaker prevents runaway spend |
+| VM → Neo4j | Bound to `127.0.0.1` only (host loopback) | Never bind to `0.0.0.0`; other containers reach it via the `neo4j` service hostname on the internal network |
 | Between containers | Internal Docker network | No service binds to `0.0.0.0` except Nginx |
 | Frontend → backend | `/api/*` proxy via Nginx | No CORS bypass; `enforce_app_id` header required |
 
@@ -215,6 +230,9 @@ When designing a CI/CD workflow, follow this structure:
 | Postgres | `host.docker.internal:5432` (standalone on host) | Cloud SQL `<CLOUD_SQL_PRIVATE_IP>:5432` |
 | Redis persistence | None (ephemeral) | `appendonly yes`, `appendfsync everysec` |
 | Redis memory | 256 MB | 512 MB |
+| Neo4j ports | `37687`/`37474` exposed to host, `NEO4J_AUTH=none` | `127.0.0.1:7687`/`127.0.0.1:7474` only, password-protected |
+| Neo4j memory | 1.5 GB limit (256m/512m heap) | 4 GB limit (1G/2G heap) |
+| OCR microservice | Not present | Present (`ocr-service`, Tesseract) — compose-only, not invoked by current backend/worker code |
 | File storage | `./data` bind mount | `/mnt/kitabim-data` named volume |
 | Images | Built locally (`docker compose build`) | Pulled from Artifact Registry |
 | Nginx | Not present (ports exposed directly) | Present (SSL, proxy, security headers) |
@@ -233,8 +251,7 @@ deploy/
     nginx/conf.d/kitabim.conf   ← Nginx SSL + proxy config
     scripts/
       setup-vm.sh               ← one-time VM provisioning
-      deploy.sh                 ← automated build + push + deploy
-      deploy_security_fixes.sh  ← manual deploy with env validation
+      deploy.sh                 ← automated build + push + deploy (backend, worker, frontend, neo4j)
   local/
     rebuild-and-restart.sh      ← local dev rebuild (single or all services)
 
@@ -245,8 +262,10 @@ scripts/                        ← operational / maintenance scripts
   reset_spell_check_prod.sh     ← production data reset (with confirmation)
   setup-gcp-vm.sh               ← alternative minimal VM setup
 
-docker-compose.yml              ← local dev (all services)
+docker-compose.yml              ← local dev (all services; no ocr-service — prod-only)
 Dockerfile.backend              ← backend image
 Dockerfile.worker               ← worker image
 apps/frontend/Dockerfile        ← frontend image
+                                   (no Dockerfile.ocr — the ocr-service image in
+                                    deploy/gcp/docker-compose.yml is not built anywhere in-repo)
 ```

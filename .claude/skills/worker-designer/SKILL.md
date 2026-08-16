@@ -53,12 +53,14 @@ spell_check_milestone=idle → Spell-check scanner claims (optional step)
 
 **Book-level milestones** (denormalized on `Book`): `ocr_milestone`, `chunking_milestone`, `embedding_milestone`, `spell_check_milestone`. Always call `BookMilestoneService` after changing page milestones.
 
+`Book` also has a `graph_milestone` column (knowledge graph pipeline). It is book-level only — there is no corresponding per-page milestone to denormalize from, so it is set directly by `graph_scanner`/`knowledge_graph_job`, not via `BookMilestoneService`.
+
 **Pipeline Driver** (`scanners/pipeline_driver.py`) runs every minute and:
 1. Initializes new pages (`ocr_milestone = idle`)
 2. Resets `failed` milestones back to `idle` when `retry_count < max_retries`
 3. Marks books `ready` / `error` when all pages reach terminal state
 
-**Stale Watchdog** (`scanners/stale_watchdog.py`) runs every 30 minutes and resets any `in_progress` page not updated within 30 minutes back to `idle` — handles crashed jobs.
+**Stale Watchdog** (`scanners/stale_watchdog_scanner.py`) runs every 30 minutes and resets any `in_progress` page not updated within 30 minutes back to `idle` — handles crashed jobs.
 
 ---
 
@@ -79,7 +81,7 @@ from sqlalchemy import select, update, func
 
 from app.db import session as db_session
 from app.db.models import Page
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
@@ -157,7 +159,7 @@ from sqlalchemy import select, update, func
 
 from app.db import session as db_session
 from app.db.models import Page, PipelineEvent
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
@@ -435,5 +437,5 @@ async def run_my_maintenance_scanner(ctx) -> None:
 4. **Write the job** — isolated session per page, `succeeded`/`failed` + `PipelineEvent` in each outcome, book milestone update at the end.
 5. **Register both** — add job to `WorkerSettings.functions`, scanner to `WorkerSettings.cron_jobs`.
 6. **Add config keys** — add tuneable params (model name, page limit, max parallel) to the DB via seeds or a migration; never hardcode them.
-7. **Stale watchdog coverage** — add the new `*_milestone` to the watchdog's `where_conditions` and `update_values` in `stale_watchdog.py`.
+7. **Stale watchdog coverage** — add the new `*_milestone` to the watchdog's `where_conditions` and `update_values` in `stale_watchdog_scanner.py`.
 8. **Rebuild** — `./deploy/local/rebuild-and-restart.sh worker`.

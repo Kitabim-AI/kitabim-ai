@@ -1025,14 +1025,16 @@
   "share": {
     "shareBook": "كىتابنى ھەمبەھىرلەش",
     "shareQA": "جاۋابنى ھەمبەھىرلەش",
-    "postToFacebook": "Facebook تا ھەمبەھىرلەش",
+    "shareQuote": "ئىقتىباسنى ھەمبەھىرلەش",
+    "postToFacebook": "Facebook قا يوللاش",
+    "postToX": "X قا يوللاش",
     "copyLink": "ئۇلانمىنى كۆچۈر",
     "linkCopied": "كۆچۈرۈلدى!",
-    "previewLabel": "Facebook تا كۆرۈنۈشى",
+    "previewLabel": "كۆرۈنۈشى",
     "questionLabel": "سوئال",
     "answerLabel": "جاۋاب",
     "textCopied": "مەزمۇن كۆچۈرۈلدى!",
-    "pasteHint": "مەزمۇن كۆچۈرۈلدى — Facebook خاتىرىڭىزغا چاپلاڭ"
+    "pasteHint": "مەزمۇن كۆچۈرۈلدى — خاتىرىڭىزگە چاپلاڭ"
   },
   "graph": {
     "title": "بىلىم گىرافى",

@@ -44,7 +44,7 @@ Work through every applicable category for the diff.
 - [ ] Page claiming uses `.with_for_update(skip_locked=True)` — without this, two scanner instances can double-claim the same pages
 - [ ] The `UPDATE` to set `in_progress` and the `commit()` happen **inside** the `async with` session block
 - [ ] `redis.enqueue_job(...)` is called **outside** the session block — after the session is closed and committed
-- [ ] `_job_id=` is passed to `enqueue_job` to deduplicate — a scanner that runs every minute without deduplication floods the queue with duplicate jobs
+- [ ] For **page-claiming** scanners (chunking, embedding, spell_check, auto_correct), dedup comes from the atomic claim itself (`with_for_update(skip_locked=True)` + milestone flip to `in_progress`) — `_job_id=` is not needed and these scanners omit it. For **book-level/singleton** dispatchers (`ocr_scanner`, `graph_scanner`, `graph_resolution_scanner`, `pipeline_driver`'s summary dispatch), `_job_id=` (e.g. `f"summary:{book_id}"`) **is** required to prevent re-dispatching the same book while a job is still in flight — flag it as missing on a new book-level dispatcher, but don't demand it on a new page-claiming scanner
 - [ ] The scanner returns early (without enqueueing) when `page_ids` is empty — no empty jobs dispatched
 - [ ] `BookMilestoneService.update_book_milestone_for_step` is called inside the claim session before committing
 - [ ] The dependency gate (`prev_milestone == "succeeded"` in the `WHERE` clause) is correct for the step — e.g. chunking must check `ocr_milestone == "succeeded"`, embedding must check `chunking_milestone == "succeeded"`
@@ -103,7 +103,7 @@ Work through every applicable category for the diff.
 ### 9. Database & Migrations
 
 - [ ] Every new table or column has a corresponding SQL migration file `packages/backend-core/migrations/NNN_description.sql` with the next sequential number
-- [ ] New `*_milestone` string columns have a `CheckConstraint` limiting values to the valid milestone states: `idle`, `in_progress`, `succeeded`, `failed`, `error`
+- [ ] New `*_milestone` string columns have a `CheckConstraint` — but the valid states differ by table, so check the sibling column rather than assuming one universal set: `books.*_milestone` uses `idle`, `in_progress`, `complete`, `partial_failure`, `failed` (see `BookMilestoneService`); `pages.spell_check_milestone` uses `idle`, `in_progress`, `succeeded`, `skipped`, `failed`, `error`. Note that `pages.ocr_milestone`/`chunking_milestone`/`embedding_milestone` currently have **no** DB `CheckConstraint` at all even though application code treats them as `idle`/`in_progress`/`succeeded`/`failed` — a new Page-level milestone column added without a constraint is following existing (if imperfect) precedent, not introducing a new gap
 - [ ] Bulk updates use `update(Model).where(...).values(...)` (single SQL statement) — not a loop of individual `session.execute(update(...).where(id == x))` calls
 - [ ] `last_updated=func.now()` is included in every milestone update — the stale watchdog uses this column to detect stuck pages
 

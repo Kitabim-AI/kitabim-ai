@@ -243,13 +243,14 @@ vi.spyOn(persistenceService.PersistenceService, 'getGlobalLibrary')
   .mockResolvedValue({ books: [], total: 0, page: 1, pageSize: 10, totalReady: 0 });
 ```
 
-### Mock streaming (async generator pattern used in chatWithBookStream)
+### Mock streaming (callback pattern used in chatWithBookStream)
 ```ts
+// Real signature: chatWithBookStream(params: ChatStreamParams, callbacks: ChatStreamCallbacks)
 vi.mocked(chatWithBookStream).mockImplementation(
-  async (_question, _bookId, _page, _history, onChunk, onComplete, onError) => {
-    onChunk('First ');
-    onChunk('chunk');
-    onComplete();
+  async (_params, callbacks) => {
+    callbacks.onChunk('First ');
+    callbacks.onChunk('chunk');
+    callbacks.onComplete();
   }
 );
 ```

@@ -23,16 +23,20 @@ You are designing new features, integrations, and infrastructure changes for the
                         │              │                          │
                         │         PostgreSQL (external managed)   │
                         │              │                          │
+                        │         Neo4j :7687 (knowledge graph)  │
+                        │              │                          │
                         │         GCS Buckets                     │
                         │           ├── data bucket (PDFs)        │
                         │           └── media bucket (covers)     │
                         └─────────────────────────────────────────┘
 
 External services:
-  Gemini API ◄── Backend (RAG chat, summaries)
-  Gemini API ◄── Worker (OCR, embeddings, spell-check)
-  OAuth providers ◄── Backend (Google, Facebook, Twitter)
+  Gemini API ◄── Backend (RAG chat via ChatOrchestrator, summaries)
+  Gemini API ◄── Worker (OCR, embeddings, spell-check, knowledge graph extraction)
+  OAuth providers ◄── Backend (Google, Facebook, Twitter/X, Instagram)
 ```
+
+Both `backend` and `worker` depend on Neo4j (knowledge graph: Entity nodes + `RELATED_TO` edges only, no Book/Author/Chunk nodes). `Book.graph_milestone` (Postgres) tracks per-book graph state; the `has_graph` flag is derived from `graph_milestone == "complete"` — never a live Neo4j query.
 
 ---
 
@@ -45,6 +49,7 @@ External services:
 | `backend` | `kitabim-backend` | 1 GB | always | internal :8000 |
 | `worker` | `kitabim-worker` | 1 GB | always | none |
 | `redis` | `redis:7-alpine` | 512 MB (prod) / 256 MB (dev) | always | internal :6379 |
+| `neo4j` | `neo4j:5.26.0` | 4 GB (prod) / 1.5 GB (dev) | always | internal :7687, :7474 (dev exposes both on host) |
 
 **PostgreSQL** is external (managed) in production — not a Docker service.
 
@@ -88,18 +93,30 @@ Upload (POST /api/books)
                       └─ chunking_job → embedding_job → (spell_check_job)
                            └─ pipeline_driver marks book ready
                                 └─ Enqueues summary_job
+                                └─ graph_scanner (cron 5 min, if knowledge_graph_enabled)
+                                     picks up ready books → knowledge_graph_job / graph_resolution_job
+                                     → writes Entity nodes + RELATED_TO edges to Neo4j,
+                                       sets Book.graph_milestone
 ```
 
 ### Chat (streaming)
 ```
 POST /api/chat/stream
-  1. Check daily usage limit (user_chat_usage table)
-  2. Query pgvector similarity search on chunks
-  3. Build RAG context (up to rag_max_chars_per_book chars)
-  4. Stream Gemini response as SSE (text/event-stream)
-  5. Increment usage counter
-  6. Record RAG evaluation metrics
+  1. Check daily usage limit (chat_limit_service, role-based)
+  2. ChatOrchestrator.stream_response — the sole chat pipeline, two chained
+     Google ADK Agents (packages/backend-core/app/services/chat/):
+       a. Retrieval Agent (retrieval_agent.py) — tool-calling agent; tools
+          include pgvector chunk search, book/summary/catalog lookup,
+          Uyghur dictionary/history-term/spelling/synonym lookups, query
+          rewrite. Stops once it has gathered sufficient evidence.
+       b. Context grading + reranking (context_grading.py, agent/reranker.py)
+       c. Answer Agent (answer_agent.py) — no tools, pure synthesis over the
+          graded/reranked context; streams the final response
+  3. Stream SSE (text/event-stream) to client
+  4. Increment usage counter
+  5. Record RAG evaluation metrics (rag_evaluations table)
 ```
+The older dual router/handler RAG pipeline (`RAG_PROMPT_TEMPLATE`-driven `standard_rag` handler) has been removed — `ChatOrchestrator` is the only chat pipeline; do not design around the old one.
 
 ---
 
@@ -109,7 +126,8 @@ POST /api/chat/stream
 |-------|-------|-------|
 | Book metadata + pipeline status | PostgreSQL | Source of truth |
 | Page text + milestones | PostgreSQL | Written by worker jobs |
-| Vector embeddings | PostgreSQL (pgvector) | Written by embedding_job |
+| Vector embeddings | PostgreSQL (pgvector, `Vector(3072)`, `gemini-embedding-2`) | Written by embedding_job |
+| Knowledge graph (entities + relations) | Neo4j | Written by knowledge_graph_job/graph_resolution_job; id-keyed Entity nodes, `RELATED_TO` edges, optional `profile_embedding` for semantic matching (behind `entity_semantic_matching_enabled`) |
 | User sessions (JWT) | JWT token (stateless) + Redis cache | Cache TTL 5 min |
 | Refresh tokens | PostgreSQL | Invalidated on logout |
 | Job queue | Redis | arq uses Redis lists |
@@ -253,6 +271,7 @@ Checklist for adding a step (e.g. `my_step`) to the OCR → Chunking → Embeddi
 |--------|-----------|-----------------|
 | PostgreSQL | Standalone on host port 5432 (not Docker) | External managed instance |
 | Redis persistence | None (ephemeral) | `appendonly yes`, `appendfsync everysec` |
+| Neo4j auth | `NEO4J_AUTH=none` | `neo4j/${NEO4J_PASSWORD}` |
 | Redis memory | 256 MB | 512 MB |
 | File storage | `./data` bind mount | `/mnt/kitabim-data` named volume |
 | GCS | Real GCS with service account key | Same |

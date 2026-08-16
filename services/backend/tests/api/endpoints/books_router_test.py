@@ -551,3 +551,28 @@ async def test_rename_entity_request_accepts_camel_case():
     )
     assert req.entity_id == "entity-1"
     assert req.new_name == "NewName"
+
+
+@pytest.mark.asyncio
+async def test_upload_pdf_exceeds_size_limit():
+    setup_paths()
+    from api.endpoints.books_router import upload_pdf
+    from app.core.config import settings
+
+    mock_file = AsyncMock()
+    mock_file.filename = "large_book.pdf"
+    # Stream chunks totaling more than max_book_upload_bytes
+    large_chunk = b"X" * (settings.max_book_upload_bytes + 1024)
+    mock_file.read = AsyncMock(side_effect=[large_chunk, b""])
+
+    mock_user = MagicMock()
+    mock_session = AsyncMock()
+
+    with patch("api.endpoints.books_router.BooksRepository", return_value=MagicMock()):
+        with pytest.raises(HTTPException) as excinfo:
+            await upload_pdf(
+                file=mock_file, current_user=mock_user, session=mock_session
+            )
+
+    assert excinfo.value.status_code == 413
+    assert "File size exceeds maximum limit" in excinfo.value.detail

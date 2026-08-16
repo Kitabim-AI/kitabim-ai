@@ -21,26 +21,28 @@ You are acting as a backend test engineer for the kitabim-ai ARQ worker service.
 pytest services/worker/tests/ -v
 
 # Single file
-pytest services/worker/tests/jobs/test_ocr_job.py -v
+pytest services/worker/tests/jobs/ocr_job_test.py -v
 ```
 
 ---
 
 ## File Placement
 
-Mirror the source tree under `tests/`:
+Mirror the source tree under `tests/`. Test files use an `_test.py` **suffix**, not a `test_` prefix:
 
 ```
 services/worker/
-  jobs/ocr_job.py              → tests/jobs/test_ocr_job.py
-  jobs/chunking_job.py         → tests/jobs/test_chunking_job.py
-  jobs/embedding_job.py        → tests/jobs/test_embedding_job.py
-  jobs/spell_check_job.py      → tests/jobs/test_spell_check_job.py
-  jobs/summary_job.py          → tests/jobs/test_summary_job.py
-  jobs/auto_correct_job.py     → tests/jobs/test_auto_correct_job.py
-  scanners/ocr_scanner.py      → tests/scanners/test_ocr_scanner.py
-  scanners/pipeline_driver.py  → tests/scanners/test_pipeline_driver.py
-  scanners/stale_watchdog.py   → tests/scanners/test_stale_watchdog.py
+  jobs/ocr_job.py                    → tests/jobs/ocr_job_test.py
+  jobs/chunking_job.py               → tests/jobs/chunking_job_test.py
+  jobs/embedding_job.py              → tests/jobs/embedding_job_test.py
+  jobs/spell_check_job.py            → tests/jobs/spell_check_job_test.py
+  jobs/summary_job.py                → tests/jobs/summary_job_test.py
+  jobs/auto_correct_job.py           → tests/jobs/auto_correct_job_test.py
+  jobs/knowledge_graph_job.py        → tests/jobs/knowledge_graph_job_test.py
+  jobs/graph_resolution_job.py       → tests/jobs/graph_resolution_job_test.py
+  scanners/ocr_scanner.py            → tests/scanners/ocr_scanner_test.py
+  scanners/pipeline_driver.py        → tests/scanners/pipeline_driver_test.py
+  scanners/stale_watchdog_scanner.py → tests/scanners/stale_watchdog_scanner_test.py
   ...
 ```
 
@@ -120,7 +122,7 @@ def make_mock_page(page_id=1, book_id="book-1", page_number=1, **kwargs):
 ```python
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, call
-from jobs.chunking_job import chunking_job
+from services.worker.jobs.chunking_job import chunking_job
 from app.db.models import Page
 
 def make_mock_page(page_id=1, book_id="b1", page_number=1, **kw):
@@ -151,8 +153,8 @@ async def test_chunking_job_success():
     ]
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("jobs.chunking_job.chunking_service") as mock_chunker, \
-         patch("jobs.chunking_job.BookMilestoneService") as mock_milestone:
+         patch("services.worker.jobs.chunking_job.chunking_service") as mock_chunker, \
+         patch("services.worker.jobs.chunking_job.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -176,8 +178,8 @@ async def test_chunking_job_toc_page_skips_chunking():
     mock_session.execute.return_value = mock_pages_result
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("jobs.chunking_job.chunking_service") as mock_chunker, \
-         patch("jobs.chunking_job.BookMilestoneService") as mock_milestone:
+         patch("services.worker.jobs.chunking_job.chunking_service") as mock_chunker, \
+         patch("services.worker.jobs.chunking_job.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -210,8 +212,8 @@ async def test_chunking_job_page_failure_is_isolated():
         return ["chunk"]
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("jobs.chunking_job.chunking_service") as mock_chunker, \
-         patch("jobs.chunking_job.BookMilestoneService") as mock_milestone:
+         patch("services.worker.jobs.chunking_job.chunking_service") as mock_chunker, \
+         patch("services.worker.jobs.chunking_job.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -234,7 +236,7 @@ async def test_chunking_job_empty_page_ids():
     mock_session.execute.return_value = mock_empty
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("jobs.chunking_job.BookMilestoneService") as mock_milestone:
+         patch("services.worker.jobs.chunking_job.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -252,7 +254,7 @@ async def test_chunking_job_empty_page_ids():
 Some jobs first fetch config from `SystemConfigsRepository`. Mock the repo at the job's import path:
 
 ```python
-with patch("jobs.ocr_job.SystemConfigsRepository") as mock_config_cls:
+with patch("services.worker.jobs.ocr_job.SystemConfigsRepository") as mock_config_cls:
     mock_config = mock_config_cls.return_value
     mock_config.get_value = AsyncMock(side_effect=lambda key, default=None: {
         "gemini_ocr_model": "gemini-pro-vision",
@@ -260,6 +262,8 @@ with patch("jobs.ocr_job.SystemConfigsRepository") as mock_config_cls:
     }.get(key, default))
     ...
 ```
+
+Real tests more often patch the `.get_value` method directly (`patch("services.worker.jobs.ocr_job.SystemConfigsRepository.get_value", new_callable=AsyncMock)`), which works identically since jobs do `SystemConfigsRepository(session).get_value(...)`. Either style is fine — both are used in the codebase.
 
 **Raise RuntimeError when required config is missing:**
 ```python
@@ -269,7 +273,7 @@ async def test_embedding_job_raises_when_model_not_configured():
     mock_session = AsyncMock()
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("jobs.embedding_job.SystemConfigsRepository") as mock_config_cls:
+         patch("services.worker.jobs.embedding_job.SystemConfigsRepository") as mock_config_cls:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -292,7 +296,7 @@ Key differences from jobs:
 ```python
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from scanners.ocr_scanner import run_ocr_scanner
+from services.worker.scanners.ocr_scanner import run_ocr_scanner
 
 @pytest.mark.asyncio
 async def test_ocr_scanner_dispatches_job_for_idle_pages():
@@ -315,8 +319,8 @@ async def test_ocr_scanner_dispatches_job_for_idle_pages():
     ]
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("scanners.ocr_scanner.SystemConfigsRepository") as mock_config_cls, \
-         patch("scanners.ocr_scanner.BookMilestoneService") as mock_milestone:
+         patch("services.worker.scanners.ocr_scanner.SystemConfigsRepository") as mock_config_cls, \
+         patch("services.worker.scanners.ocr_scanner.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -347,8 +351,8 @@ async def test_ocr_scanner_skips_books_with_no_idle_pages():
     mock_session.execute.side_effect = [mock_books_result, mock_no_pages]
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("scanners.ocr_scanner.SystemConfigsRepository") as mock_config_cls, \
-         patch("scanners.ocr_scanner.BookMilestoneService") as mock_milestone:
+         patch("services.worker.scanners.ocr_scanner.SystemConfigsRepository") as mock_config_cls, \
+         patch("services.worker.scanners.ocr_scanner.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -369,7 +373,7 @@ async def test_ocr_scanner_no_books_to_process():
     mock_session.execute.return_value = mock_empty
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("scanners.ocr_scanner.SystemConfigsRepository") as mock_config_cls:
+         patch("services.worker.scanners.ocr_scanner.SystemConfigsRepository") as mock_config_cls:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -389,7 +393,7 @@ The driver is a state machine with four phases: initialize, reset, detect termin
 ```python
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from scanners.pipeline_driver import run_pipeline_driver
+from services.worker.scanners.pipeline_driver import run_pipeline_driver
 
 def _mock_execute_chain(session, side_effects):
     """Helper: configure session.execute() calls in order."""
@@ -431,8 +435,8 @@ async def test_pipeline_driver_marks_book_ready():
     ]
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("scanners.pipeline_driver.SystemConfigsRepository") as mock_config_cls, \
-         patch("scanners.pipeline_driver.BookMilestoneService") as mock_milestone:
+         patch("services.worker.scanners.pipeline_driver.SystemConfigsRepository") as mock_config_cls, \
+         patch("services.worker.scanners.pipeline_driver.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -463,8 +467,8 @@ async def test_pipeline_driver_marks_book_error_on_exhausted_retries():
     ]
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("scanners.pipeline_driver.SystemConfigsRepository") as mock_config_cls, \
-         patch("scanners.pipeline_driver.BookMilestoneService") as mock_milestone:
+         patch("services.worker.scanners.pipeline_driver.SystemConfigsRepository") as mock_config_cls, \
+         patch("services.worker.scanners.pipeline_driver.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -491,8 +495,8 @@ async def test_pipeline_driver_resets_failed_pages_with_retries_remaining():
     ]
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("scanners.pipeline_driver.SystemConfigsRepository") as mock_config_cls, \
-         patch("scanners.pipeline_driver.BookMilestoneService") as mock_milestone:
+         patch("services.worker.scanners.pipeline_driver.SystemConfigsRepository") as mock_config_cls, \
+         patch("services.worker.scanners.pipeline_driver.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -521,7 +525,7 @@ async def test_stale_watchdog_resets_stale_pages():
     mock_session.execute.return_value = stale_result
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("scanners.stale_watchdog.BookMilestoneService") as mock_milestone:
+         patch("services.worker.scanners.stale_watchdog_scanner.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -542,7 +546,7 @@ async def test_stale_watchdog_no_stale_pages():
     mock_session.execute.return_value = empty_result
 
     with patch("app.db.session.async_session_factory") as mock_factory, \
-         patch("scanners.stale_watchdog.BookMilestoneService") as mock_milestone:
+         patch("services.worker.scanners.stale_watchdog_scanner.BookMilestoneService") as mock_milestone:
 
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -562,12 +566,12 @@ Always patch at the **module that imports the symbol**, not where it's defined:
 | Target | Correct patch path |
 |--------|-------------------|
 | `db_session.async_session_factory` | `"app.db.session.async_session_factory"` |
-| `BookMilestoneService` in scanner | `"scanners.ocr_scanner.BookMilestoneService"` |
-| `chunking_service` in job | `"jobs.chunking_job.chunking_service"` |
-| `SystemConfigsRepository` in job | `"jobs.ocr_job.SystemConfigsRepository"` |
-| `GeminiEmbeddings` in embedding job | `"jobs.embedding_job.GeminiEmbeddings"` |
-| `ocr_page_with_gemini` in OCR job | `"jobs.ocr_job.ocr_page_with_gemini"` |
-| `storage.download_file` in OCR job | `"jobs.ocr_job.storage"` |
+| `BookMilestoneService` in scanner | `"services.worker.scanners.ocr_scanner.BookMilestoneService"` |
+| `chunking_service` in job | `"services.worker.jobs.chunking_job.chunking_service"` |
+| `SystemConfigsRepository` in job | `"services.worker.jobs.ocr_job.SystemConfigsRepository"` |
+| `GeminiEmbeddings` in embedding job | `"services.worker.jobs.embedding_job.GeminiEmbeddings"` |
+| `ocr_page_with_gemini` in OCR job | `"services.worker.jobs.ocr_job.ocr_page_with_gemini"` |
+| `storage.download_file` in OCR job | `"services.worker.jobs.ocr_job.storage"` |
 
 ---
 

@@ -477,7 +477,9 @@ async def vector_search(
 # ---------------------------------------------------------------------------
 
 
-async def graph_entity_lookup(question: str, top_k: int = 10) -> List[dict]:
+async def graph_entity_lookup(
+    question: str, top_k: int = 10, session=None
+) -> List[dict]:
     """Query-time knowledge-graph lookup — Redis cache read with prefix enumeration (B1),
     partial-name token-intersection & IDF specificity scoring (B2), and miss-only
     Neo4j full-text fuzzy fallback (B3). No LLM call is made here.
@@ -648,6 +650,46 @@ async def graph_entity_lookup(question: str, top_k: int = 10) -> List[dict]:
     except Exception:
         facts_map = {}
 
+    book_titles: dict[str, str] = {}
+    collected_book_ids = list(
+        {
+            f.get("book_id")
+            for entity_id in matched_ids
+            for f in (facts_map.get(entity_id) or [])
+            if f and f.get("book_id") and f.get("book_id") != "knowledge_graph"
+        }
+    )
+
+    if collected_book_ids:
+        try:
+            from sqlalchemy import select
+            from app.db.models import Book
+
+            if session is not None:
+                stmt = select(Book.id, Book.title).where(
+                    Book.id.in_(collected_book_ids)
+                )
+                res = await session.execute(stmt)
+                book_titles = {row[0]: row[1] for row in res.fetchall() if row[1]}
+            else:
+                from app.db.session import AsyncSessionLocal
+
+                async with AsyncSessionLocal() as db_sess:
+                    stmt = select(Book.id, Book.title).where(
+                        Book.id.in_(collected_book_ids)
+                    )
+                    res = await db_sess.execute(stmt)
+                    book_titles = {row[0]: row[1] for row in res.fetchall() if row[1]}
+        except Exception as exc:
+            log_json(
+                logger,
+                logging.WARNING,
+                "failed to resolve book titles for graph facts",
+                error=str(exc),
+            )
+
+    kg_label = t("rag.knowledge_graph_title", default="بىلىم گىرافى")
+
     for entity_id in matched_ids:
         facts = facts_map.get(entity_id)
         if facts is None:
@@ -663,16 +705,23 @@ async def graph_entity_lookup(question: str, top_k: int = 10) -> List[dict]:
                 if fact.get("page") is not None
                 else fact.get("page_number")
             )
+            b_id = fact.get("book_id")
+            b_title = book_titles.get(b_id) if b_id else None
+            if b_title:
+                display_title = f"«{b_title}» ({kg_label})"
+            else:
+                display_title = kg_label
+
             results.append(
                 {
                     "text": fact["text"],
                     "score": entity_scores.get(entity_id, 0.9),
                     "page": page_val,
                     "page_number": page_val,
-                    "title": t("rag.knowledge_graph_title", default="بىلىم گىرافى"),
+                    "title": display_title,
                     "volume": None,
                     "author": None,
-                    "book_id": fact.get("book_id") or "knowledge_graph",
+                    "book_id": b_id or "knowledge_graph",
                 }
             )
 

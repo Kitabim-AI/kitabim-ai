@@ -7,6 +7,7 @@ import time
 from typing import Any, AsyncIterator, Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from google.adk.agents.invocation_context import LlmCallsLimitExceededError
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import InMemoryRunner, Runner
 from google.adk.sessions import InMemorySessionService
@@ -44,6 +45,11 @@ from app.utils.observability import log_json
 
 # Fallback default when the rag_keyword_top_k system_config row is missing.
 _EXACT_PHRASE_DEFAULT_LIMIT = 10
+
+# Fallback default when the rag_agent_max_llm_calls system_config row is
+# missing or unparsable — see seeds.py for why this sits above the prompt's
+# own 6/10 tool-call budget.
+_AGENT_MAX_LLM_CALLS_DEFAULT = 12
 
 
 logger = logging.getLogger("app.services.chat.orchestrator")
@@ -240,6 +246,14 @@ class ChatOrchestrator:
             intent = signals.get("intent", "open")
             yield {"type": "planning", "intent": intent}
 
+            agent_max_llm_calls_str = await configs_repo.get_value(
+                "rag_agent_max_llm_calls", str(_AGENT_MAX_LLM_CALLS_DEFAULT)
+            )
+            try:
+                agent_max_llm_calls = int(agent_max_llm_calls_str)
+            except (TypeError, ValueError):
+                agent_max_llm_calls = _AGENT_MAX_LLM_CALLS_DEFAULT
+
             # 3. Retrieval Agent Execution
             retrieval_agent = build_retrieval_agent(
                 model=agent_model,
@@ -298,50 +312,69 @@ class ChatOrchestrator:
 
             pending_calls: dict[str, str] = {}
 
-            async for event in runner.run_async(
-                user_id=request_dto.user_id,
-                session_id=conv_id,
-                new_message=retrieval_content,
-                run_config=RunConfig(streaming_mode=StreamingMode.SSE),
-            ):
-                if not event.partial and event.content and event.content.parts:
-                    for part in event.content.parts:
-                        if part.function_call:
-                            call_id = (
-                                getattr(part.function_call, "id", None)
-                                or part.function_call.name
-                            )
-                            pending_calls[call_id] = part.function_call.name
-                            yield {
-                                "type": "tool_call",
-                                "tool": part.function_call.name,
-                                "name": part.function_call.name,
-                            }
-                        elif part.text:
-                            yield {"type": "agent_thinking", "text": part.text}
+            try:
+                async for event in runner.run_async(
+                    user_id=request_dto.user_id,
+                    session_id=conv_id,
+                    new_message=retrieval_content,
+                    run_config=RunConfig(
+                        streaming_mode=StreamingMode.SSE,
+                        max_llm_calls=agent_max_llm_calls,
+                    ),
+                ):
+                    if not event.partial and event.content and event.content.parts:
+                        for part in event.content.parts:
+                            if part.function_call:
+                                call_id = (
+                                    getattr(part.function_call, "id", None)
+                                    or part.function_call.name
+                                )
+                                pending_calls[call_id] = part.function_call.name
+                                yield {
+                                    "type": "tool_call",
+                                    "tool": part.function_call.name,
+                                    "name": part.function_call.name,
+                                }
+                            elif part.text:
+                                yield {"type": "agent_thinking", "text": part.text}
 
-                function_responses = event.get_function_responses()
-                if function_responses:
-                    for fr in function_responses:
-                        response_data = fr.response or {}
-                        call_id = getattr(fr, "id", None) or fr.name
-                        tool_name = pending_calls.pop(call_id, fr.name)
-                        observations.append(
-                            {
+                    function_responses = event.get_function_responses()
+                    if function_responses:
+                        for fr in function_responses:
+                            response_data = fr.response or {}
+                            call_id = getattr(fr, "id", None) or fr.name
+                            tool_name = pending_calls.pop(call_id, fr.name)
+                            observations.append(
+                                {
+                                    "tool": tool_name,
+                                    "result": response_data,
+                                }
+                            )
+                            found = (
+                                response_data.get("found_count", 0)
+                                if isinstance(response_data, dict)
+                                else 0
+                            )
+                            yield {
+                                "type": "tool_result",
                                 "tool": tool_name,
-                                "result": response_data,
+                                "found": found,
                             }
-                        )
-                        found = (
-                            response_data.get("found_count", 0)
-                            if isinstance(response_data, dict)
-                            else 0
-                        )
-                        yield {
-                            "type": "tool_result",
-                            "tool": tool_name,
-                            "found": found,
-                        }
+            except LlmCallsLimitExceededError:
+                # The retrieval agent kept calling tools past its configured
+                # budget (rag_agent_max_llm_calls) — e.g. retrying a dictionary
+                # lookup under alternate spellings instead of stopping on a
+                # miss. Proceed to grading/synthesis with whatever evidence
+                # was gathered so far rather than failing the whole turn.
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "Retrieval agent exceeded rag_agent_max_llm_calls; "
+                    "proceeding with observations gathered so far",
+                    conversation_id=conv_id,
+                    max_llm_calls=agent_max_llm_calls,
+                    observations_count=len(observations),
+                )
 
         content = types.Content(
             role="user", parts=[types.Part.from_text(text=request_dto.question)]

@@ -52,7 +52,8 @@ Work through these categories in order. Skip categories that don't apply to the 
 
 ### 4. Design System Compliance
 
-- [ ] **Primary colour** is `#0369a1` — not a Tailwind blue (e.g. `blue-600`) unless it matches exactly
+- [ ] **Primary colour** is `#0369a1` in light mode / `#38bdf8` in dark mode — not a Tailwind blue (e.g. `blue-600`) unless it matches exactly
+- [ ] **Dark mode** — every colour utility (`bg-`, `text-`, `border-`, `shadow-`) has a paired `dark:` variant (e.g. `bg-white/80 dark:bg-slate-900/60`, `text-[#0369a1] dark:text-[#38bdf8]`); app is toggled via `.dark` class on `<html>` through `ThemeContext` (`useTheme()`), not `prefers-color-scheme` alone
 - [ ] **Glass morphism** surfaces use `bg-white/80 backdrop-blur-xl` (cards) or `bg-white/90 backdrop-blur-2xl` (modals) — not solid white
 - [ ] **Borders** use `border-[#0369a1]/10` (default) or `border-[#0369a1]/30` (hover) — not `border-gray-*`
 - [ ] **Rounded corners** follow the scale: cards `rounded-2xl sm:rounded-3xl`, modals `rounded-[24px] sm:rounded-[32px] md:rounded-[40px]`, buttons `rounded-2xl`, pills `rounded-full`

@@ -92,7 +92,7 @@ async with db_session.async_session_factory() as session:
 All tuneable parameters (model names, limits, thresholds) must be read from `SystemConfigsRepository` at job/scanner startup — not hardcoded, not from `settings.*`:
 
 ```python
-from app.db.repositories.system_configs import SystemConfigsRepository
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 
 async with db_session.async_session_factory() as session:
     config_repo = SystemConfigsRepository(session)
@@ -231,7 +231,7 @@ docker exec -it $(docker compose ps -q worker) \
 
 ## Stale Watchdog — Adding New Steps
 
-When you add a new pipeline step with a `*_milestone` column, you **must** add it to the stale watchdog (`scanners/stale_watchdog.py`) so stuck `in_progress` pages are automatically recovered:
+When you add a new pipeline step with a `*_milestone` column, you **must** add it to the stale watchdog (`scanners/stale_watchdog_scanner.py`) so stuck `in_progress` pages are automatically recovered:
 
 ```python
 # In run_stale_watchdog — add to both lists:
@@ -296,10 +296,10 @@ log_json(logger, logging.INFO, "my job started", page_count=len(page_ids))
 
 See **`database-designer`** for migration format conventions (IF NOT EXISTS guards, BEGIN/COMMIT, sequential numbering).
 
-Apply locally:
+Apply locally (Postgres is a standalone host process, not a docker-compose service — `rebuild-and-restart.sh` runs this same `psql` invocation for every file under `migrations/`, tracked in the `schema_migrations` table):
 ```bash
-docker exec -i $(docker compose ps -q postgres) \
-    psql -U postgres kitabim < packages/backend-core/migrations/NNN_my_change.sql
+psql "postgresql://kitabim:kitabim@127.0.0.1:5432/kitabim-ai" -v ON_ERROR_STOP=1 \
+    < packages/backend-core/migrations/NNN_my_change.sql
 ```
 
 After adding a column, update: ORM model → affected repository queries → stale watchdog (if `*_milestone`) → `BookMilestoneService` (if it tracks the new milestone).

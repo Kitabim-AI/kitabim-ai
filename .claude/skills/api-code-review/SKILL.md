@@ -36,7 +36,7 @@ Work through each category that applies to the change.
 - [ ] No endpoint returns another user's private data without ownership or role check
 - [ ] `get_current_user_optional` is used only for endpoints that are genuinely public (guest + auth both valid) — not as a shortcut to skip auth
 - [ ] No secrets, tokens, API keys, or passwords are logged — check `log_json` calls and exception handlers
-- [ ] IP addresses are hashed before storing (use `security.hash_ip()` from `app.utils.security`) — never stored raw
+- [ ] IP addresses are hashed before storing (use `hash_ip_address()` / `hash_ip_if_present()` from `app.utils.security`) — never stored raw
 - [ ] File uploads validate MIME type and extension — not just the filename
 - [ ] No raw SQL string interpolation — always use SQLAlchemy bound parameters
 - [ ] `enforce_app_id` middleware cannot be bypassed by a new public route that should be protected
@@ -99,7 +99,7 @@ Work through each category that applies to the change.
 - [ ] `429 Too Many Requests` is used for rate/usage limit errors
 - [ ] All `HTTPException` `detail=` values use `t("errors.key")` — no hardcoded English strings visible to the client
 - [ ] The global exception handler in `main.py` is not bypassed by catching `Exception` and returning a raw `Response` — re-raise or raise `HTTPException`
-- [ ] `record_book_error(session, book_id, message)` is called for book-level pipeline failures
+- [ ] `record_book_error(session, book_id, kind, message)` is called for book-level pipeline failures
 
 ---
 
