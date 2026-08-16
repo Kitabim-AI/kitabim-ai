@@ -94,11 +94,6 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Globally enable/disable knowledge graph extraction and the graph scanner. Set to 'true' to activate.",
         },
         {
-            "key": "fictional_categories",
-            "value": "رومان, تارىخىي رومان, بالىلار رومانى, ساتىرىك رومان, پەلسەپىۋىي رومان, پوۋېست, پوۋېستلار, تارىخىي پوۋېست, ھېكايىلەر, تارىخىي ھېكايىلەر, بالىلار ھېكايىلېرى, چۆچەكلەر, قىسسە, تارىخىي قىسسە, داستان, داستانلار, تارىخىي داستان, رىۋايەتلەر, مەسەللەر, لەتىپىلەر, يۇمۇرلار, شېئىرلار, سەھنە ئەسەرلېرى, كىنو سېنارىيىلىرى",
-            "description": "Comma-separated list of categories that indicate a book is fictional. If a book's categories match any in this list, its Person entities will be namespaced to prevent cross-book duplication. Otherwise, it defaults to non-fictional.",
-        },
-        {
             "key": "ocr_scanner_batch_size",
             "value": "10",
             "description": "Maximum number of pages claimed and processed in a single OCR job batch.",
