@@ -19,6 +19,8 @@ Page/quote sharing is **public** — no login required to see the buttons, use t
 
 Chat sharing (`ShareChatModal`, already shipped) needs no change here — it's already registered-user-only end-to-end, not by an explicit check on the Share button itself, but structurally: the chat input is hidden behind `isAuthenticated` (`ChatInterface.tsx:433/891`), so an anonymous user can never produce an answer to share, and the backend chat endpoints (`chat_router.py`) require `Depends(require_reader)`, which 401s guests. This is called out explicitly so the distinction is a documented decision rather than an accident of two features built at different times.
 
+**Guest text-selection caveat:** `VirtualScrollReader.tsx:62-63,284,288-289` already disables text selection and copy entirely for guests (`select-none`, `onCopy`/`onContextMenu` preventDefault) as anti-copy protection — unrelated to this feature, pre-existing. This means the quote-share popover (§4, triggered by making a selection) can never appear for a guest in practice, since they cannot select text at all. This is left as-is by design: whole-page share stays public for everyone (button-triggered, no selection needed); quote-share ends up authenticated-only as a side effect of the existing anti-copy protection, not a new restriction added by this feature, and the existing protection is not weakened.
+
 ## Proposed Changes
 
 ### 1. `apps/frontend/src/utils/shareText.ts` (new)
