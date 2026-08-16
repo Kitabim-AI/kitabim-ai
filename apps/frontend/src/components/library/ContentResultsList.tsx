@@ -1,8 +1,9 @@
-import { BookOpen, RefreshCw, Search } from 'lucide-react';
+import { BookOpen, RefreshCw, Search, Share2 } from 'lucide-react';
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { ContentSearchHit } from '../../services/searchTabsService';
+import { ShareSearchResultModal } from '../share/ShareSearchResultModal';
 
 interface ContentResultsListProps {
   hits: ContentSearchHit[];
@@ -72,6 +73,7 @@ export const ContentResultsList: React.FC<ContentResultsListProps> = ({
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
   const isGuest = !isAuthenticated;
+  const [shareHit, setShareHit] = useState<ContentSearchHit | null>(null);
 
   if (isLoading && hits.length === 0) {
     return (
@@ -158,7 +160,19 @@ export const ContentResultsList: React.FC<ContentResultsListProps> = ({
             </div>
 
             {/* Footer action */}
-            <div className="flex items-center justify-end pt-1">
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShareHit(hit);
+                }}
+                className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors"
+              >
+                <Share2 size={16} strokeWidth={2} />
+                <span className="uyghur-text">{t('share.shareSearchResult')}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={(e) => {
@@ -174,6 +188,17 @@ export const ContentResultsList: React.FC<ContentResultsListProps> = ({
           </div>
         );
       })}
+
+      {shareHit && (
+        <ShareSearchResultModal
+          title={shareHit.bookTitle}
+          subtitle={shareHit.bookAuthor ? `Author: ${shareHit.bookAuthor}` : undefined}
+          content={shareHit.snippet}
+          sourceLabel={`📖 ${shareHit.pageNumber}-بەت`}
+          url={`${window.location.origin}/books/${shareHit.bookId}`}
+          onClose={() => setShareHit(null)}
+        />
+      )}
     </div>
   );
 };
