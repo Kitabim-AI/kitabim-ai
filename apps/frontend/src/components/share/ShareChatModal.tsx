@@ -32,11 +32,14 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
   const [copied, setCopied] = useState(false);
   const [fbClicked, setFbClicked] = useState(false);
 
-  const params = new URLSearchParams({ q: question.slice(0, MAX_Q), a: answer.slice(0, MAX_A) });
+  const safeQ = question || '';
+  const safeA = answer || '';
+
+  const params = new URLSearchParams({ q: safeQ.slice(0, MAX_Q), a: safeA.slice(0, MAX_A) });
   if (bookId) params.set('book_id', bookId);
   const shareUrl = `${window.location.origin}/api/share/qa?${params.toString()}`;
 
-  const qaText = [question, answer].filter(Boolean).join('\n\n');
+  const qaText = [safeQ, safeA].filter(Boolean).join('\n\n');
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(shareUrl);
@@ -44,9 +47,11 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const previewAnswer = safeA.length > 220 ? safeA.slice(0, 220) + '…' : safeA;
+
   const handleTwitter = () => {
     const tweetText = [
-      question ? `Q: ${question.slice(0, 100)}` : '',
+      safeQ ? `Q: ${safeQ.slice(0, 100)}` : '',
       `A: ${previewAnswer.slice(0, 150)}`,
       bookTitle ? `— Source: ${bookTitle}` : '',
       shareUrl
@@ -66,17 +71,15 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
     setFbClicked(true);
   };
 
-  const previewAnswer = answer.length > 220 ? answer.slice(0, 220) + '…' : answer;
-
   return createPortal(
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" dir="rtl">
       <div
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl"
+        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl animate-fade-in"
         onClick={onClose}
       />
 
       <div
-        className="relative z-10 w-full max-w-md bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[32px] shadow-[0_32px_128px_rgba(0,0,0,0.25)] dark:shadow-black/35 overflow-hidden border border-white/40 dark:border-slate-800 animate-scale-up"
+        className="relative z-10 w-full max-w-md bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[32px] shadow-[0_32px_128px_rgba(0,0,0,0.25)] dark:shadow-black/35 overflow-hidden border border-white/40 dark:border-slate-800 animate-fade-in"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

@@ -159,7 +159,7 @@ test('ChatInterface shows loading state', () => {
   expect(screen.getByTestId('send-button')).toBeDisabled();
 });
 
-test('ChatInterface renders global chat messages', () => {
+test('ChatInterface renders global chat messages and share button', () => {
   const ref = { current: document.createElement('div') };
   renderChat(
     <ChatInterface
@@ -176,6 +176,7 @@ test('ChatInterface renders global chat messages', () => {
 
   expect(screen.getByText('Hello')).toBeInTheDocument();
   expect(screen.getByText('Salam')).toBeInTheDocument();
+  expect(screen.getByTitle('share.shareQA')).toBeInTheDocument();
 });
 
 test('ChatInterface global send button disables when input empty', () => {

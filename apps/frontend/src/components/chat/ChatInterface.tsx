@@ -337,24 +337,42 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         <span>{t('chat.partialResultsWarning')}</span>
                       </div>
                     )}
-                    {msg.role === 'model' && submitFeedback && (
+                    {msg.role === 'model' && !isChatting && (
                       <div dir="ltr" className="mt-1 flex items-center gap-0.5 px-1">
                         <button
-                          onClick={() => submitFeedback(idx, 'positive')}
-                          disabled={!!msg.feedback}
-                          title="جاۋاب ياقتى"
-                          className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-300 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
+                            setShareMsg({
+                              question: userMsg?.text || '',
+                              answer: msg.text || '',
+                            });
+                          }}
+                          title={t('share.shareQA')}
+                          className="p-1.5 rounded-lg text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
                         >
-                          <ThumbsUp size={18} strokeWidth={2} />
+                          <Share2 size={18} strokeWidth={2} />
                         </button>
-                        <button
-                          onClick={() => submitFeedback(idx, 'negative')}
-                          disabled={!!msg.feedback}
-                          title="جاۋاب ياقمىدى"
-                          className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-300 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
-                        >
-                          <ThumbsDown size={18} strokeWidth={2} />
-                        </button>
+                        {submitFeedback && (
+                          <>
+                            <button
+                              onClick={() => submitFeedback(idx, 'positive')}
+                              disabled={!!msg.feedback}
+                              title="جاۋاب ياقتى"
+                              className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
+                            >
+                              <ThumbsUp size={18} strokeWidth={2} />
+                            </button>
+                            <button
+                              onClick={() => submitFeedback(idx, 'negative')}
+                              disabled={!!msg.feedback}
+                              title="جاۋاب ياقمىدى"
+                              className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
+                            >
+                              <ThumbsDown size={18} strokeWidth={2} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -772,15 +790,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               {msg.role === 'model' && !isChatting && (
                 <div dir="ltr" className="flex gap-0.5 items-center px-1">
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
                       setShareMsg({
-                        question: userMsg ? userMsg.text : '',
-                        answer: msg.text,
+                        question: userMsg?.text || '',
+                        answer: msg.text || '',
                       });
                     }}
                     title={t('share.shareQA')}
-                    className="p-1.5 rounded-lg text-slate-300 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
+                    className="p-1.5 rounded-lg text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
                   >
                     <Share2 size={18} strokeWidth={2} />
                   </button>
