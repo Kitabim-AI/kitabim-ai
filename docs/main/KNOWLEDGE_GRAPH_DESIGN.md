@@ -9,7 +9,7 @@ Knowledge graph generation is a post-pipeline, book-level stage that reads a `re
 **Extraction and entity resolution are two distinct sub-pipelines, connected by one Postgres queue.** This is the single most important structural fact about this stage:
 
 - **Bulk extraction** (`knowledge_graph_job`) is per-book, admin-triggered, and does **no deduplication whatsoever**. Every extracted entity gets a fresh `uuid4()` assigned by position, even when two batches (or two books) clearly describe the same person. Coreference resolution happens only *inside* one LLM call, expressed by the model reusing the same `local_id`. The job's last act is to bulk-insert one `graph_resolution_queue` row per entity it created.
-- **Entity resolution** (`graph_resolution_scanner` → `graph_resolution_job` → `entity_resolution_service.resolve_entity`) is a continuously-running, entity-at-a-time second pass driven off that queue. It is where cross-batch/cross-book duplicates are actually merged, using fuzzy candidate lookup against a Neo4j full-text index, hard-constraint checks on resolved facts, a graded similarity score, and — only in the gray zone between the two score thresholds — a single-shot LLM judge. Ambiguous outcomes are not guessed: they become `graph_resolution_reviews` rows for a human admin.
+- **Entity resolution** (`graph_resolution_scanner` → `graph_resolution_job` → `entity_resolution_service.resolve_entity`) is a continuously-running, entity-at-a-time second pass driven off that queue. It is where cross-batch/cross-book duplicates are actually merged, using fuzzy candidate lookup against a Neo4j full-text index — plus, when `entity_semantic_matching_enabled` is `"true"` (default `"false"`), a second candidate source from a Neo4j vector index over each entity's `profile_embedding` — hard-constraint checks on resolved facts, a graded similarity score (blended with profile-embedding cosine similarity when semantic matching is on), and — only in the gray zone between the two score thresholds — a single-shot LLM judge. Ambiguous outcomes are not guessed: they become `graph_resolution_reviews` rows for a human admin.
 
 Other key characteristics:
 
@@ -50,7 +50,8 @@ Written by `GraphRepository.upsert_entities_bulk` (`MERGE (e:Entity {id: ...})` 
 | `year_gregorian` | int \| null | Derived from `year_hijri` via `hijri_to_gregorian()` (`round(y - y/33.7 + 622)`, ±1 year). Never model-supplied. |
 | `century_gregorian` | int \| null | Set only when a Gregorian century was reported *and* no Hijri year (the two are mutually exclusive by prompt instruction and by the job's `elif`). |
 | `resolution_status` | `"unresolved"` \| `"resolving"` \| `"resolved"` | Written `unresolved` at extraction, flipped to `resolving` while `resolve_entity` works on it, then `resolved`. Candidate selection skips nodes currently `resolving`. |
-| `fastrp_embedding`, `profile_embedding` | list&lt;float&gt; | Property names referenced by the GDS helper methods on `GraphRepository`; no code path currently writes or reads them (see [Architecture](#architecture)). |
+| `profile_embedding` | list&lt;float&gt; (3072-dim) | Semantic embedding of the entity's profile text (`build_entity_profile_text`: canonical name + aliases + subtype/type + context_summary, NFC-normalized). Written by `embed_and_store_entity_profiles` right after extraction's bulk write, only when `entity_semantic_matching_enabled` is `"true"` (default `"false"`) — an embedding failure is logged and never fails the job. Indexed by the native vector index `entity_profile_embedding_idx` (cosine, 3072 dims) and read by `find_semantic_candidates` and `_graded_score`'s semantic term during resolution (see [Architecture](#architecture)). |
+| `fastrp_embedding` | list&lt;float&gt; | Property name referenced only by the unused `run_gds_fastrp` GDS wrapper on `GraphRepository`; no code path writes or reads it. |
 
 ### Neo4j — `(:Entity)-[:RELATED_TO]->(:Entity)` relationship
 
@@ -66,7 +67,7 @@ Written by `GraphRepository.connect_entities_bulk`. The MERGE key is the pair `{
 | `parent_role` | `"father"` \| `"mother"` \| null | Only meaningful when `rel_type = 'CHILD_OF'`; ignored otherwise. |
 | `year_hijri`, `year_gregorian`, `century_gregorian` | int \| null | Same semantics as on the node, for when the *relationship* is dated. `ON CREATE`-only, so a re-run never clobbers an edge's original dating. |
 
-Indexes/constraints created by `init_constraints` (9 statements, idempotent, `ClientError` swallowed at DEBUG): `DROP CONSTRAINT entity_name_unique IF EXISTS`; `entity_id_unique` on `Entity.id`; B-tree indexes on `Entity.canonical_name` and `Entity.aliases`; a native `FULLTEXT INDEX entity_search_idx` on `[canonical_name, aliases]` (used by the resolution pass's Lucene fuzzy lookup — chosen because Cypher has no trigram operator and no APOC plugin is installed); and B-tree indexes on `RELATED_TO.book_id`, `.rel_type`, `.id`, `.chunk_refs`.
+Indexes/constraints created by `init_constraints` (10 statements, idempotent, `ClientError` swallowed at DEBUG): `DROP CONSTRAINT entity_name_unique IF EXISTS`; `entity_id_unique` on `Entity.id`; B-tree indexes on `Entity.canonical_name` and `Entity.aliases`; a native `FULLTEXT INDEX entity_search_idx` on `[canonical_name, aliases]` (used by the resolution pass's Lucene fuzzy lookup — chosen because Cypher has no trigram operator and no APOC plugin is installed); B-tree indexes on `RELATED_TO.book_id`, `.rel_type`, `.id`, `.chunk_refs`; and a native `VECTOR INDEX entity_profile_embedding_idx` on `Entity.profile_embedding` (3072 dimensions, cosine similarity — used by `find_semantic_candidates` when `entity_semantic_matching_enabled` is `"true"`).
 
 ### Postgres — `books.graph_milestone`
 
@@ -125,10 +126,10 @@ Indexes: `graph_resolution_queue_status_idx (status)`, `graph_resolution_queue_s
 | File | Purpose |
 |---|---|
 | `packages/backend-core/app/services/knowledge_graph_service.py` | Despite the name, holds **no orchestration logic** — it is the shared Pydantic extraction schema module: `EntityType` (with its synonym-coercing `_missing_`), `ExtractedEntity`, `ExtractedRelation`, `KnowledgeExtraction` (chunk-level), `GlobalRelation`/`GlobalMetadataExtraction` (book-level), and `parse_and_clean_json_from_exception` — a brace-matching JSON salvager that strips malformed entity/relation objects out of a failed structured response and re-validates. Its module docstring says `summary_job` imports from here too; it does not (`summary_job.py` imports nothing from this module), so `GlobalRelation`/`GlobalMetadataExtraction` are exercised only by `robust_parsing_test.py`. |
-| `packages/backend-core/app/services/entity_resolution_service.py` | The resolution algorithm and every graph-mutating operation: `normalize_alias`, `_name_similarity`, `_check_hard_constraints`, `_graded_score`, `_expand_name_components` (splits a name into individually-cacheable word components, dropping honorifics/short words), `_gray_zone_judge`, `update_alias_cache`, `execute_merge`, `execute_split`, `execute_unmerge`, `resolve_entity`. Shared by the worker job and the admin endpoints so merge/split execution, audit logging, re-propagation, and cache refresh happen in exactly one place. |
-| `packages/backend-core/app/db/repositories/graph_repository.py` | All Cypher. Class-level shared `AsyncGraphDatabase` driver (pool size 20, `max_connection_lifetime=300`, `liveness_check_timeout=0`, `connection_timeout=30`; credentials parsed out of `NEO4J_URL` if embedded). `close()` is a deliberate no-op — the driver is closed once at app shutdown via `close_driver()`. Grouped into: bulk write (`init_constraints`, `upsert_entities_bulk`, `connect_entities_bulk`, `delete_book_graph`); resolution/admin/RAG reads (`get_entity_by_id`, `get_entity_names_by_ids`, `get_entity_facts`, `get_entities_facts_for_citation_bulk` — one Cypher call for many ids, with `get_entity_facts_for_citation` now a thin single-id wrapper around it —, `find_resolution_candidates`, `search_entities_fulltext` — the miss-only fuzzy fallback `retrieval.graph_entity_lookup` calls when the Redis alias cache has no hit at all —, `get_entity_edges_snapshot`, `get_children_via_child_of`, `set_resolution_status`); mutations (`merge_entities_by_id`, `split_entities` + its `_connected_components` union-find, `restore_entity_from_snapshot`, `rename_entity`, `delete_relationship_by_id`, `delete_relationships_by_ids`); and RAG/visualization reads (`query_subgraph`, `query_paths`, `check_books_exist`). Six Neo4j GDS wrappers also exist (`project_gds_graph`, `run_gds_node_similarity`, `run_gds_fastrp`, `store_profile_embeddings_bulk`, `run_gds_knn_similarity`, `run_gds_wcc_clustering`); no application code calls any of them, and no test covers them — the live resolution path uses `find_resolution_candidates`' full-text lookup. `query_paths` and `check_books_exist` likewise have no callers today, and `query_subgraph` is referenced only by its own unit test. |
+| `packages/backend-core/app/services/entity_resolution_service.py` | The resolution algorithm and every graph-mutating operation: `normalize_alias`, `_name_similarity`, `cosine_similarity`, `_check_hard_constraints`, `_graded_score` (blends in the semantic term when a `semantic_weight` > 0 is passed), `_expand_name_components` (splits a name into individually-cacheable word components, dropping honorifics/short words), `_gray_zone_judge`, `update_alias_cache`, `execute_merge`, `execute_split`, `execute_unmerge`, `resolve_entity`. Also owns the entity-semantic-matching write path: `build_entity_profile_text` (the canonical-name/aliases/subtype/context_summary text an embedding is computed from), `_embed_texts_batched` (chunks embedding calls to `settings.embed_batch_size`, matching `embedding_job.py`'s convention; never misaligns a partial-batch failure with adjacent results), and `embed_and_store_entity_profiles` (embeds + calls `graph_repo.store_profile_embeddings_bulk`) — called from `knowledge_graph_job` after extraction, and reused for offline scoring by `scripts/eval_entity_semantic_matching.py`. Shared by the worker job and the admin endpoints so merge/split execution, audit logging, re-propagation, and cache refresh happen in exactly one place. |
+| `packages/backend-core/app/db/repositories/graph_repository.py` | All Cypher. Class-level shared `AsyncGraphDatabase` driver (pool size 20, `max_connection_lifetime=300`, `liveness_check_timeout=0`, `connection_timeout=30`; credentials parsed out of `NEO4J_URL` if embedded). `close()` is a deliberate no-op — the driver is closed once at app shutdown via `close_driver()`. Grouped into: bulk write (`init_constraints`, `upsert_entities_bulk`, `connect_entities_bulk`, `delete_book_graph`); resolution/admin/RAG reads (`get_entity_by_id`, `get_entity_names_by_ids`, `get_entity_facts`, `get_entities_facts_for_citation_bulk` — one Cypher call for many ids, with `get_entity_facts_for_citation` now a thin single-id wrapper around it —, `find_resolution_candidates`, `find_semantic_candidates` — live per-entity vector-index kNN lookup over `entity_profile_embedding_idx`, over-fetching `max(limit*10, 50)` before its scope/book_id/resolving-status filter since the vector index applies `WHERE` after selecting its k nearest neighbors, called from `resolve_entity` only when `entity_semantic_matching_enabled` is `"true"` —, `search_entities_fulltext` — the miss-only fuzzy fallback `retrieval.graph_entity_lookup` calls when the Redis alias cache has no hit at all —, `get_entity_edges_snapshot`, `get_children_via_child_of`, `set_resolution_status`); mutations (`merge_entities_by_id`, `split_entities` + its `_connected_components` union-find, `restore_entity_from_snapshot`, `rename_entity`, `delete_relationship_by_id`, `delete_relationships_by_ids`); and RAG/visualization reads (`query_subgraph`, `query_paths`, `check_books_exist`). `store_profile_embeddings_bulk` (bulk `SET e.profile_embedding`) is likewise live — it's `embed_and_store_entity_profiles`' only caller. Five further Neo4j GDS wrappers also exist (`project_gds_graph`, `run_gds_node_similarity`, `run_gds_fastrp`, `run_gds_knn_similarity`, `run_gds_wcc_clustering`, all under a "GDS Integration (Items 5-9)" comment block); no application code calls any of them, and no test beyond their own repository unit tests covers them — the live resolution path uses `find_resolution_candidates`' full-text lookup plus, optionally, `find_semantic_candidates`' native vector-index lookup, neither of which needs a GDS graph projection. `query_paths` and `check_books_exist` likewise have no callers today, and `query_subgraph` is referenced only by its own unit test. |
 | `packages/backend-core/app/db/repositories/graph_resolution_repository.py` | The three Postgres coordination repositories: `GraphResolutionQueueRepository` (`bulk_enqueue`, `claim_batch` with `FOR UPDATE SKIP LOCKED`, `mark_status`, `delete_by_entity_id`, `requeue_or_cap`), `GraphResolutionReviewsRepository` (`create_review`, `list_pending`, `set_status`, `resolve_reviews_for_merge`), `GraphMergeLogRepository` (`log_merge`, `mark_reverted`). |
-| `services/worker/jobs/knowledge_graph_job.py` | `knowledge_graph_job(ctx, book_id, scope)` — bulk extraction for one book. Owns the extraction prompt inline (kinship-vs-figurative rules, Uyghur kinship term glossary, directed-edge semantics, year/century rules, script preservation). |
+| `services/worker/jobs/knowledge_graph_job.py` | `knowledge_graph_job(ctx, book_id, scope)` — bulk extraction for one book. Owns the extraction prompt inline (kinship-vs-figurative rules, Uyghur kinship term glossary, directed-edge semantics, year/century rules, script preservation). After the bulk Neo4j write, calls `_maybe_embed_entity_profiles` — a no-op unless `entity_semantic_matching_enabled` is `"true"`, in which case it embeds every newly-created entity via `embed_and_store_entity_profiles`; any failure here is logged and swallowed, never failing the job. |
 | `services/worker/scanners/graph_scanner.py` | `run_graph_scanner` — claims `ready` books whose `graph_milestone` is `idle`/`failed` and enqueues extraction. **Written and unit-tested but not registered** in `worker.py`'s `cron_jobs`, so it never runs; its `enqueue_job` call also omits the now-required `scope` argument (its test asserts that exact call shape). |
 | `services/worker/scanners/graph_resolution_scanner.py` | `run_graph_resolution_scanner` — every 5 minutes, claims `graph_resolution_queue` rows and dispatches one `graph_resolution_job` per scope. Registered in `cron_jobs`. |
 | `services/worker/jobs/graph_resolution_job.py` | `graph_resolution_job(ctx, entity_ids)` — loops the claimed ids, one fresh Postgres session per entity, delegating to `resolve_entity`; per-entity error isolation. |
@@ -158,6 +159,7 @@ flowchart TD
         LLM["Per batch: Gemini generate_content<br/>response_schema=KnowledgeExtraction, temperature=0<br/>(salvage parse on validation failure)"]
         IDS["Assign id=uuid4() per entity by position;<br/>map relation local_ids → those uuids<br/>(NO dedup here)"]
         WRITE[("Neo4j: upsert_entities_bulk<br/>then connect_entities_bulk<br/>— 2 round-trips total")]
+        EMBED["Optional: embed_and_store_entity_profiles<br/>(only if entity_semantic_matching_enabled;<br/>failure logged, never fails the job)"]
         QUEUE[("Postgres: graph_resolution_queue<br/>bulk_enqueue (one row per entity)")]
         DONE["graph_milestone = 'complete'<br/>(or 'partial' if the bulk write failed)"]
         NOOP["graph_milestone = 'idle';<br/>warning logged, no exception"]
@@ -167,9 +169,9 @@ flowchart TD
         SCAN["graph_resolution_scanner (every 5 min):<br/>claim_batch(resolution_batch_size)<br/>ORDER BY scope, sort_year NULLS LAST<br/>FOR UPDATE SKIP LOCKED → status='in_progress'"]
         DISPATCH["enqueue graph_resolution_job per scope<br/>(_job_id=graph_resolution:&lt;scope&gt;:batch)"]
         RESOLVE["resolve_entity(entity_id):<br/>set resolution_status='resolving'"]
-        CAND["find_resolution_candidates:<br/>fulltext entity_search_idx, term~edit_distance,<br/>same scope, same book_id if fiction,<br/>skip nodes already 'resolving' — LIMIT 20"]
+        CAND["find_resolution_candidates:<br/>fulltext entity_search_idx, term~edit_distance,<br/>same scope, same book_id if fiction,<br/>skip nodes already 'resolving' — LIMIT 20;<br/>+ find_semantic_candidates (vector index over<br/>profile_embedding) merged in, id-deduped,<br/>only if entity_semantic_matching_enabled"]
         HARD{"_check_hard_constraints<br/>(shared parent? shared birthplace?)"}
-        SCORE["_graded_score:<br/>0.55*name + 0.35*neighbor overlap<br/>+ 0.10*subtype (+parent boost)"]
+        SCORE["_graded_score:<br/>0.55*name + 0.35*neighbor overlap<br/>+ 0.10*subtype (+parent boost);<br/>lexical terms scaled by (1-semantic_weight)<br/>+ semantic_weight*cosine(profile_embedding)<br/>when semantic matching is enabled"]
         JUDGE["_gray_zone_judge:<br/>single-shot Gemini structured call<br/>→ same | different | unsure + confidence"]
         MERGE[("execute_merge:<br/>snapshot → graph_merge_log,<br/>redirect edges, DETACH DELETE removed,<br/>requeue CHILD_OF children")]
         REVIEW[("graph_resolution_reviews row;<br/>queue status = 'needs_review'")]
@@ -192,7 +194,7 @@ flowchart TD
     BOOKSEL -->|"missing"| BOOKGONE
     BOOKSEL -->|"found"| LOAD
     LOAD -->|"zero chunks"| NOOP
-    LOAD --> CLEAR --> BATCH --> LLM --> IDS --> WRITE --> QUEUE --> DONE
+    LOAD --> CLEAR --> BATCH --> LLM --> IDS --> WRITE --> EMBED --> QUEUE --> DONE
 
     QUEUE --> SCAN --> DISPATCH --> RESOLVE --> CAND
     CAND --> HARD
@@ -220,7 +222,7 @@ flowchart TD
 
     class ADMIN,FLAG,HARD,JFLAG,BOOKGONE idle
     class MILE,ENQ,LOAD,CLEAR,BATCH,LLM,IDS,SCAN,DISPATCH,RESOLVE,CAND,SCORE,JUDGE,LOOKUP,FALLBACK,FACTS,BOOKSEL active
-    class WRITE,QUEUE,DONE,MERGE,OK,CACHE,CHUNKS,NEXT done
+    class WRITE,EMBED,QUEUE,DONE,MERGE,OK,CACHE,CHUNKS,NEXT done
     class REJ,NOOP,REVIEW fail
 ```
 
@@ -275,14 +277,24 @@ flowchart TD
 8. Single bulk write: upsert_entities_bulk(all_entities) then
    connect_entities_bulk(all_relations). On exception: save_errors += 1,
    log ERROR (the job continues — it does not re-raise here).
-9. finally: graph_repo.close() (a no-op; the driver is process-shared).
-10. IF queue_rows AND save_errors == 0: new session →
+9. IF the bulk write succeeded: _maybe_embed_entity_profiles(all_entities).
+   Reads entity_semantic_matching_enabled (default "false"); a no-op unless
+   "true". If enabled: reads gemini_embedding_model (raises if unset),
+   builds an embedding provider, and calls embed_and_store_entity_profiles
+   to embed each entity's profile text (build_entity_profile_text) and
+   store it as Entity.profile_embedding via store_profile_embeddings_bulk.
+   The whole step is wrapped in try/except — any failure (missing model
+   config, embedding-API error, count mismatch) is logged at WARNING and
+   never raised, since profile embeddings are an optional resolution
+   signal, not a requirement for extraction to have succeeded.
+10. finally: graph_repo.close() (a no-op; the driver is process-shared).
+11. IF queue_rows AND save_errors == 0: new session →
     GraphResolutionQueueRepository.bulk_enqueue(queue_rows). A failed
     Neo4j write therefore never queues entities that don't exist.
-11. UPDATE books SET graph_milestone = 'partial' if save_errors > 0 else
+12. UPDATE books SET graph_milestone = 'partial' if save_errors > 0 else
     'complete'; commit; log completion (chunk_count, batch_count,
     batch_size).
-12. ON any unhandled exception: log ERROR, best-effort UPDATE
+13. ON any unhandled exception: log ERROR, best-effort UPDATE
     graph_milestone='failed' (its own failure is logged, not raised),
     then re-raise so arq records the job as failed.
 ```
@@ -350,27 +362,53 @@ worker.py's cron_jobs; the only live extraction trigger is the admin endpoint.
 0. get_entity_by_id. IF the node is gone (crash mid-merge, or removed by
    delete_book_graph's orphan sweep): mark the queue row 'failed', return.
 1. Read the node's scope/book_id; read resolution_similarity_threshold
-   (default "2"); set resolution_status='resolving' so concurrent
+   (default "2"). Read entity_semantic_matching_enabled (default "false");
+   if "true", read entity_semantic_weight (default "0.15"; a non-numeric or
+   NaN value is caught, logged at WARNING, and falls back to 0.15), then
+   clamp it to [0.0, 1.0] so a misconfigured weight (e.g. an admin typing
+   "15" meaning "15%") can never drive the lexical weight negative in
+   _graded_score. set resolution_status='resolving' so concurrent
    candidate lookups skip this node.
 2. find_resolution_candidates: for each term in [canonical_name, *aliases],
    query the entity_search_idx fulltext index with Lucene fuzzy
    `term~<edit_distance>`; keep nodes with a different id, the same scope,
    resolution_status != 'resolving', and (book_id IS NULL OR same book_id);
    rank by best score, LIMIT 20.
-3. get_entity_facts(entity_id) once: parent links (CHILD_OF/SON_OF/
+3. IF semantic matching is enabled AND the entity has a profile_embedding:
+   read entity_semantic_candidate_limit (default "5"; a non-numeric value
+   is logged and falls back to 5); find_semantic_candidates queries the
+   entity_profile_embedding_idx vector index for its k=max(limit*10, 50)
+   nearest neighbors (over-fetched because the index applies the
+   scope/book_id/resolving-status filter AFTER selecting k, unlike the
+   fulltext path's streaming filter-then-limit), keeps the top `limit`
+   after filtering, and its results are appended to the fulltext
+   candidates, deduped by id. A Neo4j/index failure here is caught, logged
+   at WARNING, and degrades this one entity to fulltext-only candidates —
+   it does not abort resolution or leave resolution_status stuck at
+   'resolving' (every other candidate query already excludes 'resolving'
+   nodes, so an unguarded failure here would have permanently poisoned the
+   candidate pool for everyone else).
+4. get_entity_facts(entity_id) once: parent links (CHILD_OF/SON_OF/
    DAUGHTER_OF outgoing, FATHER_OF/MOTHER_OF incoming, normalized to a
    parent_role), BORN_IN, DIED_IN, and up to 20 relationship neighbors.
-4. For each candidate, in score order:
+5. For each candidate, in score order:
      a. Re-fetch it (an earlier iteration may have merged it away → skip).
      b. _check_hard_constraints on resolved facts: disjoint known parents
         → 'conflict'; overlapping → 'match'; if parents are unknown on
         either side, fall back to the same test on BORN_IN; otherwise
         'none'. 'conflict' → leave separate, next candidate.
-     c. _graded_score = 0.55*best name/alias similarity (difflib ratio over
+     c. _graded_score: when semantic matching is disabled, or either
+        entity lacks a profile_embedding, the original three-signal
+        formula — 0.55*best name/alias similarity (difflib ratio over
         NFC-lowercased strings) + 0.35*Jaccard neighbor-id overlap +
-        0.10*exact subtype match; a hard 'match' adds +0.15, discounted to
-        +0.05 when either side has >10 neighbors (a hub ancestor shared by
-        everyone is weak evidence). Capped at 1.0, rounded to 4dp.
+        0.10*exact subtype match. When both carry a profile_embedding and
+        semantic_weight > 0, those three lexical terms are each scaled by
+        (1 - semantic_weight) and a semantic_weight *
+        cosine_similarity(profile_embedding_a, profile_embedding_b) term is
+        added, keeping the blended base in [0, 1]. Either way, a hard
+        'match' then adds +0.15, discounted to +0.05 when either side has
+        >10 neighbors (a hub ancestor shared by everyone is weak
+        evidence). Capped at 1.0, rounded to 4dp.
      d. score >= 0.75 → merge. score <= 0.25 → leave. Otherwise call
         _gray_zone_judge (raw generate_content, response_schema=
         EntityResolutionVerdict, temperature 0; any failure returns
@@ -383,7 +421,7 @@ worker.py's cron_jobs; the only live extraction trigger is the admin endpoint.
      e. On merge: execute_merge(keep_id=entity_id, remove_id=candidate_id,
         performed_by="system:resolution_job"), then re-read entity_facts so
         subsequent candidates are compared against the enriched node.
-5. IF a review was created: mark the queue row 'needs_review', return
+6. IF a review was created: mark the queue row 'needs_review', return
    (resolution_status stays 'resolving').
    ELSE: resolution_status='resolved', queue row 'succeeded',
    update_alias_cache(entity_id).
@@ -537,6 +575,9 @@ flowchart TD
 | `resolve_entity` finds the Neo4j node gone | Queue row marked `failed`; no exception. |
 | One entity in a resolution batch raises | `graph_resolution_job` logs it, marks only that row `failed`, and continues with the rest of the batch. |
 | The gray-zone LLM judge call fails | Caught inside `_gray_zone_judge`, which returns `verdict='unsure', confidence=0.0` — which always routes to a human review row. A judge outage can never cause a silent merge or a silent leave-separate. |
+| `entity_semantic_matching_enabled` is `"true"` but `find_semantic_candidates` (Neo4j vector index) raises | Caught in `resolve_entity`, logged at WARNING; that entity's candidate list degrades to fulltext-only for this pass. `resolution_status` is not left stuck at `'resolving'`. |
+| `entity_semantic_weight` config value is non-numeric or `NaN` | Caught, logged at WARNING, falls back to the default `0.15`. The value is also clamped to `[0.0, 1.0]` regardless, so an out-of-range value (e.g. `"15"`) cannot drive the lexical weight negative in `_graded_score`. |
+| Profile-embedding write (`embed_and_store_entity_profiles`) fails during extraction | Caught in `knowledge_graph_job`'s `_maybe_embed_entity_profiles`, logged at WARNING; the book still reaches `graph_milestone='complete'`. Entities without a `profile_embedding` simply never contribute to semantic candidate lookup or scoring — resolution falls back to the lexical-only path for them. |
 | An entity keeps being re-queued by successive merges | `requeue_or_cap` increments `pass_count` and force-marks the row `needs_review` once it reaches `resolution_max_passes` (default 5), breaking flip-flop loops. |
 | A resolution batch job is deduped by arq while rows were already claimed | `claim_batch` has already flipped the rows to `in_progress` and commits before enqueuing, and `_job_id=f"graph_resolution:{scope}:batch"` is a fixed per-scope id. If a job with that id is still queued/running, the newly claimed rows are logged at DEBUG and stay `in_progress` with no job to process them — there is no watchdog that resets stale `graph_resolution_queue` rows (unlike `books.graph_milestone`). The same applies if the worker dies mid-batch, which additionally leaves the in-flight `Entity.resolution_status` at `'resolving'`, excluding that node from other entities' candidate lookups. |
 | Unmerge cannot re-point an edge | Its id is returned in `unrecoverableEdgeIds` and logged — the accepted consequence of the merge-time `chunk_refs` union collapsing two edges into one. |
@@ -555,11 +596,14 @@ flowchart TD
 | `resolution_max_passes` (`system_configs`, migration `075`) | `"5"` | `execute_merge` → `requeue_or_cap` — re-propagation passes allowed for one entity before it is force-marked `needs_review`. |
 | `resolution_similarity_threshold` (`system_configs`, migration `075`) | `"2"` | `resolve_entity` → `find_resolution_candidates` — the Lucene fuzzy edit distance appended as `term~N` against `entity_search_idx`. Raising it widens recall and increases gray-zone judge calls (cost). |
 | `gemini_entity_resolution_model` (`system_configs`, migration `075`) | `"gemini-3.1-flash-lite"` | `_gray_zone_judge` — the same/different/unsure judge model. |
+| `entity_semantic_matching_enabled` (`system_configs`, migration `088`) | `"false"` | Gate for the whole semantic-matching path: `knowledge_graph_job` only embeds/stores `profile_embedding` when `"true"`; `resolve_entity` only calls `find_semantic_candidates` and blends the semantic term into `_graded_score` when `"true"`. Off by default so behavior is unchanged until validated via `scripts/eval_entity_semantic_matching.py`. |
+| `entity_semantic_weight` (`system_configs`, migration `088`) | `"0.15"` | `resolve_entity` / `_graded_score` — weight given to profile-embedding cosine similarity; the remaining `1 - weight` is distributed proportionally across the existing name/neighbor/subtype signals. A non-numeric/NaN value falls back to this default; always clamped to `[0.0, 1.0]`. |
+| `entity_semantic_candidate_limit` (`system_configs`, migration `088`) | `"5"` | `resolve_entity` → `find_semantic_candidates` — max semantic-similarity candidates fetched per entity from the vector index, in addition to the fulltext candidates. A non-numeric value falls back to this default. |
 | `GEMINI_API_KEY` (env → `settings.gemini_api_key`) | none — required | Both the extraction call and the judge call. `knowledge_graph_job` raises `RuntimeError` if unset; `_gray_zone_judge` degrades to `unsure`. |
 | `NEO4J_URL` (env → `settings.neo4j_url`) | `"bolt://localhost:37687"` | `GraphRepository`. Credentials may be embedded in the URI — they are parsed out and passed as `auth` because the driver rejects them inline. In Docker Compose both backend and worker override this to `bolt://neo4j:7687`. |
 | `CACHE_TTL_RAG_QUERY` (env → `settings.cache_ttl_rag_query`) | `3600` (seconds) | `update_alias_cache` — TTL of each `graph:alias:{alias}` entry. When an alias entry expires, `graph_entity_lookup` simply finds no match and retrieval falls back to text search; nothing re-populates it until that entity is resolved/merged/renamed again. |
 | `STRONG_MERGE_SCORE` / `STRONG_LEAVE_SCORE` / `GRAY_ZONE_CONFIDENCE_THRESHOLD` (module constants, `entity_resolution_service.py`) | `0.75` / `0.25` / `0.75` | `resolve_entity`. Not configurable at runtime — narrowing the gray band trades human review volume against judge-call cost. |
-| Candidate/neighbor caps (hardcoded) | candidates `LIMIT 20`; `get_entity_facts` neighbors truncated to 20; judge prompt gets 10 neighbor names; `query_subgraph` `LIMIT 30`; `query_paths` `LIMIT 40`; `GET /api/books/graph` `LIMIT 150` | Respective methods in `graph_repository.py` / `books_router.py`. |
+| Candidate/neighbor caps (hardcoded) | fulltext candidates `LIMIT 20`; semantic candidates over-fetch `max(entity_semantic_candidate_limit*10, 50)` from the vector index before filtering, then cap at `entity_semantic_candidate_limit`; `get_entity_facts` neighbors truncated to 20; judge prompt gets 10 neighbor names; `query_subgraph` `LIMIT 30`; `query_paths` `LIMIT 40`; `GET /api/books/graph` `LIMIT 150` | Respective methods in `graph_repository.py` / `books_router.py`. |
 
 ## API Endpoints
 
@@ -590,12 +634,12 @@ Roles are read directly from each route's auth dependency.
 
 ## Testing
 
-All of the following pass against the current working tree (84 tests across the eight graph-specific files, plus 11 graph-related cases in `books_router_test.py`).
+All of the following pass against the current working tree (113 tests across the eight graph-specific files, plus 11 graph-related cases in `books_router_test.py`).
 
-- `packages/backend-core/tests/app/db/graph_repository_test.py` — 18 tests, all mocking `AsyncGraphDatabase.driver` (no live Neo4j) with an autouse fixture that resets the class-level driver. **This file was modified alongside the code it covers and its current content does match this doc**: `test_graph_repository_init_constraints` asserts exactly 9 statements and specifically that `DROP CONSTRAINT entity_name_unique`, `CREATE CONSTRAINT entity_id_unique` and `CREATE FULLTEXT INDEX entity_search_idx` are among them; `..._connect_entities_bulk_unions_chunk_refs` / `..._no_existing_edge` / `..._carries_evidence` cover the read-before-write union and the `ON CREATE`-only `evidence`; `..._merge_entities_by_id_redirects_edges_and_deletes`, `..._split_entities_partitions_and_flags_unclustered`, `..._connected_components_groups_by_shared_book_and_endpoint`, `..._restore_entity_from_snapshot_repoints_matching_edges` / `..._reports_unrecoverable`, `..._rename_entity_folds_old_name_into_aliases`, `..._delete_relationship_by_id_*`, and `..._find_resolution_candidates_queries_fulltext_index` / `..._no_terms_returns_empty` cover the rest. Not covered: `upsert_entities_bulk`'s NFC normalization details beyond the happy path, `get_entity_facts`, `get_entity_facts_for_citation`, `get_entities_facts_for_citation_bulk`, `search_entities_fulltext`, `delete_book_graph`, `query_paths`, `check_books_exist`, and all six GDS methods. `test_graph_repository_query_subgraph` is the only reference to `query_subgraph` anywhere outside the repository itself.
-- `packages/backend-core/tests/app/services/entity_resolution_service_test.py` — 24 tests: the pure helpers (`normalize_alias`, `_check_hard_constraints` conflict/match/none/`born_in` fallback, `_graded_score` high/low, `_expand_name_components` decomposing a multi-word name and filtering title/honorific tokens), `update_alias_cache` union and missing-entity no-op, `execute_merge` no-op plus the happy path asserting the merge log is written *before* the delete and that children are re-queued plus a dedicated case for cleaning up the removed entity's dangling alias-cache keys, `execute_split` cache refresh for both nodes, `execute_unmerge` restore/mark-reverted/missing/already-reverted, and `resolve_entity` across every branch (missing entity → failed, no candidates → succeeded, hard conflict skip, hard match merge, gray-zone unsure → review + `needs_review`, gray-zone confident-same → merge) plus the judge's exception fallback.
+- `packages/backend-core/tests/app/db/graph_repository_test.py` — 20 tests, all mocking `AsyncGraphDatabase.driver` (no live Neo4j) with an autouse fixture that resets the class-level driver. **This file was modified alongside the code it covers and its current content does match this doc**: `test_graph_repository_init_constraints` asserts exactly 10 statements and specifically that `DROP CONSTRAINT entity_name_unique`, `CREATE CONSTRAINT entity_id_unique`, `CREATE FULLTEXT INDEX entity_search_idx`, and `CREATE VECTOR INDEX entity_profile_embedding_idx` are among them; `..._connect_entities_bulk_unions_chunk_refs` / `..._no_existing_edge` / `..._carries_evidence` cover the read-before-write union and the `ON CREATE`-only `evidence`; `..._merge_entities_by_id_redirects_edges_and_deletes`, `..._split_entities_partitions_and_flags_unclustered`, `..._connected_components_groups_by_shared_book_and_endpoint`, `..._restore_entity_from_snapshot_repoints_matching_edges` / `..._reports_unrecoverable`, `..._rename_entity_folds_old_name_into_aliases`, `..._delete_relationship_by_id_*`, `..._find_resolution_candidates_queries_fulltext_index` / `..._no_terms_returns_empty`, and `..._find_semantic_candidates` / `..._find_semantic_candidates_overfetches_proportionally_to_limit` cover the rest. Not covered: `upsert_entities_bulk`'s NFC normalization details beyond the happy path, `get_entity_facts`, `get_entity_facts_for_citation`, `get_entities_facts_for_citation_bulk`, `search_entities_fulltext`, `delete_book_graph`, `query_paths`, `check_books_exist`, `store_profile_embeddings_bulk`, and the five dead GDS methods. `test_graph_repository_query_subgraph` is the only reference to `query_subgraph` anywhere outside the repository itself.
+- `packages/backend-core/tests/app/services/entity_resolution_service_test.py` — 47 tests: the pure helpers (`normalize_alias`, `_check_hard_constraints` conflict/match/none/`born_in` fallback, `_graded_score` high/low plus semantic-blend-when-weighted and unchanged-when-weight-zero, `_expand_name_components` decomposing a multi-word name and filtering title/honorific tokens, `build_entity_profile_text` field inclusion/fallback/missing-fields/NFC-normalization), `update_alias_cache` union and missing-entity no-op, `execute_merge` no-op plus the happy path asserting the merge log is written *before* the delete and that children are re-queued plus a dedicated case for cleaning up the removed entity's dangling alias-cache keys, `execute_split` cache refresh for both nodes, `execute_unmerge` restore/mark-reverted/missing/already-reverted, `embed_and_store_entity_profiles` happy path / empty-list no-op / count-mismatch skip / large-list batching, `_embed_texts_batched` explicit batch size / default batch size / a partial-batch mismatch not misaligning later batches, and `resolve_entity` across every branch (missing entity → failed, no candidates → succeeded, hard conflict skip, hard match merge, gray-zone unsure → review + `needs_review`, gray-zone confident-same → merge, the judge's exception fallback, semantic lookup skipped when disabled, semantic candidates merged in when enabled, semantic weight clamped above 1, semantic weight falling back to default on a malformed or `NaN` config value, and resolution degrading to lexical-only when the semantic lookup itself raises).
 - `packages/backend-core/tests/app/db/graph_resolution_repository_test.py` — 14 tests over all three repositories: `bulk_enqueue` empty/insert, `claim_batch` claim-and-update vs. empty, `requeue_or_cap` under-cap/at-cap/missing-row, `list_pending`, `set_status` found/missing, `log_merge`, `mark_reverted` found/missing, and `resolve_reviews_for_merge`.
-- `services/worker/tests/jobs/knowledge_graph_job_test.py` — 9 tests: invalid scope raises, flag-disabled path, book-not-found, no-chunks, the non-fiction and fiction success paths (the latter asserting `scope`/`book_id` are stamped on both the entity and its queue row), a relation with an unresolvable `local_id` being skipped, `CHILD_OF` carrying `parent_role`, and the failure path.
+- `services/worker/tests/jobs/knowledge_graph_job_test.py` — 13 tests: invalid scope raises, flag-disabled path, book-not-found, no-chunks, the non-fiction and fiction success paths (the latter asserting `scope`/`book_id` are stamped on both the entity and its queue row), a relation with an unresolvable `local_id` being skipped, `CHILD_OF` carrying `parent_role`, the failure path, and `_maybe_embed_entity_profiles` no-op-when-disabled / embeds-when-enabled / swallows-embedding-failure / no-op-on-empty-entities.
 - `services/worker/tests/jobs/graph_resolution_job_test.py` — 3 tests: one session per entity, one failure not aborting the batch, empty list still closing the repo.
 - `services/worker/tests/scanners/graph_resolution_scanner_test.py` — 4 tests: flag-disabled, nothing claimed, one job enqueued per scope, and the arq-dedup (`None` return) path.
 - `services/worker/tests/scanners/graph_scanner_test.py` — 3 tests (flag-disabled, no books, with books). `test_run_graph_scanner_enabled_with_books` asserts the enqueue call as `("knowledge_graph_job", book_id=..., _job_id=...)` — i.e. it locks in the call shape that omits the `scope` argument `knowledge_graph_job` now requires.
@@ -606,7 +650,7 @@ All of the following pass against the current working tree (84 tests across the 
 
 ## Related Docs
 
-- [NEO4J_CONNECTION.md](NEO4J_CONNECTION.md) — connection details and Cypher recipes; its schema table has since been corrected to match this doc (`Entity.id` as the unique key, `canonical_name` + `aliases`, `rel_type` not `type`). (`WORKER_DESIGN.md`'s `KnowledgeGraphJob` coverage used to carry pseudocode describing `fictional_categories` namespacing, a Roman-numeral second LLM pass, and a `book_id`-only signature — all three were stale even before this doc existed. Task 9's cleanup trimmed that coverage down to a one-line link to this doc, so `WORKER_DESIGN.md` no longer makes any of those claims.)
+- [NEO4J_CONNECTION.md](NEO4J_CONNECTION.md) — connection details and Cypher recipes; its schema table matches this doc (`Entity.id` as the unique key, `canonical_name` + `aliases`, `rel_type` not `type`). (`WORKER_DESIGN.md`'s `KnowledgeGraphJob` coverage used to carry pseudocode describing `fictional_categories` namespacing, a Roman-numeral second LLM pass, and a `book_id`-only signature — all three were stale even before this doc existed. Task 9's cleanup trimmed that coverage down to a one-line link to this doc, so `WORKER_DESIGN.md` no longer makes any of those claims.)
 - [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md) — the consumer. Graph facts reach an answer only via `retrieval.graph_entity_lookup` riding the `search_chunks` agent tool; there is no separate graph tool for the agent. Correction to a stale cross-doc claim: that doc (and an earlier version of `retrieval.py`) documented alias matching as exact against whitespace/punctuation-split unigrams and bigrams, so a Uyghur agglutinative suffix attached to a name would not match a bare cached alias. `graph_entity_lookup` now also checks per-word prefix stems (down to 4 characters) and falls back to a Neo4j fuzzy full-text query on a total cache miss, so that limitation no longer applies as stated — see CHAT_RAG_DESIGN.md's own B1/B2/B3 breakdown for the current matching behavior.
 - [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) — the other post-`ready`, book-level, non-mandatory stage. It is triggered automatically by `PipelineDriver` (this stage is not) and shares no state with the graph, despite `knowledge_graph_service.py`'s docstring implying `summary_job` reuses its schemas.
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — cron schedule, `PipelineDriver`, `StaleWatchdog`, and the shared worker conventions.

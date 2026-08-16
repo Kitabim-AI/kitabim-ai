@@ -11,7 +11,7 @@ Chat / RAG retrieval is the only *read* stage of the pipeline: it consumes the a
 Key characteristics:
 
 - **Retrieval is tool-driven, not hand-routed.** `ChatOrchestrator` builds a `QueryContext` (`rag/context.py`) and drives all 19 ADK tools (`rag/agent/tools.py`, listed via `ALL_TOOLS` in `chat/retrieval_agent.py`) over shared primitives (`rag/retrieval.py`: `embed_query`, `vector_search`, `find_books_by_title_in_question`, `graph_entity_lookup`), using `AGENT_SYSTEM_PROMPT` (`rag/agent/prompts.py`). A single-shot structured LLM call (`analyze_query_signals`, `chat/query_signals.py`) extracts pre-processing signals (intent, catalog/dictionary/Quran subtype hints, resolved book/author matches) before the retrieval agent runs; only `signals["intent"]` is read directly by the orchestrator today — the rest of the extracted signal dict feeds the retrieval agent's system-prompt hints (see `build_retrieval_agent`).
-- **Exact-phrase questions bypass the retrieval agent.** `phrase_intent.detect_phrase_intent()` classifies a quoted phrase (`"..."` / `«...»` / `"..."`) or the explicit `ChatRequest.exact_phrase` flag as exact-phrase intent; when it fires, `ChatOrchestrator` answers from a keyword-only leg (`chat/exact_phrase.py` → `retrieval.exact_phrase_chunk_search` → `ChunksRepository.keyword_search`'s `phraseto_tsquery` match) instead. Vector search itself (`vector_search` in `retrieval.py`) is vector-only; there is no hybrid vector+keyword fusion (removed along with `rag_hybrid_search_enabled` — see Feature Flags).
+- **Exact-phrase questions bypass the retrieval agent — unless the quoted text is actually a catalog book title.** `phrase_intent.detect_phrase_intent()` classifies a quoted phrase (`"..."` / `«...»` / `"..."`) or the explicit `ChatRequest.exact_phrase` flag as exact-phrase intent. Before honoring that intent, `ChatOrchestrator` runs a **catalog-first check**: when the phrase came from quotes (not the explicit flag) and the question isn't page-finding, it calls `find_books_by_title_in_question` directly; a match scopes the turn to those book(s) (`ctx.context_book_ids`) and flips `phrase_intent.is_exact` back to `False`, so the turn is routed through the normal retrieval agent (vector + graph) instead. Only when no book title matches — or the explicit `exact_phrase` flag/page-finding phrasing was used — does `ChatOrchestrator` answer from the keyword-only leg (`chat/exact_phrase.py` → `retrieval.exact_phrase_chunk_search` → `ChunksRepository.keyword_search`'s `phraseto_tsquery` match) instead. Vector search itself (`vector_search` in `retrieval.py`) is vector-only; there is no hybrid vector+keyword fusion (removed along with `rag_hybrid_search_enabled` — see Feature Flags).
 - **The judge is opt-in per turn, not per pipeline.** Every turn writes a `rag_evaluations` row; `rag_judge_scoring_enabled` decides whether that row is `eval_status='queued'` (and `rag_eval_job` gets enqueued) or `'skipped'`.
 - **Book summaries drive book routing, not answer content.** `search_books_by_summary` / `get_book_summary` (see [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md)) narrow *which* books to search before `search_chunks` runs; chunk passages remain the citable evidence.
 - **Composite/multi-part question decomposition no longer exists as a distinct mechanism.** An earlier design ran an explicit LLM-driven question-splitting step and fanned sub-questions out concurrently. That machinery was part of the deleted legacy pipeline and was never wired into `ChatOrchestrator`; `analyze_query_signals` still asks the model for `is_composite`/`sub_questions` in its structured JSON response, but nothing reads those two fields today. A compound question is handled implicitly by the retrieval agent's own multi-turn tool-calling loop, not by a dedicated splitting/fan-out step.
@@ -136,7 +136,7 @@ All 19 tools are registered once, in `ALL_TOOLS` (`chat/retrieval_agent.py`), an
 |---|---|---|---|
 | `search_chunks` | `vector_search` (pgvector `ChunksRepository.similarity_search`, vector-only — no keyword fusion) | L1 (`embed_query`) + L2 (`vector_search` results) | Vector-search passages; the primary retrieval tool. Also appends knowledge-graph facts via `graph_entity_lookup` (own Redis cache, no LLM call, capped by `rag_graph_top_k`) as extra chunk-shaped results titled `Knowledge Graph` — see [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md). Exact-phrase (quoted) questions bypass this tool entirely on the `ChatOrchestrator` path — see the exact-phrase leg in Overview. |
 | `search_books_by_summary` | `BookSummariesRepository.summary_search` (pgvector over `book_summaries.embedding`) | L1 (`embed_query`) only — the search results themselves are not cached; `KEY_RAG_SUMMARY_SEARCH` is defined but never written (see Cache Layers) | Find which book(s) cover a topic when book scope is unknown ("book routing" — see [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md)). |
-| `find_books_by_title` | `find_books_by_title_in_question` (`retrieval.py`) plus a fuzzy-keyword fallback over `Book` when strict matching finds nothing | In-request only (`ctx._title_cache`, a plain dict — not a Redis tier) | Resolve a book title mentioned in the question to internal book IDs via fuzzy word-prefix matching; includes a false-positive guard for lone single-word matches. Quoting the title (`«...»`) no longer has any special effect here — it resolves the same whether quoted or not, since `«...»` now signals exact-phrase-search intent elsewhere in the pipeline (see `phrase_intent.py`). |
+| `find_books_by_title` | `find_books_by_title_in_question` (`retrieval.py`) plus a fuzzy-keyword fallback over `Book` when strict matching finds nothing | In-request only (`ctx._title_cache`, a plain dict — not a Redis tier) | Resolve a book title mentioned in the question to internal book IDs via fuzzy word-prefix matching; includes a false-positive guard for lone single-word matches. Quoting the title (`«...»`) no longer has any special effect on this tool's own matching — it resolves the same whether quoted or not, since `«...»` now primarily signals exact-phrase-search intent elsewhere in the pipeline (see `phrase_intent.py`). Note this is distinct from `ChatOrchestrator`'s own catalog-first check (see Overview and the `stream_response` pseudocode step 6), which calls the same `find_books_by_title_in_question` primitive directly — outside this tool — specifically to decide whether a quoted phrase should be treated as a book title instead of an exact-phrase search. |
 | `get_book_summary` | `BookSummariesRepository.get_summaries_for_books`, with a `PagesRepository.find_first_pages_with_text` intro-excerpt fallback | none | Full semantic summary text for specific books, with server-side sister-volume expansion; falls back to a ≤2,000-char intro excerpt per book when no summary row exists yet. |
 | `get_current_page` | `PagesRepository` | none | Raw text of the page currently open in the reader (reader mode only). |
 | `get_sister_volumes` | `BooksRepository.find_sister_volumes` | none | Other volumes of the same series as a given `book_id`. |
@@ -184,6 +184,7 @@ flowchart TD
         CONV[("conversations:<br/>get-or-create + title,<br/>load last 6 messages")]
         OCTX["Build QueryContext<br/>+ set_current_query_context"]
         PGATE{"phrase_intent.is_exact?<br/>(quoted text, or<br/>exactPhrase flag)"}
+        CATFIRST{"Catalog-first: quoted (not<br/>explicit flag), not page-finding,<br/>AND find_books_by_title_in_question<br/>matches a book?"}
         EXACT["exact_phrase_chunk_search<br/>(keyword-only leg, phrases<br/>ANDed via chunks.text_search)"]
         PAGEQ{"phrase_intent.is_page_finding?"}
         PAGEHITS["format_page_hits →<br/>{type:page_hits} SSE event;<br/>summarize_page_hits_as_text<br/>— no answer-agent call"]
@@ -215,7 +216,10 @@ flowchart TD
 
     CONV --> OCTX --> PGATE
     PGATE -- No --> SIG --> RETR --> RERANK
-    PGATE -- Yes --> EXACT --> PAGEQ
+    PGATE -- Yes --> CATFIRST
+    CATFIRST -- "Match: scope to book(s),<br/>is_exact → false" --> SIG
+    CATFIRST -- "No match (or explicit<br/>flag / page-finding)" --> EXACT
+    EXACT --> PAGEQ
     PAGEQ -- Yes --> PAGEHITS --> PERSIST
     PAGEQ -- No --> RERANK
     RERANK -- Yes --> RR
@@ -237,7 +241,7 @@ flowchart TD
     classDef done fill:#d4f1f4,stroke:#189ab4
     classDef fail fill:#ffcccb,stroke:#d32f2f
 
-    class Q,LIMIT,EP,PGATE,PAGEQ,RERANK,JUDGE idle
+    class Q,LIMIT,EP,PGATE,CATFIRST,PAGEQ,RERANK,JUDGE idle
     class OCTX,SIG,RETR,EXACT,RR,GC1,ANSA,ENQ,TOOLS,VS,WORKER,INC active
     class CONV,PERSIST,PAGEHITS,DATA,OUT done
     class L429 fail
@@ -309,7 +313,18 @@ flowchart TD
    intent (multiple quoted phrases are ANDed).
 5. Scope: IF not is_global and book_id → ctx.context_book_ids=[book_id];
    ELIF is_global and request context_book_ids → carry them forward.
-6. IF phrase_intent.is_exact — the retrieval agent is skipped entirely:
+6. Catalog-first phrase resolution: ONLY IF phrase_intent.is_exact came
+   from quoted text (not the explicit exactPhrase flag) AND the question
+   is not page-finding: call find_books_by_title_in_question(question,
+   db_session, categories=ctx.character_categories) directly — the same
+   primitive the find_books_by_title tool wraps, but invoked here in the
+   orchestrator, outside the retrieval agent. IF it matches book(s):
+   ctx.context_book_ids = the matched book IDs, and phrase_intent.is_exact
+   is flipped to False — the turn falls through to step 7's normal
+   retrieval-agent path, scoped to those books, instead of the
+   exact-phrase leg. An explicit exactPhrase flag or page-finding phrasing
+   always skips this check.
+7. IF phrase_intent.is_exact — the retrieval agent is skipped entirely:
    a. yield {"type":"planning","intent":"exact_phrase"}; yield
       {"type":"tool_call","tool":"exact_phrase_search"}.
    b. rag_keyword_top_k = int(system_configs "rag_keyword_top_k",
@@ -326,9 +341,18 @@ flowchart TD
       unchanged. observations = [observation].
    d. yield {"type":"tool_result","tool":"exact_phrase_search",
       "found": len(hits)}.
-   ELSE (the normal path):
-   a. signals = analyze_query_signals(question, ctx) (chat/query_signals.py);
-      yield {"type":"planning","intent": signals["intent"] or "open"}.
+   ELSE (the normal path — including turns that fell through from the
+   catalog-first check in step 6):
+   a. TRY signals = analyze_query_signals(question, ctx)
+      (chat/query_signals.py); ON ANY EXCEPTION (e.g. a plain
+      ValueError("Too many tool call iterations in query analysis") or a
+      json.JSONDecodeError), log a warning ("analyze_query_signals
+      failed, proceeding without signal hints") and continue with
+      signals={} rather than propagating — a transient signal-extraction
+      failure degrades gracefully instead of failing the whole turn
+      (regression-covered by
+      test_stream_response_tolerates_analyze_query_signals_failure).
+      yield {"type":"planning","intent": signals.get("intent","open")}.
       Runs on every non-exact-phrase request. Only signals["intent"] is
       read directly here — the full signal dict (including
       is_composite/sub_questions, which nothing consumes) is passed on to
@@ -345,11 +369,11 @@ flowchart TD
       yield tool_call / agent_thinking on non-partial events, and for
       every function response append {"tool","result"} to a local
       observations list and yield tool_result with result["found_count"].
-7. skip_answer_synthesis = phrase_intent.is_exact AND
+8. skip_answer_synthesis = phrase_intent.is_exact AND
    phrase_intent.is_page_finding (a "find pages with…" / "which pages
    mention…" / "show me where" style question — see
    phrase_intent._PAGE_FINDING_MARKERS).
-8. used_book_ids = _extract_used_book_ids(observations).
+9. used_book_ids = _extract_used_book_ids(observations).
    IF skip_answer_synthesis: graded_context, before_count, after_count =
    "", 0, 0 (grading/reranking is skipped entirely). ELSE: rag_top_k =
    int(system_configs "rag_vector_top_k", default str(settings.rag_top_k))
@@ -360,20 +384,20 @@ flowchart TD
    to _grade_context(observations, max_chunks=rag_top_k).
    ELSE: _grade_context(observations, max_chunks=rag_top_k).
    IF before_count > 0: yield {"type":"grading","before","after"}.
-9. yield {"type":"answer_start"}.
-   IF skip_answer_synthesis: page_hits = format_page_hits(hits); yield
-   {"type":"page_hits","hits":page_hits}; accumulated_text =
-   summarize_page_hits_as_text(hits, phrase=", ".join(
-   phrase_intent.phrases)) — a plain i18n-templated listing of book/page
-   hits, built with NO LLM call.
-   ELSE: build_answer_agent(chat_model, graded_context, persona_prompt,
-   is_global, has_categories) and run it through the same shared session
-   service (or an InMemoryRunner), yielding {"type":"chunk","text"} per
-   partial part; fall back to non-partial parts if no partial events
-   arrived. yield answer_end either way.
-10. fixed_text = fix_malformed_citations(accumulated_text) — a no-op on
+10. yield {"type":"answer_start"}.
+    IF skip_answer_synthesis: page_hits = format_page_hits(hits); yield
+    {"type":"page_hits","hits":page_hits}; accumulated_text =
+    summarize_page_hits_as_text(hits, phrase=", ".join(
+    phrase_intent.phrases)) — a plain i18n-templated listing of book/page
+    hits, built with NO LLM call.
+    ELSE: build_answer_agent(chat_model, graded_context, persona_prompt,
+    is_global, has_categories) and run it through the same shared session
+    service (or an InMemoryRunner), yielding {"type":"chunk","text"} per
+    partial part; fall back to non-partial parts if no partial events
+    arrived. yield answer_end either way.
+11. fixed_text = fix_malformed_citations(accumulated_text) — a no-op on
     page-hit text, which carries no citations to fix.
-11. create_evaluation(... retrieved_count=len(observations),
+12. create_evaluation(... retrieved_count=len(observations),
     context_chars=len(graded_context) (0 for a page-hit turn),
     scores=[1.0]*len(observations) (placeholders, not real similarities),
     category_filter=request context_book_ids, agent_steps=len(observations),
@@ -381,14 +405,14 @@ flowchart TD
     rag_judge_scoring_enabled else "skipped", answer=fixed_text,
     retrieved_context=graded_context, is_first_turn). Set
     eval_record.conversation_id = conv_id; flush; commit.
-12. IF rag_judge_scoring_enabled: create a short-lived arq pool from
+13. IF rag_judge_scoring_enabled: create a short-lived arq pool from
     settings.redis_url, enqueue_job("rag_eval_job", eval_id=eval_id,
     _job_id=f"rag_eval:{eval_id}"), aclose it. Any exception here is
     logged at ERROR and swallowed — the turn still succeeds.
-13. save_turn(conv_id, question, fixed_text, used_book_ids, eval_id,
+14. save_turn(conv_id, question, fixed_text, used_book_ids, eval_id,
     current_page, agent_steps={"llm_calls":len(observations),
     "tools":[...]}); commit.
-14. yield {"type":"done","eval_id","conversation_id","used_book_ids"} —
+15. yield {"type":"done","eval_id","conversation_id","used_book_ids"} —
     the router converts this into the SSE done payload and increments
     the user's daily usage.
 ```
@@ -561,7 +585,7 @@ flowchart TD
 | `gemini_chat_model` or `gemini_embedding_model` unset in `system_configs` | `ChatOrchestrator` does not raise: it falls back to the `model_name` argument (`"gemini-2.5-flash"`) and to `"text-embedding-004"` for embeddings. |
 | Book not found (non-global request) | `ChatOrchestrator` does not validate `book_id` — `BooksRepository.get(book_id)` returning `None` just leaves `ctx.book = None`, and downstream code (e.g. `_build_human_message`) already guards on `ctx.book` truthiness, so the turn proceeds without a book-context block rather than erroring with a 404. |
 | Gemini returns 429 / `RESOURCE_EXHAUSTED` | `POST /api/chat/` maps it to `HTTPException(429, t("errors.system_busy"))` before the generic 500 branch. `/stream` has no such special case — every non-`ValueError` becomes the generic `t("errors.system_busy_generic")` SSE error, followed by a `record_book_error(..., "chat_stream")` attempt. |
-| `analyze_query_signals` fails (any exception, including exceeding 3 model turns without final JSON — `ValueError("Too many tool call iterations in query analysis")`) | `ChatOrchestrator` calls it directly with no wrapping fallback; the exception propagates out of `stream_response` and surfaces as the generic SSE error (or the generic 500 on `POST /api/chat/`). |
+| `analyze_query_signals` fails (any exception, including exceeding 3 model turns without final JSON — `ValueError("Too many tool call iterations in query analysis")` — or a `json.JSONDecodeError`) | `ChatOrchestrator` wraps the call in a try/except: logs a warning and proceeds with `signals={}` (so `intent` falls back to `"open"` and `build_retrieval_agent` gets no signal hints) rather than propagating — the turn still completes. Covered by `test_stream_response_tolerates_analyze_query_signals_failure`. |
 | `rerank_context` raises (call error, no JSON array, malformed JSON, non-list, out-of-range index) | `ChatOrchestrator` logs a warning and falls back to `_grade_context(observations, max_chunks=rag_top_k)` — same return shape, no user-visible change. Covered by `test_stream_response_falls_back_to_grade_context_when_reranker_fails`. |
 | Reranker judged 0 of N candidates relevant | Not treated as an error: pad back to `MIN_CHUNKS_AFTER_GRADING` (3) by original score. A partial selection (e.g. 2 of 3) is respected as-is. |
 | Vector search with the strict threshold returns nothing | Automatically retried with `threshold=0.0` (same scope and shape). |
@@ -653,7 +677,7 @@ All chat routes are mounted at `/api/chat` (`services/backend/main.py`), `questi
 
 Backend-core service/handler tests (`packages/backend-core/tests/app/services/`):
 
-- `test_adk_orchestrator.py` — the `ChatOrchestrator` suite: `test_chat_request_dto_immutability`, `test_build_agents`, `test_orchestrator_initialization`, `test_stream_response_builds_query_context_and_persists_turn`, `test_stream_response_reader_mode_sends_context_block_to_retrieval_agent`, `test_stream_response_yields_streaming_chunks_with_sse_run_config`, `test_stream_response_enqueues_rag_eval_job_when_scoring_enabled`, `test_stream_response_skips_rag_eval_job_when_scoring_disabled`, `test_stream_response_uses_reranker_when_enabled`, `test_stream_response_uses_grade_context_when_reranker_disabled`, `test_stream_response_falls_back_to_grade_context_when_reranker_fails`, `test_stream_response_exact_phrase_uses_configured_rag_keyword_top_k`, `test_stream_response_page_finding_exact_phrase_yields_page_hits_and_skips_answer_agent`, `test_stream_response_non_page_finding_exact_phrase_still_synthesizes_answer`, `test_answer_concatenates_chunks_and_returns_done_metadata` (the non-streaming `answer()` wrapper).
+- `test_adk_orchestrator.py` — the `ChatOrchestrator` suite: `test_chat_request_dto_immutability`, `test_build_agents`, `test_knowledge_graph_tool_not_offered`, `test_lookup_synonyms_tool_included`, `test_orchestrator_initialization`, `test_stream_response_builds_query_context_and_persists_turn`, `test_stream_response_reader_mode_sends_context_block_to_retrieval_agent`, `test_stream_response_yields_streaming_chunks_with_sse_run_config`, `test_stream_response_tolerates_analyze_query_signals_failure` (regression: `analyze_query_signals` raising must not fail the turn), `test_stream_response_enqueues_rag_eval_job_when_scoring_enabled`, `test_stream_response_skips_rag_eval_job_when_scoring_disabled`, `test_stream_response_uses_reranker_when_enabled`, `test_stream_response_uses_grade_context_when_reranker_disabled`, `test_stream_response_falls_back_to_grade_context_when_reranker_fails`, `test_stream_response_exact_phrase_uses_configured_rag_keyword_top_k`, `test_stream_response_page_finding_exact_phrase_yields_page_hits_and_skips_answer_agent`, `test_stream_response_non_page_finding_exact_phrase_still_synthesizes_answer`, `test_answer_concatenates_chunks_and_returns_done_metadata` (the non-streaming `answer()` wrapper), `test_answer_falls_back_to_page_hits_text_when_no_chunks` (regression: `answer()` must also accumulate text from `page_hits` events, not just `chunk` events).
 - `chat_exact_phrase_test.py` — `chat/exact_phrase.py` in isolation: `test_run_exact_phrase_retrieval_wraps_hits_as_search_chunks_observation`, `test_format_page_hits_shapes_payload`, `test_summarize_page_hits_as_text_no_hits`, `test_summarize_page_hits_as_text_with_hits`.
 - `rag_phrase_intent_test.py` — `phrase_intent.detect_phrase_intent`: plain/quoted (straight, guillemet, curly) detection, multiple quoted phrases, the explicit `exact_phrase` flag, and page-finding phrase classification.
 - `rag_reranker_test.py` — 14 tests over `rerank_context`: ordering, dedup by `(book_id, page)`, no-chunk short-circuit, empty/zero-relevant handling and the `MIN_CHUNKS_AFTER_GRADING` floor, `RERANK_MAX_INPUT_CHUNKS` trimming, the `AGENT_MAX_CONTEXT_CHUNKS` cap, the integer-array `response_schema`, and every raise path (no JSON array, out-of-range index, malformed JSON, trailing commentary).

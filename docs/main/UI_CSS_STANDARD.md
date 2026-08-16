@@ -129,7 +129,7 @@ To be added to `tailwind.config.js` under `theme.extend.boxShadow`.
 
 ## Glass Morphism
 
-`.glass-panel` (defined in `apps/frontend/index.css`) is the standard frosted-surface utility class and is already used across the app (navbar, admin menus, modals, ~24 components).
+`.glass-panel` (defined in `apps/frontend/index.css`) is the standard frosted-surface utility class and is already used across the app (navbar, admin menus, modals, ~28 components), including via the reusable `<GlassPanel>` wrapper component (`apps/frontend/src/components/ui/GlassPanel.tsx`).
 
 | Class | Status | Opacity | Usage |
 |---|---|---|---|
@@ -178,7 +178,7 @@ When ready to implement, make changes in this order — no component files need 
 
 ## Current Inconsistencies to Fix During Migration
 
-Verified against `apps/frontend/src` — arbitrary values remain widespread (over 260 arbitrary font-size classes alone):
+Verified against `apps/frontend/src` — arbitrary values remain widespread (over 250 arbitrary font-size classes alone):
 
 | Issue | Example (current) | Target |
 |---|---|---|

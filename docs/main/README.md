@@ -67,7 +67,7 @@ Kitabim.ai is a monorepo platform for OCR digitization, editorial curation, and 
 - **Backend:** Python 3.13, FastAPI, SQLAlchemy 2.0 (async) + asyncpg
 - **Worker:** ARQ (async Redis queue)
 - **Frontend:** React 19, Vite, TypeScript, Tailwind CSS
-- **AI:** Google Gemini — models are read from `system_configs` at request time, never hardcoded (see [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md#7-gemini-integration-strategy) for current defaults). Built on `google-genai` (direct generation/embeddings) and `google-adk` (both RAG handlers' tool execution).
+- **AI:** Google Gemini — models are read from `system_configs` at request time, never hardcoded (see [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md#7-gemini-integration-strategy) for current defaults). Built on `google-genai` (direct generation/embeddings) and `google-adk` (`ChatOrchestrator`'s retrieval + answer agent tool execution).
 - **Storage:** Google Cloud Storage
 - **Deployment:** Docker Compose on GCP
 

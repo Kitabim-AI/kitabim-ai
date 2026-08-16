@@ -1161,6 +1161,9 @@ async def test_stream_response_non_page_finding_exact_phrase_still_synthesizes_a
     gets an LLM-synthesized answer — but built only from the exact-phrase
     leg, bypassing the ADK retrieval agent's vector+graph tool calls."""
     db_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = []
+    db_session.execute.return_value = mock_result
 
     conv_repo = AsyncMock()
     conv_repo.get_conversation.return_value = None

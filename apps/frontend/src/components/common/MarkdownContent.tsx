@@ -232,9 +232,11 @@ const isTocLine = (line: string) => {
 
 const parseDigitString = (str: string): number | null => {
   if (!str) return null;
-  const normalized = str
+  const clean = str.trim().replace(/^[\s.:\-–—]+|[\s.:\-–—]+$/g, '');
+  const normalized = clean
     .replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x0660))
     .replace(/[\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) - 0x06F0));
+  if (!/^\d+$/.test(normalized)) return null;
   const num = parseInt(normalized, 10);
   return isNaN(num) || num <= 0 ? null : num;
 };
@@ -256,6 +258,10 @@ const extractTocPageNumber = (line: string): number | null => {
 
   const startMatch = clean.match(/^([\d\u0660-\u0669\u06F0-\u06F9]+)/);
   if (startMatch) {
+    const rest = clean.slice(startMatch[0].length);
+    if (/^\s*[.\-:،](?![.\-:،])\s*\D/.test(rest)) {
+      return null;
+    }
     const num = parseDigitString(startMatch[1]);
     if (num !== null) return num;
   }
@@ -265,15 +271,17 @@ const extractTocPageNumber = (line: string): number | null => {
 
 const extractRowPageNumber = (row: string[]): number | null => {
   if (!row || row.length === 0) return null;
-  for (const cell of row) {
-    const num = parseDigitString(cell.trim());
+  for (let idx = row.length - 1; idx >= 0; idx--) {
+    const num = parseDigitString(row[idx]);
     if (num !== null && num > 0 && num < 5000) {
       return num;
     }
   }
-  for (const cell of row) {
-    const num = extractTocPageNumber(cell);
-    if (num !== null) return num;
+  for (let idx = row.length - 1; idx >= 0; idx--) {
+    const num = extractTocPageNumber(row[idx]);
+    if (num !== null && num > 0 && num < 5000) {
+      return num;
+    }
   }
   return null;
 };

@@ -1285,31 +1285,23 @@ and
         },
 ```
 
-- [ ] **Step 2: Verify no code still reads these keys**
+- [x] **Step 2: Verify no code still reads these keys**
 
 Run: `grep -rn "use_deterministic_router\|agent_max_steps\|agent_enough_chunks" --include="*.py" packages/backend-core services/backend services/worker`
 Expected: no output (the `QueryContext.agent_max_steps: int = 6` / `agent_enough_chunks: int = 8` dataclass field declarations in `rag/context.py` are harmless dead fields at this point — deleting them is optional cleanup outside this plan's scope, since nothing constructs `QueryContext` with those kwargs after Task 5 and unused dataclass fields with defaults don't error).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add packages/backend-core/app/db/seeds.py
 git commit -m "chore: remove dead system_configs seeds (use_deterministic_router, agent_max_steps, agent_enough_chunks)"
 ```
 
-- [ ] **Step 4: Check and clean up the live prod table**
+Done in `71b9476`.
 
-This step is manual, against production data — confirm with whoever owns the prod DB before running any `DELETE`. Query the current values first:
+- [x] **Step 4: Check and clean up the live prod table**
 
-```sql
-SELECT key, value, description FROM system_configs
-WHERE key IN (
-  'use_deterministic_router', 'agent_max_steps', 'agent_enough_chunks',
-  'use_adk_chat_v2', 'rag_eval_enabled'
-);
-```
-
-For every row returned, delete it (either via the admin system-configs UI, or `DELETE FROM system_configs WHERE key = '<key>';` per key) once Tasks 1-6 are deployed and confirmed working — deleting the row before the deploy would just make the code fall back to each `get_value(..., default)` call's hardcoded default (harmless), but deleting it only after deploy avoids any window where a rollback would need the row back. `use_deterministic_router`/`agent_max_steps`/`agent_enough_chunks` stop being seeded going forward per Steps 1-3 (via `seeds.py`, which only runs against a fresh/reset database). However, three existing migrations still insert these rows independently of `seeds.py`: `072_add_conversations.sql` seeds `use_adk_chat_v2` with `ON CONFLICT (key) DO UPDATE SET value = 'true'` (re-asserts the row even over a manually-deleted one), `044_eval_status_constraint_and_config_seed.sql` seeds `rag_eval_enabled` with `ON CONFLICT DO NOTHING`, and `052_add_use_deterministic_router_config.sql` seeds `use_deterministic_router` with `ON CONFLICT DO NOTHING`. So on any environment that runs migrations from scratch (not just `seeds.py`), all three rows come back regardless of this step's manual `DELETE` — harmless, since no code reads them anymore, but the manual deletion here won't "stick" for a brand-new database the way this note used to imply.
+Superseded by migration `089_remove_dead_system_configs.sql` (2026-08-15), which deletes these 5 rows plus 6 more found by a full re-audit of every `get_value()`/`get_system_config_timeout()` call site against the live table: `rag_top_k` (renamed to `rag_vector_top_k`), `rag_hybrid_search_enabled` (hybrid-fusion code deleted), `gemini_embedding_model_v2` (fed unused `embedding_v2` columns from migration 035), `gemini_batch_ocr_poll_interval` (never read, not even seeded), `fictional_categories` (feature it described was never implemented), and `use_knowledge_graph_in_chat` (ad hoc admin-UI row, never wired to code). Applied to local dev; still needs to run against prod via `./scripts/run_migration_prod.sh 089` once this is deployed.
 
 Note: none of this needs a schema migration — `system_configs` is a data table, not a schema Task 5/6 changes.
 

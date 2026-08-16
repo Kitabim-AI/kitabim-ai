@@ -25,6 +25,7 @@
    - 3.18 [AI Book Summaries](#318-ai-book-summaries)
    - 3.19 [Contact & Community Engagement](#319-contact--community-engagement)
    - 3.20 [Content Sharing](#320-content-sharing)
+   - 3.21 [AI History Dictionary Extraction](#321-ai-history-dictionary-extraction)
 4. [Scalability & Performance](#4-scalability--performance)
 
 ---
@@ -117,7 +118,8 @@ An administrator has full control over the system.
 | Toggle book visibility | ❌ | ❌ | ✅ | ✅ |
 | View system configuration & circuit breaker status | ❌ | ❌ | ✅ | ✅ |
 | Manage system configuration & circuit breaker control | ❌ | ❌ | ❌ | ✅ |
-| Curate knowledge graph entities (merge/rename/delete) | ❌ | ❌ | ❌ | ✅ |
+| Curate knowledge graph entities (merge/rename/delete/split/unmerge, review queue) | ❌ | ❌ | ❌ | ✅ |
+| Trigger AI history-dictionary extraction & review staged terms | ❌ | ❌ | ❌ | ✅ |
 | Bulk-reset incomplete OCR | ❌ | ❌ | ❌ | ✅ |
 | Delete books | ❌ | ❌ | ❌ | ✅ |
 | Manage users & roles | ❌ | ❌ | ❌ | ✅ |
@@ -354,12 +356,8 @@ The reader includes a spell check panel that can be triggered per-page, showing 
 **REQ-CHAT-001: Per-Book Chat**
 Authenticated users can ask questions about a specific book. The AI assistant answers based on the book's content, citing relevant pages.
 
-**REQ-CHAT-002: Dual Retrieval Architecture**
-The system supports two retrieval strategies for answering questions, selectable globally through an administrator-configurable setting:
-- **Deterministic Router** — a fixed, rule-based decision tree that extracts signals from the question (e.g. references to a specific page, volume, author, or catalog listing) and dispatches to a specialized retrieval path.
-- **LLM-Routed Agent** — a free-form, LLM-driven retrieval loop that autonomously selects from a shared library of tools (chunk search, catalog and author lookup, book summaries, dictionary/proverb/synonym/history/name lookups, Quran search, spelling checks) to construct an answer.
-
-Both strategies present the assistant with a consistent "librarian" persona.
+**REQ-CHAT-002: Agentic Retrieval Pipeline**
+Every chat request is answered by one retrieval pipeline (`ChatOrchestrator`) — there is no administrator-selectable strategy. A single-shot signal-extraction pass first classifies the question's intent and detects exact-phrase/quoted questions, which are answered directly from a keyword-only match without invoking the agent. Otherwise, a free-form, LLM-driven retrieval agent autonomously selects from a shared library of tools (chunk search, catalog and author lookup, book summaries, dictionary/proverb/synonym/history/name lookups, Quran search, spelling checks) to gather evidence, which is then graded and handed to a separate answer-synthesis step. The assistant presents a consistent "librarian" persona throughout.
 
 **REQ-CHAT-003: Uyghur Language Responses**
 The AI assistant always responds in the Uyghur language, regardless of the language of the question.
@@ -376,7 +374,7 @@ For signed-in users, the chat persists conversations server-side rather than onl
 The assistant uses AI-powered semantic search to find relevant content, combining meaning-based (embedding) search with keyword-based matching, for both conceptually relevant and terminologically precise results.
 
 **REQ-CHAT-007: Multi-Part and Comparative Questions**
-The assistant detects when a message contains multiple distinct questions and automatically splits it into sub-questions answered concurrently. It also detects comparison/contrast questions spanning multiple books or entities and answers across the relevant sources.
+The assistant detects when a message contains multiple distinct questions and decomposes it into sub-questions, each addressed with its own tool calls within the same retrieval pass. It also detects comparison/contrast questions spanning multiple books or entities and answers across the relevant sources.
 
 ---
 
@@ -574,6 +572,9 @@ Administrators can trigger knowledge-graph extraction for a specific book, which
 **REQ-GRAPH-003: Entity Curation**
 Administrators can merge duplicate entities, rename entities, and delete incorrect relationships in the knowledge graph to keep it accurate over time.
 
+**REQ-GRAPH-004: Automated Resolution Review, Split, and Unmerge**
+Entity resolution (deduplication) runs automatically as part of graph extraction. Ambiguous merge decisions the algorithm can't resolve with confidence are parked in a review queue for an administrator to approve or reject. Every automatic or admin-approved merge is logged with a pre-merge snapshot, so an administrator can undo (unmerge) any individual merge afterward. Administrators can also split an entity that was incorrectly merged into another.
+
 ---
 
 ### 3.18 AI Book Summaries
@@ -609,6 +610,22 @@ Links to a specific book or a shared chat Q&A conversation render Open Graph pre
 
 ---
 
+### 3.21 AI History Dictionary Extraction
+
+**REQ-HIST-001: Admin-Triggered Extraction**
+Administrators can trigger AI-based extraction of historical terms and entities (people, places, events, terminology) from a specific book's pages. Extraction is a distinct action from Knowledge Graph extraction and does not write directly to the public history dictionary.
+
+**REQ-HIST-002: Staging & Review**
+Extracted terms are held in a staging area pending admin review before publication. Administrators can approve or bulk-approve staged terms, reject individual terms, resolve/merge the individual facts collected for a term, and trigger AI synthesis of a candidate definition from those facts.
+
+**REQ-HIST-003: Batch Extraction Mode**
+For lower-cost, higher-volume extraction, the system can submit the extraction task through the AI provider's asynchronous batch API instead of processing in real time, trading latency for cost. This mode is independently toggleable via system configuration and defaults to off.
+
+**REQ-HIST-004: Feature Flag**
+The history-extraction feature as a whole is toggleable via a system-wide configuration flag (defaulting to enabled), independent of the Knowledge Graph feature flag.
+
+---
+
 ## 4. Scalability & Performance
 
 **REQ-SCALE-001: Target Corpus Size**
@@ -618,7 +635,7 @@ The system must be designed and optimized to handle a digital library of at leas
 To maintain performance at scale, the system must utilize database-level vector indexing (PostgreSQL with pgvector). Similarity calculations for AI chat and semantic search must be performed by the database engine rather than the application tier to ensure sub-second retrieval times across millions of records.
 
 **REQ-SCALE-003: Scoped Retrieval**
-The Global Chat Assistant must narrow the search space to relevant books, categories, or metadata filters before performing vector similarity searches, preventing performance degradation and "noise" from unrelated sections of the library. The Deterministic Router does this via fixed signal-based rules; the LLM-Routed Agent does this by selecting scoping tools (catalog search, author lookup) as part of its retrieval loop.
+The Global Chat Assistant must narrow the search space to relevant books, categories, or metadata filters before performing vector similarity searches, preventing performance degradation and "noise" from unrelated sections of the library. The retrieval agent does this by selecting scoping tools (catalog search, author/title lookup, book-summary search) as part of its tool-calling loop, informed by signals (title/author matches, intent classification) extracted from the question up front.
 
 **REQ-SCALE-004: Chat Response Latency Targets**
 The system should target a total response latency of under **5 seconds** for typical AI chat questions, even with a library of 2,000 books. This includes time for routing, retrieval, and final answer generation.

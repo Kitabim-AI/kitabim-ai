@@ -45,7 +45,7 @@ The backend API and worker are two separate deployable services that share one P
 
 - **Frontend (`apps/frontend`)**
   - React 19 SPA built with Vite, served by Nginx.
-  - Reader UI with real-time book/page milestone polling, curation/spell-check workspace, admin dashboard, and streaming chat UI (renders `planning`, `decompose`, `tool_call`, `grading`, and `chunk` SSE events as they arrive).
+  - Reader UI with real-time book/page milestone polling, curation/spell-check workspace, admin dashboard, and streaming chat UI (renders `planning`, `tool_call`, `agent_thinking`, `grading`, and `chunk` SSE events as they arrive).
   - Home page search is a paginated tab bar (`SearchTabBar`, 11 tabs per page with a More/Back toggle) covering chat, catalog browse, full-text content search, and independent reference lookups — see §6D.
 
 - **Gemini Infrastructure**
@@ -93,7 +93,7 @@ PostgreSQL itself is **not** containerized in local dev — it runs standalone o
 
 ## 5) Data Model
 
-### PostgreSQL (28 tables)
+### PostgreSQL (30 tables)
 
 **`books`**
 - `status`: `pending`, `ocr_processing`, `ocr_done`, `indexing`, `ready`, `error`.
@@ -116,13 +116,16 @@ PostgreSQL itself is **not** containerized in local dev — it runs standalone o
 **`book_summaries`**
 - One LLM-generated summary + `pgvector(3072)` embedding per ready book, used for hierarchical/topic-level book discovery ahead of chunk-level search.
 
-**`batch_ocr_jobs` / `batch_embedding_jobs`**
-- One row per Gemini Batch API submission (`gemini_batch_id`, `status` — `submitting | submitted | running | succeeded | failed | cancelled`, GCS input/output URIs, page/book/chunk ID arrays). Written by `batch_ocr_service.py`/`batch_embedding_service.py` when the corresponding `gemini_batch_*_enabled` system config is on, and updated by the two dedicated poller scanners as Gemini's batch job progresses. Only exist when batch mode has been used at least once — both flags default to `false`.
+**`batch_ocr_jobs` / `batch_embedding_jobs` / `batch_history_extraction_jobs`**
+- One row per Gemini Batch API submission (`gemini_batch_id`, `status` — `submitting | submitted | running | succeeded | failed | cancelled`, GCS input/output URIs, page/book/chunk ID arrays). Written by `batch_ocr_service.py`/`batch_embedding_service.py`/`batch_history_extraction_service.py` when the corresponding `gemini_batch_*_enabled` system config is on, and updated by the three dedicated poller scanners as Gemini's batch job progresses. Only exist when batch mode has been used at least once — all three flags default to `false`.
 
 **`conversations` / `conversation_messages`**
 - Persisted, resumable chat history: one `conversations` row per chat thread (`user_id`, optional `book_id`, `is_global`, `title` auto-derived from the book or first question, soft-deleted via `deleted_at`), and one `conversation_messages` row per turn (`role` — `user`/`model`, `content`, `agent_steps`/`used_book_ids` JSONB, optional `eval_id` linking to `rag_evaluations`). Backed by `ConversationRepository`; only populated for requests served by `ChatOrchestrator` (see §6B).
 
-**Dictionary & reference tables**: `dictionary`, `words`, `synonyms`, `history_dictionary`, `names_dictionary`, `english_uyghur_dictionary`, `proverbs`, `quran` — power the RAG handlers' dedicated dictionary/Quran lookup tools independent of book content.
+**Dictionary & reference tables**: `dictionary`, `words`, `synonyms`, `history_dictionary`, `names_dictionary`, `english_uyghur_dictionary`, `proverbs`, `quran` — power the retrieval agent's dedicated dictionary/Quran lookup tools independent of book content.
+
+**`history_dictionary_staging`**
+- Holds AI-extracted historical terms/facts pending admin review before publication into `history_dictionary`. Populated by `extract_book_history_terms_task` (admin-triggered per book, `history_extraction_service.py`), reviewed via the `/api/admin/history-dictionary/staging/*` endpoints (list, approve, bulk-approve, reject, resolve individual facts, synthesize a definition from collected facts). Gated by the `history_extraction_enabled` system config (default `true`); an optional Gemini Batch API mode (`gemini_batch_history_extraction_enabled`, default `false`) submits extraction as an async batch job instead, polled by `batch_history_poller_scanner`.
 
 **Curation tables**: `page_spell_issues`, `auto_correct_rules` — per-page spell-check findings and reusable OCR auto-correction rules.
 
@@ -131,7 +134,7 @@ PostgreSQL itself is **not** containerized in local dev — it runs standalone o
 **Graph resolution tables**: `graph_resolution_queue` (one row per extracted entity awaiting dedup, claimed by `graph_resolution_scanner`), `graph_resolution_reviews` (ambiguous merge decisions parked for a human admin), `graph_merge_log` (pre-delete snapshot of every merged node + its edges, enabling `unmerge`) — see [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) for the full resolution pipeline.
 
 ### `system_configs` — runtime configuration
-A key/value table (seeded with defaults, editable via the admin dashboard) that drives model selection and pipeline tuning without a redeploy — including `gemini_chat_model`, `gemini_ocr_model`, `gemini_embedding_model`, `gemini_kg_extraction_model`, `gemini_agent_loop_model` (optional override, otherwise falls back to `gemini_chat_model`), `rag_reranker_enabled`, `rag_judge_scoring_enabled`, `knowledge_graph_enabled`, `gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled` (default `false`), and various batch-size/timeout/retention knobs.
+A key/value table (seeded with defaults, editable via the admin dashboard) that drives model selection and pipeline tuning without a redeploy — including `gemini_chat_model`, `gemini_ocr_model`, `gemini_embedding_model`, `gemini_kg_extraction_model`, `gemini_agent_loop_model` (optional override, otherwise falls back to `gemini_chat_model`), `history_extraction_model`, `rag_reranker_enabled`, `rag_judge_scoring_enabled`, `knowledge_graph_enabled`, `history_extraction_enabled`, `gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled` / `gemini_batch_history_extraction_enabled` (default `false`), and various batch-size/timeout/retention knobs.
 
 ### Neo4j (Knowledge Graph)
 Stores only entities and their relationships extracted from book chunks — no `Book`, `Author`, or `Chunk` nodes live in the graph; those stay in PostgreSQL.
@@ -162,7 +165,7 @@ One chat pipeline, `ChatOrchestrator` (`packages/backend-core/app/services/chat/
 
 1. Gets-or-creates a `conversations` row (`ConversationRepository`), deriving a title from the current book or the first ~40 characters of the question. This happens on both endpoints now, including the non-streaming one and first-turn requests — a prior flag-gated design left some requests without conversation persistence (see the note at the end of this section).
 2. Loads the last 6 messages of that conversation as pre-processing context, and runs a single-shot structured Gemini signal-extraction call (`analyze_query_signals`, `chat/query_signals.py`) that classifies intent (`catalog`, `dictionary`, `identity`, `summary`, `relationship`, `passage`, `quran`), pronoun-coreference needs, and volume-shift requests, alongside DB lookups for title/author matches. Only the extracted `intent` is read directly by the orchestrator; the rest feeds the retrieval agent's prompt hints.
-3. Skips retrieval entirely for exact-phrase/quoted questions (`detect_phrase_intent`, `rag/phrase_intent.py`): a keyword-only leg (`chat/exact_phrase.py`) answers directly from `chunks.text_search` matches, rendering page-finding phrasing ("find pages with...") as raw page hits instead of an LLM-synthesized answer.
+3. Skips retrieval entirely for exact-phrase/quoted questions (`detect_phrase_intent`, `rag/phrase_intent.py`): a keyword-only leg (`chat/exact_phrase.py`, via `rag/retrieval.py`'s `exact_phrase_chunk_search` → `ChunksRepository.keyword_search`) answers directly from `pages.text_search` matches, rendering page-finding phrasing ("find pages with...") as raw page hits instead of an LLM-synthesized answer.
 4. Otherwise, builds a **retrieval agent** (`chat/retrieval_agent.py`) — `AGENT_SYSTEM_PROMPT` over all 19 tools (`services/rag/agent/tools.py`: passage search, summary-based book discovery, knowledge-graph lookup, catalog/author/title/volume metadata tools, per-page retrieval, query rewriting, and dictionary/proverb/name/spelling/Quran lookups) — and runs it via an ADK `Runner` backed by a persistent `DatabaseSessionService` (wired in `services/backend/main.py`), streaming `tool_call`/`tool_result`/`agent_thinking` events.
 5. Grades the collected context — by default via an LLM reranker (`rerank_context`, gated by `rag_reranker_enabled`, default `true`) that replaces the relative-score selection with real semantic reranking, falling back to `_grade_context` (`chat/context_grading.py`) if the reranker call fails, times out, or is disabled — then extracts used book IDs with `_extract_used_book_ids`.
 6. Builds a separate, tools-less **answer agent** (`chat/answer_agent.py`) to stream the final answer, using its own citation-instruction prompt (`chat/answer_prompts.py`).
@@ -174,16 +177,20 @@ The REST endpoints `POST/GET /api/chat/conversations`, `GET /api/chat/conversati
 
 ### D) Home Search / Library Discovery
 
-The home page's search box drives a single tab bar (`SearchTabBar`) covering 11 modes, paginated 11-per-page with a More/Back toggle (currently a dormant no-op, since all 11 tabs already fit on the one page): `ask` (routes to RAG chat, §6B), `books` (title/author/category catalog browse), `content` (full-text search over `chunks.text_search` across the whole library), and eight reference-lookup tabs — dictionary, names, history terms, proverbs, synonyms, English↔Uyghur, Quran, and single-word spell-check. Only the active tab's hook performs a live, debounced fetch against its own existing lookup endpoint (dictionary/proverb/Quran/etc. — no LLM involved); the rest are cheap no-ops. The `content` tab is the one exception requiring pagination: `GET /api/books/content-search` (backed by `ChunksRepository.search_content_chunks`, an exact-phrase Postgres full-text match) returns snippet hits paginated for infinite scroll, page size 40 by default (matching, but not read from, the `collection_page_size` system config).
+The home page's search box drives a single tab bar (`SearchTabBar`) covering 11 modes, paginated 11-per-page with a More/Back toggle (currently a dormant no-op, since all 11 tabs already fit on the one page): `ask` (routes to RAG chat, §6B), `books` (title/author/category catalog browse), `content` (full-text search over `pages.text_search` across the whole library), and eight reference-lookup tabs — dictionary, names, history terms, proverbs, synonyms, English↔Uyghur, Quran, and single-word spell-check. Only the active tab's hook performs a live, debounced fetch against its own existing lookup endpoint (dictionary/proverb/Quran/etc. — no LLM involved); the rest are cheap no-ops. The `content` tab is the one exception requiring pagination: `GET /api/books/content-search` (backed by `PagesRepository.search_content_pages`, an exact-phrase Postgres full-text match) returns snippet hits paginated for infinite scroll, page size 40 by default (matching, but not read from, the `collection_page_size` system config).
+
+### E) History Dictionary AI Extraction (admin-triggered)
+
+An administrator can trigger AI-based extraction of historical terms/entities from a specific book's pages (`POST /api/admin/history-dictionary/books/{book_id}/extract-history`). `extract_book_history_terms_task` (`history_extraction_job.py`) reads the book's page text, runs a structured Gemini extraction + fact-classification pass (`history_extraction_service.py`), and stages the results in `history_dictionary_staging` rather than writing directly into the public `history_dictionary` table. An admin then reviews staged candidates — approve, bulk-approve, reject, resolve individual extracted facts, or trigger LLM synthesis of a definition from the collected facts — via `dictionary_staging_service.py` and the `/api/admin/history-dictionary/staging/*` endpoints. The whole feature is gated by `history_extraction_enabled` (default `true`); if `gemini_batch_history_extraction_enabled` is on (default `false`), extraction is instead submitted as a Gemini Batch API job (`batch_history_extraction_jobs` row via `batch_history_extraction_service.py`) and picked up asynchronously by `batch_history_poller_scanner`.
 
 ## 7) Gemini Integration Strategy
-- **`google-genai` SDK** — used for every direct (non-agentic) AI call: the File API for OCR image uploads, OCR text extraction, book summarization, structured knowledge-graph entity/relation extraction (Pydantic schemas), embedding generation, and ChatOrchestrator's signal-extraction and query-rewrite calls.
+- **`google-genai` SDK** — used for every direct (non-agentic) AI call: the File API for OCR image uploads, OCR text extraction, book summarization, structured knowledge-graph entity/relation extraction (Pydantic schemas), history-term extraction and definition synthesis, embedding generation, and ChatOrchestrator's signal-extraction and query-rewrite calls.
 - **Google ADK (`google-adk`)** — used for `ChatOrchestrator`'s two-agent pipeline: a free-form ReAct retrieval `Agent` over the 19-tool registry, and a tool-less answer `Agent` for synthesis, both run through an ADK `Runner`.
 
 ## 8) Reliability & Observability
 - **Idempotency**: jobs use deterministic keys (e.g. `ocr_{book_id}_{page_number}`) so retries and concurrent workers converge on the same result.
 - **Per-page locking**: `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` each wrap their claimed page IDs in a `MultiPageLock` (Redis `SET NX`, namespaced per pipeline stage) so the same page can't be double-processed even if a scanner double-claims it.
-- **Batch job resilience**: `batch_ocr_jobs`/`batch_embedding_jobs` poller scanners enforce a wall-clock timeout (`gemini_batch_*_timeout_hours`, default 24h) and a retry budget (`gemini_batch_*_max_retry_count`, default 3) per job, falling back to marking affected pages failed rather than blocking indefinitely.
+- **Batch job resilience**: `batch_ocr_jobs`/`batch_embedding_jobs` poller scanners enforce a wall-clock timeout (`gemini_batch_*_timeout_hours`, default 24h) and a retry budget (`gemini_batch_*_max_retry_count`, default 3) per job, falling back to marking affected pages failed rather than blocking indefinitely. `batch_history_extraction_jobs`/`batch_history_poller_scanner` reuse the same submit-then-poll shape but do not yet have equivalent timeout/retry-count system configs.
 - **Cleanup**: transient Gemini File API uploads are deleted after each OCR call.
 - **Circuit breakers**: independent breakers protect Redis and each class of Gemini call (text, OCR, embedding) so an outage in one degrades gracefully instead of cascading.
 - **Caching**: Redis caches books, category lists, system configs, RAG query/embedding/rewrite/summary-search results, and stats, each with its own TTL.

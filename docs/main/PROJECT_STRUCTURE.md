@@ -68,7 +68,7 @@ packages/backend-core/app/
 │   ├── prompts.py             # Base prompt templates
 │   └── providers.py           # LLM/storage provider protocols
 ├── db/
-│   ├── models.py               # SQLAlchemy ORM models (28 tables)
+│   ├── models.py               # SQLAlchemy ORM models (30 tables)
 │   ├── session.py               # Async engine/session factory, init/close hooks
 │   ├── seeds.py                   # Default system_configs seeding
 │   └── repositories/               # 17 repository modules, ~one per table, incl. graph_repository.py (Neo4j)
@@ -88,14 +88,20 @@ packages/backend-core/app/
 │   ├── chunking_service.py                # Text cleaning + chunk splitting
 │   ├── batch_embedding_service.py           # Gemini Batch API embedding submission + result polling (feature-flagged)
 │   ├── knowledge_graph_service.py             # Entity/relation extraction orchestration
-│   ├── spell_check_service.py                   # Dictionary-based spell-check
-│   ├── auto_correct_service.py                    # Bulk OCR auto-correction rule application
-│   ├── book_milestone_service.py                   # Milestone transition helpers
-│   ├── storage_service.py                            # GCS / local filesystem storage abstraction
-│   ├── pdf_service.py, docx_service.py                  # PDF/DOCX parsing helpers
+│   ├── entity_resolution_service.py             # Merge/split algorithm (scope-parameterized), used by graph_resolution_job
+│   │                                                and the admin merge/split/unmerge endpoints alike
+│   ├── history_extraction_service.py              # History-term extraction + fact classification/synthesis from book pages
+│   ├── batch_history_extraction_service.py          # Gemini Batch API history-extraction submission + result polling (feature-flagged)
+│   ├── history_fact_utils.py                          # Pure dedup/similarity helpers for extracted history facts (no I/O)
+│   ├── dictionary_staging_service.py                    # Reviews history_dictionary_staging candidates, publishes approvals
+│   ├── spell_check_service.py                             # Dictionary-based spell-check
+│   ├── auto_correct_service.py                              # Bulk OCR auto-correction rule application
+│   ├── book_milestone_service.py                              # Milestone transition helpers
+│   ├── storage_service.py                                       # GCS / local filesystem storage abstraction
+│   ├── pdf_service.py, docx_service.py                             # PDF/DOCX parsing helpers
 │   ├── token_service.py, user_service.py, chat_limit_service.py
-│   ├── rag/                                              # Retrieval primitives + ADK tools shared by the chat pipeline (see below)
-│   └── chat/                                               # ADK-native ChatOrchestrator — the chat pipeline (see below)
+│   ├── rag/                                                         # Retrieval primitives + ADK tools shared by the chat pipeline (see below)
+│   └── chat/                                                          # ADK-native ChatOrchestrator — the chat pipeline (see below)
 ├── utils/
 │   ├── circuit_breaker.py     # Generic Redis-backed CircuitBreaker
 │   ├── rate_limiter.py          # RedisRateLimiter
@@ -112,6 +118,8 @@ app/services/rag/
 ├── context.py                 # QueryContext dataclass — per-request state threaded through tool calls
 ├── answer_builder.py            # Document/format_document/build_instructions (generate_answer_stream is now dead code)
 ├── query_rewriter.py              # Standalone pronoun-resolution helper
+├── judge.py                         # LLM-as-judge scoring (faithfulness/answer_relevance/context_precision),
+│                                        used by rag_eval_job
 ├── retrieval.py                     # vector_search, embed_query, find_books_by_title_in_question,
 │                                        exact_phrase_chunk_search (keyword-only leg)
 ├── phrase_intent.py                    # detect_phrase_intent() — classifies quoted/"Exact phrase" questions
@@ -152,10 +160,12 @@ app/services/chat/
 ```
 services/backend/
 ├── main.py                  # FastAPI app factory, router registration, CORS, rate limiting, /health
-├── api/endpoints/            # One router module per resource (21 files): books, chat, auth, users,
+├── api/endpoints/            # One router module per resource (23 files): books, chat, auth, users,
 │                                 system_configs, stats, contact, spell_check, auto_correct_rules,
 │                                 dictionary, words, synonyms, history_dictionary, names_dictionary,
-│                                 english_uyghur, share, cache, questions, proverbs, quran, ai
+│                                 english_uyghur, share, cache, questions, proverbs, quran, ai,
+│                                 admin_history_dictionary (admin-only history-extraction/staging-review
+│                                 actions), graph_admin (admin-only entity split/unmerge/review-queue actions)
 ├── auth/
 │   ├── dependencies.py         # get_current_user, require_role() dependency factory
 │   ├── jwt_handler.py            # JWT issue/verify, refresh-token rotation
@@ -176,7 +186,7 @@ The worker adds `services/worker/requirements.worker.txt` on top of these two fi
 services/worker/
 ├── worker.py                # ARQ WorkerSettings entrypoint (arq worker.WorkerSettings)
 ├── manual_scan.py             # CLI to trigger a scanner pass on demand
-├── jobs/                        # Per-unit-of-work executors (9)
+├── jobs/                        # Per-unit-of-work executors (10)
 │   ├── ocr_job.py                  # Renders a page, calls Gemini Vision (or submits a batch_ocr_job if gemini_batch_ocr_enabled)
 │   ├── chunking_job.py               # Cleans text, writes chunk rows
 │   ├── embedding_job.py                # Vectorizes chunks (synchronous path; batch path is submitted inline by embedding_scanner)
@@ -185,8 +195,11 @@ services/worker/
 │   ├── summary_job.py                        # Generates + embeds a book summary
 │   ├── knowledge_graph_job.py                  # Extracts entities/relations, writes to Neo4j
 │   ├── graph_resolution_job.py                   # Resolves/merges duplicate graph entities against Neo4j fuzzy-match candidates
+│   ├── history_extraction_job.py                   # Extracts + stages history-dictionary terms/facts for a book (or submits a
+│   │                                                   batch_history_extraction_job if gemini_batch_history_extraction_enabled);
+│   │                                                   admin-triggered, not on a cron schedule
 │   └── rag_eval_job.py                             # Post-turn async judge scoring for rag_evaluations (enqueued by ChatOrchestrator, not a scanner)
-└── scanners/                             # Periodic pollers + the event-driven dispatcher (15)
+└── scanners/                             # Periodic pollers + the event-driven dispatcher (16)
     ├── ocr_scanner.py                        # Leases idle pages, enqueues ocr_job
     ├── batch_ocr_poller_scanner.py              # Polls in-flight batch_ocr_jobs, ingests results when Gemini finishes
     ├── chunking_scanner.py                        # Leases OCR'd pages, enqueues chunking_job
@@ -197,6 +210,7 @@ services/worker/
     ├── summary_scanner.py                                    # Leases ready books, enqueues summary_job
     ├── graph_scanner.py                                        # Leases ready books, enqueues knowledge_graph_job (implemented but NOT wired into WorkerSettings.cron_jobs — see WORKER_DESIGN.md)
     ├── graph_resolution_scanner.py                               # Claims graph_resolution_queue rows, dispatches one graph_resolution_job per scope
+    ├── batch_history_poller_scanner.py                             # Polls in-flight batch_history_extraction_jobs, stages results when Gemini finishes
     ├── event_dispatcher.py                                       # Reacts to pipeline_events for immediate next-step triggering
     ├── gcs_discovery_scanner.py                                    # Discovers books uploaded directly to GCS
     ├── pipeline_driver.py                                            # Coordinates scanner scheduling
@@ -204,7 +218,7 @@ services/worker/
     └── maintenance_scanner.py                                            # Cleans up processed pipeline_events
 ```
 
-14 of these 15 scanners are wired into `WorkerSettings.cron_jobs` — `graph_scanner.py` is the one exception (see [WORKER_DESIGN.md](WORKER_DESIGN.md)). Each scanner uses a fresh `async with async_session_factory()` per page/batch it processes — no session is held or shared across pages within a run. `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` additionally take a Redis `MultiPageLock` (namespaced per stage via a `prefix` argument) around their claimed page IDs as a second line of defense against double-processing.
+15 of these 16 scanners are wired into `WorkerSettings.cron_jobs` — `graph_scanner.py` is the one exception (see [WORKER_DESIGN.md](WORKER_DESIGN.md)). Each scanner uses a fresh `async with async_session_factory()` per page/batch it processes — no session is held or shared across pages within a run. `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` additionally take a Redis `MultiPageLock` (namespaced per stage via a `prefix` argument) around their claimed page IDs as a second line of defense against double-processing.
 
 ---
 
@@ -268,7 +282,7 @@ PDF rendering uses `pdf.js` loaded from a CDN `<script>` tag at runtime (`pdfSer
 - **Database**: PostgreSQL 17 + pgvector (`Vector(3072)` embeddings)
 - **Graph DB**: Neo4j 5.26 (Bolt protocol, Cypher queries)
 - **Queue / cache**: Redis 7 + ARQ
-- **AI stack**: `google-adk` (`google-adk[gcp]==2.5.0` — agent tool orchestration for both RAG handlers) and `google-genai` (direct generation, embeddings, structured extraction)
+- **AI stack**: `google-adk` (`google-adk[gcp]==2.5.0` — agent tool orchestration for `ChatOrchestrator`'s retrieval + answer agents) and `google-genai` (direct generation, embeddings, structured extraction)
 - **Other notable deps**: `pymupdf` (PDF parsing/rendering), `python-jose` (JWT), `slowapi` (rate limiting), `neo4j` (driver), `flashrank`, `tenacity` (retry), `python-docx`
 
 ### Infrastructure
@@ -299,10 +313,10 @@ PDF rendering uses `pdf.js` loaded from a CDN `<script>` tag at runtime (`pdfSer
 | File | Purpose |
 |------|---------|
 | `packages/backend-core/app/core/config.py` | Env-backed `Settings` dataclass. Deliberately holds no AI model names — those live only in `system_configs`. |
-| `packages/backend-core/app/db/models.py` | All 25 SQLAlchemy ORM table definitions. |
+| `packages/backend-core/app/db/models.py` | All 30 SQLAlchemy ORM table definitions. |
 | `packages/backend-core/app/db/repositories/conversation_repository.py` | `ConversationRepository` — CRUD + soft-delete for `conversations`/`conversation_messages`, used only by `ChatOrchestrator`. |
 | `packages/backend-core/app/services/chat/orchestrator.py` | `ChatOrchestrator` — the only chat pipeline; `stream_response()` for `POST /api/chat/stream`, `answer()` for `POST /api/chat/`. |
-| `packages/backend-core/app/services/batch_ocr_service.py` / `batch_embedding_service.py` | Gemini Batch API submission + polling for OCR and embeddings, feature-flagged off by default. |
+| `packages/backend-core/app/services/batch_ocr_service.py` / `batch_embedding_service.py` / `batch_history_extraction_service.py` | Gemini Batch API submission + polling for OCR, embeddings, and history-dictionary extraction, feature-flagged off by default. |
 | `packages/backend-core/app/db/seeds.py` | Default `system_configs` rows, including default model names and pipeline-tuning toggles. |
 | `packages/backend-core/app/llm/models.py` | `ProtectedLLM`/`GeminiEmbeddings` clients wrapping `google-genai`, with per-call-type `CircuitBreaker`s and `RedisRateLimiter`. |
 | `packages/backend-core/app/services/rag/agent/tools.py` | The 19 ADK-callable tool functions used by the retrieval agent. |

@@ -23,7 +23,7 @@ Summary generation is a post-pipeline, book-level (not page-level) stage: once a
 | `embedding` | `vector(3072)`, not null | Embedding of the summary text (`GeminiEmbeddings`, same model as chunk embeddings via `gemini_embedding_model`), used for `summary_search`'s cosine-distance ranking. |
 | `generated_at` | `timestamptz`, default/server-default `now()` | Set on every insert and on every `upsert` (both the initial write and any regeneration). |
 
-`packages/backend-core/app/db/models.py`'s `BookSummary` model has only these four columns today. Two staging columns (`summary_v1`, `embedding_draft`) existed briefly for a resample/cutover migration (`039_summary_v1_backfill.sql` → `040_summary_embedding_cutover.sql`) and were dropped once the cutover completed; `BookSummariesRepository.upsert_draft()` (targets the now-dropped `embedding_draft` column) is dead code left over from that migration and is not called by `summary_job.py`, which uses `upsert()` exclusively.
+`packages/backend-core/app/db/models.py`'s `BookSummary` model has only these four columns today. Two staging columns (`summary_v1`, `embedding_draft`) existed briefly for a resample/cutover migration (`039_summary_v1_backfill.sql` → `040_summary_embedding_cutover.sql`) and were dropped once the cutover completed; `BookSummariesRepository` no longer has an `upsert_draft()` method (it targeted the now-dropped `embedding_draft` column) — it has been removed, and `summary_job.py` uses `upsert()` exclusively.
 
 ## Architecture
 
