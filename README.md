@@ -45,9 +45,7 @@ Uyghur literature and historical publications exist overwhelmingly in physical f
 - **Smart Chunking & Embeddings**: Overlapping window chunking stored with `pgvector` similarity indexes using Gemini Embedding v2.
 
 ### 🤖 Agentic RAG & Natural Language QA
-- **Dual Query Pipelines**:
-  - **`ChatOrchestrator`**: Persistent conversation history, query analysis, ADK Retrieval Agent (19 tools), context reranking, context grading, and ADK Answer Agent with streaming SSE output.
-  - **`RAGService` / `HandlerRegistry`**: Configurable router supporting `DeterministicRAGHandler` (Google ADK Workflow graph with 10 path selection nodes) and `LLMRoutedRAGHandler` (ADK ReAct reasoning loop).
+- **`ChatOrchestrator`** (the only chat pipeline): Persistent conversation history, query-signal analysis, ADK Retrieval Agent (19 tools), context reranking / context grading, and ADK Answer Agent with streaming SSE output.
 - **Hybrid Retrieval**: `pgvector` semantic search fused with PostgreSQL full-text keyword search via Reciprocal Rank Fusion (`rag_hybrid_search_enabled`), followed by an LLM-based reranking pass (`rag_reranker_enabled`) before context grading.
 - **19 Specialized ADK Tools**: Includes passage search, summary search, title/author matching, catalog lookup, current reader page text, sister volume discovery, Uyghur dictionary lookups, scripture (Quran) vector search, and post-vector knowledge graph entity lookup.
 - **Fine-Grained Citations**: Answers cite `ref:book_id:page_number` inline immediately after the relevant sentence (with multi-page and Quran surah:ayah variants), not just at the book level.
@@ -63,8 +61,12 @@ Uyghur literature and historical publications exist overwhelmingly in physical f
 - **Bulk OCR Auto-Correction**: Scheduled daily job (`auto_correct_scanner`) applying auto-correction rules across processed pages.
 - **Interactive Reader & Curation UI**: Modern React 19 SPA with PDF viewer, in-reader query assistant, spellcheck review workspace, and admin analytics panel.
 
+### 📚 AI-Driven History Dictionary Extraction
+- **Gemini-Powered Fact Extraction**: Extracts structured Uyghur history-dictionary entries from book content (interactive and Gemini Batch API modes, `batch_history_poller_scanner` / `history_extraction_job`).
+- **Admin Review & Staging Workflow**: Extracted entries land in a staging queue for admin approval/conflict-resolution before merging into the live `history_dictionary` table (`admin_history_dictionary_router`, `history_dictionary_router`).
+
 ### 🔐 User Management & Access Control
-- **OAuth2 & JWT Authentication**: Support for Google, Facebook, and Twitter/X login with secure `httpOnly` cookies.
+- **OAuth2 & JWT Authentication**: Support for Google, Facebook, Twitter/X, and Instagram login with secure `httpOnly` cookies.
 - **Role Hierarchy**: Strict role-based access control (**Admin**, **Editor**, **Reader**, **Guest**).
 
 ---
@@ -86,7 +88,7 @@ flowchart LR
   DB -.->|pipeline_events poll| WK
   BE <-->|PDFs / covers| GCS[(Google Cloud Storage / Local)]
   WK <-->|PDFs / covers| GCS
-  BE <-->|L0-L3 Cache| CACHE[(Redis Cache)]
+  BE <-->|L0-L2 Cache| CACHE[(Redis Cache)]
   BE --> N4J[(Neo4j<br/>Knowledge Graph)]
   WK --> N4J
 ```
@@ -155,28 +157,18 @@ flowchart TD
 
 ### Agentic RAG Question Answering Pipeline
 
-Question answering supports both `ChatOrchestrator` (persistent multi-turn conversations) and `RAGService` (handler-registry architecture).
+Question answering is served entirely by `ChatOrchestrator` — the single pipeline behind both `POST /api/chat/` and `POST /api/chat/stream`.
 
 ```mermaid
 flowchart TD
-    Q(["User Question + Context"]) --> ROUTE{"Has conversationId or<br/>use_adk_chat_v2?"}
-
-    ROUTE -- Yes (Streaming Default) --> ORCH["ChatOrchestrator Pipeline"]
+    Q(["User Question + Context"]) --> ORCH["ChatOrchestrator"]
     ORCH --> RET_AGENT["[LLM] KitabimRetrievalAgent<br/>(Google ADK + 19 Tools)"]
     RET_AGENT --> RERANK{"rag_reranker_enabled?"}
     RERANK -- Yes --> RR["LLM Reranker"]
-    RERANK -- No --> GRADE1["Context Grading"]
-    RR --> GRADE1
-    GRADE1 --> ANS_AGENT["[LLM] KitabimAnswerAgent<br/>(Streaming Answer Synthesis)"]
+    RERANK -- No --> GRADE["Context Grading"]
+    RR --> ANS_AGENT
+    GRADE --> ANS_AGENT["[LLM] KitabimAnswerAgent<br/>(Streaming Answer Synthesis)"]
     ANS_AGENT --> SAVE["Save Turn & Enqueue Evaluation"]
-
-    ROUTE -- No --> REG["RAGService / HandlerRegistry"]
-    REG --> DET_CHECK{"use_deterministic_router?"}
-    DET_CHECK -- Yes --> DET["DeterministicRAGHandler<br/>(ADK Workflow Graph - 10 Nodes)"]
-    DET_CHECK -- No --> LLM_RAG["LLMRoutedRAGHandler<br/>(ADK ReAct Loop + 19 Tools)"]
-    DET --> GRADE2["Context Grading & Synthesis"]
-    LLM_RAG --> GRADE2
-    GRADE2 --> STREAM["Stream Response"]
 ```
 
 ### Knowledge Graph & Entity Resolution
@@ -197,7 +189,7 @@ kitabim-ai/
 │   └── shared/                # Generated OpenAPI TypeScript types (npm workspace package)
 ├── services/
 │   ├── backend/                # FastAPI HTTP API (routes, auth, middleware)
-│   └── worker/                 # ARQ background processing worker (14 scanners, 9 jobs)
+│   └── worker/                 # ARQ background processing worker (16 scanners, 10 jobs)
 ├── deploy/
 │   ├── local/                 # Local Docker Compose rebuild & execution scripts
 │   └── gcp/                    # Production GCP infrastructure & deployment scripts
@@ -212,10 +204,10 @@ kitabim-ai/
 ### Core Package Breakdown (`packages/backend-core/app/`)
 
 - **`core/`**: Environment configurations (`config.py`), cache templates (`cache_config.py`), pipeline state constants (`pipeline.py`), character personas (`characters.py`), and i18n (`i18n.py`).
-- **`db/`**: SQLAlchemy models (`models.py` — 25 PostgreSQL tables), database engine factory (`session.py`), system configuration seeds (`seeds.py`), and 17 repository classes in `db/repositories/`.
+- **`db/`**: SQLAlchemy models (`models.py` — 30 PostgreSQL tables), database engine factory (`session.py`), system configuration seeds (`seeds.py`), and 18 repository classes in `db/repositories/`.
 - **`llm/`**: `GeminiLLM` client, `TextChain` / `StructuredChain` wrappers, Redis rate limiting, and circuit breaker resilience.
 - **`services/`**: Core business services including OCR, chunking, embeddings, spell-check, auto-correction, summary generation, storage abstraction, and sub-packages:
-  - **`services/rag/`**: `RAGService`, `HandlerRegistry`, `DeterministicRAGHandler`, `LLMRoutedRAGHandler`, `graph_router.py` (10-node ADK Workflow), retrieval engine (`retrieval.py`), context grading, answer builder, and 19 ADK tools (`rag/agent/tools.py`).
+  - **`services/rag/`**: Shared retrieval primitives used by `ChatOrchestrator` — no handlers. Retrieval engine (`retrieval.py`), `QueryContext`, the 19 ADK tools (`rag/agent/tools.py`), the LLM reranker, and other tool-implementation helpers.
   - **`services/chat/`**: `ChatOrchestrator`, `KitabimRetrievalAgent`, `KitabimAnswerAgent`, conversation state management (`history.py`), and context builders.
 
 ---
@@ -225,14 +217,14 @@ kitabim-ai/
 | Layer | Technologies Used |
 |---|---|
 | **Frontend** | React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons, PDF.js |
-| **Backend API** | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy (Async IO) |
-| **Worker / Queue** | Python 3.11+, ARQ (Async Redis Queue) |
+| **Backend API** | Python 3.13, FastAPI, Pydantic v2, SQLAlchemy (Async IO) |
+| **Worker / Queue** | Python 3.13, ARQ (Async Redis Queue) |
 | **Relational Database** | PostgreSQL 16+ with `pgvector` extension (Vector Similarity Search) |
 | **Graph Database** | Neo4j 5+ (Cypher Graph Database for GraphRAG) |
 | **Cache & Locking** | Redis (L0-L3 Query Caching, Distributed `MultiPageLock`, Rate Limiting) |
 | **Storage** | Google Cloud Storage (GCS) with local `./data/` volume fallback |
 | **AI & LLM Frameworks** | Google Gemini API (`google-genai` SDK), Google ADK (`google-adk` framework) |
-| **Authentication** | JWT (httpOnly Cookies) + OAuth2 (Google, Facebook, Twitter/X) |
+| **Authentication** | JWT (httpOnly Cookies) + OAuth2 (Google, Facebook, Twitter/X, Instagram) |
 
 ---
 
@@ -255,13 +247,10 @@ cp .env.template .env
 Ensure `.env` contains at minimum:
 ```env
 GEMINI_API_KEY=your_actual_gemini_api_key
-POSTGRES_DB=kitabim
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_HOST=host.docker.internal
-POSTGRES_PORT=5432
+DATABASE_URL=postgresql://kitabim:kitabim@host.docker.internal:5432/kitabim-ai
 REDIS_URL=redis://redis:6379/0
 ```
+> Note: the app reads a single `DATABASE_URL` connection string (see `packages/backend-core/app/core/config.py`), not separate `POSTGRES_*` vars. `docker-compose.yml` overrides `DATABASE_URL`/`REDIS_URL` for the `backend` and `worker` containers regardless of what's in `.env`.
 
 ### Running with Docker Compose
 
@@ -333,7 +322,7 @@ Detailed architectural specs, milestone state machine details, and stage documen
 | [**`EMBEDDING_DESIGN.md`**](docs/main/EMBEDDING_DESIGN.md) | Vector embeddings, pgvector indexing, and batch embedding mode |
 | [**`SPELLCHECK_DESIGN.md`**](docs/main/SPELLCHECK_DESIGN.md) | Uyghur dictionary spell-checking and auto-correction engine |
 | [**`SUMMARY_DESIGN.md`**](docs/main/SUMMARY_DESIGN.md) | Book-level summary generation for RAG book selection |
-| [**`CHAT_RAG_DESIGN.md`**](docs/main/CHAT_RAG_DESIGN.md) | ChatOrchestrator, RAGService, 19 ADK tools, reranking, and evaluation |
+| [**`CHAT_RAG_DESIGN.md`**](docs/main/CHAT_RAG_DESIGN.md) | ChatOrchestrator, 19 ADK tools, reranking, and evaluation |
 | [**`KNOWLEDGE_GRAPH_DESIGN.md`**](docs/main/KNOWLEDGE_GRAPH_DESIGN.md) | Neo4j GraphRAG entity extraction and scheduled entity resolution |
 | [**`PROJECT_STRUCTURE.md`**](docs/main/PROJECT_STRUCTURE.md) | Directory structure map, module responsibilities, and key files |
 | [**`REQUIREMENTS.md`**](docs/main/REQUIREMENTS.md) | Business functional requirements and user role permission matrix |

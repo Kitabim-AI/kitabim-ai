@@ -39,3 +39,15 @@ def test_fix_malformed_citations_quran():
     text_standalone = "بۇ ھەقتە ref:quran:2:255 نى كۆرۈڭ."
     expected_standalone = "بۇ ھەقتە [مەنبە](ref:quran:2:255) نى كۆرۈڭ."
     assert fix_malformed_citations(text_standalone) == expected_standalone
+
+
+def test_fix_malformed_citations_knowledge_graph():
+    # Test unformatted raw English Knowledge Graph citation
+    text_raw = "مەنبە: Knowledge Graph, 99-بەت"
+    expected_raw = "مەنبە: [بىلىم گىرافى، 99-بەت](ref:graph:knowledge_graph:99)"
+    assert fix_malformed_citations(text_raw) == expected_raw
+
+    # Test Knowledge Graph inside link label
+    text_link = "مەنبە: [Knowledge Graph, 99-بەت](ref:book123:99)"
+    expected_link = "مەنبە: [بىلىم گىرافى، 99-بەت](ref:book123:99)"
+    assert fix_malformed_citations(text_link) == expected_link

@@ -2214,6 +2214,71 @@
         }
       }
     },
+    "/api/books/{book_id}/pages/{page_num}/toc": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Set Page Toc",
+        "description": "Manually mark or unmark a page as a Table of Contents page",
+        "operationId": "set_page_toc_api_books__book_id__pages__page_num__toc_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Num"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageTocUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/admin/bulk-reset-incomplete-ocr": {
       "post": {
         "tags": [
@@ -2444,7 +2509,7 @@
           "chat"
         ],
         "summary": "Chat With Book Api",
-        "description": "Chat with book using RAG with SQLAlchemy and role-based daily limits",
+        "description": "Chat with book using the ADK chat orchestrator with role-based daily limits",
         "operationId": "chat_with_book_api_api_chat__post",
         "requestBody": {
           "content": {
@@ -5104,9 +5169,110 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "history-dictionary"
+        ],
+        "summary": "Create History Entry",
+        "description": "Create a new live history dictionary entry (Admin only).",
+        "operationId": "create_history_entry_api_history_dictionary_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistoryEntryCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryEntryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/history-dictionary/{entry_id}": {
+      "patch": {
+        "tags": [
+          "history-dictionary"
+        ],
+        "summary": "Update History Entry",
+        "description": "Update transliteration/definition of a live history dictionary entry (Admin only).",
+        "operationId": "update_history_entry_api_history_dictionary__entry_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistoryEntryUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryEntryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "history-dictionary"
@@ -7401,6 +7567,11 @@
             ],
             "title": "Volume"
           },
+          "contentPageOffset": {
+            "type": "integer",
+            "title": "Contentpageoffset",
+            "default": 0
+          },
           "totalPages": {
             "type": "integer",
             "title": "Totalpages"
@@ -8303,6 +8474,28 @@
             "type": "integer",
             "title": "Pagenumber"
           },
+          "contentPageNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contentpagenumber"
+          },
+          "displayPageNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displaypagenumber"
+          },
           "text": {
             "anyOf": [
               {
@@ -8408,6 +8601,54 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HistoryEntryCreate": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "title": "Term"
+          },
+          "transliteration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transliteration"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          },
+          "is_ai_generated": {
+            "type": "boolean",
+            "title": "Is Ai Generated",
+            "default": true
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Aliases",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "term"
+        ],
+        "title": "HistoryEntryCreate"
+      },
       "HistoryEntryOut": {
         "properties": {
           "id": {
@@ -8443,6 +8684,19 @@
           "letter_group": {
             "type": "string",
             "title": "Letter Group"
+          },
+          "is_ai_generated": {
+            "type": "boolean",
+            "title": "Is Ai Generated",
+            "default": false
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Aliases",
+            "default": []
           }
         },
         "type": "object",
@@ -8452,6 +8706,59 @@
           "letter_group"
         ],
         "title": "HistoryEntryOut"
+      },
+      "HistoryEntryUpdate": {
+        "properties": {
+          "transliteration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transliteration"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          },
+          "is_ai_generated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Ai Generated"
+          },
+          "aliases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aliases"
+          }
+        },
+        "type": "object",
+        "title": "HistoryEntryUpdate"
       },
       "HistoryStatsOut": {
         "properties": {
@@ -8683,6 +8990,20 @@
           "count"
         ],
         "title": "PageStatusCount"
+      },
+      "PageTocUpdate": {
+        "properties": {
+          "isToc": {
+            "type": "boolean",
+            "title": "Istoc"
+          }
+        },
+        "type": "object",
+        "required": [
+          "isToc"
+        ],
+        "title": "PageTocUpdate",
+        "description": "Request body for manually marking/unmarking a page as ToC"
       },
       "PaginatedBooks": {
         "properties": {

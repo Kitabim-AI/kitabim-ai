@@ -76,6 +76,7 @@
     "volume_label": "{volume}-توم",
     "volume_unknown": "توم ئۇچۇرى يوق",
     "pages_suffix": "، {pages} بەت",
-    "followup_context_prefix": "[ئالدىنقى جاۋاب: {context}]"
+    "followup_context_prefix": "[ئالدىنقى جاۋاب: {context}]",
+    "knowledge_graph_title": "بىلىم گىرافى"
   }
 }

@@ -610,7 +610,9 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
         except ValueError:
             rag_graph_top_k = 10
 
-        graph_results = await graph_entity_lookup(query, top_k=rag_graph_top_k)
+        graph_results = await graph_entity_lookup(
+            query, top_k=rag_graph_top_k, session=ctx.session
+        )
         if graph_results:
             results = [*results, *graph_results]
     except Exception as exc:

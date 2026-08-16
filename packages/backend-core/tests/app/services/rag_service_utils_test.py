@@ -101,27 +101,8 @@ async def test_build_catalog_context_title_match():
     assert count == 1
 
 
-def test_detect_intent():
-    from app.services.rag.agent.llm_routed_handler import _detect_intent
-    from app.services.rag.context import QueryContext
-
-    ctx = MagicMock(spec=QueryContext)
-    ctx.current_page = None
-
-    questions = [
-        "ئانا يۇرت رومانىنىڭ ئاپتورى كىم؟",
-        "ئانا يۇرت رومانى كىمنىڭ؟",
-        "ئانا يۇرت رومانىنى كىم يازغان؟",
-        "ئانا يۇرت رومانى قايسى داڭلىق يازغۇچىنىڭ؟",
-        "ئانا يۇرت كىمنىڭ؟",
-        "ئانا يۇرتنىڭ ئاپتورى كىم؟",
-    ]
-    for q in questions:
-        assert _detect_intent(q, ctx) == "content_search"
-
-
 def test_grade_context_local_grading():
-    from app.services.rag.agent.llm_routed_handler import _grade_context
+    from app.services.chat.context_grading import _grade_context
 
     # Simulate two search calls.
     # Search A: high similarity scores (e.g. 0.95, 0.90) -> top_score = 0.95, floor = 0.8075 (keeps both)

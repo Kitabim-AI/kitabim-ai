@@ -151,5 +151,31 @@ I. ها ... II. زە ... III. ئو ... - roman - لۇئان — يېقىنقى �
 
     expect(screen.getByRole('button', { name: /مۇقەددىمە/ })).toBeInTheDocument();
   });
+
+  it('correctly extracts page number 28 instead of section number 9 from table row "| 9 . قېرىنداش ۋە ئويۇن | 28 |"', () => {
+    const onTocPageClick = vi.fn();
+    const sectionPrefixedTableToc = `
+# مۇندەرىجە
+
+| 9 . قېرىنداش ۋە ئويۇن | 28 |
+`;
+    render(
+      <MarkdownContent
+        content={sectionPrefixedTableToc}
+        contentPageOffset={10}
+        onTocPageClick={onTocPageClick}
+      />
+    );
+
+    const rowText = screen.getByText(/قېرىنداش ۋە ئويۇن/);
+    expect(rowText).toBeInTheDocument();
+
+    const rowTr = rowText.closest('tr');
+    expect(rowTr).not.toBeNull();
+    fireEvent.click(rowTr!);
+
+    // Should navigate to page 28 + 10 (offset) = 38, NOT 9 + 10 = 19
+    expect(onTocPageClick).toHaveBeenCalledWith(38);
+  });
 });
 

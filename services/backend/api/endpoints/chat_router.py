@@ -8,13 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from app.db.repositories.conversation_repository import ConversationRepository
-from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.session import get_session
 from app.models.schemas import ChatRequest, ChatResponse, ChatUsageStatus
 from app.models.user import User
 from app.services.chat.context import ChatRequestDTO
 from app.services.chat.orchestrator import ChatOrchestrator
-from app.services.rag_service import get_rag_service, RAGService
 from app.services.chat_limit_service import chat_limit_service
 from app.utils.errors import record_book_error
 from app.utils.observability import log_json
@@ -38,11 +36,11 @@ async def get_chat_usage(
 @router.post("/", response_model=ChatResponse)
 async def chat_with_book_api(
     req: ChatRequest,
+    request: Request,
     current_user: User = Depends(require_reader),
     session: AsyncSession = Depends(get_session),
-    rag_service: RAGService = Depends(get_rag_service),
 ):
-    """Chat with book using RAG with SQLAlchemy and role-based daily limits"""
+    """Chat with book using the ADK chat orchestrator with role-based daily limits"""
     log_json(
         logger,
         logging.INFO,
@@ -65,13 +63,25 @@ async def chat_with_book_api(
         raise HTTPException(status_code=429, detail=t("errors.daily_limit_reached"))
 
     try:
-        # 2. Process chat request
-        answer = await rag_service.answer_question(
-            req, session, user_id=current_user.id
+        # 2. Process chat request via the ADK orchestrator
+        is_global = req.is_global or req.book_id == "global"
+        dto = ChatRequestDTO(
+            question=req.question,
+            user_id=current_user.id,
+            book_id=req.book_id,
+            is_global=is_global,
+            current_page=req.current_page,
+            character_id=req.character_id,
+            conversation_id=req.conversation_id,
+            context_book_ids=req.context_book_ids,
+            exact_phrase=req.exact_phrase,
         )
+        adk_session_service = getattr(request.app.state, "adk_session_service", None)
+        orchestrator = ChatOrchestrator(session_service=adk_session_service)
+        result = await orchestrator.answer(dto, session)
 
         # 2.5. Fix malformed citation references
-        answer = fix_malformed_citations(answer)
+        answer = fix_malformed_citations(result["answer"])
 
         # 3. Increment usage on successful answer
         await chat_limit_service.increment_usage(current_user, session)
@@ -107,7 +117,6 @@ async def chat_with_book_stream(
     request: Request,
     current_user: User = Depends(require_reader),
     session: AsyncSession = Depends(get_session),
-    rag_service: RAGService = Depends(get_rag_service),
 ):
     """Stream chat responses using Server-Sent Events (SSE)"""
     log_json(
@@ -138,91 +147,43 @@ async def chat_with_book_stream(
 
     async def event_generator():
         try:
-            config_repo = SystemConfigsRepository(session)
-            config_value = await config_repo.get_value("use_adk_chat_v2")
-            use_v2 = (config_value == "true") or bool(req.conversation_id)
+            adk_session_service = getattr(
+                request.app.state, "adk_session_service", None
+            )
+            orchestrator = ChatOrchestrator(session_service=adk_session_service)
 
-            if use_v2:
-                adk_session_service = getattr(
-                    request.app.state, "adk_session_service", None
-                )
-                orchestrator = ChatOrchestrator(session_service=adk_session_service)
-
-                is_global = req.is_global or req.book_id == "global"
-                dto = ChatRequestDTO(
-                    question=req.question,
-                    user_id=current_user.id,
-                    book_id=req.book_id,
-                    is_global=is_global,
-                    current_page=req.current_page,
-                    character_id=req.character_id,
-                    conversation_id=req.conversation_id,
-                    context_book_ids=req.context_book_ids,
-                    exact_phrase=req.exact_phrase,
-                )
-
-                async for event in orchestrator.stream_response(dto, session):
-                    if isinstance(event, dict):
-                        if event.get("type") == "chunk":
-                            yield f"data: {json.dumps({'chunk': event['text']})}\n\n"
-                        elif event.get("type") == "done":
-                            await chat_limit_service.increment_usage(
-                                current_user, session
-                            )
-                            updated_usage = (
-                                await chat_limit_service.get_user_usage_status(
-                                    current_user, session
-                                )
-                            )
-                            done_payload = {
-                                "done": True,
-                                "usage": updated_usage,
-                                "conversationId": event.get("conversation_id"),
-                                "contextBookIds": event.get("used_book_ids", []),
-                                "evalId": event.get("eval_id"),
-                            }
-                            yield f"data: {json.dumps(done_payload)}\n\n"
-                        else:
-                            yield f"data: {json.dumps(event)}\n\n"
-                return
-
-            accumulated_response = ""
-            stream_meta: dict = {}
-            # Stream events from RAG service.
-            async for event in rag_service.answer_question_stream(
-                req, session, user_id=current_user.id, metadata_out=stream_meta
-            ):
-                if isinstance(event, str):
-                    accumulated_response += event
-                    yield f"data: {json.dumps({'chunk': event})}\n\n"
-                elif isinstance(event, dict):
-                    if event.get("type") == "chunk":
-                        accumulated_response += event.get("text", "")
-                        yield f"data: {json.dumps({'chunk': event['text']})}\n\n"
-                    elif event.get("type") == "answer_start":
-                        accumulated_response = ""
-                        yield f"data: {json.dumps(event)}\n\n"
-                    else:
-                        yield f"data: {json.dumps(event)}\n\n"
-
-            # After streaming completes, apply citation fixer and send fixed version if needed
-            fixed_response = fix_malformed_citations(accumulated_response)
-            if fixed_response != accumulated_response:
-                log_json(
-                    logger,
-                    logging.INFO,
-                    "Citations were fixed in stream",
-                    user_id=current_user.id,
-                )
-                yield f"data: {json.dumps({'correction': fixed_response})}\n\n"
-
-            # Increment usage on successful stream completion
-            await chat_limit_service.increment_usage(current_user, session)
-            updated_usage = await chat_limit_service.get_user_usage_status(
-                current_user, session
+            is_global = req.is_global or req.book_id == "global"
+            dto = ChatRequestDTO(
+                question=req.question,
+                user_id=current_user.id,
+                book_id=req.book_id,
+                is_global=is_global,
+                current_page=req.current_page,
+                character_id=req.character_id,
+                conversation_id=req.conversation_id,
+                context_book_ids=req.context_book_ids,
+                exact_phrase=req.exact_phrase,
             )
 
-            yield f"data: {json.dumps({'done': True, 'usage': updated_usage, 'contextBookIds': stream_meta.get('used_book_ids', []), 'evalId': stream_meta.get('eval_id')})}\n\n"
+            async for event in orchestrator.stream_response(dto, session):
+                if isinstance(event, dict):
+                    if event.get("type") == "chunk":
+                        yield f"data: {json.dumps({'chunk': event['text']})}\n\n"
+                    elif event.get("type") == "done":
+                        await chat_limit_service.increment_usage(current_user, session)
+                        updated_usage = await chat_limit_service.get_user_usage_status(
+                            current_user, session
+                        )
+                        done_payload = {
+                            "done": True,
+                            "usage": updated_usage,
+                            "conversationId": event.get("conversation_id"),
+                            "contextBookIds": event.get("used_book_ids", []),
+                            "evalId": event.get("eval_id"),
+                        }
+                        yield f"data: {json.dumps(done_payload)}\n\n"
+                    else:
+                        yield f"data: {json.dumps(event)}\n\n"
 
         except ValueError as exc:
             # Book not found or validation error

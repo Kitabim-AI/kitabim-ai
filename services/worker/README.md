@@ -5,18 +5,18 @@ Runs background jobs (OCR/embedding/RAG processing) from Redis using ARQ.
 ## Run (Dev)
 
 ```bash
-PYTHONPATH=packages/backend-core python -m arq app.worker.WorkerSettings
+PYTHONPATH=packages/backend-core:services/worker arq worker.WorkerSettings
 ```
 
 ## Backend Core Layout
 ```
 /packages/backend-core
   /app
-    /api
-    /services
     /core
     /db
+    /llm
     /models
+    /services
     /utils
 ```
 

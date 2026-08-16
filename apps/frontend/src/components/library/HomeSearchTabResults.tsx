@@ -94,6 +94,7 @@ export const HomeSearchTabResults: React.FC<HomeSearchTabResultsProps> = ({ acti
     secondary: isEditor && (e.volume != null || e.pageNumber != null)
       ? t('home.tabs.proverbVolumePage', { volume: e.volume ?? '-', page: e.pageNumber ?? '-' })
       : undefined,
+    excludeSecondaryOnShare: true,
   });
 
   const trimmedQuery = query.trim();

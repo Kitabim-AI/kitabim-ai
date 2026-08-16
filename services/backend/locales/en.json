@@ -80,6 +80,7 @@
     "exact_phrase_no_matches": "No exact matches found for \"{phrase}\".",
     "exact_phrase_page_hits_header": "Found {count} exact match(es):",
     "exact_phrase_page_hit_line": "{title} — page {page}",
-    "exact_phrase_page_hit_line_no_page": "{title}"
+    "exact_phrase_page_hit_line_no_page": "{title}",
+    "knowledge_graph_title": "Knowledge Graph"
   }
 }

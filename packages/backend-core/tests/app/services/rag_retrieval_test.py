@@ -5,7 +5,7 @@ Hybrid vector+keyword RRF fusion was removed in the keyword-search rework
 with vector results — it runs standalone, only for exact-phrase intent."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.rag.retrieval import exact_phrase_chunk_search
 
@@ -236,3 +236,42 @@ async def test_graph_entity_lookup_respects_top_k():
         hits = await graph_entity_lookup("kitab kitab kitab", top_k=2)
 
         assert len(hits) == 2
+
+
+@pytest.mark.asyncio
+async def test_graph_entity_lookup_resolves_book_title():
+    """Verify graph_entity_lookup resolves book_id to title format «Book Title» (بىلىم گىرافى)."""
+    from app.services.rag.retrieval import graph_entity_lookup
+
+    mock_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = [("book-123", "مۇغۇلىستان تارىخى")]
+    mock_session.execute.return_value = mock_result
+
+    with (
+        patch("app.services.cache_service.cache_service") as mock_cache,
+        patch("app.db.repositories.graph_repository.GraphRepository") as MockGraphRepo,
+    ):
+        graph_repo = AsyncMock()
+        graph_repo.get_entities_facts_for_citation_bulk.return_value = {
+            "e-1": [{"text": "Fact 1", "page": 99, "book_id": "book-123"}],
+        }
+        MockGraphRepo.return_value = graph_repo
+
+        async def mock_get(key):
+            if key.startswith("rag_graph_lookup:"):
+                return None
+            if key.endswith(":mogholistan"):
+                return ["e-1"]
+            return None
+
+        mock_cache.get = AsyncMock(side_effect=mock_get)
+
+        hits = await graph_entity_lookup(
+            "mogholistan mogholistan", top_k=5, session=mock_session
+        )
+
+        assert len(hits) == 1
+        assert hits[0]["book_id"] == "book-123"
+        assert hits[0]["title"] == "«مۇغۇلىستان تارىخى» (بىلىم گىرافى)"
+        assert hits[0]["page"] == 99

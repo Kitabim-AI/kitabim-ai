@@ -15,26 +15,55 @@ class I18n:
 
     @classmethod
     def load_translations(cls):
-        for filename in os.listdir(cls._locales_dir):
+        search_dirs = [
+            cls._locales_dir,
+            os.path.join(
+                os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                ),
+                "services",
+                "backend",
+                "locales",
+            ),
+            os.path.abspath("services/backend/locales"),
+        ]
+        target_dir = None
+        for d in search_dirs:
+            if d and os.path.exists(d) and os.path.isdir(d) and os.listdir(d):
+                target_dir = d
+                break
+
+        if not target_dir:
+            return
+
+        for filename in os.listdir(target_dir):
             if filename.endswith(".json"):
                 lang = filename[:-5]
                 with open(
-                    os.path.join(cls._locales_dir, filename), "r", encoding="utf-8"
+                    os.path.join(target_dir, filename), "r", encoding="utf-8"
                 ) as f:
                     cls._translations[lang] = json.load(f)
 
     @classmethod
-    def t(cls, key: str, lang: Optional[str] = None, **kwargs) -> str:
+    def t(
+        cls,
+        key: str,
+        lang: Optional[str] = None,
+        default: Optional[str] = None,
+        **kwargs,
+    ) -> str:
+        if not cls._translations:
+            cls.load_translations()
+
         if not lang:
             lang = _current_lang.get()
 
         # Fallback to English if language not found
-        if lang not in cls._translations:
-            lang = "en"
+        target_lang = lang if lang in cls._translations else "en"
 
-        # If English also not loaded, fallback to raw key
-        if lang not in cls._translations:
-            return key
+        # If language not loaded, fallback to default or raw key
+        if target_lang not in cls._translations:
+            return default if default is not None else key
 
         def _get_nested(d: dict, k: str) -> Optional[str]:
             parts = k.split(".")
@@ -46,12 +75,13 @@ class I18n:
                     return None
             return curr if isinstance(curr, str) else None
 
-        text = _get_nested(cls._translations[lang], key)
-        if text is None and lang != "en" and "en" in cls._translations:
+        text = _get_nested(cls._translations[target_lang], key)
+        if text is None and target_lang != "en" and "en" in cls._translations:
             text = _get_nested(cls._translations["en"], key)
 
         if text is None:
-            text = key
+            text = default if default is not None else key
+
         if kwargs:
             try:
                 return text.format(**kwargs)
@@ -76,5 +106,5 @@ except Exception:
     pass
 
 
-def t(key: str, **kwargs) -> str:
-    return I18n.t(key, **kwargs)
+def t(key: str, default: Optional[str] = None, **kwargs) -> str:
+    return I18n.t(key, default=default, **kwargs)

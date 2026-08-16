@@ -50,16 +50,13 @@ async def test_orchestrator_catalog_first_phrase_suppression():
         "app.services.chat.orchestrator.find_books_by_title_in_question",
         new=AsyncMock(return_value=mock_books),
     ) as mock_find_books, patch(
-        "app.services.chat.orchestrator.DeterministicRAGHandler"
-    ) as mock_handler_cls, patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        new=AsyncMock(return_value={"intent": "open"}),
+    ), patch(
         "app.services.chat.orchestrator.build_retrieval_agent"
     ) as mock_build_agent, patch(
         "app.services.chat.orchestrator.run_exact_phrase_retrieval"
     ) as mock_run_exact:
-        mock_handler = MagicMock()
-        mock_handler._llm_analyze_query = AsyncMock(return_value={"intent": "open"})
-        mock_handler_cls.return_value = mock_handler
-
         mock_agent = MagicMock()
         mock_build_agent.return_value = mock_agent
 

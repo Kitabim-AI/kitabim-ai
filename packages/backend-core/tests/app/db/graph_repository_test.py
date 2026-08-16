@@ -32,12 +32,16 @@ async def test_graph_repository_init_constraints():
         repo = GraphRepository()
         await repo.init_constraints()
 
-        # DROP entity_name_unique, CREATE entity_id_unique, 2 entity btree indexes, 1 fulltext index, 4 relationship indexes
-        assert mock_session.run.call_count == 9
+        # DROP entity_name_unique, CREATE entity_id_unique, 2 entity btree indexes,
+        # 1 fulltext index, 4 relationship indexes, 1 vector index
+        assert mock_session.run.call_count == 10
         statements = [c[0][0] for c in mock_session.run.call_args_list]
         assert any("DROP CONSTRAINT entity_name_unique" in s for s in statements)
         assert any("CREATE CONSTRAINT entity_id_unique" in s for s in statements)
         assert any("CREATE FULLTEXT INDEX entity_search_idx" in s for s in statements)
+        assert any(
+            "CREATE VECTOR INDEX entity_profile_embedding_idx" in s for s in statements
+        )
 
         await GraphRepository.close_driver()
         assert mock_driver.close.called
@@ -567,3 +571,74 @@ async def test_graph_repository_find_resolution_candidates_no_terms_returns_empt
         )
         assert candidates == []
         assert not mock_driver.session.called
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_find_semantic_candidates():
+    mock_result = AsyncMock()
+    mock_result.data.return_value = [
+        {"id": "cand-1", "canonical_name": "Temur Barlas", "score": 0.91}
+    ]
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.return_value = mock_result
+    mock_driver = _mock_driver_session(mock_session)
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        records = await repo.find_semantic_candidates(
+            entity_id="e1",
+            embedding=[0.1, 0.2, 0.3],
+            scope="nonfiction",
+            book_id=None,
+            limit=5,
+        )
+
+        assert records == [
+            {"id": "cand-1", "canonical_name": "Temur Barlas", "score": 0.91}
+        ]
+        assert mock_session.run.called
+        call_args = mock_session.run.call_args[0]
+        call_kwargs = mock_session.run.call_args[1]
+        assert "db.index.vector.queryNodes" in call_args[0]
+        assert "entity_profile_embedding_idx" in call_args[0]
+        assert call_kwargs["embedding"] == [0.1, 0.2, 0.3]
+        assert call_kwargs["entity_id"] == "e1"
+        assert call_kwargs["scope"] == "nonfiction"
+        assert call_kwargs["book_id"] is None
+        # Over-fetch substantially (limit * 10, floored at 50) so the scope/book_id
+        # filter in WHERE — which runs *after* the vector index picks its top-k, per
+        # Cypher's evaluation order — has enough candidates left to find same-scope
+        # matches, rather than being globally starved down to nothing.
+        assert call_kwargs["k"] == 50
+        assert call_kwargs["limit"] == 5
+
+
+@pytest.mark.asyncio
+async def test_graph_repository_find_semantic_candidates_overfetches_proportionally_to_limit():
+    mock_result = AsyncMock()
+    mock_result.data.return_value = []
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.run.return_value = mock_result
+    mock_driver = _mock_driver_session(mock_session)
+
+    with patch(
+        "app.db.repositories.graph_repository.AsyncGraphDatabase.driver",
+        return_value=mock_driver,
+    ):
+        repo = GraphRepository()
+        await repo.find_semantic_candidates(
+            entity_id="e1",
+            embedding=[0.1, 0.2, 0.3],
+            scope="nonfiction",
+            book_id=None,
+            limit=20,
+        )
+
+        call_kwargs = mock_session.run.call_args[1]
+        # limit * 10 dominates the floor once limit is large enough.
+        assert call_kwargs["k"] == 200

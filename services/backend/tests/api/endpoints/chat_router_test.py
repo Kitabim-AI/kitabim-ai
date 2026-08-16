@@ -22,7 +22,7 @@ def setup_paths():
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_uses_injected_rag_service():
+async def test_chat_endpoint_uses_chat_orchestrator():
     setup_paths()
     from api.endpoints.chat_router import chat_with_book_api
     from app.models.schemas import ChatRequest
@@ -40,26 +40,35 @@ async def test_chat_endpoint_uses_injected_rag_service():
     mock_limit_service.get_user_usage_status.return_value = mock_usage
     mock_limit_service.increment_usage = AsyncMock()
 
-    mock_rag_service = AsyncMock()
-    mock_rag_service.answer_question.return_value = "جاۋاب"
+    mock_orchestrator = AsyncMock()
+    mock_orchestrator.answer.return_value = {
+        "answer": "جاۋاب",
+        "conversation_id": "conv-1",
+        "used_book_ids": ["book-abc"],
+        "eval_id": 1,
+    }
 
-    with patch("api.endpoints.chat_router.chat_limit_service", mock_limit_service):
+    with (
+        patch("api.endpoints.chat_router.chat_limit_service", mock_limit_service),
+        patch(
+            "api.endpoints.chat_router.ChatOrchestrator",
+            return_value=mock_orchestrator,
+        ),
+    ):
         response = await chat_with_book_api(
             req=req,
+            request=MagicMock(),
             current_user=mock_user,
             session=mock_session,
-            rag_service=mock_rag_service,
         )
 
     assert response["answer"] == "جاۋاب"
     assert response["usage"] == mock_usage
-    mock_rag_service.answer_question.assert_called_once_with(
-        req, mock_session, user_id="user-123"
-    )
+    mock_orchestrator.answer.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_chat_stream_endpoint_uses_injected_rag_service():
+async def test_chat_stream_endpoint_uses_chat_orchestrator():
     setup_paths()
     from api.endpoints.chat_router import chat_with_book_stream
     from app.models.schemas import ChatRequest
@@ -78,24 +87,25 @@ async def test_chat_stream_endpoint_uses_injected_rag_service():
     mock_limit_service.get_user_usage_status.return_value = mock_usage
     mock_limit_service.increment_usage = AsyncMock()
 
-    # Mock async generator for stream
-    async def mock_stream_chunks(*args, **kwargs):
-        # We need to make sure the mutable metadata_out dictionary gets populated
-        if "metadata_out" in kwargs and kwargs["metadata_out"] is not None:
-            kwargs["metadata_out"]["used_book_ids"] = ["book-abc"]
-            kwargs["metadata_out"]["eval_id"] = 42
-        yield "بىرىنچى"
-        yield "ئىككىنچى"
+    async def mock_stream_response(*args, **kwargs):
+        yield {"type": "chunk", "text": "بىرىنچى"}
+        yield {"type": "chunk", "text": "ئىككىنچى"}
+        yield {
+            "type": "done",
+            "eval_id": 42,
+            "conversation_id": "conv-1",
+            "used_book_ids": ["book-abc"],
+        }
 
-    mock_rag_service = MagicMock()
-    mock_rag_service.answer_question_stream = mock_stream_chunks
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.stream_response = mock_stream_response
 
     chunks = []
     with (
         patch("api.endpoints.chat_router.chat_limit_service", mock_limit_service),
         patch(
-            "app.db.repositories.system_configs_repository.SystemConfigsRepository.get_value",
-            AsyncMock(return_value=None),
+            "api.endpoints.chat_router.ChatOrchestrator",
+            return_value=mock_orchestrator,
         ),
     ):
         response = await chat_with_book_stream(
@@ -103,15 +113,12 @@ async def test_chat_stream_endpoint_uses_injected_rag_service():
             request=MagicMock(),
             current_user=mock_user,
             session=mock_session,
-            rag_service=mock_rag_service,
         )
 
-        # Read events from response body
         async for item in response.body_iterator:
             chunks.append(item)
 
     assert len(chunks) > 0
-    # The first event is the first yielded chunk formatted as SSE
     assert f"data: {json.dumps({'chunk': 'بىرىنچى'})}\n\n" in chunks
     assert f"data: {json.dumps({'chunk': 'ئىككىنچى'})}\n\n" in chunks
 

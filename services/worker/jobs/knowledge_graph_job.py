@@ -33,6 +33,7 @@ import uuid
 from sqlalchemy import select, update
 
 from app.core.config import settings
+from app.core.providers import get_embedding_provider
 from app.db import session as db_session
 from app.db.models import Book, Chunk
 from app.db.repositories.graph_repository import GraphRepository
@@ -40,6 +41,7 @@ from app.db.repositories.graph_resolution_repository import (
     GraphResolutionQueueRepository,
 )
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
+from app.services.entity_resolution_service import embed_and_store_entity_profiles
 from app.services.knowledge_graph_service import (
     KnowledgeExtraction,
     parse_and_clean_json_from_exception,
@@ -62,6 +64,42 @@ def hijri_to_gregorian(year_hijri: int) -> int:
 
 def _chunk_ref(book_id: str, chunk: Chunk) -> str:
     return f"{book_id}:{chunk.page_number}:{chunk.chunk_index}"
+
+
+async def _maybe_embed_entity_profiles(
+    graph_repo: GraphRepository, entities: list[dict], book_id: str
+) -> None:
+    """Embeds and stores entity profile vectors (Item 8,
+    knowledge-graph-improvement-backlog.md) when entity_semantic_matching_enabled is
+    on. Never raises — an embedding failure must not fail the graph write that
+    already succeeded by the time this is called; it's an optional signal for the
+    resolution pass, not a requirement for extraction.
+    """
+    if not entities:
+        return
+    try:
+        async with db_session.async_session_factory() as config_session:
+            config_repo = SystemConfigsRepository(config_session)
+            semantic_enabled = (
+                await config_repo.get_value("entity_semantic_matching_enabled", "false")
+            ).strip().lower() == "true"
+            if not semantic_enabled:
+                return
+            gemini_embedding_model = await config_repo.get_value(
+                "gemini_embedding_model"
+            )
+        if not gemini_embedding_model:
+            raise RuntimeError("system_config 'gemini_embedding_model' is not set")
+        embeddings_model = get_embedding_provider(gemini_embedding_model)
+        await embed_and_store_entity_profiles(graph_repo, entities, embeddings_model)
+    except Exception as embed_exc:
+        log_json(
+            logger,
+            logging.WARNING,
+            "entity profile embedding failed — resolution will fall back to lexical matching only",
+            book_id=book_id,
+            error=str(embed_exc),
+        )
 
 
 async def knowledge_graph_job(ctx, book_id: str, scope: str) -> None:
@@ -395,6 +433,7 @@ async def knowledge_graph_job(ctx, book_id: str, scope: str) -> None:
                     entities=len(all_entities),
                     relations=len(all_relations),
                 )
+                await _maybe_embed_entity_profiles(graph_repo, all_entities, book_id)
             except Exception as save_exc:
                 save_errors += 1
                 log_json(
