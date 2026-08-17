@@ -52,17 +52,17 @@ export const QuranResultsList: React.FC<QuranResultsListProps> = ({ items, isLoa
           <div className="flex items-center justify-between mb-3" dir="rtl">
             <span className="uyghur-text text-base text-[#1a1a1a] dark:text-slate-100">{ayah.surahNameUg}</span>
             <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-full text-xs">
-                {ayah.surah}:{ayah.ayah}
-              </span>
               <button
                 type="button"
                 onClick={() => setShareAyah(ayah)}
-                className="p-1 text-slate-400 hover:text-[#0369a1] dark:hover:text-[#38bdf8] rounded-lg transition-colors"
+                className="p-1.5 text-slate-400 hover:text-[#0369a1] dark:hover:text-[#38bdf8] rounded-lg transition-colors"
                 title={t('share.shareSearchResult')}
               >
                 <Share2 size={16} strokeWidth={2} />
               </button>
+              <span className="px-3 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-full text-xs">
+                {ayah.surah}:{ayah.ayah}
+              </span>
             </div>
           </div>
           <p dir="rtl" className="arabic-text text-xl sm:text-2xl leading-loose text-[#1a1a1a] dark:text-slate-100 mb-3">

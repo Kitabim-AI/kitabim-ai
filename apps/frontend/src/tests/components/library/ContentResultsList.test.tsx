@@ -77,3 +77,20 @@ test('allows selection and copying for authenticated users', () => {
   fireEvent(snippetElement, copyEvent);
   expect(preventDefaultSpy).not.toHaveBeenCalled();
 });
+
+test('renders share button as icon-only at top header and opens share modal on click', () => {
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { role: 'reader' },
+  } as any);
+
+  renderContentResultsList();
+
+  const shareButton = screen.getByTitle('share.shareSearchResult');
+  expect(shareButton).toBeInTheDocument();
+  expect(shareButton.textContent).toBe('');
+
+  fireEvent.click(shareButton);
+  expect(screen.getAllByText('Sample Book').length).toBeGreaterThan(1);
+});
+
