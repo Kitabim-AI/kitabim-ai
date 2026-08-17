@@ -131,6 +131,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   streamingMessage = '',
   streamingPartialResult = false,
 
+  bookId,
+  bookTitle,
+  bookAuthor,
   agentSteps = [],
   chatContainerRef,
   usageStatus,
@@ -648,6 +651,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             pageNumbers={selectedReference.pageNums}
           />
         )}
+        {shareMsg && (
+          <ShareChatModal
+            question={shareMsg.question}
+            answer={shareMsg.answer}
+            bookId={bookId}
+            bookTitle={bookTitle}
+            bookAuthor={bookAuthor}
+            onClose={() => setShareMsg(null)}
+          />
+        )}
       </div>
     );
   }
@@ -936,6 +949,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         <ShareChatModal
           question={shareMsg.question}
           answer={shareMsg.answer}
+          bookId={bookId}
+          bookTitle={bookTitle}
+          bookAuthor={bookAuthor}
           onClose={() => setShareMsg(null)}
         />
       )}

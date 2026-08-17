@@ -44,11 +44,14 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
 
   const shareTargetUrl = deepLink || url || window.location.origin;
   const facebookTargetUrl = ogPreviewLink || shareTargetUrl;
+  const plainPageUrl = isPageShare
+    ? `${window.location.origin}/books/${bookId}/${pageNumber}`
+    : (url || window.location.origin);
 
   const fullTextToShare = [
     title ? `📌 ${title}` : '',
     subtitle ? `(${subtitle})` : '',
-    content ? `"${content}"` : '',
+    content || '',
     sourceLabel ? `— Source: ${sourceLabel}` : '',
     `Kitabim AI: ${shareTargetUrl}`,
   ]
@@ -64,12 +67,11 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
   const handleTwitter = () => {
     const tweetText = buildSafeTweetText({
       headLines: [title ? `📌 ${title}` : ''],
-      contentPrefix: '"',
+      contentPrefix: '',
       contentText: content,
-      contentSuffix: '"',
       tailLines: [
         sourceLabel ? `— ${sourceLabel}` : '',
-        shareTargetUrl,
+        plainPageUrl,
       ],
     });
 

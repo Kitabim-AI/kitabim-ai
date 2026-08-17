@@ -109,7 +109,7 @@ describe('ShareSearchResultModal', () => {
     expect(tweetText).not.toContain('quote=');
   });
 
-  it('renders the quote-share header label and includes the quote query param when quote is given', () => {
+  it('renders the quote-share header label and links to the plain page URL (no quote param) on X', () => {
     render(
       <ShareSearchResultModal
         title="My Book"
@@ -126,9 +126,9 @@ describe('ShareSearchResultModal', () => {
 
     fireEvent.click(screen.getByText('share.postToX'));
     const tweetText = getOpenedQueryParam('text');
-    expect(tweetText).toContain(
-      `${window.location.origin}/books/book-1/5?quote=${encodeURIComponent('a highlighted quote')}`
-    );
+    expect(tweetText).toContain(`${window.location.origin}/books/book-1/5`);
+    expect(tweetText).not.toContain('quote=');
+    expect(tweetText).not.toContain('"a highlighted quote"');
   });
 
   it('uses the /api/share/page OG-preview URL (not the plain deep link) for the Facebook sharer', async () => {

@@ -1,5 +1,6 @@
 import { BookmarkCheck, Edit3, ListTree, ListX, Loader2, RotateCcw, Save, Share2 } from 'lucide-react';
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useIsEditor } from '../../hooks/useAuth';
 import { useQuoteHighlight } from '../../hooks/useQuoteHighlight';
 import { useTextSelectionShare } from '../../hooks/useTextSelectionShare';
@@ -141,7 +142,7 @@ export const PageItem: React.FC<PageItemProps> = ({
           <button
             onClick={() => setShareState({ content: cleanShareText(page.text || '') })}
             title={t('share.sharePage')}
-            className={`flex items-center justify-center h-7 w-7 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-all ${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}
+            className={`flex items-center justify-center h-8 w-8 rounded-lg bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 transition-all ${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}
           >
             <Share2 size={14} />
           </button>
@@ -201,7 +202,7 @@ export const PageItem: React.FC<PageItemProps> = ({
         )
       )}
 
-      {textSelection && (
+      {textSelection && createPortal(
         <button
           onClick={() => {
             setShareState({ content: textSelection.text, quote: textSelection.text });
@@ -217,7 +218,8 @@ export const PageItem: React.FC<PageItemProps> = ({
           className="z-[250] flex items-center justify-center h-9 w-9 rounded-full bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-lg"
         >
           <Share2 size={16} />
-        </button>
+        </button>,
+        document.body
       )}
 
       {shareState && (
