@@ -1442,12 +1442,17 @@ EOF
 
 ```typescript
 // apps/frontend/src/tests/hooks/useTextSelectionShare.test.ts
-import { renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { useTextSelectionShare } from '@/src/hooks/useTextSelectionShare';
 
+// selectionchange fires a real DOM event outside React's render cycle, so the
+// listener's setState call must be wrapped in act() or the test reads result.current
+// before React has flushed the update.
 const fireSelectionChange = () => {
-  document.dispatchEvent(new Event('selectionchange'));
+  act(() => {
+    document.dispatchEvent(new Event('selectionchange'));
+  });
 };
 
 const selectTextIn = (el: Node, startOffset: number, endOffset: number) => {
@@ -1462,6 +1467,12 @@ const selectTextIn = (el: Node, startOffset: number, endOffset: number) => {
 beforeEach(() => {
   document.body.innerHTML = '';
   window.getSelection()?.removeAllRanges();
+  // jsdom doesn't implement Range.prototype.getBoundingClientRect at all (unlike
+  // Element.prototype.getBoundingClientRect, which is stubbed to an all-zero rect) —
+  // polyfill it the same way so the hook's real getBoundingClientRect() call works.
+  Range.prototype.getBoundingClientRect = function (this: Range) {
+    return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON() {} } as DOMRect;
+  };
 });
 
 describe('useTextSelectionShare', () => {
