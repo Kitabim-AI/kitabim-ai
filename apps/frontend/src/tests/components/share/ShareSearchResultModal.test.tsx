@@ -162,4 +162,24 @@ describe('ShareSearchResultModal', () => {
     const tweetText = getOpenedQueryParam('text');
     expect(tweetText).toContain('https://kitabim.ai/dictionary/entry-1');
   });
+
+  it('includes book title, author, and page number at the bottom of the tweet text', () => {
+    render(
+      <ShareSearchResultModal
+        title="مېھرابتەن چايان"
+        subtitle="ئابدۇللا قادىرى"
+        content="مېھرابتەن چايان (تارىخى رومان)"
+        bookTitle="مېھرابتەن چايان"
+        bookAuthor="ئابدۇللا قادىرى"
+        bookId="book-123"
+        pageNumber={2}
+        variant="page"
+        onClose={onCloseMock}
+      />
+    );
+
+    fireEvent.click(screen.getByText('share.postToX'));
+    const tweetText = getOpenedQueryParam('text');
+    expect(tweetText).toContain('— «مېھرابتەن چايان» (ئابدۇللا قادىرى)، 2-بەت');
+  });
 });
