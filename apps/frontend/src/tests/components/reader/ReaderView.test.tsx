@@ -57,6 +57,9 @@ vi.mock('@/src/components/reader/PageItem', () => ({
     onSave,
     onCancel,
     onReprocess,
+    bookId,
+    bookTitle,
+    highlightQuote,
   }: any) => (
     <div>
       <div>{page.text}</div>
@@ -64,6 +67,9 @@ vi.mock('@/src/components/reader/PageItem', () => ({
       {isEditing && <button onClick={onSave}>save-{page.pageNumber}</button>}
       {isEditing && <button onClick={onCancel}>cancel-{page.pageNumber}</button>}
       <button onClick={onReprocess}>reprocess-{page.pageNumber}</button>
+      <div data-testid={`share-props-${page.pageNumber}`}>
+        {bookId || ''}|{bookTitle || ''}|{highlightQuote || ''}
+      </div>
     </div>
   ),
 }));
@@ -105,6 +111,8 @@ const createContextValue = () => ({
   previousView: 'library',
   currentPage: 1,
   setCurrentPage: vi.fn(),
+  pendingQuoteHighlight: null,
+  setPendingQuoteHighlight: vi.fn(),
   chat: {
     chatMessages: [],
     chatInput: '',
@@ -281,4 +289,27 @@ test('ReaderView saves page edits and handles reprocess in virtual scroll mode',
   // Test virtual reprocess
   fireEvent.click(screen.getByText('virtual-reprocess-1'));
   expect(context.bookActions.handleReProcessPage).toHaveBeenCalledWith('1', 1);
+});
+
+test('ReaderView passes bookId/bookTitle and gated highlightQuote to each PageItem', async () => {
+  const contextValue = { ...createContextValue(), pendingQuoteHighlight: 'a quote' };
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue(contextValue as any);
+  vi.mocked(AuthModule.useAuth).mockReturnValue({ isAuthenticated: true, user: { role: 'admin' } } as any);
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
+  vi.mocked(PersistenceService.getBookPages).mockResolvedValue(mockBook.pages as any);
+
+  renderReader();
+
+  // The non-virtual-scroll PageItem list (the one under test) only renders in
+  // full document mode — the default virtual-scroll mode uses the separate
+  // VirtualScrollReader mock instead, which doesn't render PageItem at all.
+  fireEvent.click(screen.getByTitle('reader.loadFullDocument'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Page 1 content')).toBeInTheDocument();
+  });
+
+  // mockBook.pages has pageNumber 1 (== currentPage) and 2.
+  expect(screen.getByTestId('share-props-1').textContent).toBe('1|Reader Book|a quote');
+  expect(screen.getByTestId('share-props-2').textContent).toBe('1|Reader Book|');
 });

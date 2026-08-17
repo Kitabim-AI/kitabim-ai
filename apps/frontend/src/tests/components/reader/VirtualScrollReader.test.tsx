@@ -16,7 +16,12 @@ vi.mock('@/src/services/persistenceService', () => ({
 }));
 
 vi.mock('@/src/components/reader/PageItem', () => ({
-  PageItem: () => <div data-testid="page-item">Page Content</div>,
+  PageItem: ({ bookId, bookTitle, highlightQuote }: any) => (
+    <div data-testid="page-item">
+      Page Content
+      <div data-testid="share-props">{bookId || ''}|{bookTitle || ''}|{highlightQuote || ''}</div>
+    </div>
+  ),
 }));
 
 const i18nValue = {
@@ -141,5 +146,54 @@ test('re-observes all pages after exiting edit mode so scrolling down loads subs
   expect(new Set(reobservedPages)).toEqual(new Set(['1', '2', '3', '4', '5']));
 
   vi.stubGlobal('IntersectionObserver', realIntersectionObserver);
+});
+
+test('passes bookId/bookTitle to PageItem and only gates highlightQuote to the current-center page', () => {
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { id: 'user-1', role: 'reader' },
+  } as any);
+
+  // On initial mount, VirtualScrollReader's "reset pages cache when bookId changes"
+  // effect (keyed on [bookId]) runs AFTER the "sync selectedBookPages into cache"
+  // effect and wipes out what it just set, since a fresh bookId counts as a change
+  // on mount too. Mounting without selectedBookPages first and rerendering with it
+  // avoids that — bookId is unchanged across the rerender, so only the sync effect
+  // fires the second time.
+  const { rerender } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-1"
+        totalPages={2}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+        initialPage={1}
+        bookTitle="My Book"
+        pendingQuoteHighlight="a quote"
+      />
+    </I18nContext.Provider>
+  );
+
+  rerender(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-1"
+        totalPages={2}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+        selectedBookPages={[
+          { pageNumber: 1, text: 'Page 1 text', status: 'ready' },
+          { pageNumber: 2, text: 'Page 2 text', status: 'ready' },
+        ]}
+        initialPage={1}
+        bookTitle="My Book"
+        pendingQuoteHighlight="a quote"
+      />
+    </I18nContext.Provider>
+  );
+
+  const shareProps = screen.getAllByTestId('share-props').map(el => el.textContent);
+  expect(shareProps).toContain('book-1|My Book|a quote'); // page 1 (current center) is highlighted
+  expect(shareProps).toContain('book-1|My Book|'); // page 2 is not
 });
 

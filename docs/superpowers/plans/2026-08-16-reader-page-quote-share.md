@@ -2147,13 +2147,23 @@ vi.mock('@/src/components/reader/PageItem', () => ({
 Add a new test at the end of the file:
 
 ```tsx
-test('ReaderView passes bookId/bookTitle and gated highlightQuote to each PageItem', () => {
+test('ReaderView passes bookId/bookTitle and gated highlightQuote to each PageItem', async () => {
   const contextValue = { ...createContextValue(), pendingQuoteHighlight: 'a quote' };
   vi.mocked(AppContextModule.useAppContext).mockReturnValue(contextValue as any);
   vi.mocked(AuthModule.useAuth).mockReturnValue({ isAuthenticated: true, user: { role: 'admin' } } as any);
   vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
+  vi.mocked(PersistenceService.getBookPages).mockResolvedValue(mockBook.pages as any);
 
   renderReader();
+
+  // The non-virtual-scroll PageItem list (the one under test) only renders in
+  // full document mode — the default virtual-scroll mode uses the separate
+  // VirtualScrollReader mock instead, which doesn't render PageItem at all.
+  fireEvent.click(screen.getByTitle('reader.loadFullDocument'));
+
+  await waitFor(() => {
+    expect(screen.getByText('Page 1 content')).toBeInTheDocument();
+  });
 
   // mockBook.pages has pageNumber 1 (== currentPage) and 2.
   expect(screen.getByTestId('share-props-1').textContent).toBe('1|Reader Book|a quote');
@@ -2175,7 +2185,9 @@ vi.mock('@/src/components/reader/PageItem', () => ({
 }));
 ```
 
-Add a new test at the end of the file. The existing `renderReader()` helper (lines 28-33) takes no args and never actually mounts `PageItem` (its mocked `PersistenceService.getBookPages` resolves `[]`, so the `pages` map stays empty and every page renders the loading placeholder instead) — for this test, render `VirtualScrollReader` directly with a `selectedBookPages` prop instead, which syncs synchronously into the internal `pages` map via the component's existing `useEffect` (`VirtualScrollReader.tsx:68-84`) and does mount `PageItem`:
+Add a new test at the end of the file. The existing `renderReader()` helper (lines 28-33) takes no args and never actually mounts `PageItem` (its mocked `PersistenceService.getBookPages` resolves `[]`, so the `pages` map stays empty and every page renders the loading placeholder instead) — for this test, render `VirtualScrollReader` directly with a `selectedBookPages` prop instead, which syncs into the internal `pages` map via the component's existing `useEffect` (`VirtualScrollReader.tsx:68-84`) and does mount `PageItem`.
+
+One more wrinkle discovered while implementing: on a **fresh mount**, the "reset pages cache when bookId changes" effect (`VirtualScrollReader.tsx:227-235`, keyed on `[bookId]`) fires *after* the sync-from-`selectedBookPages` effect and wipes out what it just set — a brand-new `bookId` counts as "changed" on mount too. Passing `selectedBookPages` directly to the initial `render()` call is a race the sync effect loses. Work around it the same way the file's other effect-ordering test already does (`re-observes all pages after exiting edit mode`, lines 107-144): mount first *without* `selectedBookPages`, then `rerender` *with* it — `bookId` is unchanged across the rerender, so only the sync effect fires the second time:
 
 ```tsx
 test('passes bookId/bookTitle to PageItem and only gates highlightQuote to the current-center page', () => {
@@ -2184,7 +2196,21 @@ test('passes bookId/bookTitle to PageItem and only gates highlightQuote to the c
     user: { id: 'user-1', role: 'reader' },
   } as any);
 
-  render(
+  const { rerender } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-1"
+        totalPages={2}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+        initialPage={1}
+        bookTitle="My Book"
+        pendingQuoteHighlight="a quote"
+      />
+    </I18nContext.Provider>
+  );
+
+  rerender(
     <I18nContext.Provider value={i18nValue}>
       <VirtualScrollReader
         bookId="book-1"
