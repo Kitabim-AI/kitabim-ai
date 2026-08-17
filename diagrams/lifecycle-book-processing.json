@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Kitabim.AI - Book Ingestion Processing Lifecycle",
+    "output": "lifecycle-book-processing.html",
+    "viewBox": [1080, 720],
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      { "id": "happy-path-rail", "label": "Successful indexing rail", "focus": ["uploaded", "queued", "ocr_scanning", "chunking_embedding", "indexed_ready"], "note": "Follow the book entity from initial upload through page OCR to searchable readiness." },
+      { "id": "retry-recovery", "label": "Retry and error recovery", "focus": ["ocr_scanning", "retrying", "processing_failed"], "note": "Isolate temporary OCR worker failures and automatic ARQ retry bounds." }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "Main ingestion phases" },
+    { "id": "recovery", "label": "Retry controller" },
+    { "id": "terminal", "label": "Terminal states" }
+  ],
+  "states": [
+    { "id": "uploaded", "type": "start", "label": "Uploaded", "sublabel": "PDF file validated", "lane": "main", "col": 0, "step": "01", "tag": "pending" },
+    { "id": "queued", "type": "active", "label": "Queued", "sublabel": "Redis ARQ broker", "lane": "main", "col": 1, "step": "02", "tag": "enqueued" },
+    { "id": "ocr_scanning", "type": "active", "label": "OCR Scanning", "sublabel": "Gemini Vision OCR", "lane": "main", "col": 2, "step": "03", "tag": "processing" },
+    { "id": "chunking_embedding", "type": "active", "label": "Chunking & Embedding", "sublabel": "Gemini 768-dim", "lane": "main", "col": 3, "step": "04", "tag": "embedding" },
+    { "id": "indexed_ready", "type": "success", "label": "Indexed Ready", "sublabel": "available for RAG", "lane": "main", "col": 4, "step": "05", "tag": "ready" },
+    { "id": "retrying", "type": "waiting", "label": "Retrying", "sublabel": "ARQ max_tries=3", "lane": "recovery", "col": 2, "tag": "transient error" },
+    { "id": "processing_failed", "type": "failure", "label": "Processing Failed", "sublabel": "corrupt PDF / max retries", "lane": "terminal", "col": 2, "tag": "fatal error" }
+  ],
+  "transitions": [
+    { "from": "uploaded", "to": "queued", "variant": "emphasis", "route": "straight" },
+    { "from": "queued", "to": "ocr_scanning", "variant": "emphasis", "route": "straight" },
+    { "from": "ocr_scanning", "to": "chunking_embedding", "variant": "emphasis", "route": "straight" },
+    { "from": "chunking_embedding", "to": "indexed_ready", "variant": "emphasis", "route": "straight" },
+    { "from": "ocr_scanning", "to": "retrying", "variant": "security", "route": "drop", "fromSide": "bottom", "toSide": "top" },
+    { "from": "retrying", "to": "ocr_scanning", "variant": "dashed", "route": "drop", "fromSide": "top", "toSide": "bottom" },
+    { "from": "retrying", "to": "processing_failed", "variant": "security", "route": "drop", "fromSide": "bottom", "toSide": "top" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Ingestion Rail",
+      "items": [
+        "Books move linearly from Uploaded → Queued → OCR Scanning → Chunking → Indexed Ready",
+        "Sub-5-minute SLA for typical 300-page PDF document"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Transient Failures & Retries",
+      "items": [
+        "ARQ Worker automatically retries transient errors up to 3 times",
+        "If retries pass, job resumes from the last completed page checkpoint"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Fatal Exits",
+      "items": [
+        "Unparseable or corrupted PDF files transition to Processing Failed state",
+        "Admin UI receives instant notification with detailed error diagnostic logs"
+      ]
+    }
+  ]
+}

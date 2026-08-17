@@ -1024,18 +1024,21 @@
   },
   "share": {
     "shareBook": "كىتابنى ھەمبەھىرلەش",
+    "sharePage": "بەتنى ھەمبەھىرلەش",
     "shareQA": "جاۋابنى ھەمبەھىرلەش",
     "shareQuote": "ئىقتىباسنى ھەمبەھىرلەش",
     "shareSearchResult": "ئىزدەش نەتىجىسىنى ھەمبەھىرلەش",
-    "postToFacebook": "Facebook قا يوللاش",
-    "postToX": "X قا يوللاش",
+    "postToFacebook": "قا يوللاش",
+    "postToX": "قا يوللاش",
     "copyLink": "ئۇلانمىنى كۆچۈر",
+    "copyContent": "مەزمۇننى كۆچۈر",
+    "contentCopied": "كۆچۈرۈلدى!",
     "linkCopied": "كۆچۈرۈلدى!",
     "previewLabel": "كۆرۈنۈشى",
     "questionLabel": "سوئال",
     "answerLabel": "جاۋاب",
     "textCopied": "مەزمۇن كۆچۈرۈلدى!",
-    "pasteHint": "مەزمۇن كۆچۈرۈلدى — خاتىرىڭىزگە چاپلاڭ"
+    "pasteHint": "تولۇق مەزمۇن كۆچۈرۈلدى — (Cmd+V / Ctrl+V) بىلەن تولۇق چاپلاپ ئېلان قىلالايسىز"
   },
   "graph": {
     "title": "بىلىم گىرافى",

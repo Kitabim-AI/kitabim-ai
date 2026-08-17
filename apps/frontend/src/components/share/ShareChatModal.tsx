@@ -2,9 +2,8 @@ import { Check, ClipboardPaste, Copy, X } from 'lucide-react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
-
-const MAX_Q = 400;
-const MAX_A = 900;
+import { cleanShareText, buildSafeTweetText } from '../../utils/shareText';
+import { FacebookIcon, XIcon } from './ShareIcons';
 
 interface ShareChatModalProps {
   question: string;
@@ -15,68 +14,63 @@ interface ShareChatModalProps {
   onClose: () => void;
 }
 
-const FacebookIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-  </svg>
-);
-
-const XIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-  </svg>
-);
-
 export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer, bookId, bookTitle, bookAuthor, onClose }) => {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const [fbClicked, setFbClicked] = useState(false);
 
-  const params = new URLSearchParams({ q: question.slice(0, MAX_Q), a: answer.slice(0, MAX_A) });
-  if (bookId) params.set('book_id', bookId);
-  const shareUrl = `${window.location.origin}/api/share/qa?${params.toString()}`;
+  const safeQ = cleanShareText(question || '');
+  const safeA = cleanShareText(answer || '');
 
-  const qaText = [question, answer].filter(Boolean).join('\n\n');
+  const shareUrl = window.location.origin;
+
+  const footerText = `-- كىتابىم تورى\n${shareUrl}`;
+  const qaText = [
+    safeQ ? `سوئال: ${safeQ}` : '',
+    safeA ? `زېرەكچاق: ${safeA}` : '',
+    bookTitle ? `— Source: ${bookTitle}` : '',
+    footerText
+  ].filter(Boolean).join('\n\n');
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(shareUrl);
+    await navigator.clipboard.writeText(qaText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleTwitter = () => {
-    const tweetText = [
-      question ? `Q: ${question.slice(0, 100)}` : '',
-      `A: ${previewAnswer.slice(0, 150)}`,
-      bookTitle ? `— Source: ${bookTitle}` : '',
-      shareUrl
-    ].filter(Boolean).join('\n\n');
-
+    const tweetText = buildSafeTweetText({
+      headLines: [safeQ ? `سوئال: ${safeQ}` : ''],
+      contentPrefix: 'زېرەكچاق: ',
+      contentText: safeA,
+      tailLines: [
+        bookTitle ? `— Source: ${bookTitle}` : '',
+        footerText,
+      ],
+    });
     const twitterUrl = `https://x.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
     window.open(twitterUrl, '_blank', 'noopener,noreferrer,width=550,height=420');
   };
 
   const handleFacebook = async () => {
-    await navigator.clipboard.writeText(qaText).catch(() => {});
+    await navigator.clipboard.writeText(qaText).catch(() => { });
     const fbUrl = bookId
       ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`${window.location.origin}/api/share/book/${bookId}`)}`
-      : 'https://www.facebook.com/';
+      : `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
 
     window.open(fbUrl, '_blank', 'noopener,noreferrer,width=620,height=560');
     setFbClicked(true);
   };
 
-  const previewAnswer = answer.length > 220 ? answer.slice(0, 220) + '…' : answer;
-
   return createPortal(
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" dir="rtl">
       <div
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl"
+        className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl animate-fade-in"
         onClick={onClose}
       />
 
       <div
-        className="relative z-10 w-full max-w-md bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[32px] shadow-[0_32px_128px_rgba(0,0,0,0.25)] dark:shadow-black/35 overflow-hidden border border-white/40 dark:border-slate-800 animate-scale-up"
+        className="relative z-10 w-full max-w-md bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-[32px] shadow-[0_32px_128px_rgba(0,0,0,0.25)] dark:shadow-black/35 overflow-hidden border border-white/40 dark:border-slate-800 animate-fade-in"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -122,8 +116,8 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
           )}
 
           {/* Answer bubble */}
-          <div className="bg-[#0369a1] dark:bg-[#38bdf8] rounded-2xl px-4 py-2.5 text-sm text-white dark:text-slate-950 font-normal uyghur-text leading-relaxed w-full">
-            {previewAnswer}
+          <div className="bg-[#0369a1] dark:bg-[#38bdf8] rounded-2xl px-4 py-2.5 text-sm text-white dark:text-slate-950 font-normal uyghur-text leading-relaxed w-full max-h-48 overflow-y-auto custom-scrollbar-mini">
+            {safeA}
           </div>
         </div>
 
@@ -144,8 +138,8 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
             className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[#1a1a1a] dark:text-slate-200 rounded-2xl text-xs font-normal transition-all active:scale-95"
           >
             {copied ? <Check size={15} className="text-emerald-500" strokeWidth={2.5} /> : <Copy size={15} strokeWidth={2.5} />}
-            <span className="uyghur-text">
-              {copied ? t('share.linkCopied') : t('share.copyLink')}
+            <span className="uyghur-text whitespace-nowrap">
+              {copied ? t('share.contentCopied') : t('share.copyContent')}
             </span>
           </button>
 

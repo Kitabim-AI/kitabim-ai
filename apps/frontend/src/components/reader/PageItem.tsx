@@ -1,8 +1,13 @@
-import { BookmarkCheck, Edit3, ListTree, ListX, Loader2, RotateCcw, Save } from 'lucide-react';
+import { BookmarkCheck, Edit3, ListTree, ListX, Loader2, RotateCcw, Save, Share2 } from 'lucide-react';
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useIsEditor } from '../../hooks/useAuth';
+import { useQuoteHighlight } from '../../hooks/useQuoteHighlight';
+import { useTextSelectionShare } from '../../hooks/useTextSelectionShare';
 import { useI18n } from '../../i18n/I18nContext';
+import { cleanShareText } from '../../utils/shareText';
 import { MarkdownContent } from '../common/MarkdownContent';
+import { ShareSearchResultModal } from '../share/ShareSearchResultModal';
 
 const normalizeArabic = (text: string): string => {
   if (!text) return '';
@@ -35,16 +40,27 @@ interface PageItemProps {
   isFullscreen?: boolean;
   contentPageOffset?: number;
   onTocPageClick?: (targetPage: number) => void;
+
+  bookId?: string;
+  bookTitle?: string;
+  bookAuthor?: string;
+  highlightQuote?: string;
+  onHighlightApplied?: () => void;
 }
 
 export const PageItem: React.FC<PageItemProps> = ({
   page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc,
-  tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick
+  tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick,
+  bookId, bookTitle, bookAuthor, highlightQuote, onHighlightApplied,
 }) => {
   const { t } = useI18n();
   const isEditor = useIsEditor();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [shareState, setShareState] = React.useState<{ content: string; quote?: string } | null>(null);
+
+  const textSelection = useTextSelectionShare(contentRef);
 
   const adjustHeight = React.useCallback(() => {
     if (!isEditing || !textareaRef.current || !containerRef.current) return;
@@ -89,6 +105,8 @@ export const PageItem: React.FC<PageItemProps> = ({
     [contentFontClassName, page.text]
   );
 
+  useQuoteHighlight(contentRef, highlightQuote, isLoading || isEditing ? '' : displayText, onHighlightApplied);
+
   return (
     <div onMouseEnter={onSetActive} className={`group relative p-6 rounded-[24px] transition-all duration-300 border ${isEditing ? 'flex-1 flex flex-col min-h-0' : ''} ${isActive ? 'bg-white dark:bg-slate-900/60 shadow-xl border-[#0369a1]/10 dark:border-[#38bdf8]/10' : 'border-transparent'}`}>
       <div className="flex items-center justify-between mb-4 border-b border-[#0369a1]/5 dark:border-slate-800 pb-3">
@@ -121,6 +139,13 @@ export const PageItem: React.FC<PageItemProps> = ({
           )}
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShareState({ content: cleanShareText(page.text || '') })}
+            title={t('share.sharePage')}
+            className={`flex items-center justify-center h-8 w-8 rounded-lg bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 transition-all ${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}
+          >
+            <Share2 size={14} />
+          </button>
           <span className="text-xs font-bold text-[#94a3b8] dark:text-slate-500 uppercase flex items-center gap-1.5">
             <span>{t('chat.pageNumber', { page: page.displayPageNumber || page.display_page_number || page.pageNumber })}</span>
             {(page.displayPageNumber || page.display_page_number) && String(page.displayPageNumber || page.display_page_number) !== String(page.pageNumber) && (
@@ -164,15 +189,51 @@ export const PageItem: React.FC<PageItemProps> = ({
         isLoading ? (
           <div className="flex flex-col items-center justify-center py-10 opacity-50"><Loader2 className="animate-spin text-[#0369a1] dark:text-[#38bdf8] mb-2" /><span className="text-xs uppercase dark:text-slate-400">{t('admin.table.recognizing')}</span></div>
         ) : (
-          <MarkdownContent
-            content={displayText}
-            className={`uyghur-text text-[#1a1a1a] dark:text-slate-100 ${contentFontClassName || ''}`}
-            style={contentStyle}
-            contentPageOffset={contentPageOffset}
-            onTocPageClick={onTocPageClick}
-            isTocPage={page?.isToc ?? page?.is_toc}
-          />
+          <div ref={contentRef}>
+            <MarkdownContent
+              content={displayText}
+              className={`uyghur-text text-[#1a1a1a] dark:text-slate-100 ${contentFontClassName || ''}`}
+              style={contentStyle}
+              contentPageOffset={contentPageOffset}
+              onTocPageClick={onTocPageClick}
+              isTocPage={page?.isToc ?? page?.is_toc}
+            />
+          </div>
         )
+      )}
+
+      {textSelection && createPortal(
+        <button
+          onClick={() => {
+            setShareState({ content: textSelection.text, quote: textSelection.text });
+            window.getSelection()?.removeAllRanges();
+          }}
+          title={t('share.shareQuote')}
+          style={{
+            position: 'fixed',
+            top: textSelection.top - 44,
+            left: textSelection.left,
+            transform: 'translateX(-50%)',
+          }}
+          className="z-[250] flex items-center justify-center h-9 w-9 rounded-full bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-lg"
+        >
+          <Share2 size={16} />
+        </button>,
+        document.body
+      )}
+
+      {shareState && (
+        <ShareSearchResultModal
+          title={bookTitle || ''}
+          subtitle={bookAuthor}
+          content={shareState.content}
+          sourceLabel={t('chat.pageNumber', { page: page.displayPageNumber || page.display_page_number || page.pageNumber })}
+          bookId={bookId}
+          pageNumber={page.pageNumber}
+          quote={shareState.quote}
+          variant={shareState.quote ? 'quote' : 'page'}
+          onClose={() => setShareState(null)}
+        />
       )}
     </div>
   );

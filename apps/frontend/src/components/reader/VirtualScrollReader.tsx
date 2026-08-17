@@ -20,6 +20,10 @@ interface VirtualScrollReaderProps {
   isChatCollapsed?: boolean;
   editingPageNum?: number | null;
   tempPageText?: string;
+  bookTitle?: string;
+  bookAuthor?: string;
+  pendingQuoteHighlight?: string | null;
+  onQuoteHighlightApplied?: () => void;
   onEdit?: (pageNum: number, text: string) => void;
   onReprocess?: (pageNum: number) => void;
   onTempTextChange?: (text: string) => void;
@@ -46,6 +50,10 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   isChatCollapsed = false,
   editingPageNum = null,
   tempPageText = '',
+  bookTitle,
+  bookAuthor,
+  pendingQuoteHighlight = null,
+  onQuoteHighlightApplied,
   onEdit,
   onReprocess,
   onTempTextChange,
@@ -307,6 +315,11 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   contentFontClassName={contentFontClassName}
                   isActive={pageNum === currentCenterPage}
                   isEditing={isEditingThisPage}
+                  bookId={bookId}
+                  bookTitle={bookTitle}
+                  bookAuthor={bookAuthor}
+                  highlightQuote={pageNum === currentCenterPage ? (pendingQuoteHighlight ?? undefined) : undefined}
+                  onHighlightApplied={onQuoteHighlightApplied}
                   onSetActive={() => { }}
                   onEdit={() => onEdit?.(pageNum, page.text || '')}
                   onReprocess={() => onReprocess?.(pageNum)}

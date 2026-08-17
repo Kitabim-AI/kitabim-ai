@@ -40,6 +40,8 @@ export const ReaderView: React.FC = () => {
     previousView,
     currentPage,
     setCurrentPage,
+    pendingQuoteHighlight,
+    setPendingQuoteHighlight,
     chat,
     bookActions,
     setModal,
@@ -611,6 +613,10 @@ export const ReaderView: React.FC = () => {
                 isChatCollapsed={isSidebarCollapsed}
                 editingPageNum={editingPageNum}
                 tempPageText={tempPageText}
+                bookTitle={selectedBook.title}
+                bookAuthor={selectedBook.author}
+                pendingQuoteHighlight={pendingQuoteHighlight}
+                onQuoteHighlightApplied={() => setPendingQuoteHighlight(null)}
                 onEdit={(pageNum, text) => {
                   setEditingPageNum(pageNum);
                   setTempPageText(text);
@@ -650,6 +656,11 @@ export const ReaderView: React.FC = () => {
                         fontSize={fontSize}
                         contentFontFamily={readerContentFontFamily}
                         contentFontClassName={readerContentFontClassName}
+                        bookId={selectedBook.id}
+                        bookTitle={selectedBook.title}
+                        bookAuthor={selectedBook.author}
+                        highlightQuote={currentPage === page.pageNumber ? (pendingQuoteHighlight ?? undefined) : undefined}
+                        onHighlightApplied={() => setPendingQuoteHighlight(null)}
                         onSetActive={() => setCurrentPage(page.pageNumber)}
                         onEdit={() => { setEditingPageNum(page.pageNumber); setTempPageText(page.text || ''); }}
                         onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}

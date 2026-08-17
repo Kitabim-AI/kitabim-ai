@@ -216,6 +216,7 @@ class RagQuestionAdmin(BaseModel):
     question: str
     is_global: bool
     book_id: Optional[str] = None
+    book_title: Optional[str] = None
     user_id: Optional[str] = None
     user_display_name: Optional[str] = None
     is_first_turn: bool

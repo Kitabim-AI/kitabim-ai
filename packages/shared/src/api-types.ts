@@ -2889,6 +2889,8 @@ export interface components {
             isGlobal: boolean;
             /** Bookid */
             bookId?: string | null;
+            /** Booktitle */
+            bookTitle?: string | null;
             /** Userid */
             userId?: string | null;
             /** Isfirstturn */
