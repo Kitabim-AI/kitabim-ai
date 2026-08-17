@@ -1840,7 +1840,7 @@ EOF
 
 - [ ] **Step 1: Write the failing tests**
 
-Add these tests to `apps/frontend/src/tests/components/reader/PageItem.test.tsx`. First, add stubs needed by the new hooks/modal to the top of the file (`HTMLElement.prototype.scrollIntoView` — jsdom v27 defines it there, not on `Element.prototype`, confirmed while implementing Task 6 — plus `navigator.clipboard`, `window.open`) inside the existing `beforeEach`:
+Add these tests to `apps/frontend/src/tests/components/reader/PageItem.test.tsx`. First, add stubs needed by the new hooks/modal to the top of the file (`HTMLElement.prototype.scrollIntoView` — jsdom v27 defines it there, not on `Element.prototype`, confirmed while implementing Task 6 — plus `navigator.clipboard`, `window.open`, and the same `Range.prototype.getBoundingClientRect` polyfill from Task 7, since the selection-popover test drives a real `selectionchange`) inside the existing `beforeEach`:
 
 ```tsx
 // Add inside the existing beforeEach(() => { ... }) block:
@@ -1849,6 +1849,9 @@ Add these tests to `apps/frontend/src/tests/components/reader/PageItem.test.tsx`
   Object.assign(navigator, {
     clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
+  Range.prototype.getBoundingClientRect = function (this: Range) {
+    return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON() {} } as DOMRect;
+  };
 ```
 
 Then add these tests at the end of the file:
