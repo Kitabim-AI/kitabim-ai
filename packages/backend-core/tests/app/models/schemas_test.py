@@ -71,3 +71,23 @@ def test_rag_question_admin_scores_default_to_none_for_unscored_row():
     assert admin_view.faithfulness_score is None
     assert admin_view.answer_relevance_score is None
     assert admin_view.context_precision_score is None
+
+
+def test_rag_question_admin_includes_book_title():
+    row = RAGEvaluation(
+        id=3,
+        question="سوئال",
+        is_global=False,
+        book_id="book-123",
+        is_first_turn=True,
+        show_on_homepage=False,
+        eval_status="completed",
+        ts=datetime.now(timezone.utc),
+    )
+    row.book_title = "ئېچىلغان بولاق"  # type: ignore[attr-defined]
+    admin_view = RagQuestionAdmin.model_validate(row)
+
+    assert admin_view.book_id == "book-123"
+    assert admin_view.book_title == "ئېچىلغان بولاق"
+    dumped = admin_view.model_dump(by_alias=True)
+    assert dumped["bookTitle"] == "ئېچىلغان بولاق"

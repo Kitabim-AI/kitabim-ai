@@ -159,7 +159,7 @@ test('ChatInterface shows loading state', () => {
   expect(screen.getByTestId('send-button')).toBeDisabled();
 });
 
-test('ChatInterface renders global chat messages', () => {
+test('ChatInterface renders global chat messages and share button', () => {
   const ref = { current: document.createElement('div') };
   renderChat(
     <ChatInterface
@@ -176,6 +176,54 @@ test('ChatInterface renders global chat messages', () => {
 
   expect(screen.getByText('Hello')).toBeInTheDocument();
   expect(screen.getByText('Salam')).toBeInTheDocument();
+  expect(screen.getByTitle('share.shareQA')).toBeInTheDocument();
+});
+
+test('ChatInterface opens ShareChatModal when share button is clicked in global chat', () => {
+  const ref = { current: document.createElement('div') };
+  renderChat(
+    <ChatInterface
+      type="global"
+      totalReady={1}
+      chatMessages={mockMessages}
+      chatInput="hello"
+      setChatInput={vi.fn()}
+      onSendMessage={vi.fn()}
+      isChatting={false}
+      chatContainerRef={ref}
+    />
+  );
+
+  const shareBtn = screen.getByTitle('share.shareQA');
+  fireEvent.click(shareBtn);
+
+  expect(screen.getByText('share.postToX')).toBeInTheDocument();
+  expect(screen.getByText('share.postToFacebook')).toBeInTheDocument();
+});
+
+test('ChatInterface opens ShareChatModal with book details when share button is clicked in reader chat', () => {
+  const ref = { current: document.createElement('div') };
+  renderChat(
+    <ChatInterface
+      type="book"
+      bookId="book-123"
+      bookTitle="Test Book"
+      bookAuthor="Test Author"
+      chatMessages={mockMessages}
+      chatInput="hello"
+      setChatInput={vi.fn()}
+      onSendMessage={vi.fn()}
+      isChatting={false}
+      chatContainerRef={ref}
+    />
+  );
+
+  const shareBtn = screen.getByTitle('share.shareQA');
+  fireEvent.click(shareBtn);
+
+  expect(screen.getByText('share.postToX')).toBeInTheDocument();
+  expect(screen.getByText('Test Book')).toBeInTheDocument();
+  expect(screen.getByText('Test Author')).toBeInTheDocument();
 });
 
 test('ChatInterface global send button disables when input empty', () => {

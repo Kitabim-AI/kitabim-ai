@@ -168,7 +168,7 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         self, limit: int = 20, offset: int = 0, query: Optional[str] = None
     ) -> tuple[List[RAGEvaluation], int]:
         """Return all questions descending by ts, with total count for pagination."""
-        from app.db.models import User
+        from app.db.models import User, Book
 
         count_stmt = select(func.count()).select_from(RAGEvaluation)
         if query:
@@ -177,8 +177,14 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         total = count_result.scalar_one()
 
         stmt = (
-            select(RAGEvaluation, User.display_name, User.email)
+            select(
+                RAGEvaluation,
+                User.display_name,
+                User.email,
+                Book.title.label("book_title"),
+            )
             .outerjoin(User, RAGEvaluation.user_id == User.id)
+            .outerjoin(Book, RAGEvaluation.book_id == Book.id)
             .order_by(RAGEvaluation.ts.desc())
             .limit(limit)
             .offset(offset)
@@ -187,8 +193,9 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             stmt = stmt.where(RAGEvaluation.question.ilike(f"%{query}%"))
         result = await self.session.execute(stmt)
         items: List[RAGEvaluation] = []
-        for eval_row, display_name, email in result.all():
+        for eval_row, display_name, email, book_title in result.all():
             eval_row.user_display_name = display_name or email  # type: ignore[attr-defined]
+            eval_row.book_title = book_title  # type: ignore[attr-defined]
             items.append(eval_row)
         return items, total
 

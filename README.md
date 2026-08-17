@@ -15,6 +15,7 @@
   - [Book Processing \& Ingestion Pipeline](#book-processing--ingestion-pipeline)
   - [Agentic RAG Question Answering Pipeline](#agentic-rag-question-answering-pipeline)
   - [Knowledge Graph \& Entity Resolution](#knowledge-graph--entity-resolution)
+  - [Interactive Archify Diagrams](#interactive-archify-diagrams)
 - [Monorepo Project Structure](#monorepo-project-structure)
 - [Technology Stack](#technology-stack)
 - [Getting Started (Local Development)](#getting-started-local-development)
@@ -176,6 +177,17 @@ flowchart TD
 1. **Extraction (`knowledge_graph_job`)**: Triggered manually via admin action (`POST /api/books/{id}/reprocess/graph`). Extracts entities and relationships into Neo4j using UUID keys and inserts entity records into PostgreSQL `graph_resolution_queue`.
 2. **Resolution (`graph_resolution_scanner` → `graph_resolution_job`)**: Scheduled every 5 minutes. Claims queued entity batches oldest-generation-first (`FOR UPDATE SKIP LOCKED`), applies fuzzy/phonetic/alias matching with hard-match parent boosting, merges target entities in Neo4j, auto-resolves existing reviews, or flags ambiguous entities in `graph_resolution_reviews`.
 
+### Interactive Archify Diagrams
+
+Interactive HTML diagrams generated with [Archify](https://github.com/tt-a1i/archify) are available in [**`diagrams/`**](diagrams/README.md):
+
+- [**System Architecture Map**](diagrams/system-architecture.html) (`diagrams/system-architecture.html`): Full infrastructure topology, service interactions, and pipeline views.
+- [**Book Ingestion & RAG Chat Sequence**](diagrams/sequence-pipelines.html) (`diagrams/sequence-pipelines.html`): Step-by-step sequence flows for PDF upload, OCR processing, and RAG streaming.
+- [**OCR & Document Processing Workflow**](diagrams/workflow-ocr-pipeline.html) (`diagrams/workflow-ocr-pipeline.html`): End-to-end workflow for PDF extraction, page splitting, OCR, and embedding commit.
+- [**Hybrid Search & RAG Data Flow**](diagrams/dataflow-rag-hybrid-search.html) (`diagrams/dataflow-rag-hybrid-search.html`): Data flow from query intake to pgvector + Knowledge Graph lookup and Gemini synthesis.
+- [**Book Processing Lifecycle**](diagrams/lifecycle-book-processing.html) (`diagrams/lifecycle-book-processing.html`): State machine transitions from `Uploaded` to `Indexed Ready`.
+- [**Uyghur Spellcheck Sequence**](diagrams/sequence-spellcheck.html) (`diagrams/sequence-spellcheck.html`): Exact dictionary lookup, phonetic sound-alike matching, and edit distance candidate ranking.
+
 ---
 
 ## Monorepo Project Structure
@@ -309,10 +321,11 @@ Production releases use automated GCP Compute Engine deployment scripts.
 
 ## Documentation Index
 
-Detailed architectural specs, milestone state machine details, and stage documentation are located in `docs/main/`:
+Detailed architectural specs, milestone state machine details, and stage documentation are located in `docs/main/` and `diagrams/`:
 
 | Document | Description |
 |---|---|
+| [**`diagrams/README.md`**](diagrams/README.md) | Interactive Archify system architecture, pipeline sequence, workflow, and lifecycle HTML diagrams |
 | [**`SYSTEM_DESIGN.md`**](docs/main/SYSTEM_DESIGN.md) | High-level system architecture, data models, and technology stack |
 | [**`WORKER_DESIGN.md`**](docs/main/WORKER_DESIGN.md) | Background worker design, ARQ cron schedule, scanners, and jobs |
 | [**`BOOK_PROCESSING_DIAGRAM.md`**](docs/main/BOOK_PROCESSING_DIAGRAM.md) | Comprehensive mermaid diagrams for the book ingestion pipeline |

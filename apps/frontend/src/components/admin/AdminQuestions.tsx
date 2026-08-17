@@ -14,6 +14,7 @@ interface RagQuestion {
   question: string;
   isGlobal: boolean;
   bookId: string | null;
+  bookTitle?: string | null;
   userId: string | null;
   userDisplayName: string | null;
   isFirstTurn: boolean;
@@ -244,10 +245,10 @@ export function AdminQuestions() {
                   >
                     {/* Question text */}
                     <td className="px-3 md:px-6 py-4 md:py-6">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-start gap-2.5">
                         <div
                           title={q.isGlobal ? t('admin.questions.scopeGlobal') : t('admin.questions.scopeBook')}
-                          className={`p-1.5 rounded-lg shrink-0 ${
+                          className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${
                             q.isGlobal
                               ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400'
                               : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
@@ -255,14 +256,23 @@ export function AdminQuestions() {
                         >
                           {q.isGlobal ? <Globe size={14} /> : <BookOpen size={14} />}
                         </div>
-                        <p
-                          className="uyghur-text text-[#1a1a1a] dark:text-slate-100 font-semibold text-[14px] md:text-[16px] lg:text-[17px] leading-relaxed line-clamp-2 text-right flex-1"
-                          dir="rtl"
-                          lang="ug"
-                          title={q.question}
-                        >
-                          {q.question}
-                        </p>
+                        <div className="flex-1 min-w-0 flex flex-col gap-1 text-right" dir="rtl">
+                          <p
+                            className="uyghur-text text-[#1a1a1a] dark:text-slate-100 font-semibold text-[14px] md:text-[16px] lg:text-[17px] leading-relaxed line-clamp-2"
+                            lang="ug"
+                            title={q.question}
+                          >
+                            {q.question}
+                          </p>
+                          {(!q.isGlobal || q.bookTitle || q.bookId) && (q.bookTitle || q.bookId) && (
+                            <div className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400/90 font-medium mt-0.5">
+                              <span className="opacity-60">—</span>
+                              <span className="truncate uyghur-text" title={q.bookTitle || q.bookId || undefined}>
+                                {q.bookTitle || q.bookId}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
 
