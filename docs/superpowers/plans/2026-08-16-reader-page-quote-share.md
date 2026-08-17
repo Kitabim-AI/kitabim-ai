@@ -863,7 +863,7 @@ EOF
 
 - [ ] **Step 1: Write the failing tests**
 
-Add these tests to the end of `apps/frontend/src/tests/components/share/ShareSearchResultModal.test.tsx`, inside the existing `describe('ShareSearchResultModal', ...)` block:
+Add these tests to the end of `apps/frontend/src/tests/components/share/ShareSearchResultModal.test.tsx`, inside the existing `describe('ShareSearchResultModal', ...)` block. Also add `waitFor` to the file's existing `@testing-library/react` import (`handleFacebook` is `async` — it awaits `navigator.clipboard.writeText` before calling `window.open`, so the Facebook test below must wait for that microtask to resolve instead of asserting immediately after `fireEvent.click`):
 
 ```tsx
   // Extracts the `text` (or `u`) query param via the URL API instead of manually
@@ -918,7 +918,7 @@ Add these tests to the end of `apps/frontend/src/tests/components/share/ShareSea
     );
   });
 
-  it('uses the /api/share/page OG-preview URL (not the plain deep link) for the Facebook sharer', () => {
+  it('uses the /api/share/page OG-preview URL (not the plain deep link) for the Facebook sharer', async () => {
     render(
       <ShareSearchResultModal
         title="My Book"
@@ -931,6 +931,7 @@ Add these tests to the end of `apps/frontend/src/tests/components/share/ShareSea
     );
 
     fireEvent.click(screen.getByText('share.postToFacebook'));
+    await waitFor(() => expect(window.open).toHaveBeenCalled());
     expect(getOpenedQueryParam('u')).toBe(`${window.location.origin}/api/share/page/book-1/5`);
   });
 

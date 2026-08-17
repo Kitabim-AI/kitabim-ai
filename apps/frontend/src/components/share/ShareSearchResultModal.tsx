@@ -2,6 +2,8 @@ import { Check, Copy, X } from 'lucide-react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
+import { buildSafeTweetText } from '../../utils/shareText';
+import { FacebookIcon, XIcon } from './ShareIcons';
 
 interface ShareSearchResultModalProps {
   title: string;
@@ -9,20 +11,12 @@ interface ShareSearchResultModalProps {
   content: string;
   sourceLabel?: string;
   url?: string;
+  bookId?: string;
+  pageNumber?: number;
+  quote?: string;
+  variant?: 'searchResult' | 'page' | 'quote';
   onClose: () => void;
 }
-
-const FacebookIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-  </svg>
-);
-
-const XIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-  </svg>
-);
 
 export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
   title,
@@ -30,12 +24,26 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
   content,
   sourceLabel,
   url,
+  bookId,
+  pageNumber,
+  quote,
+  variant = 'searchResult',
   onClose,
 }) => {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
-  const shareTargetUrl = url || window.location.origin;
+  const isPageShare = bookId !== undefined && pageNumber !== undefined;
+  const quoteQueryParam = quote ? `?quote=${encodeURIComponent(quote)}` : '';
+  const deepLink = isPageShare
+    ? `${window.location.origin}/books/${bookId}/${pageNumber}${quoteQueryParam}`
+    : undefined;
+  const ogPreviewLink = isPageShare
+    ? `${window.location.origin}/api/share/page/${bookId}/${pageNumber}${quoteQueryParam}`
+    : undefined;
+
+  const shareTargetUrl = deepLink || url || window.location.origin;
+  const facebookTargetUrl = ogPreviewLink || shareTargetUrl;
 
   const fullTextToShare = [
     title ? `📌 ${title}` : '',
@@ -54,14 +62,16 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
   };
 
   const handleTwitter = () => {
-    const tweetText = [
-      title ? `📌 ${title}` : '',
-      content ? `"${content.slice(0, 160)}"` : '',
-      sourceLabel ? `— ${sourceLabel}` : '',
-      shareTargetUrl,
-    ]
-      .filter(Boolean)
-      .join('\n\n');
+    const tweetText = buildSafeTweetText({
+      headLines: [title ? `📌 ${title}` : ''],
+      contentPrefix: '"',
+      contentText: content,
+      contentSuffix: '"',
+      tailLines: [
+        sourceLabel ? `— ${sourceLabel}` : '',
+        shareTargetUrl,
+      ],
+    });
 
     const twitterUrl = `https://x.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
     window.open(twitterUrl, '_blank', 'noopener,noreferrer,width=550,height=420');
@@ -69,11 +79,16 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
 
   const handleFacebook = async () => {
     await navigator.clipboard.writeText(fullTextToShare).catch(() => {});
-    const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareTargetUrl)}`;
+    const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(facebookTargetUrl)}`;
     window.open(fbUrl, '_blank', 'noopener,noreferrer,width=620,height=560');
   };
 
   const previewContent = content.length > 200 ? content.slice(0, 200) + '…' : content;
+
+  const headerLabel =
+    variant === 'page' ? t('share.sharePage') :
+    variant === 'quote' ? t('share.shareQuote') :
+    t('share.shareSearchResult');
 
   return createPortal(
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" dir="rtl">
@@ -90,7 +105,7 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
               <XIcon />
             </div>
             <span className="font-normal text-[#1a1a1a] dark:text-slate-100 uyghur-text">
-              {t('share.shareSearchResult')}
+              {headerLabel}
             </span>
           </div>
           <button
