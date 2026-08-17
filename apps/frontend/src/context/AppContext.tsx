@@ -23,6 +23,8 @@ interface AppContextType {
   setSelectedCategory: (category: string) => void;
   currentPage: number | null;
   setCurrentPage: React.Dispatch<React.SetStateAction<number | null>>;
+  pendingQuoteHighlight: string | null;
+  setPendingQuoteHighlight: React.Dispatch<React.SetStateAction<string | null>>;
   selectedBook: Book | null;
   setSelectedBook: React.Dispatch<React.SetStateAction<Book | null>>;
   books: Book[];
@@ -61,13 +63,21 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const parsePath = (path: string): { view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran', tab: string, bookId?: string } => {
+  const parsePath = (path: string): {
+    view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran',
+    tab: string,
+    bookId?: string,
+    pageNumber?: number,
+    quote?: string,
+  } => {
     const parts = path.toLowerCase().split('/').filter(Boolean);
     const viewPortion = parts[0] || 'home';
 
     let view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran' = 'home';
     let tab = 'books';
     let bookId: string | undefined;
+    let pageNumber: number | undefined;
+    let quote: string | undefined;
 
     if (viewPortion === 'library') view = 'library';
     else if (viewPortion === 'admin') {
@@ -82,18 +92,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     else if (viewPortion === 'dictionary') view = 'dictionary';
     else if (viewPortion === 'quran') view = 'quran';
     else if (viewPortion === 'books' && parts[1]) {
-      // Deep link from Facebook share: /books/<id>
+      // Deep link from social share: /books/<id> or /books/<id>/<pageNumber>?quote=<text>
       view = 'library';
       bookId = parts[1];
+      if (parts[2] && /^\d+$/.test(parts[2])) {
+        pageNumber = parseInt(parts[2], 10);
+      }
+      const quoteParam = new URLSearchParams(window.location.search).get('quote');
+      if (quoteParam) quote = quoteParam;
     }
 
-    return { view, tab, bookId };
+    return { view, tab, bookId, pageNumber, quote };
   };
 
   const initialRoute = parsePath(window.location.pathname);
   const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran'>(initialRoute.view);
   const [activeTab, setActiveTabInternal] = useState<string>(initialRoute.tab);
   const initialBookId = initialRoute.bookId;
+  const initialPageNumber = initialRoute.pageNumber;
+  const initialQuote = initialRoute.quote;
   const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran'>('home');
 
   const getPathFromView = (v: string, t?: string) => {
@@ -164,19 +181,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [currentPage, setCurrentPage] = useState<number | null>(null);
+  const [pendingQuoteHighlight, setPendingQuoteHighlight] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [isReaderFullscreen, setIsReaderFullscreen] = useState(false);
   const [fontSize, setFontSize] = useState(18);
   const loaderRef = useRef<HTMLDivElement>(null);
 
-  // Open the reader directly when landing on a /books/<id> deep link (e.g. from a Facebook share)
+  // Open the reader directly when landing on a /books/<id>[/<page>][?quote=] deep
+  // link (e.g. from a social share)
   useEffect(() => {
     if (!initialBookId) return;
     PersistenceService.getBookById(initialBookId).then(book => {
       if (book) {
         setSelectedBook(book);
         setViewInternal('reader');
+        if (initialPageNumber) setCurrentPage(initialPageNumber);
+        if (initialQuote) setPendingQuoteHighlight(initialQuote);
         window.history.replaceState({}, '', '/');
       }
     });
@@ -241,6 +262,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSelectedCategory,
     currentPage,
     setCurrentPage,
+    pendingQuoteHighlight,
+    setPendingQuoteHighlight,
     selectedBook,
     setSelectedBook,
     books,
