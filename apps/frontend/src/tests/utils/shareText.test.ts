@@ -1,5 +1,47 @@
 import { describe, expect, test } from 'vitest';
-import { cleanShareText, buildSafeTweetText } from '@/src/utils/shareText';
+import { cleanShareText, buildSafeTweetText, formatShareSource, DEFAULT_SHARE_HASHTAGS } from '@/src/utils/shareText';
+
+describe('formatShareSource', () => {
+  test('formats full source with title, author, and page number', () => {
+    expect(
+      formatShareSource({
+        bookTitle: 'مېھرابتەن چايان',
+        bookAuthor: 'ئابدۇللا قادىرى',
+        pageNumber: 2,
+      })
+    ).toBe('— «مېھرابتەن چايان» (ئابدۇللا قادىرى)، 2-بەت');
+  });
+
+  test('formats title and page number without author', () => {
+    expect(
+      formatShareSource({
+        bookTitle: 'مېھرابتەن چايان',
+        pageNumber: '2-بەت',
+      })
+    ).toBe('— «مېھرابتەن چايان»، 2-بەت');
+  });
+
+  test('formats title and author without page number', () => {
+    expect(
+      formatShareSource({
+        bookTitle: 'مېھرابتەن چايان',
+        bookAuthor: 'ئابدۇللا قادىرى',
+      })
+    ).toBe('— «مېھرابتەن چايان» (ئابدۇللا قادىرى)');
+  });
+
+  test('formats page number only when title and author are missing', () => {
+    expect(
+      formatShareSource({
+        pageNumber: 5,
+      })
+    ).toBe('— 5-بەت');
+  });
+
+  test('returns empty string when all inputs are missing', () => {
+    expect(formatShareSource({})).toBe('');
+  });
+});
 
 describe('cleanShareText', () => {
   test('strips markdown ref links, leaving the link text', () => {
@@ -100,5 +142,9 @@ describe('buildSafeTweetText', () => {
 
     const headLineInResult = result.split('\n\n')[0];
     expect(headLineInResult.length).toBeLessThanOrEqual(81); // 80 chars + ellipsis
+  });
+
+  test('defines default hashtags #KitabimAI #Uyghur', () => {
+    expect(DEFAULT_SHARE_HASHTAGS).toBe('#KitabimAI #Uyghur');
   });
 });

@@ -2,7 +2,7 @@ import { Check, ClipboardPaste, Copy, X } from 'lucide-react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
-import { cleanShareText, buildSafeTweetText } from '../../utils/shareText';
+import { cleanShareText, buildSafeTweetText, formatShareSource, DEFAULT_SHARE_HASHTAGS } from '../../utils/shareText';
 import { FacebookIcon, XIcon } from './ShareIcons';
 
 interface ShareChatModalProps {
@@ -23,12 +23,13 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
   const safeA = cleanShareText(answer || '');
 
   const shareUrl = window.location.origin;
+  const sourceLine = formatShareSource({ bookTitle, bookAuthor });
 
   const footerText = `-- كىتابىم تورى\n${shareUrl}`;
   const qaText = [
     safeQ ? `سوئال: ${safeQ}` : '',
     safeA ? `زېرەكچاق: ${safeA}` : '',
-    bookTitle ? `— Source: ${bookTitle}` : '',
+    sourceLine,
     footerText
   ].filter(Boolean).join('\n\n');
 
@@ -44,8 +45,9 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
       contentPrefix: 'زېرەكچاق: ',
       contentText: safeA,
       tailLines: [
-        bookTitle ? `— Source: ${bookTitle}` : '',
+        sourceLine,
         footerText,
+        DEFAULT_SHARE_HASHTAGS,
       ],
     });
     const twitterUrl = `https://x.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;

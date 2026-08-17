@@ -2,7 +2,7 @@ import { Check, Copy, X } from 'lucide-react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
-import { buildSafeTweetText } from '../../utils/shareText';
+import { buildSafeTweetText, formatShareSource, DEFAULT_SHARE_HASHTAGS } from '../../utils/shareText';
 import { FacebookIcon, XIcon } from './ShareIcons';
 
 interface ShareSearchResultModalProps {
@@ -12,7 +12,9 @@ interface ShareSearchResultModalProps {
   sourceLabel?: string;
   url?: string;
   bookId?: string;
-  pageNumber?: number;
+  bookTitle?: string;
+  bookAuthor?: string;
+  pageNumber?: number | string;
   quote?: string;
   variant?: 'searchResult' | 'page' | 'quote';
   onClose: () => void;
@@ -25,6 +27,8 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
   sourceLabel,
   url,
   bookId,
+  bookTitle,
+  bookAuthor,
   pageNumber,
   quote,
   variant = 'searchResult',
@@ -48,11 +52,23 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
     ? `${window.location.origin}/books/${bookId}/${pageNumber}`
     : (url || window.location.origin);
 
+  const effectiveBookTitle = bookTitle || (isPageShare || variant === 'page' || variant === 'quote' ? title : undefined);
+  const rawAuthor = bookAuthor || subtitle;
+  const effectiveBookAuthor = rawAuthor ? rawAuthor.replace(/^Author:\s*/i, '') : undefined;
+
+  const formattedSource = formatShareSource({
+    bookTitle: effectiveBookTitle,
+    bookAuthor: effectiveBookAuthor,
+    pageNumber: pageNumber ?? sourceLabel,
+  });
+
+  const finalSourceLabel = formattedSource || (sourceLabel ? `— ${sourceLabel}` : '');
+
   const fullTextToShare = [
     title ? `📌 ${title}` : '',
     subtitle ? `(${subtitle})` : '',
     content || '',
-    sourceLabel ? `— Source: ${sourceLabel}` : '',
+    finalSourceLabel,
     `Kitabim AI: ${shareTargetUrl}`,
   ]
     .filter(Boolean)
@@ -70,8 +86,9 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
       contentPrefix: '',
       contentText: content,
       tailLines: [
-        sourceLabel ? `— ${sourceLabel}` : '',
+        finalSourceLabel,
         plainPageUrl,
+        DEFAULT_SHARE_HASHTAGS,
       ],
     });
 

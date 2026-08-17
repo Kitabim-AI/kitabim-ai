@@ -229,7 +229,9 @@ export const PageItem: React.FC<PageItemProps> = ({
           content={shareState.content}
           sourceLabel={t('chat.pageNumber', { page: page.displayPageNumber || page.display_page_number || page.pageNumber })}
           bookId={bookId}
-          pageNumber={page.pageNumber}
+          bookTitle={bookTitle}
+          bookAuthor={bookAuthor}
+          pageNumber={page.displayPageNumber || page.display_page_number || page.pageNumber}
           quote={shareState.quote}
           variant={shareState.quote ? 'quote' : 'page'}
           onClose={() => setShareState(null)}

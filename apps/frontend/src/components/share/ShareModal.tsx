@@ -3,7 +3,7 @@ import { Check, Copy, ExternalLink, X } from 'lucide-react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
-import { buildSafeTweetText } from '../../utils/shareText';
+import { buildSafeTweetText, DEFAULT_SHARE_HASHTAGS } from '../../utils/shareText';
 import { FacebookIcon, XIcon } from './ShareIcons';
 
 interface ShareModalProps {
@@ -34,7 +34,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
       headLines: [],
       contentPrefix: '📖 ',
       contentText: `${titleWithVolume}${displayAuthor ? ` - ${displayAuthor}` : ''}`,
-      tailLines: [deepLink],
+      tailLines: [deepLink, DEFAULT_SHARE_HASHTAGS],
     });
     const twitterUrl = `https://x.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
     window.open(twitterUrl, '_blank', 'noopener,noreferrer,width=550,height=420');

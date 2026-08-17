@@ -1,3 +1,6 @@
+/** Default hashtags appended to X (Twitter) posts. */
+export const DEFAULT_SHARE_HASHTAGS = '#KitabimAI #Uyghur';
+
 /** Strips markdown ref-links, bare (ref:...) fragments, and BookID fragments from
  * shareable text — keeps the visible label of `[text](ref:...)` links, drops
  * everything else that's an internal reference artifact, not meant for readers. */
@@ -8,6 +11,41 @@ export const cleanShareText = (text: string): string => {
     .replace(/\(ref:[^)]+\)/g, '')
     .replace(/\s*\(?BookID:\s*[a-zA-Z0-9-]+\)?/gi, '')
     .trim();
+};
+
+export interface ShareSourceInfo {
+  bookTitle?: string;
+  bookAuthor?: string;
+  pageNumber?: number | string;
+}
+
+/** Formats a clean Uyghur citation/source line for social media posts.
+ * E.g.: `— «مېھرابتەن چايان» (ئابدۇللا قادىرى)، 2-بەت` */
+export const formatShareSource = ({ bookTitle, bookAuthor, pageNumber }: ShareSourceInfo): string => {
+  const cleanTitle = bookTitle?.trim();
+  const cleanAuthor = bookAuthor?.trim();
+
+  let pageText = '';
+  if (pageNumber !== undefined && pageNumber !== null && pageNumber !== '') {
+    const rawPage = String(pageNumber).replace(/^📖\s*/, '').trim();
+    pageText = rawPage.includes('بەت') ? rawPage : `${rawPage}-بەت`;
+  }
+
+  const titlePart = cleanTitle ? `«${cleanTitle}»` : '';
+  const authorPart = cleanAuthor ? `(${cleanAuthor})` : '';
+
+  const bookAndAuthor = [titlePart, authorPart].filter(Boolean).join(' ');
+
+  if (bookAndAuthor && pageText) {
+    return `— ${bookAndAuthor}، ${pageText}`;
+  }
+  if (bookAndAuthor) {
+    return `— ${bookAndAuthor}`;
+  }
+  if (pageText) {
+    return `— ${pageText}`;
+  }
+  return '';
 };
 
 export interface SafeTweetInput {

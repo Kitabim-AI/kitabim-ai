@@ -141,18 +141,30 @@ export const ContentResultsList: React.FC<ContentResultsListProps> = ({
                 </div>
               </div>
 
-              {/* Page Badge */}
-              <div className="shrink-0 flex items-center gap-1.5 px-3 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] font-bold text-xs sm:text-sm rounded-full">
-                <span>📖 {hit.pageNumber}-بەت</span>
+              {/* Page Badge & Share Icon */}
+              <div className="shrink-0 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShareHit(hit);
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-[#0369a1] dark:hover:text-[#38bdf8] rounded-lg transition-colors"
+                  title={t('share.shareSearchResult')}
+                >
+                  <Share2 size={16} strokeWidth={2} />
+                </button>
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] font-bold text-xs sm:text-sm rounded-full">
+                  <span>📖 {hit.pageNumber}-بەت</span>
+                </div>
               </div>
             </div>
 
             {/* Snippet text */}
             <div
               data-testid="snippet-container"
-              className={`uyghur-text text-slate-700 dark:text-slate-300 text-base leading-relaxed bg-slate-50/50 dark:bg-slate-950/40 p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-slate-800/80 ${
-                isGuest ? 'select-none' : ''
-              }`}
+              className={`uyghur-text text-slate-700 dark:text-slate-300 text-base leading-relaxed bg-slate-50/50 dark:bg-slate-950/40 p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-slate-800/80 ${isGuest ? 'select-none' : ''
+                }`}
               onCopy={isGuest ? (e) => e.preventDefault() : undefined}
               onContextMenu={isGuest ? (e) => e.preventDefault() : undefined}
             >
@@ -160,19 +172,7 @@ export const ContentResultsList: React.FC<ContentResultsListProps> = ({
             </div>
 
             {/* Footer action */}
-            <div className="flex items-center justify-between pt-1">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShareHit(hit);
-                }}
-                className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-[#0369a1] dark:hover:text-[#38bdf8] transition-colors"
-              >
-                <Share2 size={16} strokeWidth={2} />
-                <span className="uyghur-text">{t('share.shareSearchResult')}</span>
-              </button>
-
+            <div className="flex items-center justify-end pt-1">
               <button
                 type="button"
                 onClick={(e) => {
@@ -182,7 +182,7 @@ export const ContentResultsList: React.FC<ContentResultsListProps> = ({
                 className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#0369a1] dark:text-[#38bdf8] hover:underline"
               >
                 <BookOpen size={16} strokeWidth={2} />
-                <span>بەتنى ئوقۇش</span>
+                <span>بەتنى ئېچىش</span>
               </button>
             </div>
           </div>
@@ -195,6 +195,10 @@ export const ContentResultsList: React.FC<ContentResultsListProps> = ({
           subtitle={shareHit.bookAuthor ? `Author: ${shareHit.bookAuthor}` : undefined}
           content={shareHit.snippet}
           sourceLabel={`📖 ${shareHit.pageNumber}-بەت`}
+          bookId={shareHit.bookId}
+          bookTitle={shareHit.bookTitle}
+          bookAuthor={shareHit.bookAuthor}
+          pageNumber={shareHit.pageNumber}
           url={`${window.location.origin}/books/${shareHit.bookId}`}
           onClose={() => setShareHit(null)}
         />
