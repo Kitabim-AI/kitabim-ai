@@ -1193,7 +1193,7 @@ import { useQuoteHighlight } from '@/src/hooks/useQuoteHighlight';
 
 beforeEach(() => {
   document.body.innerHTML = '';
-  Element.prototype.scrollIntoView = vi.fn();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
 });
 
 const makeContainer = (html: string): HTMLDivElement => {
@@ -1238,7 +1238,7 @@ describe('useQuoteHighlight', () => {
     expect(mark).not.toBeNull();
     expect(mark?.textContent).toBe('world example');
     expect(container.textContent).toBe('Hello world example text');
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({
       block: 'center',
       behavior: 'smooth',
     });
@@ -1269,7 +1269,7 @@ describe('useQuoteHighlight', () => {
     renderHook(() => useQuoteHighlight(ref, 'text that does not exist', 'Hello world', onApplied));
 
     expect(container.querySelector('mark')).toBeNull();
-    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+    expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
     expect(onApplied).toHaveBeenCalledTimes(1);
   });
 });
@@ -1829,11 +1829,11 @@ EOF
 
 - [ ] **Step 1: Write the failing tests**
 
-Add these tests to `apps/frontend/src/tests/components/reader/PageItem.test.tsx`. First, add stubs needed by the new hooks/modal to the top of the file (`Element.prototype.scrollIntoView`, `navigator.clipboard`, `window.open`) inside the existing `beforeEach`:
+Add these tests to `apps/frontend/src/tests/components/reader/PageItem.test.tsx`. First, add stubs needed by the new hooks/modal to the top of the file (`HTMLElement.prototype.scrollIntoView` — jsdom v27 defines it there, not on `Element.prototype`, confirmed while implementing Task 6 — plus `navigator.clipboard`, `window.open`) inside the existing `beforeEach`:
 
 ```tsx
 // Add inside the existing beforeEach(() => { ... }) block:
-  Element.prototype.scrollIntoView = vi.fn();
+  HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal('open', vi.fn());
   Object.assign(navigator, {
     clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
