@@ -168,7 +168,7 @@ export function AdminQuestions() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-8 animate-fade-in w-full max-w-full min-w-0">
       {/* Search and Filters Bar */}
       <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4">
         {/* Search input box on the right */}
@@ -222,17 +222,17 @@ export function AdminQuestions() {
 
       {/* Table */}
       {questions.length > 0 && (
-        <div className="glass-panel dark:bg-slate-900/60 overflow-hidden rounded-[16px] md:rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10 dark:border-slate-800">
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-right lg:min-w-[900px]" dir="rtl">
+        <div className="glass-panel dark:bg-slate-900/60 overflow-hidden rounded-[16px] md:rounded-[24px] p-0 shadow-xl border border-[#0369a1]/10 dark:border-slate-800 w-full max-w-full min-w-0">
+          <div className="overflow-x-hidden w-full max-w-full min-w-0">
+            <table className="w-full text-right table-fixed lg:table-auto" dir="rtl">
               <thead>
                 <tr className="bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 border-b border-[#0369a1]/10 dark:border-slate-800 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] dark:text-[#38bdf8] uppercase">
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-right font-normal w-[50%] sm:w-[45%] lg:w-[40%]">{t('admin.questions.colQuestion')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[14%]">{t('admin.questions.colUser')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[8%]">{t('admin.questions.colFeedback')}</th>
-                  <th className="hidden sm:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[30%] sm:w-[35%] lg:w-[16%]">{t('admin.questions.colEvalQuality')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal w-[15%]">{t('admin.questions.colDate')}</th>
-                  <th className="px-3 md:px-6 py-3 md:py-5 text-left font-normal w-[20%] sm:w-[20%] lg:w-[7%]">{t('admin.questions.colShowOnHome')}</th>
+                  <th className="px-2.5 sm:px-6 py-3.5 md:py-5 text-right font-normal sm:w-[45%] lg:w-[40%]">{t('admin.questions.colQuestion')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal lg:w-[14%]">{t('admin.questions.colUser')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal lg:w-[8%]">{t('admin.questions.colFeedback')}</th>
+                  <th className="hidden sm:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal sm:w-[35%] lg:w-[16%]">{t('admin.questions.colEvalQuality')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 text-center font-normal lg:w-[15%]">{t('admin.questions.colDate')}</th>
+                  <th className="px-1 sm:px-6 py-3.5 md:py-5 text-center font-normal w-20 sm:w-[20%] lg:w-[7%]">{t('admin.questions.colShowOnHome')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#75C5F0]/5 dark:divide-slate-800/30">
@@ -244,7 +244,7 @@ export function AdminQuestions() {
                     }`}
                   >
                     {/* Question text */}
-                    <td className="px-3 md:px-6 py-4 md:py-6">
+                    <td className="px-2.5 sm:px-6 py-4 md:py-6">
                       <div className="flex items-start gap-2.5">
                         <div
                           title={q.isGlobal ? t('admin.questions.scopeGlobal') : t('admin.questions.scopeBook')}
@@ -258,7 +258,7 @@ export function AdminQuestions() {
                         </div>
                         <div className="flex-1 min-w-0 flex flex-col gap-1 text-right" dir="rtl">
                           <p
-                            className="uyghur-text text-[#1a1a1a] dark:text-slate-100 font-semibold text-[14px] md:text-[16px] lg:text-[17px] leading-relaxed line-clamp-2"
+                            className="uyghur-text text-[#1a1a1a] dark:text-slate-100 font-semibold text-[13px] sm:text-[15px] md:text-[16px] lg:text-[17px] leading-relaxed line-clamp-3 break-words"
                             lang="ug"
                             title={q.question}
                           >
@@ -339,8 +339,8 @@ export function AdminQuestions() {
                     </td>
 
                     {/* Toggle */}
-                    <td className="px-3 md:px-6 py-4 md:py-6 text-left">
-                      <div className="flex items-center justify-start" dir="ltr">
+                    <td className="px-2 sm:px-6 py-4 md:py-6 text-center w-20 sm:w-[20%] lg:w-[7%]">
+                      <div className="flex items-center justify-center" dir="ltr">
                         <button
                           onClick={() => handleToggle(q)}
                           disabled={togglingId === q.id}

@@ -1,4 +1,4 @@
-import { Check, Copy, X } from 'lucide-react';
+import { Check, ClipboardPaste, Copy, X } from 'lucide-react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
@@ -36,6 +36,7 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
 }) => {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const [fbClicked, setFbClicked] = useState(false);
 
   const isPageShare = bookId !== undefined && pageNumber !== undefined;
   const quoteQueryParam = quote ? `?quote=${encodeURIComponent(quote)}` : '';
@@ -100,6 +101,7 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
     await navigator.clipboard.writeText(fullTextToShare).catch(() => {});
     const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(facebookTargetUrl)}`;
     window.open(fbUrl, '_blank', 'noopener,noreferrer,width=620,height=560');
+    setFbClicked(true);
   };
 
   const previewContent = content.length > 200 ? content.slice(0, 200) + '…' : content;
@@ -167,6 +169,16 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
           </div>
         </div>
 
+        {/* Paste hint — shown after FB button is clicked */}
+        {fbClicked && (
+          <div className="mx-5 mb-3 flex items-center gap-2 px-4 py-2.5 bg-[#1877F2]/8 dark:bg-[#1877F2]/10 border border-[#1877F2]/20 rounded-2xl">
+            <ClipboardPaste size={15} className="text-[#1877F2] shrink-0" strokeWidth={2} />
+            <p className="text-xs text-[#1877F2] font-normal uyghur-text leading-relaxed text-right">
+              {t('share.pasteHint')}
+            </p>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="grid grid-cols-3 gap-2 p-5 pt-0">
           <button
@@ -193,8 +205,10 @@ export const ShareSearchResultModal: React.FC<ShareSearchResultModalProps> = ({
             onClick={handleFacebook}
             className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-2xl text-xs font-normal transition-all active:scale-95 shadow-md shadow-[#1877F2]/30"
           >
-            <FacebookIcon />
-            <span className="uyghur-text whitespace-nowrap">{t('share.postToFacebook')}</span>
+            {fbClicked
+              ? <><Check size={15} strokeWidth={2.5} /><span className="uyghur-text whitespace-nowrap">{t('share.textCopied')}</span></>
+              : <><FacebookIcon /><span className="uyghur-text whitespace-nowrap">{t('share.postToFacebook')}</span></>
+            }
           </button>
         </div>
       </div>

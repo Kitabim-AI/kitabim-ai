@@ -1,5 +1,5 @@
 import { Book } from '@shared/types';
-import { Check, Copy, ExternalLink, X } from 'lucide-react';
+import { Check, ClipboardPaste, Copy, ExternalLink, X } from 'lucide-react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
@@ -14,9 +14,21 @@ interface ShareModalProps {
 export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const [fbClicked, setFbClicked] = useState(false);
 
   const shareUrl = `${window.location.origin}/api/share/book/${book.id}`;
   const deepLink = `${window.location.origin}/books/${book.id}`;
+
+  const displayAuthor = book.author?.trim();
+  const titleWithVolume =
+    book.volume != null
+      ? `${book.title} (${t('book.volume', { volume: book.volume })})`
+      : book.title;
+
+  const fullTextToShare = [
+    `📖 ${titleWithVolume}${displayAuthor ? ` - ${displayAuthor}` : ''}`,
+    deepLink,
+  ].join('\n\n');
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(deepLink);
@@ -24,9 +36,11 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleFacebook = () => {
+  const handleFacebook = async () => {
+    await navigator.clipboard.writeText(fullTextToShare).catch(() => {});
     const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
     window.open(fbUrl, '_blank', 'noopener,noreferrer,width=600,height=500');
+    setFbClicked(true);
   };
 
   const handleTwitter = () => {
@@ -39,12 +53,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
     const twitterUrl = `https://x.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
     window.open(twitterUrl, '_blank', 'noopener,noreferrer,width=550,height=420');
   };
-
-  const displayAuthor = book.author?.trim();
-  const titleWithVolume =
-    book.volume != null
-      ? `${book.title} (${t('book.volume', { volume: book.volume })})`
-      : book.title;
 
   return createPortal(
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" dir="rtl">
@@ -104,6 +112,16 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
           </div>
         </div>
 
+        {/* Paste hint — shown after FB button is clicked */}
+        {fbClicked && (
+          <div className="mx-5 mb-3 flex items-center gap-2 px-4 py-2.5 bg-[#1877F2]/8 dark:bg-[#1877F2]/10 border border-[#1877F2]/20 rounded-2xl">
+            <ClipboardPaste size={15} className="text-[#1877F2] shrink-0" strokeWidth={2} />
+            <p className="text-xs text-[#1877F2] font-normal uyghur-text leading-relaxed text-right">
+              {t('share.pasteHint')}
+            </p>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="grid grid-cols-3 gap-2 p-5 pt-0">
           <button
@@ -128,8 +146,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({ book, onClose }) => {
             onClick={handleFacebook}
             className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-2xl text-xs font-normal transition-all active:scale-95 shadow-md shadow-[#1877F2]/30 dark:shadow-[#1877F2]/10"
           >
-            <FacebookIcon />
-            <span className="uyghur-text whitespace-nowrap">{t('share.postToFacebook')}</span>
+            {fbClicked
+              ? <><Check size={15} strokeWidth={2.5} /><span className="uyghur-text whitespace-nowrap">{t('share.textCopied')}</span></>
+              : <><FacebookIcon /><span className="uyghur-text whitespace-nowrap">{t('share.postToFacebook')}</span></>
+            }
           </button>
         </div>
       </div>

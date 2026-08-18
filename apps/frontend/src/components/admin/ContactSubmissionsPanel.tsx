@@ -87,7 +87,7 @@ export function ContactSubmissionsPanel() {
   };
 
   return (
-    <div className="space-y-6 md:space-y-8 animate-fade-in" dir="rtl" lang="ug">
+    <div className="space-y-6 md:space-y-8 animate-fade-in w-full max-w-full min-w-0" dir="rtl" lang="ug">
       {/* Search and Filter Row - matching other tabs layout */}
       <div className="flex flex-col-reverse md:flex-row gap-3 md:gap-4 items-center">
         <div className="relative flex-1 lg:flex-none lg:w-[30%] group w-full">
@@ -148,9 +148,9 @@ export function ContactSubmissionsPanel() {
           </div>
         </div>
       ) : (
-        <div className="glass-panel dark:bg-slate-900/60 shadow-xl border border-[#0369a1]/10 dark:border-slate-800 rounded-[16px] md:rounded-[24px]" style={{ padding: 0, overflow: 'visible' }}>
-          <div className="overflow-x-auto rounded-[16px] md:rounded-[24px]" style={{ overflow: 'hidden' }}>
-            <table className="w-full text-right lg:min-w-[900px]" dir="rtl">
+        <div className="glass-panel dark:bg-slate-900/60 shadow-xl border border-[#0369a1]/10 dark:border-slate-800 rounded-[16px] md:rounded-[24px] w-full max-w-full min-w-0" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="overflow-x-auto rounded-[16px] md:rounded-[24px] w-full max-w-full min-w-0">
+            <table className="w-full min-w-[600px] lg:min-w-[900px] text-right" dir="rtl">
               <thead>
                 <tr className="bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] dark:text-[#38bdf8] uppercase border-b border-[#0369a1]/10 dark:border-slate-800">
                   <th className="px-4 md:px-8 py-3 md:py-5 text-right font-normal">
