@@ -56,10 +56,10 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
   const visibleTabs = tabs.filter((tab) => !tab.adminOnly || isAdmin);
 
   return (
-    <div className="space-y-0 px-3 py-3 sm:px-6 md:px-0" dir="rtl" lang="ug">
+    <div className="space-y-0 px-3 py-3 sm:px-6 md:px-0 w-full max-w-full min-w-0" dir="rtl" lang="ug">
       {/* Tab Navigation */}
-      <div className="border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-end overflow-x-auto overflow-y-hidden gap-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+      <div className="border-b border-slate-200 dark:border-slate-800 w-full max-w-full min-w-0">
+        <div className="flex items-end overflow-x-auto overflow-y-hidden gap-1 w-full max-w-full min-w-0" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           {visibleTabs.map((tab) => (
             <button
               key={tab.id}
@@ -86,7 +86,7 @@ export function AdminTabs({ bookManagementPanel }: AdminTabsProps) {
       </div>
 
       {/* Tab Content */}
-      <div className="pt-6 md:pt-8">
+      <div className="pt-6 md:pt-8 w-full max-w-full min-w-0">
         {activeTab === 'books' && bookManagementPanel}
         {activeTab === 'users' && isAdmin && <UserManagementPanel />}
         {activeTab === 'rules' && <AutoCorrectRulesPanel />}
