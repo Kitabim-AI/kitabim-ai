@@ -16,7 +16,7 @@
 
 ### `packages/backend-core/app/db/seeds.py`
 
-- **[suggestion]** Lines 37, 42 — `gemini_batch_ocr_batch_size` and `gemini_batch_ocr_poll_interval` are seeded but never read anywhere in the new code (confirmed: no references outside `seeds.py`). `submit_batch_ocr_job` batches whatever page list `ocr_job` hands it (sized by the scanner's own grouping, unrelated to this key), and the poller's cron cadence is a fixed `cron(run_batch_ocr_poller_scanner)` in `worker.py` with no schedule argument — `gemini_batch_ocr_poll_interval` is dead configuration. Either wire these into `batch_ocr_service.py`/the cron registration, or drop them until implemented so admins aren't misled into thinking they control behavior.
+- **[suggestion]** Lines 37, 42 — `ocr_batch_size_per_job` and `gemini_batch_ocr_poll_interval` are seeded but never read anywhere in the new code (confirmed: no references outside `seeds.py`). `submit_batch_ocr_job` batches whatever page list `ocr_job` hands it (sized by the scanner's own grouping, unrelated to this key), and the poller's cron cadence is a fixed `cron(run_batch_ocr_poller_scanner)` in `worker.py` with no schedule argument — `gemini_batch_ocr_poll_interval` is dead configuration. Either wire these into `batch_ocr_service.py`/the cron registration, or drop them until implemented so admins aren't misled into thinking they control behavior.
 
 ### `packages/backend-core/app/services/batch_ocr_service.py`
 
@@ -24,13 +24,13 @@
 - **[suggestion]** Lines 129, 279–280, 307–309, 316–319, 397–398 — Multiple `logger.error(f"...")` / `logger.warning(f"...")` calls bypass the project's `log_json(logger, level, "message", key=value)` convention used elsewhere in this same file (e.g. lines 119–127, 195–201). Convert to `log_json` for structured, greppable logs.
 - **[suggestion]** Line 131 — `err_msg = str(exc)` is not truncated to `[:500]` before landing in `Page.error` (line 155), unlike the per-page ingest path (line 344) which correctly truncates.
 - **[suggestion]** Lines 364–395 — A Gemini response with no `candidates` is treated as a silent success (blank text, `ocr_milestone="succeeded"`, no error/warning), unlike the online OCR path which only writes blank text after exhausting retries and logs a `WARNING` with a `"skipped"` flag. Recommend treating an empty-candidates response as a failure (increment retry, mark `failed`) rather than a silent blank success.
-- **[suggestion]** `model = gemini_ocr_model.replace("models/", "", 1) if ...` (lines 102–106) — Minor duplication risk: verify this normalization matches whatever `ocr_page_with_gemini` (the online path) does with the same `gemini_ocr_model` value, so behavior doesn't diverge between the two modes for the same configured model string.
+- **[suggestion]** `model = ocr_gemini_model.replace("models/", "", 1) if ...` (lines 102–106) — Minor duplication risk: verify this normalization matches whatever `ocr_page_with_gemini` (the online path) does with the same `ocr_gemini_model` value, so behavior doesn't diverge between the two modes for the same configured model string.
 
 ### `packages/backend-core/tests/app/services/batch_ocr_service_test.py`
 
 - **[suggestion]** Only two happy-path tests exist (`submit_batch_ocr_job` success, `poll_and_process_batch_ocr_jobs` success/succeeded-state ingestion). Missing per the testing checklist:
   - Submission failure path (`client.batches.create` raises) — should assert `Page.ocr_milestone` update to `"failed"` with `retry_count` incremented, not just that no exception propagates.
-  - Timeout path (`created_at` older than `gemini_batch_ocr_timeout_hours`).
+  - Timeout path (`created_at` older than `ocr_batch_timeout_hours`).
   - `FAILED` / `CANCELLED` Gemini batch state handling.
   - No-active-jobs early return (`active_jobs` empty → `processed_count == 0`, no Gemini API calls made).
   - `_ingest_batch_ocr_results` per-line error branch (`item.get("error")` truthy) and the empty-candidates edge case.

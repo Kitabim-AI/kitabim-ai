@@ -37,14 +37,14 @@ def _get_genai_client() -> genai.Client:
 
 async def _get_extraction_model(session: AsyncSession) -> str:
     config_repo = SystemConfigsRepository(session)
-    val = await config_repo.get_value("history_extraction_model", "gemini-2.5-flash")
+    val = await config_repo.get_value("history_gemini_model", "gemini-2.5-flash")
     model = val.strip() if val else "gemini-2.5-flash"
     return model.replace("models/", "", 1) if model.startswith("models/") else model
 
 
 async def _get_extraction_batch_size(session: AsyncSession) -> int:
     config_repo = SystemConfigsRepository(session)
-    val = await config_repo.get_value("history_extraction_batch_size", "15")
+    val = await config_repo.get_value("history_batch_size", "15")
     if val and val.strip().isdigit():
         return int(val.strip())
     return 15

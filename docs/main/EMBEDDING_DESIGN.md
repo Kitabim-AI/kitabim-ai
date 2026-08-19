@@ -10,16 +10,16 @@ Key characteristics:
 
 - **`EmbeddingScanner` claims pages across all books, not book-by-book** — same cross-book claiming pattern as `ChunkingScanner`, since embedding only needs chunk text already stored in `chunks`, not any book-level resource.
 - **The embedding call itself is chunk-level, not page-level.** `EmbeddingJob` loads a page's chunks with `embedding IS NULL`, then calls the Gemini embedding API in sub-batches of `EMBED_BATCH_SIZE` (env, default `50`) chunks at a time via `GeminiEmbeddings.aembed_documents`.
-- **Two independent submission paths exist, gated by `gemini_batch_embedding_enabled`:** the default interactive path dispatches `embedding_job` (an ARQ job that calls the Gemini interactive API synchronously per chunk batch); the optional path submits a `batch_embedding_jobs` row via the Gemini Batch API (async submit + poll) instead. Both paths are chosen by `EmbeddingScanner` at claim time.
-- **The reactive `EventDispatcher` path is interactive-only.** Unlike `EmbeddingScanner`, `EventDispatcher`'s `chunking_succeeded`-triggered dispatch always enqueues `embedding_job` directly — it does not check `gemini_batch_embedding_enabled` or ever submit a batch job. So when batch mode is enabled, a page only goes through the batch path if `EmbeddingScanner`'s 1-minute poll claims it before the reactive dispatcher does; the reactive path (which usually wins the race, since it fires within seconds of `chunking_succeeded`) always uses the interactive API regardless of the flag.
-- **`chunks.embedding` is `vector(3072)`, produced by the current default model `gemini-embedding-2`.** The column started as `vector(768)` in the initial baseline schema and was migrated to a 3072-dim column (`embedding_v2` → renamed to `embedding`) by migrations 035/037/038; `gemini_embedding_model` was cut over from `models/gemini-embedding-001` to `gemini-embedding-2` in the same migration (037), and a later migration (051) stripped the `models/` prefix from the stored config value. Note: `embedding_job.py`'s module docstring still says "generates and stores 768-dim embeddings" and `chunks_repository.py`'s `similarity_search` docstring still says "768-dimensional" — both are stale comments left over from the pre-cutover schema; the actual column, index casts (`::halfvec(3072)`), and `_get_embedding_dimensionality()`/`GeminiEmbeddings` dimension logic all agree on 3072 for the current `gemini-embedding-2` model.
+- **Two independent submission paths exist, gated by `embed_batch_enabled`:** the default interactive path dispatches `embedding_job` (an ARQ job that calls the Gemini interactive API synchronously per chunk batch); the optional path submits a `batch_embedding_jobs` row via the Gemini Batch API (async submit + poll) instead. Both paths are chosen by `EmbeddingScanner` at claim time.
+- **The reactive `EventDispatcher` path is interactive-only.** Unlike `EmbeddingScanner`, `EventDispatcher`'s `chunking_succeeded`-triggered dispatch always enqueues `embedding_job` directly — it does not check `embed_batch_enabled` or ever submit a batch job. So when batch mode is enabled, a page only goes through the batch path if `EmbeddingScanner`'s 1-minute poll claims it before the reactive dispatcher does; the reactive path (which usually wins the race, since it fires within seconds of `chunking_succeeded`) always uses the interactive API regardless of the flag.
+- **`chunks.embedding` is `vector(3072)`, produced by the current default model `gemini-embedding-2`.** The column started as `vector(768)` in the initial baseline schema and was migrated to a 3072-dim column (`embedding_v2` → renamed to `embedding`) by migrations 035/037/038; `embed_gemini_model` was cut over from `models/gemini-embedding-001` to `gemini-embedding-2` in the same migration (037), and a later migration (051) stripped the `models/` prefix from the stored config value. Note: `embedding_job.py`'s module docstring still says "generates and stores 768-dim embeddings" and `chunks_repository.py`'s `similarity_search` docstring still says "768-dimensional" — both are stale comments left over from the pre-cutover schema; the actual column, index casts (`::halfvec(3072)`), and `_get_embedding_dimensionality()`/`GeminiEmbeddings` dimension logic all agree on 3072 for the current `gemini-embedding-2` model.
 - **`ready` books remain eligible for re-embedding**, for the same reason as chunking: `apply_auto_corrections_to_page` (`auto_correct_service.py`) resets `embedding_milestone` to `idle` on a corrected page regardless of book status, and `ChunkingJob` sets `embedding=NULL` on any chunk whose text changed. Neither `EmbeddingScanner` nor `EventDispatcher` excludes `book.status == 'ready'` — only `status == 'error'` is excluded.
 
 ## Feature Flags
 
 | Flag | Default | Gates |
 |---|---|---|
-| `gemini_batch_embedding_enabled` (`system_configs`) | `"false"` (seeded by `seed_system_configs()`) | `EmbeddingScanner` — when `"true"`, claimed pages are submitted via `batch_embedding_service.submit_batch_embedding_job` (Gemini Batch API, async) instead of dispatching `embedding_job` directly. Does **not** affect `EventDispatcher`'s reactive path (see Overview). |
+| `embed_batch_enabled` (`system_configs`) | `"false"` (seeded by `seed_system_configs()`) | `EmbeddingScanner` — when `"true"`, claimed pages are submitted via `batch_embedding_service.submit_batch_embedding_job` (Gemini Batch API, async) instead of dispatching `embedding_job` directly. Does **not** affect `EventDispatcher`'s reactive path (see Overview). |
 
 ## Schema
 
@@ -69,7 +69,7 @@ Full column list and the rest of `chunks` (`id`, `book_id`, `page_number`, `chun
 
 | File | Purpose |
 |---|---|
-| `services/worker/scanners/embedding_scanner.py` | `run_embedding_scanner` — claims idle embedding pages across all books, then either dispatches `embedding_job` (interactive) or calls `submit_batch_embedding_job` (batch), depending on `gemini_batch_embedding_enabled`. |
+| `services/worker/scanners/embedding_scanner.py` | `run_embedding_scanner` — claims idle embedding pages across all books, then either dispatches `embedding_job` (interactive) or calls `submit_batch_embedding_job` (batch), depending on `embed_batch_enabled`. |
 | `services/worker/jobs/embedding_job.py` | `embedding_job` — interactive path: for each claimed page, loads unembedded chunks, calls `GeminiEmbeddings.aembed_documents` in `EMBED_BATCH_SIZE` sub-batches, persists vectors, sets `embedding_milestone='succeeded'`. One page at a time, own session per page. |
 | `packages/backend-core/app/services/batch_embedding_service.py` | `submit_batch_embedding_job` / `poll_and_process_batch_embedding_jobs` — batch path: builds and submits a Gemini Batch API JSONL embedding dataset, and later polls/ingests the results. |
 | `services/worker/scanners/batch_embedding_poller_scanner.py` | `run_batch_embedding_poller_scanner` — every-1-minute cron wrapper that calls `poll_and_process_batch_embedding_jobs`; no-op if there are no `submitting/submitted/running` `batch_embedding_jobs` rows. |
@@ -87,7 +87,7 @@ flowchart TD
     EMB_IDLE(["embedding_milestone = idle"])
     POLL["EmbeddingScanner (every 1 min):<br/>claim up to scanner_page_limit<br/>idle pages, cross-book"]
     REACT["EventDispatcher (reactive):<br/>claims off chunking_succeeded events"]
-    BATCH_GATE{"gemini_batch_embedding_enabled?<br/>(EmbeddingScanner path only)"}
+    BATCH_GATE{"embed_batch_enabled?<br/>(EmbeddingScanner path only)"}
     LOCK["EmbeddingJob:<br/>MultiPageLock(prefix=embedding)<br/>book.pipeline_step = embedding"]
     SUBMIT["submit_batch_embedding_job:<br/>chunks -> JSONL -> Gemini Batch API<br/>batch_embedding_jobs row created"]
     LOADCH{"page has chunks<br/>WHERE embedding IS NULL?"}
@@ -132,7 +132,7 @@ flowchart TD
 
 ```
 1. Fetch scanner_page_limit (system_configs, default 100) and
-   gemini_batch_embedding_enabled (system_configs, default "false").
+   embed_batch_enabled (system_configs, default "false").
 2. SELECT Page.id, Page.book_id JOIN Book WHERE
      chunking_milestone = 'succeeded'
      AND embedding_milestone = 'idle'
@@ -146,7 +146,7 @@ flowchart TD
    book's rolled-up embedding_milestone
    (BookMilestoneService.update_book_milestone_for_step).
 6. Commit.
-7. IF gemini_batch_embedding_enabled: call
+7. IF embed_batch_enabled: call
    batch_embedding_service.submit_batch_embedding_job(session, page_ids)
    in a fresh session.
    ELSE: enqueue embedding_job(page_ids=<all claimed ids>) via ARQ.
@@ -163,7 +163,7 @@ flowchart TD
    own poll never both enqueue a job for the same page.
 4. Mark processed events; commit.
 5. If any pages were claimed, enqueue embedding_job(page_ids=<claimed>)
-   directly — always interactive, regardless of gemini_batch_embedding_enabled
+   directly — always interactive, regardless of embed_batch_enabled
    (see Overview).
 ```
 
@@ -175,11 +175,11 @@ flowchart TD
    this run. If zero locks acquired, exit.
 2. Overwrite worker_id/claimed_at on the locked pages with this
    executing worker's ID.
-3. Fetch gemini_embedding_model from system_configs — no fallback;
+3. Fetch embed_gemini_model from system_configs — no fallback;
    raises RuntimeError if unset.
 4. Load the Page rows for the locked IDs.
 5. Set pipeline_step='embedding' on every distinct Book among these pages.
-6. Instantiate GeminiEmbeddings(gemini_embedding_model) once for the job.
+6. Instantiate GeminiEmbeddings(embed_gemini_model) once for the job.
 7. For each page (sequential, own session per page):
      a. SELECT chunks WHERE book_id=page.book_id AND page_number=
         page.page_number AND embedding IS NULL, ORDER BY chunk_index.
@@ -206,8 +206,8 @@ flowchart TD
 **`batch_embedding_service.submit_batch_embedding_job(session, page_ids)`:**
 
 ```
-1. Fetch gemini_embedding_model (required, no fallback) and
-   gemini_batch_embedding_max_chunks_per_job (default 100).
+1. Fetch embed_gemini_model (required, no fallback) and
+   embed_batch_max_chunks_per_job (default 100).
 2. Strip any "models/" prefix; compute output_dim via
    _get_embedding_dimensionality(model) = 3072 if "gemini-embedding-2" in
    model else 768.
@@ -218,7 +218,7 @@ flowchart TD
    recompute book milestones, return [].
 5. Group chunks by page, then pack into sub-batches without splitting a
    page's chunks across two sub-batches, each sub-batch capped at
-   gemini_batch_embedding_max_chunks_per_job chunks.
+   embed_batch_max_chunks_per_job chunks.
 6. For each sub-batch:
    a. Build one JSONL line per chunk: {"custom_id": "chunk_<id>",
       "request": {"content": {"parts": [{"text": chunk.text}]},
@@ -237,8 +237,8 @@ flowchart TD
 **`batch_embedding_service.poll_and_process_batch_embedding_jobs(session)`** (invoked every 1 min by `batch_embedding_poller_scanner`):
 
 ```
-1. Fetch gemini_batch_embedding_timeout_hours (default 24) and
-   gemini_batch_embedding_max_retry_count (default 3).
+1. Fetch embed_batch_timeout_hours (default 24) and
+   embed_batch_max_retry_count (default 3).
 2. SELECT all BatchEmbeddingJob rows WHERE status IN
    ('submitting','submitted','running').
 3. For each active job:
@@ -306,24 +306,24 @@ flowchart TD
 | Same exception, **on a book whose `status == 'ready'`** | Same page-level failure as above, but `PipelineDriver`'s Reset step excludes `status IN ('ready', 'error')` books outright — the page is never auto-retried until an admin reprocesses it (`POST /{book_id}/reprocess/embedding`) or the book's status otherwise changes. Same gap as chunking (see [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md#error-handling--retries)). |
 | `retry_count >= ocr_max_retry_count` (shared pipeline-level retry budget, `system_configs`, default `10`) after an embedding failure | Page stays `embedding_milestone='failed'` permanently; `PipelineDriver` marks the whole book `status='error'` (embedding is a mandatory step). |
 | Batch submission fails (`client.batches.create_embeddings` raises) | All pages in that sub-batch marked `embedding_milestone='failed'`, `retry_count+=1`, `error="Batch embedding submission failed: <msg>"`. The `BatchEmbeddingJob` row itself is recorded `status='failed'`. |
-| A submitted batch job exceeds `gemini_batch_embedding_timeout_hours` (default `24`) without reaching a terminal Gemini state | Job marked `status='failed'`; all its pages marked `embedding_milestone='failed'`, `retry_count+=1`, `error="Batch embedding job timed out"`. |
-| Batch job `SUCCEEDED` but a per-chunk entry has an `error` field (or is missing from the results) | That chunk is added to `failed_chunk_ids`. Per affected page: if `retry_count + 1 >= gemini_batch_embedding_max_retry_count` (default `3`), the page is marked **succeeded anyway** (to avoid indefinitely blocking on a handful of bad chunks — some chunks on that page permanently keep `embedding=NULL`); otherwise the page is marked `embedding_milestone='failed'`, `retry_count+=1`, for another pass. |
+| A submitted batch job exceeds `embed_batch_timeout_hours` (default `24`) without reaching a terminal Gemini state | Job marked `status='failed'`; all its pages marked `embedding_milestone='failed'`, `retry_count+=1`, `error="Batch embedding job timed out"`. |
+| Batch job `SUCCEEDED` but a per-chunk entry has an `error` field (or is missing from the results) | That chunk is added to `failed_chunk_ids`. Per affected page: if `retry_count + 1 >= embed_batch_max_retry_count` (default `3`), the page is marked **succeeded anyway** (to avoid indefinitely blocking on a handful of bad chunks — some chunks on that page permanently keep `embedding=NULL`); otherwise the page is marked `embedding_milestone='failed'`, `retry_count+=1`, for another pass. |
 | Batch job reaches Gemini state `FAILED` or `CANCELLED` | Job marked `status='failed'`; all its pages marked `embedding_milestone='failed'`, `retry_count+=1`, `error="Gemini batch job failed (<state>)"`. |
 | Page has zero chunks (e.g. it was `is_toc` or had empty OCR text) | Not a failure — both the interactive path (`EmbeddingJob`) and the batch submit path immediately mark the page `embedding_milestone='succeeded'`, `is_indexed=true` without calling the embedding API. |
 | A page's Redis lock can't be acquired (another `EmbeddingJob` already holds it) | That page is silently dropped from this run (not marked failed) — it stays `in_progress` and is picked up again once the lock expires (1h) or `StaleWatchdog` resets it. |
-| A page is locked by an active `batch_embedding_jobs` submission when `StaleWatchdog` runs | `StaleWatchdog` explicitly exempts any page ID present in a `submitting`/`submitted`/`running` `BatchEmbeddingJob.page_ids` array, so it is not force-reset to `idle` mid-batch — the batch poller's own `gemini_batch_embedding_timeout_hours` timeout is the sole recovery mechanism for those pages. |
+| A page is locked by an active `batch_embedding_jobs` submission when `StaleWatchdog` runs | `StaleWatchdog` explicitly exempts any page ID present in a `submitting`/`submitted`/`running` `BatchEmbeddingJob.page_ids` array, so it is not force-reset to `idle` mid-batch — the batch poller's own `embed_batch_timeout_hours` timeout is the sole recovery mechanism for those pages. |
 
 ## Configuration Reference
 
 | Key | Default | Used by |
 |---|---|---|
 | `scanner_page_limit` (`system_configs`) | `100` (code fallback; no seed row) | `embedding_scanner` — idle pages claimed per run, across all books. Also used by `chunking_scanner`/`spell_check_scanner`. |
-| `gemini_embedding_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`, migrated from `models/gemini-embedding-001` via migration 037, `models/` prefix stripped by migration 051) | `embedding_job` and `batch_embedding_service` — no code-level fallback; both raise `RuntimeError` if unset. Determines the embedding dimensionality (3072 for any model name containing `"gemini-embedding-2"`, else 768) used both by `GeminiEmbeddings` (interactive) and `_get_embedding_dimensionality()` (batch). |
+| `embed_gemini_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`, migrated from `models/gemini-embedding-001` via migration 037, `models/` prefix stripped by migration 051) | `embedding_job` and `batch_embedding_service` — no code-level fallback; both raise `RuntimeError` if unset. Determines the embedding dimensionality (3072 for any model name containing `"gemini-embedding-2"`, else 768) used both by `GeminiEmbeddings` (interactive) and `_get_embedding_dimensionality()` (batch). |
 | `EMBED_BATCH_SIZE` (env, `packages/backend-core/app/core/config.py`) | `50` | `embedding_job` — number of chunks sent per interactive Gemini embedding API call. |
-| `gemini_batch_embedding_enabled` (`system_configs`) | `"false"` (seeded) | `embedding_scanner` — routes claimed pages through `submit_batch_embedding_job` instead of `embedding_job` when `"true"`. See Feature Flags. |
-| `gemini_batch_embedding_max_chunks_per_job` (`system_configs`) | `100` (seeded) | `batch_embedding_service.submit_batch_embedding_job` — max chunks packed into a single Gemini Batch API sub-job (a book's/page's chunks are never split across sub-batches, so an individual sub-batch can slightly exceed this if one page alone has more chunks). |
-| `gemini_batch_embedding_timeout_hours` (`system_configs`) | `24` (seeded) | `poll_and_process_batch_embedding_jobs` — wall-clock timeout after which a stuck batch job's pages are marked failed. Also referenced by `StaleWatchdog`'s exemption logic. |
-| `gemini_batch_embedding_max_retry_count` (`system_configs`) | `3` (seeded) | `poll_and_process_batch_embedding_jobs` — per-page retry ceiling for a batch job with partially-failed chunks before that page is marked succeeded-with-gaps instead of retried again. |
+| `embed_batch_enabled` (`system_configs`) | `"false"` (seeded) | `embedding_scanner` — routes claimed pages through `submit_batch_embedding_job` instead of `embedding_job` when `"true"`. See Feature Flags. |
+| `embed_batch_max_chunks_per_job` (`system_configs`) | `100` (seeded) | `batch_embedding_service.submit_batch_embedding_job` — max chunks packed into a single Gemini Batch API sub-job (a book's/page's chunks are never split across sub-batches, so an individual sub-batch can slightly exceed this if one page alone has more chunks). |
+| `embed_batch_timeout_hours` (`system_configs`) | `24` (seeded) | `poll_and_process_batch_embedding_jobs` — wall-clock timeout after which a stuck batch job's pages are marked failed. Also referenced by `StaleWatchdog`'s exemption logic. |
+| `embed_batch_max_retry_count` (`system_configs`) | `3` (seeded) | `poll_and_process_batch_embedding_jobs` — per-page retry ceiling for a batch job with partially-failed chunks before that page is marked succeeded-with-gaps instead of retried again. |
 | `ocr_max_retry_count` (`system_configs`) | `10` (seeded; code fallback in `pipeline_driver.py` is `3`, only reached if seeding never ran) | `PipelineDriver` — the same shared pipeline-level retry budget used by OCR/chunking also governs when an `embedding_milestone='failed'` page is reset to `idle` vs. left exhausted. There is no embedding-specific retry-count key. |
 
 ## API Endpoints

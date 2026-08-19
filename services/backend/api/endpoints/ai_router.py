@@ -58,14 +58,14 @@ async def ocr_image(
 
     # Fetch OCR model from system_configs (no fallback — must be configured in DB)
     config_repo = SystemConfigsRepository(session)
-    gemini_ocr_model = await config_repo.get_value("gemini_ocr_model")
+    gemini_ocr_model = await config_repo.get_value("ocr_gemini_model")
     if not gemini_ocr_model:
         raise HTTPException(
-            status_code=500, detail="system_config 'gemini_ocr_model' is not set"
+            status_code=500, detail="system_config 'ocr_gemini_model' is not set"
         )
 
     # Fetch OCR timeout from system_configs
-    gemini_ocr_timeout_str = await config_repo.get_value("gemini_ocr_timeout")
+    gemini_ocr_timeout_str = await config_repo.get_value("ocr_gemini_timeout")
     gemini_ocr_timeout = (
         float(gemini_ocr_timeout_str) if gemini_ocr_timeout_str else None
     )

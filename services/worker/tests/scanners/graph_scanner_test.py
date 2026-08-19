@@ -18,7 +18,7 @@ async def test_run_graph_scanner_disabled():
 
             await run_graph_scanner(ctx)
 
-            mock_get_value.assert_called_with("knowledge_graph_enabled", "false")
+            mock_get_value.assert_called_with("kg_enabled", "false")
             mock_session.execute.assert_not_called()
 
 

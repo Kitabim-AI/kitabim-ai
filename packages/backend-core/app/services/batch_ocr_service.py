@@ -194,9 +194,7 @@ async def poll_and_process_batch_ocr_jobs(session: AsyncSession) -> int:
     and ingests completed results or records failures.
     """
     config_repo = SystemConfigsRepository(session)
-    timeout_hours = float(
-        await config_repo.get_value("gemini_batch_ocr_timeout_hours", "24")
-    )
+    timeout_hours = float(await config_repo.get_value("ocr_batch_timeout_hours", "24"))
     ocr_max_retry_count = int(await config_repo.get_value("ocr_max_retry_count", "3"))
 
     # Find jobs in submitting, submitted, or running status

@@ -67,14 +67,12 @@ async def summary_job(ctx, book_id: str) -> None:
         async with db_session.async_session_factory() as session:
             # Fetch models from system_configs (no fallback — must be configured in DB)
             config_repo = SystemConfigsRepository(session)
-            gemini_chat_model = await config_repo.get_value("gemini_chat_model")
+            gemini_chat_model = await config_repo.get_value("rag_gemini_chat_model")
             if not gemini_chat_model:
-                raise RuntimeError("system_config 'gemini_chat_model' is not set")
-            gemini_embedding_model = await config_repo.get_value(
-                "gemini_embedding_model"
-            )
+                raise RuntimeError("system_config 'rag_gemini_chat_model' is not set")
+            gemini_embedding_model = await config_repo.get_value("embed_gemini_model")
             if not gemini_embedding_model:
-                raise RuntimeError("system_config 'gemini_embedding_model' is not set")
+                raise RuntimeError("system_config 'embed_gemini_model' is not set")
 
             # Load book metadata
             result = await session.execute(select(Book).where(Book.id == book_id))

@@ -8,7 +8,7 @@ Using Gemini Batch API for bulk embedding tasks provides a **50% cost reduction*
 - **Online Mode (Default / Fallback)**: Real-time embedding pipeline using `GeminiEmbeddings.aembed_documents()` (`batchEmbedContents`).
 - **Batch Mode**: Asynchronous batch processing using `client.batches.create()` with GCS input/output JSONL datasets and Gemini Files API.
 
-The feature will be controlled dynamically via a system configuration flag (`gemini_batch_embedding_enabled`) stored in the `system_configs` table — matching the naming convention of the existing `gemini_batch_ocr_enabled` flag. Administrators can toggle between modes at runtime without restarting services.
+The feature will be controlled dynamically via a system configuration flag (`embed_batch_enabled`) stored in the `system_configs` table — matching the naming convention of the existing `ocr_batch_enabled` flag. Administrators can toggle between modes at runtime without restarting services.
 
 A single batch job is allowed to span **multiple books**, mirroring the existing online `embedding_scanner`, which claims idle pages across all books in one flat sweep (chunk embedding has no per-book dependency, unlike OCR which needs a per-book PDF document). Grouping strictly by `book_id` would fragment a `scanner_page_limit`-sized claim spanning many small books into many tiny batch submissions, each paying its own GCS/Files-API upload and poll overhead — eroding the cost benefit the Batch API is meant to provide.
 
@@ -19,7 +19,7 @@ A single batch job is allowed to span **multiple books**, mirroring the existing
 ```mermaid
 flowchart TD
     subgraph Trigger & Ingestion
-        A[Embedding Scanner: claim idle pages\nacross ALL books, like today] --> B{system_config:\ngemini_batch_embedding_enabled}
+        A[Embedding Scanner: claim idle pages\nacross ALL books, like today] --> B{system_config:\nembed_batch_enabled}
     end
 
     subgraph Mode 1: Online Embedding (Existing)
@@ -93,10 +93,10 @@ Add the following system configuration keys:
 
 | Config Key | Default Value | Description |
 | :--- | :--- | :--- |
-| `gemini_batch_embedding_enabled` | `false` | Dynamically enables/disables Batch API embedding processing (`true`/`false`). Naming matches the existing `gemini_batch_ocr_enabled` flag. |
-| `gemini_batch_embedding_timeout_hours` | `24` | Timeout threshold after which a pending/running batch job is marked stale and retried. |
-| `gemini_batch_embedding_max_chunks_per_job` | `5000` | Caps how many chunks are placed in a single JSONL/batch submission. Unlike the dead `gemini_batch_ocr_batch_size` config (seeded but never read — see code review), this key must actually be read by `submit_batch_embedding_job` to split an oversized claim into multiple submissions. |
-| `gemini_batch_embedding_max_retry_count` | `3` | Per-chunk retry ceiling before a permanently-failing chunk is skipped (embedding left `NULL`) so it doesn't block the page forever — mirrors `ocr_max_retry_count`. |
+| `embed_batch_enabled` | `false` | Dynamically enables/disables Batch API embedding processing (`true`/`false`). Naming matches the existing `ocr_batch_enabled` flag. |
+| `embed_batch_timeout_hours` | `24` | Timeout threshold after which a pending/running batch job is marked stale and retried. |
+| `embed_batch_max_chunks_per_job` | `5000` | Caps how many chunks are placed in a single JSONL/batch submission. Unlike the dead `ocr_batch_size_per_job` config (seeded but never read — see code review), this key must actually be read by `submit_batch_embedding_job` to split an oversized claim into multiple submissions. |
+| `embed_batch_max_retry_count` | `3` | Per-chunk retry ceiling before a permanently-failing chunk is skipped (embedding left `NULL`) so it doesn't block the page forever — mirrors `ocr_max_retry_count`. |
 
 ---
 
@@ -119,7 +119,7 @@ Provides core utilities for:
    ```
 2. **Submission (`submit_batch_embedding_job`)**:
    - Queries idle pages/chunks for a claimed set of `page_ids` (which, unlike batch OCR, may span multiple books — see [Executive Summary](#executive-summary)).
-   - Splits into multiple submissions if the claim exceeds `gemini_batch_embedding_max_chunks_per_job`.
+   - Splits into multiple submissions if the claim exceeds `embed_batch_max_chunks_per_job`.
    - Builds JSONL dataset with dynamic `outputDimensionality` (see above).
    - Uploads audit JSONL payload to GCS storage (`batch_embedding/inputs/<job_id>.jsonl`).
    - Uploads payload to Gemini Files API (`client.files.upload()`).
@@ -132,11 +132,11 @@ Provides core utilities for:
    - Upon `JOB_STATE_SUCCEEDED`:
      - Downloads result JSONL output (`client.files.download()` or GCS).
      - Parses vector float array per `custom_id` (`chunk_<id>`).
-     - **Per-line failure handling (a job can be `SUCCEEDED` overall while individual lines carry an `error`, mirroring `_record_page_ocr_failure` in the OCR service)**: if a chunk's line has an `error` or an empty/missing embedding, leave `Chunk.embedding` as `NULL`, mark the *owning* `Page.embedding_milestone="failed"` with `retry_count` incremented and a `PipelineEvent("embedding_failed")` — do **not** mark that page `succeeded`. Once a page's `retry_count` exceeds `gemini_batch_embedding_max_retry_count`, mark it `succeeded` anyway (chunk embedding stays permanently `NULL`) so one bad chunk can't block the page/book forever, matching the OCR precedent of skipping after exhausting retries.
+     - **Per-line failure handling (a job can be `SUCCEEDED` overall while individual lines carry an `error`, mirroring `_record_page_ocr_failure` in the OCR service)**: if a chunk's line has an `error` or an empty/missing embedding, leave `Chunk.embedding` as `NULL`, mark the *owning* `Page.embedding_milestone="failed"` with `retry_count` incremented and a `PipelineEvent("embedding_failed")` — do **not** mark that page `succeeded`. Once a page's `retry_count` exceeds `embed_batch_max_retry_count`, mark it `succeeded` anyway (chunk embedding stays permanently `NULL`) so one bad chunk can't block the page/book forever, matching the OCR precedent of skipping after exhausting retries.
      - For chunks that parsed successfully, batch updates `Chunk.embedding` in database.
      - Sets each fully-succeeded page's `embedding_milestone="succeeded"`, `is_indexed=True`, and emits pipeline events.
      - Updates milestone for every book in `job.book_ids` using `BookMilestoneService.update_book_milestone_for_step()`.
-   - Upon failure or timeout (> `gemini_batch_embedding_timeout_hours`):
+   - Upon failure or timeout (> `embed_batch_timeout_hours`):
      - Marks job status as `failed`, resets page/chunk retries, and updates milestone for every book in `job.book_ids`.
 
 ---
@@ -144,14 +144,14 @@ Provides core utilities for:
 ### 3. Worker Scanners & Scheduling
 
 1. **`services/worker/scanners/embedding_scanner.py`**:
-   - Reads `gemini_batch_embedding_enabled` setting from `SystemConfigsRepository`.
-   - If `True`: passes the claimed `page_ids` — still claimed across all books in one sweep, exactly as today — straight to `submit_batch_embedding_job()` without grouping by `book_id`. The service itself splits into multiple submissions only if the claim exceeds `gemini_batch_embedding_max_chunks_per_job`.
+   - Reads `embed_batch_enabled` setting from `SystemConfigsRepository`.
+   - If `True`: passes the claimed `page_ids` — still claimed across all books in one sweep, exactly as today — straight to `submit_batch_embedding_job()` without grouping by `book_id`. The service itself splits into multiple submissions only if the claim exceeds `embed_batch_max_chunks_per_job`.
    - If `False`: Enqueues standard real-time `embedding_job` (unchanged).
 2. **`services/worker/scanners/batch_embedding_poller_scanner.py`**:
    - Runs periodically (every 1 minute) in the worker process to invoke `poll_and_process_batch_embedding_jobs()`.
    - **Registration in `services/worker/worker.py`**: add a new `from scanners.batch_embedding_poller_scanner import run_batch_embedding_poller_scanner` import line and a new `cron(run_batch_embedding_poller_scanner)` entry — as *additions* alongside the existing imports/cron entries, not as a replacement. A prior diff for the OCR poller once replaced an unrelated import line instead of adding a new one, which raised `NameError` at worker startup and crashed the entire worker process (not just the OCR path); the same mistake here would take down embedding, OCR, chunking, and every other scanner.
 3. **`services/worker/scanners/stale_watchdog_scanner.py`**:
-   - **Must exempt in-flight batch embedding pages from the existing 30-minute `STALE_THRESHOLD_MINUTES` reset**, the same way it already exempts `BatchOCRJob` pages today via its `active_batch_page_ids` query. Add an equivalent query against `BatchEmbeddingJob` (`status.in_(["submitting", "submitted", "running"])`) and union its `page_ids` into the exemption set. Without this, pages sit at `embedding_milestone="in_progress"` for longer than 30 minutes (batch jobs run for up to `gemini_batch_embedding_timeout_hours`, default 24h), get reset to `idle` by the watchdog, get re-claimed and re-dispatched as a duplicate online `embedding_job`, and race with the original batch job's writes to `Chunk.embedding` when it later completes. This exact bug was already caught and fixed for `BatchOCRJob` — see `code-review-worker-2026-07-22.md`.
+   - **Must exempt in-flight batch embedding pages from the existing 30-minute `STALE_THRESHOLD_MINUTES` reset**, the same way it already exempts `BatchOCRJob` pages today via its `active_batch_page_ids` query. Add an equivalent query against `BatchEmbeddingJob` (`status.in_(["submitting", "submitted", "running"])`) and union its `page_ids` into the exemption set. Without this, pages sit at `embedding_milestone="in_progress"` for longer than 30 minutes (batch jobs run for up to `embed_batch_timeout_hours`, default 24h), get reset to `idle` by the watchdog, get re-claimed and re-dispatched as a duplicate online `embedding_job`, and race with the original batch job's writes to `Chunk.embedding` when it later completes. This exact bug was already caught and fixed for `BatchOCRJob` — see `code-review-worker-2026-07-22.md`.
    - Separately, also monitor stuck `BatchEmbeddingJob` instances (jobs in `submitted`/`running` for > 2 hours with no progress) and trigger recovery — this is in addition to, not instead of, the 30-minute exemption above.
 
 ---
@@ -161,15 +161,15 @@ Provides core utilities for:
 1. **Unit & Integration Tests** (`packages/backend-core/tests/app/services/batch_embedding_service_test.py`) — the batch OCR test suite shipped with happy-path-only coverage per code review; this feature must not repeat that gap:
    - JSONL payload generation, including `outputDimensionality` matching the configured model (assert `768` vs `3072` for both model families, not just the default).
    - Batch submission across pages spanning **multiple books**, asserting a single `BatchEmbeddingJob.book_ids` array with all distinct book IDs.
-   - Submission split when the claim exceeds `gemini_batch_embedding_max_chunks_per_job`.
+   - Submission split when the claim exceeds `embed_batch_max_chunks_per_job`.
    - Submission failure path (`client.batches.create` raises) — assert `Page.embedding_milestone="failed"`, `retry_count` incremented, **and** `Book.embedding_milestone` updated for every affected book (not just the page-level write).
    - Result JSONL parsing: full-success case, a per-line `error` on one chunk while the job status is `SUCCEEDED` (assert that chunk's `Chunk.embedding` stays `NULL` and its page is marked `failed`, not `succeeded`), and the retry-exhaustion skip path.
-   - Timeout path (`created_at` older than `gemini_batch_embedding_timeout_hours`).
+   - Timeout path (`created_at` older than `embed_batch_timeout_hours`).
    - `FAILED` / `CANCELLED` Gemini batch state handling.
    - No-active-jobs early return (no Gemini API calls made).
    - `stale_watchdog_scanner_test.py`: assert pages tied to an active `BatchEmbeddingJob` are exempted from the 30-minute reset, and pages tied to a completed/failed job are not.
 2. **Local End-to-End Test**:
-   - Enable `gemini_batch_embedding_enabled = "true"` via DB seed / admin config.
+   - Enable `embed_batch_enabled = "true"` via DB seed / admin config.
    - Run document ingestion pipeline and verify batch job submission, poller execution, vector persistence, and book milestone completion across a multi-book batch.
 
 ---

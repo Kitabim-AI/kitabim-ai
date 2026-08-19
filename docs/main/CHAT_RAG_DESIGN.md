@@ -298,10 +298,10 @@ flowchart TD
    history_str = format_history_for_analysis(history_msgs).
 2. Resolve character (CHARACTERS[character_id] or DEFAULT_CHARACTER_ID
    "librarian") → persona_prompt, character_categories. Load the Book row
-   when not global. Read gemini_chat_model (falling back to the
+   when not global. Read rag_gemini_chat_model (falling back to the
    model_name argument), gemini_agent_loop_model (→ chat_model),
-   gemini_embedding_model (→ getattr(settings,
-   "gemini_embedding_model", "text-embedding-004") — and settings has no
+   embed_gemini_model (→ getattr(settings,
+   "embed_gemini_model", "text-embedding-004") — and settings has no
    such attribute, so in practice the fallback is always the literal
    "text-embedding-004"). Missing model configs do NOT raise here — they
    silently fall back to the literal defaults above.
@@ -379,7 +379,7 @@ flowchart TD
    int(system_configs "rag_vector_top_k", default str(settings.rag_top_k))
    — same config key vector_search reads, renamed from rag_top_k.
    IF rag_reranker_enabled: rerank_context(_extract_effective_question(
-   question, observations), observations, gemini_reranker_model,
+   question, observations), observations, rag_gemini_reranker_model,
    max_chunks=rag_top_k) — on ANY exception, log a warning and fall back
    to _grade_context(observations, max_chunks=rag_top_k).
    ELSE: _grade_context(observations, max_chunks=rag_top_k).
@@ -422,7 +422,7 @@ flowchart TD
 ```
 1. Open its own worker session (async_session_factory).
 2. row = RAGEvaluationsRepository.get(eval_id). IF missing: warn, return.
-3. model = system_configs "gemini_judge_model" (default
+3. model = system_configs "rag_gemini_judge_model" (default
    "gemini-3.1-flash-lite").
 4. scores = judge.score_answer(row.question, row.answer or "",
    row.retrieved_context or "", model) — one LLM call with
@@ -582,7 +582,7 @@ flowchart TD
 | Scenario | Behavior |
 |---|---|
 | User is over their daily limit | `POST /api/chat/` raises `HTTPException(429, t("errors.daily_limit_reached"))`. `POST /api/chat/stream` returns HTTP 200 with a single SSE `{"error": ...}` event instead — the frontend must read the error out of the stream body, not the status code. |
-| `gemini_chat_model` or `gemini_embedding_model` unset in `system_configs` | `ChatOrchestrator` does not raise: it falls back to the `model_name` argument (`"gemini-2.5-flash"`) and to `"text-embedding-004"` for embeddings. |
+| `rag_gemini_chat_model` or `embed_gemini_model` unset in `system_configs` | `ChatOrchestrator` does not raise: it falls back to the `model_name` argument (`"gemini-2.5-flash"`) and to `"text-embedding-004"` for embeddings. |
 | Book not found (non-global request) | `ChatOrchestrator` does not validate `book_id` — `BooksRepository.get(book_id)` returning `None` just leaves `ctx.book = None`, and downstream code (e.g. `_build_human_message`) already guards on `ctx.book` truthiness, so the turn proceeds without a book-context block rather than erroring with a 404. |
 | Gemini returns 429 / `RESOURCE_EXHAUSTED` | `POST /api/chat/` maps it to `HTTPException(429, t("errors.system_busy"))` before the generic 500 branch. `/stream` has no such special case — every non-`ValueError` becomes the generic `t("errors.system_busy_generic")` SSE error, followed by a `record_book_error(..., "chat_stream")` attempt. |
 | `analyze_query_signals` fails (any exception, including exceeding 3 model turns without final JSON — `ValueError("Too many tool call iterations in query analysis")` — or a `json.JSONDecodeError`) | `ChatOrchestrator` wraps the call in a try/except: logs a warning and proceeds with `signals={}` (so `intent` falls back to `"open"` and `build_retrieval_agent` gets no signal hints) rather than propagating — the turn still completes. Covered by `test_stream_response_tolerates_analyze_query_signals_failure`. |
@@ -612,11 +612,11 @@ flowchart TD
 | `settings.summary_top_k` (env `SUMMARY_TOP_K`) | `5` | Defined in `config.py`; `_run_search_books_by_summary` hardcodes `limit=30` instead and does not read it. |
 | `settings.cache_ttl_rag_query` (env `CACHE_TTL_RAG_QUERY`) | `3600` (seconds) | TTL for the L1 embedding cache, the L2 search cache, and the L0 rewrite cache. |
 | `settings.cache_ttl_summary_search` (env `CACHE_TTL_SUMMARY_SEARCH`) | `1800` | Only referenced as `cache_config.TTL_SUMMARY_SEARCH`; no code sets a value under `KEY_RAG_SUMMARY_SEARCH`, so summary searches are uncached (see Cache Layers). |
-| `gemini_chat_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded by `seed_system_configs()`) | Answer synthesis chain / `KitabimAnswerAgent`. `ChatOrchestrator` falls back to its `model_name` argument (`"gemini-2.5-flash"`) if the key is unset — never raises. |
-| `gemini_embedding_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`; see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md)) | `embed_query` — must match the model that embedded `chunks` and `book_summaries`. `ChatOrchestrator` falls back to `"text-embedding-004"` if the key is unset (its `getattr(settings, "gemini_embedding_model", ...)` lookup never resolves — `Settings` is a frozen dataclass with no such field, by design: model names are `system_configs`-only). Never raises. |
-| `gemini_agent_loop_model` (`system_configs`) | Unset; falls back to `gemini_chat_model` | `ctx.agent_model` — the retrieval agent and the signal-extraction model. |
-| `gemini_reranker_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rerank_context`. |
-| `gemini_judge_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rag_eval_job` → `score_answer`. |
+| `rag_gemini_chat_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded by `seed_system_configs()`) | Answer synthesis chain / `KitabimAnswerAgent`. `ChatOrchestrator` falls back to its `model_name` argument (`"gemini-2.5-flash"`) if the key is unset — never raises. |
+| `embed_gemini_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`; see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md)) | `embed_query` — must match the model that embedded `chunks` and `book_summaries`. `ChatOrchestrator` falls back to `"text-embedding-004"` if the key is unset (its `getattr(settings, "embed_gemini_model", ...)` lookup never resolves — `Settings` is a frozen dataclass with no such field, by design: model names are `system_configs`-only). Never raises. |
+| `gemini_agent_loop_model` (`system_configs`) | Unset; falls back to `rag_gemini_chat_model` | `ctx.agent_model` — the retrieval agent and the signal-extraction model. |
+| `rag_gemini_reranker_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rerank_context`. |
+| `rag_gemini_judge_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rag_eval_job` → `score_answer`. |
 | `chat_limit_reader`, `chat_limit_editor` (`system_configs`) | `20` and `100` (rows present in migration `001_initial_baseline.sql`; **not** in `seeds.py`) | `ChatLimitService.get_limit_for_role` reads `f"chat_limit_{role}"`. Hardcoded fallbacks if absent: editor `100`, reader `20`, unknown role `10`. `ADMIN` returns `None` (unlimited) before any DB read. |
 | `AGENT_MAX_STEPS`, `AGENT_ENOUGH_CHUNKS` (`rag/agent/config.py`) | `6`, `8` | Constants with no importers anywhere in the repo — dead code. The `agent_max_steps`/`agent_enough_chunks` `system_configs` keys that used to feed the equivalent (also-unread) `QueryContext` fields have been removed; the real ceiling on tool-call count is the prose "at most 6 tool calls" in `AGENT_SYSTEM_PROMPT`, which only the model enforces. |
 | `AGENT_MAX_CONTEXT_CHUNKS` (`rag/agent/config.py`) | `25` | The chunk cap `_grade_context` applies when `max_chunks` is omitted, and `rerank_context`'s fallback cap. |
@@ -657,7 +657,7 @@ All chat routes are mounted at `/api/chat` (`services/backend/main.py`), `questi
 | `GET /api/questions/admin/questions` | `Depends(require_admin)` | Paginated, newest-first admin view of all `rag_evaluations` questions, optional text `query` filter. |
 | `PATCH /api/questions/admin/questions/{eval_id}/featured` | `Depends(require_admin)` | Sets/clears `show_on_homepage`; 404 when the row doesn't exist. |
 | `GET /api/questions/featured` | **None** — no auth dependency | Questions flagged `show_on_homepage`, for the home page. Deliberately public. |
-| `POST /api/ai/ocr` | `Depends(require_editor)` (ADMIN or EDITOR) | Not part of the chat/RAG request path: an ad-hoc single-image Gemini OCR helper for the editor UI (base64 in, cleaned text out), using `gemini_ocr_model`/`gemini_ocr_timeout`. Listed here only because `ai_router.py` is often assumed to host chat endpoints — it does not. See [OCR_DESIGN.md](OCR_DESIGN.md). |
+| `POST /api/ai/ocr` | `Depends(require_editor)` (ADMIN or EDITOR) | Not part of the chat/RAG request path: an ad-hoc single-image Gemini OCR helper for the editor UI (base64 in, cleaned text out), using `ocr_gemini_model`/`ocr_gemini_timeout`. Listed here only because `ai_router.py` is often assumed to host chat endpoints — it does not. See [OCR_DESIGN.md](OCR_DESIGN.md). |
 
 ## Security Considerations
 
@@ -704,7 +704,7 @@ No dedicated test file exists for the conversation list/messages endpoints or fo
 ## Related Docs
 
 - [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) — produces `book_summaries`, which this stage consumes through `search_books_by_summary` (vector search over summary embeddings, `settings.summary_threshold` = 0.30, `limit=30`) and `get_book_summary` (full summary text, server-side sister-volume expansion, intro-excerpt fallback when no summary row exists). This is the "which book(s) is the question about" step that precedes chunk retrieval.
-- [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) — produces the `chunks.embedding` vectors `vector_search` queries; the `gemini_embedding_model` used here must match the one used there.
+- [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) — produces the `chunks.embedding` vectors `vector_search` queries; the `embed_gemini_model` used here must match the one used there.
 - [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md) — defines the chunk boundaries and `chunks.text` that become the citable passages, the generated `chunks.text_search` tsvector column (migration `074_add_chunks_text_search.sql`) this stage's exact-phrase leg queries, and the TOC exclusion this stage also honors.
 - [OCR_DESIGN.md](OCR_DESIGN.md) — produces `pages.text`, read directly by `get_current_page` and by the dev-only fuzzy fallback in `vector_search`. Also the actual home of `POST /api/ai/ocr`.
 - [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) — the auto-correct pass that improves the text this stage retrieves; `check_word_spelling` reuses the same word/dictionary tables from the read side.

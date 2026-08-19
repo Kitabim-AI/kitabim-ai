@@ -1252,7 +1252,7 @@ Two more keys are read only by deleted code but were **never in `seeds.py`** (co
 | `use_adk_chat_v2` | `chat_router.py:142` (the `use_v2` branch condition, removed in Task 4) | No |
 | `rag_eval_enabled` | `rag_service.py:186` (gates whether `answer_question_stream` writes a `rag_evaluations` row) | No |
 
-Everything else the flowchart shows being read from `system_configs` (`gemini_chat_model`, `gemini_embedding_model`, `gemini_agent_loop_model`, `rag_reranker_enabled`, `gemini_reranker_model`, `rag_vector_top_k`, `rag_keyword_top_k`, `rag_graph_top_k`, `rag_judge_scoring_enabled`) is also read by `orchestrator.py` and/or the shared `rag/agent/tools.py` / `rag/retrieval.py` modules that survive this plan — keep all of those. `gemini_judge_model` is read only by `services/worker/jobs/rag_eval_job.py`, which both the old and new pipelines enqueue the same way — keep it too, out of scope here.
+Everything else the flowchart shows being read from `system_configs` (`rag_gemini_chat_model`, `embed_gemini_model`, `gemini_agent_loop_model`, `rag_reranker_enabled`, `rag_gemini_reranker_model`, `rag_vector_top_k`, `rag_keyword_top_k`, `rag_graph_top_k`, `rag_judge_scoring_enabled`) is also read by `orchestrator.py` and/or the shared `rag/agent/tools.py` / `rag/retrieval.py` modules that survive this plan — keep all of those. `rag_gemini_judge_model` is read only by `services/worker/jobs/rag_eval_job.py`, which both the old and new pipelines enqueue the same way — keep it too, out of scope here.
 
 **Files:**
 - Modify: `packages/backend-core/app/db/seeds.py:91-100` (`agent_max_steps`, `agent_enough_chunks`)
@@ -1301,7 +1301,7 @@ Done in `71b9476`.
 
 - [x] **Step 4: Check and clean up the live prod table**
 
-Superseded by migration `089_remove_dead_system_configs.sql` (2026-08-15), which deletes these 5 rows plus 6 more found by a full re-audit of every `get_value()`/`get_system_config_timeout()` call site against the live table: `rag_top_k` (renamed to `rag_vector_top_k`), `rag_hybrid_search_enabled` (hybrid-fusion code deleted), `gemini_embedding_model_v2` (fed unused `embedding_v2` columns from migration 035), `gemini_batch_ocr_poll_interval` (never read, not even seeded), `fictional_categories` (feature it described was never implemented), and `use_knowledge_graph_in_chat` (ad hoc admin-UI row, never wired to code). Applied to local dev; still needs to run against prod via `./scripts/run_migration_prod.sh 089` once this is deployed.
+Superseded by migration `089_remove_dead_system_configs.sql` (2026-08-15), which deletes these 5 rows plus 6 more found by a full re-audit of every `get_value()`/`get_system_config_timeout()` call site against the live table: `rag_top_k` (renamed to `rag_vector_top_k`), `rag_hybrid_search_enabled` (hybrid-fusion code deleted), `embed_gemini_model_v2` (fed unused `embedding_v2` columns from migration 035), `gemini_batch_ocr_poll_interval` (never read, not even seeded), `fictional_categories` (feature it described was never implemented), and `use_knowledge_graph_in_chat` (ad hoc admin-UI row, never wired to code). Applied to local dev; still needs to run against prod via `./scripts/run_migration_prod.sh 089` once this is deployed.
 
 Note: none of this needs a schema migration — `system_configs` is a data table, not a schema Task 5/6 changes.
 

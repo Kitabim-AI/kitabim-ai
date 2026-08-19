@@ -86,9 +86,7 @@ async def _run_extraction(
             "reason": "history_extraction_enabled is false",
         }
 
-    batch_enabled = await config_repo.get_value(
-        "gemini_batch_history_extraction_enabled", "false"
-    )
+    batch_enabled = await config_repo.get_value("history_batch_enabled", "false")
 
     if batch_enabled.strip().lower() == "true":
         log_json(

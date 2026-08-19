@@ -57,7 +57,7 @@ class PagesRepository(BaseRepository[Page]):
         try:
             config_repo = SystemConfigsRepository(self.session)
             val = await config_repo.get_value(
-                "content_search_snippet_max_chars", default="500"
+                "sys_content_search_snippet_max_chars", default="500"
             )
             if val is not None:
                 max_snippet_len = int(val)

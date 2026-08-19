@@ -8,7 +8,7 @@ Using Gemini Batch API provides a **50% cost reduction** compared to standard on
 - **Online Mode (Default)**: Existing real-time OCR pipeline using `client.aio.models.generate_content`.
 - **Batch Mode**: Asynchronous batch processing using `client.batches.create()` and GCS input/output datasets.
 
-The feature will be controlled dynamically via a system configuration flag (`gemini_batch_ocr_enabled`) stored in the `system_configs` table. Administrators can switch between modes at runtime without restarting services.
+The feature will be controlled dynamically via a system configuration flag (`ocr_batch_enabled`) stored in the `system_configs` table. Administrators can switch between modes at runtime without restarting services.
 
 ---
 
@@ -17,7 +17,7 @@ The feature will be controlled dynamically via a system configuration flag (`gem
 ```mermaid
 flowchart TD
     subgraph Trigger & Ingestion
-        A[OCR Scanner] --> B{system_config:\ngemini_batch_ocr_enabled}
+        A[OCR Scanner] --> B{system_config:\nocr_batch_enabled}
     end
 
     subgraph Mode 1: Online OCR (Existing)
@@ -78,10 +78,10 @@ Add the following system configuration keys:
 
 | Config Key | Default Value | Description |
 | :--- | :--- | :--- |
-| `gemini_batch_ocr_enabled` | `false` | Dynamically enables/disables Batch API OCR processing (`true`/`false`). |
-| `gemini_batch_ocr_batch_size` | `50` | Maximum number of pages bundled into a single Batch API job. |
+| `ocr_batch_enabled` | `false` | Dynamically enables/disables Batch API OCR processing (`true`/`false`). |
+| `ocr_batch_size_per_job` | `50` | Maximum number of pages bundled into a single Batch API job. |
 | `gemini_batch_ocr_poll_interval` | `120` | Interval in seconds between poller executions to check batch job status. |
-| `gemini_batch_ocr_timeout_hours` | `24` | Timeout threshold after which a pending/running batch job is marked stale and retried. |
+| `ocr_batch_timeout_hours` | `24` | Timeout threshold after which a pending/running batch job is marked stale and retried. |
 
 ---
 
@@ -120,9 +120,9 @@ Provides core utilities for:
 ### 3. Worker Pipelines & Scanners (`services/worker/`)
 
 #### A. Ingestion Router (`services/worker/jobs/ocr_job.py`)
-Modify `ocr_job` to inspect `gemini_batch_ocr_enabled`:
-- If `gemini_batch_ocr_enabled == "false"`: Run existing real-time page-by-page vision calls via `ocr_page_with_gemini()`.
-- If `gemini_batch_ocr_enabled == "true"`:
+Modify `ocr_job` to inspect `ocr_batch_enabled`:
+- If `ocr_batch_enabled == "false"`: Run existing real-time page-by-page vision calls via `ocr_page_with_gemini()`.
+- If `ocr_batch_enabled == "true"`:
   1. Render page image pixmaps from PDF.
   2. Assemble JSONL file and upload to GCS.
   3. Call `client.batches.create()`.
@@ -146,7 +146,7 @@ A new periodic background scanner running every 2 minutes:
    - `chunking_scanner`, `spell_check_scanner`, and `embedding_scanner` react to `PipelineEvent(event_type="ocr_succeeded")` and `Page.ocr_milestone == 'succeeded'`.
    - Batch OCR emits the exact same `ocr_succeeded` events upon batch completion, guaranteeing 100% compatibility with all existing downstream workers.
 2. **Seamless Mode Switching**:
-   - Toggling `gemini_batch_ocr_enabled` from `false` to `true` instantly routes new OCR jobs to the Batch API.
+   - Toggling `ocr_batch_enabled` from `false` to `true` instantly routes new OCR jobs to the Batch API.
    - Toggling back to `false` routes new jobs to standard real-time API while allowing existing submitted batch jobs to complete via the poller scanner.
 
 ---
@@ -157,7 +157,7 @@ A new periodic background scanner running every 2 minutes:
 - `[NEW]` `migrations/067_add_batch_ocr_jobs.sql`: Migration script for `batch_ocr_jobs` table.
 - `[NEW]` `app/db/models.py`: Add `BatchOCRJob` model mapping.
 - `[NEW]` `app/services/batch_ocr_service.py`: JSONL formatting, GCS handling, Gemini Batch API client calls, and output parsing.
-- `[MODIFY]` `app/db/seeds.py`: Add default `gemini_batch_ocr_enabled`, `gemini_batch_ocr_batch_size`, `gemini_batch_ocr_poll_interval`.
+- `[MODIFY]` `app/db/seeds.py`: Add default `ocr_batch_enabled`, `ocr_batch_size_per_job`, `gemini_batch_ocr_poll_interval`.
 - `[MODIFY]` `app/services/ocr_service.py`: Add helper wrappers for batch OCR job submission and ingestion.
 
 ### Worker Service (`services/worker/`)
@@ -176,5 +176,5 @@ A new periodic background scanner running every 2 minutes:
    - Verify page milestone transitions (`idle` -> `in_progress` -> `succeeded`) and `PipelineEvent` emission.
 3. **End-to-End Local Verification**:
    - Rebuild local docker container: `./deploy/local/rebuild-and-restart.sh worker`
-   - Set `gemini_batch_ocr_enabled = 'true'` in System Configs.
+   - Set `ocr_batch_enabled = 'true'` in System Configs.
    - Upload sample PDF and verify batch job lifecycle.

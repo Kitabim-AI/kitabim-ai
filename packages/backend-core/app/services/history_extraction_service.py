@@ -80,9 +80,7 @@ class HistoryExtractionService:
 
     async def _get_system_config_model(self) -> str:
         """Fetch the dynamic history extraction model name from system_config."""
-        stmt = select(SystemConfig).where(
-            SystemConfig.key == "history_extraction_model"
-        )
+        stmt = select(SystemConfig).where(SystemConfig.key == "history_gemini_model")
         res = await self.session.execute(stmt)
         config = res.scalar_one_or_none()
         if config and config.value.strip():
@@ -91,9 +89,7 @@ class HistoryExtractionService:
 
     async def _get_system_config_batch_size(self) -> int:
         """Fetch the dynamic history extraction batch size from system_config."""
-        stmt = select(SystemConfig).where(
-            SystemConfig.key == "history_extraction_batch_size"
-        )
+        stmt = select(SystemConfig).where(SystemConfig.key == "history_batch_size")
         res = await self.session.execute(stmt)
         config = res.scalar_one_or_none()
         if config and config.value.strip().isdigit():
@@ -102,7 +98,7 @@ class HistoryExtractionService:
 
     async def _get_system_config_embedding_model(self) -> str:
         """Fetch the dynamic embedding model name from system_config."""
-        stmt = select(SystemConfig).where(SystemConfig.key == "gemini_embedding_model")
+        stmt = select(SystemConfig).where(SystemConfig.key == "embed_gemini_model")
         res = await self.session.execute(stmt)
         config = res.scalar_one_or_none()
         if config and config.value.strip():

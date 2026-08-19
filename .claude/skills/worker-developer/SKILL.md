@@ -98,9 +98,9 @@ async with db_session.async_session_factory() as session:
     config_repo = SystemConfigsRepository(session)
 
     # Required — raise if missing so arq records the failure clearly
-    model = await config_repo.get_value("gemini_ocr_model")
+    model = await config_repo.get_value("ocr_gemini_model")
     if not model:
-        raise RuntimeError("system_config 'gemini_ocr_model' is not set")
+        raise RuntimeError("system_config 'ocr_gemini_model' is not set")
 
     # Optional with default
     page_limit  = int(await config_repo.get_value("scanner_page_limit", "100"))

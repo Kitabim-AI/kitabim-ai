@@ -52,7 +52,7 @@ class SystemConfigsRepository(BaseRepository[SystemConfig]):
             await self.session.refresh(config)
             await cache_service.delete(f"config:{key}")
 
-        if key == "log_level" and value:
+        if key == "sys_log_level" and value:
             import logging
 
             level = getattr(logging, value.upper(), logging.INFO)

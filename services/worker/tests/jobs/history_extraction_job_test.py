@@ -18,7 +18,7 @@ async def test_extract_book_history_terms_task_realtime():
     ) as mock_service_cls:
         mock_config = AsyncMock()
         mock_config.get_value.side_effect = lambda key, default="true": (
-            "false" if key == "gemini_batch_history_extraction_enabled" else "true"
+            "false" if key == "history_batch_enabled" else "true"
         )
         mock_config_cls.return_value = mock_config
 
@@ -86,7 +86,7 @@ async def test_extract_book_history_terms_task_no_pages():
     ) as mock_config_cls:
         mock_config = AsyncMock()
         mock_config.get_value.side_effect = lambda key, default="true": (
-            "false" if key == "gemini_batch_history_extraction_enabled" else "true"
+            "false" if key == "history_batch_enabled" else "true"
         )
         mock_config_cls.return_value = mock_config
 

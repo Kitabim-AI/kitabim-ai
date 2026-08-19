@@ -9,8 +9,8 @@ from app.db.models import Book, Chunk
 
 def _config_get_value(overrides=None):
     base = {
-        "knowledge_graph_enabled": "true",
-        "gemini_kg_extraction_model": "gemini-3.1-flash-lite",
+        "kg_enabled": "true",
+        "kg_gemini_extraction_model": "gemini-3.1-flash-lite",
         "kg_max_parallel_chunks": "5",
         "kg_chunk_batch_size": "5",
     }
@@ -46,7 +46,7 @@ async def test_knowledge_graph_job_disabled():
 
             await knowledge_graph_job(ctx, book_id, "nonfiction")
 
-            mock_get_value.assert_any_call("knowledge_graph_enabled", "false")
+            mock_get_value.assert_any_call("kg_enabled", "false")
             mock_session.execute.assert_called()
             mock_session.commit.assert_called_once()
 
@@ -485,7 +485,7 @@ async def test_maybe_embed_entity_profiles_embeds_when_enabled():
             side_effect=_config_get_value(
                 overrides={
                     "entity_semantic_matching_enabled": "true",
-                    "gemini_embedding_model": "gemini-embedding-2",
+                    "embed_gemini_model": "gemini-embedding-2",
                 }
             ),
         ),
@@ -522,7 +522,7 @@ async def test_maybe_embed_entity_profiles_swallows_embedding_failure():
             side_effect=_config_get_value(
                 overrides={
                     "entity_semantic_matching_enabled": "true",
-                    "gemini_embedding_model": "gemini-embedding-2",
+                    "embed_gemini_model": "gemini-embedding-2",
                 }
             ),
         ),

@@ -56,12 +56,12 @@ Model names come from `SystemConfigsRepository`, not hardcoded in prompts. Seed 
 
 | Key | Default Value | Used For |
 |-----|---------------|----------|
-| `gemini_chat_model` | `gemini-3.1-flash-lite` | Answer-agent synthesis (reader chat and global chat); also the fallback for `gemini_agent_loop_model` |
-| `gemini_agent_loop_model` | *(unset → falls back to `gemini_chat_model`)* | Retrieval-agent tool-calling loop — set separately if you want a cheaper/faster model for retrieval vs. synthesis |
-| `gemini_ocr_model` | `gemini-3.5-flash` | OCR vision calls |
-| `gemini_embedding_model` | `gemini-embedding-2` | Chunk + summary embeddings (3072-dim — do not assume 768, that's stale from an earlier model) |
-| `gemini_reranker_model` | `gemini-3.1-flash-lite` | `RAG_RERANK_PROMPT` |
-| `gemini_judge_model` | `gemini-3.1-flash-lite` | `RAG_JUDGE_PROMPT` |
+| `rag_gemini_chat_model` | `gemini-3.1-flash-lite` | Answer-agent synthesis (reader chat and global chat); also the fallback for `gemini_agent_loop_model` |
+| `gemini_agent_loop_model` | *(unset → falls back to `rag_gemini_chat_model`)* | Retrieval-agent tool-calling loop — set separately if you want a cheaper/faster model for retrieval vs. synthesis |
+| `ocr_gemini_model` | `gemini-3.5-flash` | OCR vision calls |
+| `embed_gemini_model` | `gemini-embedding-2` | Chunk + summary embeddings (3072-dim — do not assume 768, that's stale from an earlier model) |
+| `rag_gemini_reranker_model` | `gemini-3.1-flash-lite` | `RAG_RERANK_PROMPT` |
+| `rag_gemini_judge_model` | `gemini-3.1-flash-lite` | `RAG_JUDGE_PROMPT` |
 | `rag_agent_max_llm_calls` | `12` | Code-enforced cap (`RunConfig.max_llm_calls`) on the retrieval agent's ADK LLM-call loop — backstops `AGENT_SYSTEM_PROMPT`'s own prose-only "at most 6 tool calls" limit, which the model can and does ignore in production |
 
 There is no `gemini_categorization_model` — that belonged to the dead `CATEGORY_PROMPT` path and was never seeded as a live key.
@@ -91,14 +91,14 @@ If you need deterministic OCR-style behavior for a new prompt, follow the `disab
 ```python
 from app.llm.models import generate_text
 
-text = await generate_text(prompt_string, model_name=gemini_chat_model)
+text = await generate_text(prompt_string, model_name=rag_gemini_chat_model)
 ```
 
 ### Vision OCR (worker only)
 ```python
 from app.llm.models import generate_text_with_image
 
-text = await generate_text_with_image(OCR_PROMPT.format(...), image_bytes, model_name=gemini_ocr_model)
+text = await generate_text_with_image(OCR_PROMPT.format(...), image_bytes, model_name=ocr_gemini_model)
 ```
 
 ### Judge / reranker calls — static prompts via ProtectedLLM
@@ -129,7 +129,7 @@ Editing chat behavior means editing `AGENT_SYSTEM_PROMPT` (what to retrieve and 
 ```python
 from app.llm.models import GeminiEmbeddings
 
-embeddings = GeminiEmbeddings(model_name=gemini_embedding_model)
+embeddings = GeminiEmbeddings(model_name=embed_gemini_model)
 doc_vecs = await embeddings.aembed_documents(texts)   # RETRIEVAL_DOCUMENT task type
 query_vec = await embeddings.aembed_query(question)   # RETRIEVAL_QUERY task type
 ```

@@ -20,7 +20,7 @@ async def test_run_graph_resolution_scanner_disabled():
 
             await run_graph_resolution_scanner(ctx)
 
-            mock_get_value.assert_called_with("knowledge_graph_enabled", "false")
+            mock_get_value.assert_called_with("kg_enabled", "false")
             ctx["redis"].enqueue_job.assert_not_called()
 
 

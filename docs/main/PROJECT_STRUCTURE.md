@@ -187,7 +187,7 @@ services/worker/
 ├── worker.py                # ARQ WorkerSettings entrypoint (arq worker.WorkerSettings)
 ├── manual_scan.py             # CLI to trigger a scanner pass on demand
 ├── jobs/                        # Per-unit-of-work executors (10)
-│   ├── ocr_job.py                  # Renders a page, calls Gemini Vision (or submits a batch_ocr_job if gemini_batch_ocr_enabled)
+│   ├── ocr_job.py                  # Renders a page, calls Gemini Vision (or submits a batch_ocr_job if ocr_batch_enabled)
 │   ├── chunking_job.py               # Cleans text, writes chunk rows
 │   ├── embedding_job.py                # Vectorizes chunks (synchronous path; batch path is submitted inline by embedding_scanner)
 │   ├── spell_check_job.py                # Flags likely OCR errors per page
@@ -196,14 +196,14 @@ services/worker/
 │   ├── knowledge_graph_job.py                  # Extracts entities/relations, writes to Neo4j
 │   ├── graph_resolution_job.py                   # Resolves/merges duplicate graph entities against Neo4j fuzzy-match candidates
 │   ├── history_extraction_job.py                   # Extracts + stages history-dictionary terms/facts for a book (or submits a
-│   │                                                   batch_history_extraction_job if gemini_batch_history_extraction_enabled);
+│   │                                                   batch_history_extraction_job if history_batch_enabled);
 │   │                                                   admin-triggered, not on a cron schedule
 │   └── rag_eval_job.py                             # Post-turn async judge scoring for rag_evaluations (enqueued by ChatOrchestrator, not a scanner)
 └── scanners/                             # Periodic pollers + the event-driven dispatcher (16)
     ├── ocr_scanner.py                        # Leases idle pages, enqueues ocr_job
     ├── batch_ocr_poller_scanner.py              # Polls in-flight batch_ocr_jobs, ingests results when Gemini finishes
     ├── chunking_scanner.py                        # Leases OCR'd pages, enqueues chunking_job
-    ├── embedding_scanner.py                         # Leases chunked pages; dispatches embedding_job, or submits a batch_embedding_job inline if gemini_batch_embedding_enabled
+    ├── embedding_scanner.py                         # Leases chunked pages; dispatches embedding_job, or submits a batch_embedding_job inline if embed_batch_enabled
     ├── batch_embedding_poller_scanner.py               # Polls in-flight batch_embedding_jobs, writes vectors back when Gemini finishes
     ├── spell_check_scanner.py                            # Leases indexed pages, enqueues spell_check_job
     ├── auto_correct_scanner.py                             # Enqueues auto_correct_job

@@ -13,7 +13,7 @@ Key characteristics:
 - **Two independent retry loops exist at different levels**: an inner transient-error retry loop per single Gemini Vision call (`OCR_MAX_RETRIES`, env var), and an outer pipeline-level retry budget per page (`ocr_max_retry_count`, `system_configs`) that governs how many times `OcrJob` as a whole will re-attempt a page across separate job runs.
 - **Degenerate OCR output is detected and retried like a transient error.** `is_degenerate_ocr_output` (in `app/utils/text.py`) flags output that looks like a runaway repetition/reasoning-leak loop — text longer than 10,000 chars, or a single word repeated ≥50 times and making up ≥30% of all words. The inline path raises `DegenerateOcrOutputError` from `ocr_page_with_gemini`, which the inner retry loop treats as retryable exactly like a transient API error; the batch path applies the same check to each ingested result line.
 - **Exhausting the outer retry budget on a single page is a soft-skip, not a failure.** The page is marked `ocr_milestone='succeeded'` with empty text rather than `'failed'`, so a single unreadable page never blocks the book. The only way OCR can genuinely leave a page (in fact, the whole claimed batch) `ocr_milestone='failed'` in a way that can exhaust retries and push the book to `status='error'` is if the book's PDF itself can't be downloaded/opened at all.
-- **Optional Gemini Batch API mode** (`gemini_batch_ocr_enabled`, default `false`) replaces the inline per-page Gemini Vision call with an async submit-then-poll cycle against the Gemini Batch API, trading latency for a 50% API cost discount on high-volume ingestion.
+- **Optional Gemini Batch API mode** (`ocr_batch_enabled`, default `false`) replaces the inline per-page Gemini Vision call with an async submit-then-poll cycle against the Gemini Batch API, trading latency for a 50% API cost discount on high-volume ingestion.
 - **Table-of-contents detection runs inline during OCR** (`is_toc_page`), setting `pages.is_toc` so Chunking can skip splitting those pages later.
 - **The OCR prompt is dynamically augmented with frequent auto-correction rules.** `_build_ocr_prompt` fills the `OCR_PROMPT` template's `{frequent_corrections}` placeholder from `AutoCorrectRulesRepository.get_frequent_corrections_block()` (a cached, formatted block of the active `auto_correct_rules` pairs), steering the model away from common transcription mistakes at the source rather than relying solely on the post-hoc `auto_correct_scanner`.
 
@@ -21,7 +21,7 @@ Key characteristics:
 
 | Flag | Default | Gates |
 |---|---|---|
-| `gemini_batch_ocr_enabled` | `false` | `ocr_job` — when `"true"`, `ocr_job` delegates every claimed page to `batch_ocr_service.submit_batch_ocr_job()` (Gemini Batch API) instead of OCR'ing pages inline via `ocr_page_with_gemini`. |
+| `ocr_batch_enabled` | `false` | `ocr_job` — when `"true"`, `ocr_job` delegates every claimed page to `batch_ocr_service.submit_batch_ocr_job()` (Gemini Batch API) instead of OCR'ing pages inline via `ocr_page_with_gemini`. |
 
 ## Schema
 
@@ -78,7 +78,7 @@ flowchart TD
     OCR_IDLE(["ocr_milestone = idle<br/>(book.ocr_milestone in idle/in_progress/partial_failure)"])
     CLAIM["OcrScanner:<br/>claim up to ocr_scanner_batch_size<br/>idle pages for up to scanner_book_limit books"]
     JOB["OcrJob(book_id, page_ids)<br/>MultiPageLock, download PDF"]
-    FLAG{"gemini_batch_ocr_enabled?"}
+    FLAG{"ocr_batch_enabled?"}
     RENDER["Render page to JPEG<br/>(PyMuPDF, OCR_PAGE_ZOOM_FACTOR)"]
     GEMINI["Gemini Vision call<br/>(inner retry loop: OCR_MAX_RETRIES)"]
     OK["Success:<br/>text + is_toc saved<br/>ocr_milestone = succeeded"]
@@ -100,7 +100,7 @@ flowchart TD
     EVENT --> NEXT
     JOB -->|"PDF missing/corrupt<br/>and re-download also fails"| PDLFAIL
 
-    subgraph Batch["Batch mode (gemini_batch_ocr_enabled = true)"]
+    subgraph Batch["Batch mode (ocr_batch_enabled = true)"]
         SUBMIT["submit_batch_ocr_job():<br/>render pages → JSONL → Gemini Files API<br/>→ client.batches.create()"]
         BOJ[("batch_ocr_jobs<br/>status = submitted")]
         POLL["batch_ocr_poller_scanner<br/>every 1 min"]
@@ -155,12 +155,12 @@ flowchart TD
 2. Overwrite worker_id/claimed_at on the locked pages with this executing
    worker's ID (the scanner's claim may have been made by a different
    worker instance that only enqueued the job).
-3. Fetch system_configs: gemini_ocr_model (required, no fallback —
+3. Fetch system_configs: ocr_gemini_model (required, no fallback —
    raises RuntimeError if unset), ocr_max_parallel_pages (default 4 via
    the job's own fallback constant, but seeded to 1 in system_configs —
-   see Configuration Reference), gemini_ocr_timeout, ocr_max_retry_count
-   (default 3 via fallback, but seeded to 10), gemini_batch_ocr_enabled,
-   gemini_batch_ocr_batch_size.
+   see Configuration Reference), ocr_gemini_timeout, ocr_max_retry_count
+   (default 3 via fallback, but seeded to 10), ocr_batch_enabled,
+   ocr_batch_size_per_job.
 4. Set book.pipeline_step = 'ocr'.
 5. Download the book's PDF to settings.uploads_dir/{book_id}.pdf if not
    already cached locally, trying uploads/{book_id}.pdf, then
@@ -172,8 +172,8 @@ flowchart TD
      - Recompute the book's rolled-up ocr_milestone.
      - Return — nothing further runs for this job invocation.
 6. Load the Page rows for the locked IDs.
-7. IF gemini_batch_ocr_enabled: for each sub-batch of up to
-   gemini_batch_ocr_batch_size pages, call
+7. IF ocr_batch_enabled: for each sub-batch of up to
+   ocr_batch_size_per_job pages, call
    batch_ocr_service.submit_batch_ocr_job(); on a submission exception,
    mark that sub-batch's pages ocr_milestone='failed', retry_count+=1,
    emit 'ocr_failed' events, and recompute the book milestone. Close the
@@ -209,7 +209,7 @@ flowchart TD
 
 The exhaustion check (step 8d) is the exact branch that decides soft-skip vs. hard failure: `next_retry_count >= ocr_max_retry_count` always lands the page on `ocr_milestone='succeeded'` with empty text, never on `'failed'`. `ocr_milestone='failed'` for an *individual page* processed inline only ever happens on an attempt that has *not yet* exhausted the retry budget — it is a transient state `PipelineDriver` resets back to `idle`. The only way OCR leaves pages durably `failed` (and thus eligible to push the book to `status='error'` once `retry_count >= ocr_max_retry_count`) is the PDF-download failure in step 5, which marks the entire claimed batch failed at once without going through the per-page soft-skip logic at all.
 
-**`batch_ocr_service.submit_batch_ocr_job(session, book_id, pages, doc, gemini_ocr_model)`:**
+**`batch_ocr_service.submit_batch_ocr_job(session, book_id, pages, doc, ocr_gemini_model)`:**
 
 ```
 1. Build one JSONL line per page: render to JPEG (PyMuPDF, same
@@ -234,7 +234,7 @@ The exhaustion check (step 8d) is the exact branch that decides soft-skip vs. ha
 **`batch_ocr_poller_scanner` → `batch_ocr_service.poll_and_process_batch_ocr_jobs(session)`:**
 
 ```
-1. Fetch gemini_batch_ocr_timeout_hours (default 24) and
+1. Fetch ocr_batch_timeout_hours (default 24) and
    ocr_max_retry_count (default 10, via the same shared config key OCR
    uses inline).
 2. Load all BatchOCRJob rows with status IN
@@ -303,7 +303,7 @@ flowchart TD
 | Gemini Vision call fails and `retry_count + 1 >= ocr_max_retry_count` | **Soft-skip**: page set `ocr_milestone='succeeded'` with `text=''`, `is_toc=False`, and an `error` note ("...Page skipped."). Emits `ocr_succeeded` (not `ocr_failed`) so the page flows through Chunking/Embedding as an empty, harmless page. This is the behavior that keeps a single unreadable page from ever exhausting the *mandatory-step* failure that `PipelineDriver` checks for. |
 | Book's PDF file can't be downloaded from any candidate storage path, or can't be opened by PyMuPDF even after a fresh re-download | **The one genuine hard-failure path.** Every page claimed by this job run is marked `ocr_milestone='failed'`, `retry_count+=1` — no soft-skip logic applies here since the failure isn't per-page. If retries are exhausted, this is what can push `book.status='error'`. |
 | Batch OCR submission itself fails (upload/`client.batches.create` exception) | The affected sub-batch's pages are marked `ocr_milestone='failed'`, `retry_count+=1`, same as the inline PDF-download failure — not a soft-skip, since nothing about this page specifically failed. |
-| Batch OCR job exceeds `gemini_batch_ocr_timeout_hours` (default 24h) while still `submitting`/`submitted`/`running` | All pages in the batch job marked `ocr_milestone='failed'`, `retry_count+=1`; the `BatchOCRJob` row is marked `'failed'`. |
+| Batch OCR job exceeds `ocr_batch_timeout_hours` (default 24h) while still `submitting`/`submitted`/`running` | All pages in the batch job marked `ocr_milestone='failed'`, `retry_count+=1`; the `BatchOCRJob` row is marked `'failed'`. |
 | Batch OCR job reaches Gemini state `FAILED`/`CANCELLED` | Same as timeout — all pages in the job marked `ocr_milestone='failed'`, `retry_count+=1`. |
 | Batch OCR per-item result has an `error` field, the transcription is empty after cleaning, or the transcription is degenerate/repetitive (`is_degenerate_ocr_output`) | `_record_page_ocr_failure` applies the identical soft-skip-at-exhaustion rule as the inline path: `failed`/`retry_count+=1` while budget remains, soft-skip to `succeeded` with empty text once exhausted. |
 | A page's Redis lock can't be acquired (another job already holds it) | That page is silently dropped from this `OcrJob` run (not marked failed) — it stays `in_progress` and is picked up again once the lock expires (1h) or `StaleWatchdog` resets it. |
@@ -316,16 +316,16 @@ flowchart TD
 | `ocr_max_parallel_pages` (`system_configs`) | `1` | `ocr_job` — pages OCR'd concurrently within one job via `asyncio.Semaphore`. The job's own fallback constant if the key is missing is `4`, but the seeded default is `1` (sequential). |
 | `ocr_scanner_batch_size` (`system_configs`) | `10` | `ocr_scanner` — idle pages claimed per book per run. |
 | `scanner_book_limit` (`system_configs`) | `2` | `ocr_scanner` — books dispatched per run. (Code fallback if unset is `10`; the seeded value is `2`.) |
-| `gemini_ocr_timeout` (`system_configs`) | `300` (seconds) | `ocr_job` — per-page Gemini Vision call timeout, passed through to `ocr_page_with_gemini`. |
-| `gemini_ocr_model` (`system_configs`) | `gemini-3.5-flash` | `ocr_job` / `batch_ocr_service` — required with no code fallback; `ocr_job` raises `RuntimeError` if unset. |
+| `ocr_gemini_timeout` (`system_configs`) | `300` (seconds) | `ocr_job` — per-page Gemini Vision call timeout, passed through to `ocr_page_with_gemini`. |
+| `ocr_gemini_model` (`system_configs`) | `gemini-3.5-flash` | `ocr_job` / `batch_ocr_service` — required with no code fallback; `ocr_job` raises `RuntimeError` if unset. |
 | `OCR_MAX_RETRIES` (env, `packages/backend-core/app/core/config.py`) | `4` | `ocr_service.ocr_page_with_gemini` — inner transient-error retry loop for a single Gemini Vision call, independent of and nested inside the outer `ocr_max_retry_count` budget. |
 | `OCR_PAGE_ZOOM_FACTOR` (env) | `1.5` | `ocr_service` / `batch_ocr_service` — PyMuPDF render resolution multiplier for both the inline and batch page-image rendering. |
 | `OCR_MAX_OUTPUT_TOKENS` (env, `packages/backend-core/app/core/config.py`) | `4096` | `generate_text_with_image` (inline) and the batch request's `generation_config` — hard ceiling on Gemini output tokens per page, to stop a runaway model from generating (and billing) unboundedly. |
-| `gemini_batch_ocr_enabled` (`system_configs`) | `false` | `ocr_job` — routes OCR through the Gemini Batch API instead of the inline per-page call. |
-| `gemini_batch_ocr_batch_size` (`system_configs`) | `50` | `ocr_job` — pages per submitted Gemini Batch API sub-job. |
-| `gemini_batch_ocr_timeout_hours` (`system_configs`) | `24` | `batch_ocr_poller_scanner` — wall-clock timeout before a stuck batch job's pages are marked failed. |
+| `ocr_batch_enabled` (`system_configs`) | `false` | `ocr_job` — routes OCR through the Gemini Batch API instead of the inline per-page call. |
+| `ocr_batch_size_per_job` (`system_configs`) | `50` | `ocr_job` — pages per submitted Gemini Batch API sub-job. |
+| `ocr_batch_timeout_hours` (`system_configs`) | `24` | `batch_ocr_poller_scanner` — wall-clock timeout before a stuck batch job's pages are marked failed. |
 
-**Note:** the plan for this doc anticipated a `gemini_batch_ocr_max_retry_count` key mirroring embedding's `gemini_batch_embedding_max_retry_count`, but no such key exists in `packages/backend-core/app/db/seeds.py` or anywhere in `batch_ocr_service.py` — batch-mode per-item retries reuse the same `ocr_max_retry_count` budget as the inline OCR path (see `_record_page_ocr_failure` in `batch_ocr_service.py`). This key is omitted from the table above since it does not exist in the current code.
+**Note:** the plan for this doc anticipated a `gemini_batch_ocr_max_retry_count` key mirroring embedding's `embed_batch_max_retry_count`, but no such key exists in `packages/backend-core/app/db/seeds.py` or anywhere in `batch_ocr_service.py` — batch-mode per-item retries reuse the same `ocr_max_retry_count` budget as the inline OCR path (see `_record_page_ocr_failure` in `batch_ocr_service.py`). This key is omitted from the table above since it does not exist in the current code.
 
 ## API Endpoints
 

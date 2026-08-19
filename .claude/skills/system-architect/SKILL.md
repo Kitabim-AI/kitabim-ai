@@ -93,7 +93,7 @@ Upload (POST /api/books)
                       └─ chunking_job → embedding_job → (spell_check_job)
                            └─ pipeline_driver marks book ready
                                 └─ Enqueues summary_job
-                                └─ graph_scanner (cron 5 min, if knowledge_graph_enabled)
+                                └─ graph_scanner (cron 5 min, if kg_enabled)
                                      picks up ready books → knowledge_graph_job / graph_resolution_job
                                      → writes Entity nodes + RELATED_TO edges to Neo4j,
                                        sets Book.graph_milestone

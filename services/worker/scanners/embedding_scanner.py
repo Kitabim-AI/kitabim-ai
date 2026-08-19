@@ -28,7 +28,7 @@ async def run_embedding_scanner(ctx) -> None:
         config_repo = SystemConfigsRepository(session)
         page_limit = int(await config_repo.get_value("scanner_page_limit", "100"))
         batch_enabled = (
-            await config_repo.get_value("gemini_batch_embedding_enabled", "false")
+            await config_repo.get_value("embed_batch_enabled", "false")
         ).lower() == "true"
 
         # Atomically claim idle embedding pages across all books.
