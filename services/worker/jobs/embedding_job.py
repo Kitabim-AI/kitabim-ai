@@ -59,11 +59,9 @@ async def embedding_job(ctx, page_ids: List[int]) -> None:
         # Fetch embedding model from system_configs (no fallback — must be configured in DB)
         async with db_session.async_session_factory() as session:
             config_repo = SystemConfigsRepository(session)
-            gemini_embedding_model = await config_repo.get_value(
-                "gemini_embedding_model"
-            )
+            gemini_embedding_model = await config_repo.get_value("embed_gemini_model")
             if not gemini_embedding_model:
-                raise RuntimeError("system_config 'gemini_embedding_model' is not set")
+                raise RuntimeError("system_config 'embed_gemini_model' is not set")
 
         # Load page records
         async with db_session.async_session_factory() as session:

@@ -6,12 +6,12 @@ import pathlib
 
 
 BASE_CONFIG = {
-    "gemini_ocr_model": "gemini-2.0-flash",
+    "ocr_gemini_model": "gemini-2.0-flash",
     "ocr_max_parallel_pages": "4",
-    "gemini_ocr_timeout": "30",
+    "ocr_gemini_timeout": "30",
     "ocr_max_retry_count": "3",
-    "gemini_batch_ocr_enabled": "false",
-    "gemini_batch_ocr_batch_size": "50",
+    "ocr_batch_enabled": "false",
+    "ocr_batch_size_per_job": "50",
 }
 
 
@@ -87,9 +87,9 @@ async def test_ocr_job_success():
 
         # Mock Configs
         mock_get_value.side_effect = lambda key, default=None: {
-            "gemini_ocr_model": "gemini-2.0-flash",
+            "ocr_gemini_model": "gemini-2.0-flash",
             "ocr_max_parallel_pages": "4",
-            "gemini_ocr_timeout": "30",
+            "ocr_gemini_timeout": "30",
             "ocr_max_retry_count": "3",
         }.get(key, default)
 
@@ -190,9 +190,9 @@ async def test_ocr_job_failure_retry():
 
         # Mock Configs
         mock_get_value.side_effect = lambda key, default=None: {
-            "gemini_ocr_model": "gemini-2.0-flash",
+            "ocr_gemini_model": "gemini-2.0-flash",
             "ocr_max_parallel_pages": "4",
-            "gemini_ocr_timeout": "30",
+            "ocr_gemini_timeout": "30",
             "ocr_max_retry_count": "3",
         }.get(key, default)
 
@@ -290,9 +290,9 @@ async def test_ocr_job_failure_exhausted_skip():
 
         # Mock Configs
         mock_get_value.side_effect = lambda key, default=None: {
-            "gemini_ocr_model": "gemini-2.0-flash",
+            "ocr_gemini_model": "gemini-2.0-flash",
             "ocr_max_parallel_pages": "4",
-            "gemini_ocr_timeout": "30",
+            "ocr_gemini_timeout": "30",
             "ocr_max_retry_count": "3",
         }.get(key, default)
 
@@ -388,7 +388,7 @@ async def test_ocr_job_batch_mode_delegates_to_batch_submission():
 
         mock_get_value.side_effect = lambda key, default=None: {
             **BASE_CONFIG,
-            "gemini_batch_ocr_enabled": "true",
+            "ocr_batch_enabled": "true",
         }.get(key, default)
 
         mock_doc = MagicMock()
@@ -471,7 +471,7 @@ async def test_ocr_job_batch_mode_submission_error_marks_pages_failed():
 
         mock_get_value.side_effect = lambda key, default=None: {
             **BASE_CONFIG,
-            "gemini_batch_ocr_enabled": "true",
+            "ocr_batch_enabled": "true",
         }.get(key, default)
 
         mock_doc = MagicMock()

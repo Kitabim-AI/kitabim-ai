@@ -72,13 +72,13 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
         # Fetch OCR settings from system_configs
         async with db_session.async_session_factory() as session:
             config_repo = SystemConfigsRepository(session)
-            gemini_ocr_model = await config_repo.get_value("gemini_ocr_model")
+            gemini_ocr_model = await config_repo.get_value("ocr_gemini_model")
             if not gemini_ocr_model:
-                raise RuntimeError("system_config 'gemini_ocr_model' is not set")
+                raise RuntimeError("system_config 'ocr_gemini_model' is not set")
             max_parallel_pages = int(
                 await config_repo.get_value("ocr_max_parallel_pages", "4")
             )
-            gemini_ocr_timeout_str = await config_repo.get_value("gemini_ocr_timeout")
+            gemini_ocr_timeout_str = await config_repo.get_value("ocr_gemini_timeout")
             gemini_ocr_timeout = (
                 float(gemini_ocr_timeout_str) if gemini_ocr_timeout_str else None
             )
@@ -87,11 +87,11 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
             )
             ocr_max_retry_count = int(ocr_max_retry_count_str)
             batch_ocr_enabled_str = await config_repo.get_value(
-                "gemini_batch_ocr_enabled", "false"
+                "ocr_batch_enabled", "false"
             )
             batch_ocr_enabled = batch_ocr_enabled_str.lower() in ("true", "1", "yes")
             batch_ocr_batch_size = int(
-                await config_repo.get_value("gemini_batch_ocr_batch_size", "50")
+                await config_repo.get_value("ocr_batch_size_per_job", "50")
             )
 
         # Mark book's active step

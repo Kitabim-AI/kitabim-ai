@@ -344,7 +344,7 @@ async def test_generate_text_with_image_timeout_fallback(
     result = await generate_text_with_image("prompt", b"image", "gemini-2.0-flash")
 
     assert result == "ocr response"
-    mock_get_db_timeout.assert_called_once_with("gemini_ocr_timeout", 300.0)
+    mock_get_db_timeout.assert_called_once_with("ocr_gemini_timeout", 300.0)
     mock_generate_content.assert_called_once()
     kwargs = mock_generate_content.call_args.kwargs
     assert "config" in kwargs
@@ -383,7 +383,7 @@ async def test_protected_llm_timeout_fallback(
     result = await llm.ainvoke("hello")
 
     assert result == "mocked response"
-    mock_get_db_timeout.assert_called_once_with("gemini_chat_timeout", 60.0)
+    mock_get_db_timeout.assert_called_once_with("rag_gemini_chat_timeout", 60.0)
     mock_generate_content.assert_called_once()
     kwargs = mock_generate_content.call_args.kwargs
     assert "config" in kwargs

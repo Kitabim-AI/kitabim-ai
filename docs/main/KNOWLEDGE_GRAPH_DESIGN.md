@@ -24,7 +24,7 @@ Other key characteristics:
 
 | Flag | Default | Gates |
 |---|---|---|
-| `knowledge_graph_enabled` (`system_configs`; seeded `'false'` by migration `045_add_graph_milestone_to_books.sql`) | `"false"` | All four graph entry points check it and no-op unless the value is exactly the string `"true"`: `knowledge_graph_job` (sets the book's `graph_milestone` back to `idle`, logs a warning, returns — no exception), `graph_scanner` (logs at DEBUG, returns before claiming any book), `graph_resolution_scanner` (logs at DEBUG, returns before claiming any queue row), and `POST /api/books/{book_id}/reprocess/graph` (returns HTTP 400 `"Knowledge Graph generation is currently disabled."`). Admin merge/split/rename/unmerge/review endpoints are **not** flag-gated — they operate on whatever is already in Neo4j. |
+| `kg_enabled` (`system_configs`; seeded `'false'` by migration `045_add_graph_milestone_to_books.sql`) | `"false"` | All four graph entry points check it and no-op unless the value is exactly the string `"true"`: `knowledge_graph_job` (sets the book's `graph_milestone` back to `idle`, logs a warning, returns — no exception), `graph_scanner` (logs at DEBUG, returns before claiming any book), `graph_resolution_scanner` (logs at DEBUG, returns before claiming any queue row), and `POST /api/books/{book_id}/reprocess/graph` (returns HTTP 400 `"Knowledge Graph generation is currently disabled."`). Admin merge/split/rename/unmerge/review endpoints are **not** flag-gated — they operate on whatever is already in Neo4j. |
 
 > Knowledge graph extraction is off in a fresh environment and must be enabled in `system_configs` before either the admin "Reprocess Graph" action or the resolution scanner will do anything.
 
@@ -147,10 +147,10 @@ Indexes: `graph_resolution_queue_status_idx (status)`, `graph_resolution_queue_s
 flowchart TD
     subgraph Extraction ["Bulk extraction — per book, admin-triggered"]
         ADMIN(["Admin: POST /{book_id}/reprocess/graph<br/>body: {scope: fiction | nonfiction}"])
-        FLAG{"knowledge_graph_enabled<br/>== 'true'?"}
+        FLAG{"kg_enabled<br/>== 'true'?"}
         MILE["books.graph_milestone = 'in_progress'<br/>(set by the endpoint, before enqueue)"]
         ENQ["enqueue knowledge_graph_job<br/>(_job_id=knowledge_graph:&lt;book_id&gt;)"]
-        JFLAG{"knowledge_graph_enabled<br/>== 'true'? (re-checked inside the job)"}
+        JFLAG{"kg_enabled<br/>== 'true'? (re-checked inside the job)"}
         BOOKSEL["SELECT the Book row"]
         BOOKGONE(["Book missing: return;<br/>graph_milestone left AS-IS<br/>(the only exit path that<br/>does not reset it)"])
         LOAD["Load all Chunk rows for the book<br/>ORDER BY page_number, chunk_index"]
@@ -235,9 +235,9 @@ flowchart TD
    (before any DB/Neo4j work — an invalid scope is a programming error,
    not a data condition).
 2. Open a session:
-   a. knowledge_graph_enabled (default "false"). IF != "true":
+   a. kg_enabled (default "false"). IF != "true":
       UPDATE books SET graph_milestone='idle', commit, log WARNING, return.
-   b. Read gemini_kg_extraction_model (default "gemini-3.1-flash-lite"),
+   b. Read kg_gemini_extraction_model (default "gemini-3.1-flash-lite"),
       kg_max_parallel_chunks (default "5"), kg_chunk_batch_size (default "5").
    c. SELECT the Book row. IF missing: log WARNING, return (milestone left
       as-is — the only exit path that does not reset it).
@@ -279,7 +279,7 @@ flowchart TD
    log ERROR (the job continues — it does not re-raise here).
 9. IF the bulk write succeeded: _maybe_embed_entity_profiles(all_entities).
    Reads entity_semantic_matching_enabled (default "false"); a no-op unless
-   "true". If enabled: reads gemini_embedding_model (raises if unset),
+   "true". If enabled: reads embed_gemini_model (raises if unset),
    builds an embedding provider, and calls embed_and_store_entity_profiles
    to embed each entity's profile text (build_entity_profile_text) and
    store it as Entity.profile_embedding via store_profile_embeddings_bulk.
@@ -302,9 +302,9 @@ flowchart TD
 **2. GraphScanner — `run_graph_scanner(ctx)` (implemented, unit-tested, not scheduled):**
 
 ```
-1. Open a session; read knowledge_graph_enabled (default "false").
+1. Open a session; read kg_enabled (default "false").
    IF != "true": log DEBUG, return.
-2. Read graph_scanner_batch_size (default "5").
+2. Read kg_scanner_batch_size (default "5").
 3. SELECT books.id WHERE status='ready' AND graph_milestone IN
    ('idle','failed') FOR UPDATE SKIP LOCKED LIMIT batch_size.
 4. IF none: return.
@@ -325,7 +325,7 @@ worker.py's cron_jobs; the only live extraction trigger is the admin endpoint.
 **3. GraphResolutionScanner — `run_graph_resolution_scanner(ctx)` (every 5 min):**
 
 ```
-1. Open a session; read knowledge_graph_enabled (default "false").
+1. Open a session; read kg_enabled (default "false").
    IF != "true": log DEBUG, return.
 2. Read resolution_batch_size (default "20").
 3. claim_batch(batch_size): SELECT graph_resolution_queue WHERE
@@ -560,7 +560,7 @@ flowchart TD
 
 | Scenario | Behavior |
 |---|---|
-| `knowledge_graph_enabled` is not `"true"` | Every entry point no-ops. `knowledge_graph_job` additionally resets `graph_milestone` to `idle` and commits, so a book left `in_progress` by an endpoint call made just before the flag was flipped off does not stay stuck. |
+| `kg_enabled` is not `"true"` | Every entry point no-ops. `knowledge_graph_job` additionally resets `graph_milestone` to `idle` and commits, so a book left `in_progress` by an endpoint call made just before the flag was flipped off does not stay stuck. |
 | Invalid `scope` passed to `knowledge_graph_job` | `ValueError` raised before any DB or Neo4j access; arq records the job failed. The API also rejects it earlier via the `ReprocessGraphRequest.scope` field validator (HTTP 422). |
 | Book row not found | Logged as a warning, function returns normally. This is the only exit path that leaves `graph_milestone` untouched — a book deleted mid-flight keeps whatever value it had. |
 | Book has zero chunks | `graph_milestone` reset to `idle`, warning logged, no exception. |
@@ -587,11 +587,11 @@ flowchart TD
 
 | Key | Default | Used by |
 |---|---|---|
-| `knowledge_graph_enabled` (`system_configs`) | `"false"` (seeded by migration `045`) | The master flag — see [Feature Flags](#feature-flags). Compared as an exact string; any value other than `"true"` disables. |
-| `gemini_kg_extraction_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (both the `seeds.py` value and the in-code fallback) | `knowledge_graph_job` — the extraction model. |
+| `kg_enabled` (`system_configs`) | `"false"` (seeded by migration `045`) | The master flag — see [Feature Flags](#feature-flags). Compared as an exact string; any value other than `"true"` disables. |
+| `kg_gemini_extraction_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (both the `seeds.py` value and the in-code fallback) | `knowledge_graph_job` — the extraction model. |
 | `kg_chunk_batch_size` (`system_configs`) | `"5"` (`seeds.py` and the in-code fallback agree; the job's own module docstring says 10, which is stale) | `knowledge_graph_job` — chunks combined into one LLM call. Higher values mean fewer API calls and better in-call coreference resolution, at the cost of a larger prompt and a coarser blast radius when one batch fails (all its chunks are skipped together). |
 | `kg_max_parallel_chunks` (`system_configs`) | `"5"` | `knowledge_graph_job` — `asyncio.Semaphore` size, i.e. concurrent extraction calls in flight. Bounded partly by the Neo4j pool comment's assumption in `graph_repository.py`. |
-| `graph_scanner_batch_size` (`system_configs`) | `"5"` | `graph_scanner` — books claimed per run. Inert while the scanner is unregistered. |
+| `kg_scanner_batch_size` (`system_configs`) | `"5"` | `graph_scanner` — books claimed per run. Inert while the scanner is unregistered. |
 | `resolution_batch_size` (`system_configs`, seeded by migration `075`) | `"20"` | `graph_resolution_scanner` — queue rows claimed per 5-minute tick. |
 | `resolution_max_passes` (`system_configs`, migration `075`) | `"5"` | `execute_merge` → `requeue_or_cap` — re-propagation passes allowed for one entity before it is force-marked `needs_review`. |
 | `resolution_similarity_threshold` (`system_configs`, migration `075`) | `"2"` | `resolve_entity` → `find_resolution_candidates` — the Lucene fuzzy edit distance appended as `term~N` against `entity_search_idx`. Raising it widens recall and increases gray-zone judge calls (cost). |
@@ -616,7 +616,7 @@ Roles are read directly from each route's auth dependency.
 | `POST /api/books/graph/merge` | `Depends(require_admin)` | Body `{keepId, removeId}` (camelCase aliases via `to_camel`). Delegates to `entity_resolution_service.execute_merge` with `performed_by=current_user.email` and `user_id=current_user.id`, so a manual merge gets the same snapshot/audit/re-propagation/cache-refresh treatment as an automatic one. Returns `{status, message, mergeLogId}`; `400` if either entity is missing (`execute_merge` returned `None`), `500` on any other failure. Merge intentionally lives here rather than on `/api/admin/graph`. |
 | `POST /api/books/graph/relationship/delete` | `Depends(require_admin)` | Body `{edgeId}`. Deletes one `RELATED_TO` edge by its stable `id`; `400` (i18n `errors.relationship_not_found`) if no such edge. |
 | `POST /api/books/graph/entity/rename` | `Depends(require_admin)` | Body `{entityId, newName}`. NFC-normalizes the new name, folds the previous `canonical_name` into `aliases` (so old citations keep resolving), then refreshes the alias cache. `400` if the entity doesn't exist. |
-| `POST /api/books/{book_id}/reprocess/graph` | `Depends(require_admin)` | Body `{scope}` — required, validated to `fiction`/`nonfiction`. `404` if the book is unknown; `400` if `knowledge_graph_enabled != "true"`. Otherwise sets `graph_milestone='in_progress'` (plus `last_updated`/`updated_by`) and commits *before* enqueuing `knowledge_graph_job(book_id, scope)` on a short-lived inline arq pool; on enqueue failure the milestone is rolled back to `idle` and a `500` (i18n `errors.graph_enqueue_failed`) is raised. This is the only live extraction trigger. |
+| `POST /api/books/{book_id}/reprocess/graph` | `Depends(require_admin)` | Body `{scope}` — required, validated to `fiction`/`nonfiction`. `404` if the book is unknown; `400` if `kg_enabled != "true"`. Otherwise sets `graph_milestone='in_progress'` (plus `last_updated`/`updated_by`) and commits *before* enqueuing `knowledge_graph_job(book_id, scope)` on a short-lived inline arq pool; on enqueue failure the milestone is rolled back to `idle` and a `500` (i18n `errors.graph_enqueue_failed`) is raised. This is the only live extraction trigger. |
 | `POST /api/admin/graph/entities/{entity_id}/split` | `Depends(require_admin)` | Body `{splitPointEdgeId}`. Runs `execute_split`; returns `{status, newEntityId, movedEdgeIds, unclusteredEdgeIds}`. `newEntityId` is `null` when no contradicting cluster was found (a no-op split). `400` on a missing entity/edge. |
 | `POST /api/admin/graph/merge-log/{merge_log_id}/unmerge` | `Depends(require_admin)` | Runs `execute_unmerge`; returns `{status, restoredEntityId, unrecoverableEdgeIds}`. `400` if the log row is missing or already reverted. |
 | `GET /api/admin/graph/review-queue?skip=&limit=` | `Depends(require_admin)` | Paginated `status='pending'` reviews, oldest first (`limit` 1–100, default 20). Entity display names are resolved through a 5-step fallback chain (`_resolve_entity_name`): the Neo4j names map → the stored `evidence` names → `graph_merge_log.removed_entity_snapshot->>'canonical_name'` (for an entity already merged away) → the first single-quoted phrase in the judge's `reasoning` → `Entity (<first 8 chars of id>)`. |

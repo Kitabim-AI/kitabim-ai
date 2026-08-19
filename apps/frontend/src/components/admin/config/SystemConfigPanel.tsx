@@ -43,11 +43,44 @@ interface CircuitBreakerStatus {
   overall_state: string;
 }
 
+type FeatureGroup = 'all' | 'ocr' | 'rag' | 'embed' | 'kg' | 'history' | 'summary' | 'spell' | 'sys';
+
+interface FeatureGroupInfo {
+  id: FeatureGroup;
+  label: string;
+  prefix: string;
+  badgeBg: string;
+  badgeText: string;
+  badgeBorder: string;
+}
+
+const FEATURE_GROUPS: FeatureGroupInfo[] = [
+  { id: 'all', label: 'All', prefix: '', badgeBg: 'bg-slate-100 dark:bg-slate-800', badgeText: 'text-slate-600 dark:text-slate-400', badgeBorder: 'border-slate-200 dark:border-slate-700' },
+  { id: 'ocr', label: 'OCR', prefix: 'ocr_', badgeBg: 'bg-amber-50 dark:bg-amber-950/40', badgeText: 'text-amber-700 dark:text-amber-400', badgeBorder: 'border-amber-200 dark:border-amber-900/40' },
+  { id: 'rag', label: 'RAG', prefix: 'rag_', badgeBg: 'bg-blue-50 dark:bg-blue-950/40', badgeText: 'text-blue-700 dark:text-blue-400', badgeBorder: 'border-blue-200 dark:border-blue-900/40' },
+  { id: 'embed', label: 'Embeddings', prefix: 'embed_', badgeBg: 'bg-emerald-50 dark:bg-emerald-950/40', badgeText: 'text-emerald-700 dark:text-emerald-400', badgeBorder: 'border-emerald-200 dark:border-emerald-900/40' },
+  { id: 'kg', label: 'Knowledge Graph', prefix: 'kg_', badgeBg: 'bg-purple-50 dark:bg-purple-950/40', badgeText: 'text-purple-700 dark:text-purple-400', badgeBorder: 'border-purple-200 dark:border-purple-900/40' },
+  { id: 'history', label: 'History', prefix: 'history_', badgeBg: 'bg-rose-50 dark:bg-rose-950/40', badgeText: 'text-rose-700 dark:text-rose-400', badgeBorder: 'border-rose-200 dark:border-rose-900/40' },
+  { id: 'summary', label: 'Summary', prefix: 'summary_', badgeBg: 'bg-indigo-50 dark:bg-indigo-950/40', badgeText: 'text-indigo-700 dark:text-indigo-400', badgeBorder: 'border-indigo-200 dark:border-indigo-900/40' },
+  { id: 'spell', label: 'Spell Check', prefix: 'spell_', badgeBg: 'bg-teal-50 dark:bg-teal-950/40', badgeText: 'text-teal-700 dark:text-teal-400', badgeBorder: 'border-teal-200 dark:border-teal-900/40' },
+  { id: 'sys', label: 'System', prefix: 'sys_', badgeBg: 'bg-slate-100 dark:bg-slate-800', badgeText: 'text-slate-700 dark:text-slate-300', badgeBorder: 'border-slate-200 dark:border-slate-700' },
+];
+
+function getFeatureGroupForKey(key: string): FeatureGroupInfo {
+  for (const group of FEATURE_GROUPS) {
+    if (group.prefix && key.startsWith(group.prefix)) {
+      return group;
+    }
+  }
+  return FEATURE_GROUPS.find(g => g.id === 'sys') || FEATURE_GROUPS[0];
+}
+
 export function SystemConfigPanel() {
   const { t } = useI18n();
   const isAdmin = useIsAdmin();
   const [configs, setConfigs] = useState<SystemConfig[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState<FeatureGroup>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -219,11 +252,26 @@ export function SystemConfigPanel() {
     setEditDescription('');
   };
 
-  const filteredConfigs = configs.filter(config => 
-    config.key.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (config.description?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    config.value.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const getGroupCount = (groupId: FeatureGroup) => {
+    if (groupId === 'all') return configs.length;
+    const targetGroup = FEATURE_GROUPS.find(g => g.id === groupId);
+    if (!targetGroup || !targetGroup.prefix) return 0;
+    return configs.filter(c => c.key.startsWith(targetGroup.prefix)).length;
+  };
+
+  const filteredConfigs = configs.filter(config => {
+    const matchesSearch = 
+      config.key.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      (config.description?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      config.value.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    if (!matchesSearch) return false;
+    if (selectedGroup === 'all') return true;
+
+    const groupInfo = FEATURE_GROUPS.find(g => g.id === selectedGroup);
+    if (!groupInfo || !groupInfo.prefix) return true;
+    return config.key.startsWith(groupInfo.prefix);
+  });
 
   const formatDisplayValue = (key: string, value: string) => {
     if (key.endsWith('_at')) {
@@ -419,7 +467,7 @@ export function SystemConfigPanel() {
                   type="text"
                   value={newKey}
                   onChange={(e) => setNewKey(e.target.value)}
-                  placeholder="e.g., llm_cb_failure_threshold"
+                  placeholder="e.g., ocr_max_retry_count"
                   className="w-full px-5 py-4 border-2 border-slate-100 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-550 outline-none focus:ring-4 focus:ring-[#0369a1]/10 dark:focus:ring-[#38bdf8]/10 focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all text-left font-mono"
                   dir="ltr"
                   data-latin="true"
@@ -434,7 +482,7 @@ export function SystemConfigPanel() {
                   type="text"
                   value={newValue}
                   onChange={(e) => setNewValue(e.target.value)}
-                  placeholder="e.g., 5"
+                  placeholder="e.g., 10"
                   className="w-full px-5 py-4 border-2 border-slate-100 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-550 outline-none focus:ring-4 focus:ring-[#0369a1]/10 dark:focus:ring-[#38bdf8]/10 focus:border-[#0369a1] dark:focus:border-[#38bdf8] transition-all text-left"
                   dir="ltr"
                   data-latin="true"
@@ -483,6 +531,38 @@ export function SystemConfigPanel() {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Feature Group Tabs - Hidden on mobile */}
+      {!isLoading && (
+        <div className="hidden md:flex items-center gap-1.5 md:gap-2 overflow-x-auto custom-scrollbar pb-1">
+          {FEATURE_GROUPS.map((group) => {
+            const count = getGroupCount(group.id);
+            const isSelected = selectedGroup === group.id;
+            return (
+              <button
+                key={group.id}
+                onClick={() => setSelectedGroup(group.id)}
+                className={`flex items-center gap-1.5 px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-xs md:text-sm font-medium transition-all whitespace-nowrap border ${
+                  isSelected
+                    ? 'bg-[#0369a1] text-white dark:bg-[#38bdf8] dark:text-slate-950 border-[#0369a1] dark:border-[#38bdf8] shadow-md'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <span>{group.label}</span>
+                <span
+                  className={`px-1.5 py-0.2 text-[10px] md:text-xs rounded-full ${
+                    isSelected
+                      ? 'bg-white/20 text-white dark:bg-slate-950/20 dark:text-slate-950'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       )}
 
       {/* Search and Action Bar - matching other tabs layout */}
@@ -540,9 +620,9 @@ export function SystemConfigPanel() {
             <table className="w-full text-left lg:min-w-[700px]">
               <thead>
                 <tr className="bg-[#0369a1]/5 dark:bg-[#38bdf8]/5 border-b border-[#0369a1]/10 dark:border-slate-800 text-[12px] md:text-[14px] lg:text-[16px] font-normal text-[#0369a1] dark:text-[#38bdf8] uppercase">
-                  <th className="px-3 md:px-6 py-3 md:py-5 font-normal w-1/4 text-left">{t('admin.systemConfig.key')}</th>
-                  <th className="px-3 md:px-6 py-3 md:py-5 font-normal w-1/4 text-left">{t('admin.systemConfig.value')}</th>
-                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 font-normal w-1/3 text-left">{t('admin.systemConfig.description')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 font-normal w-[35%] text-left">{t('admin.systemConfig.key')}</th>
+                  <th className="px-3 md:px-6 py-3 md:py-5 font-normal w-[20%] text-left">{t('admin.systemConfig.value')}</th>
+                  <th className="hidden lg:table-cell px-3 md:px-6 py-3 md:py-5 font-normal w-[28.3%] text-left">{t('admin.systemConfig.description')}</th>
                   <th className="px-3 md:px-6 py-3 md:py-5 font-normal w-1/6 text-right">{t('admin.systemConfig.actions')}</th>
                 </tr>
               </thead>
@@ -554,70 +634,70 @@ export function SystemConfigPanel() {
                         {config.key}
                       </code>
                     </td>
-                    <td className="px-3 md:px-6 py-4 md:py-6">
-                      {editingKey === config.key ? (
-                        <input
-                          type="text"
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none text-left text-base"
-                          dir="ltr"
-                          data-latin="true"
-                        />
-                      ) : (
-                        <span className="font-normal text-[#1a1a1a] dark:text-slate-100 text-sm md:text-base break-all">
-                          {formatDisplayValue(config.key, config.value)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="hidden lg:table-cell px-3 md:px-6 py-4 md:py-6">
-                      {editingKey === config.key ? (
-                        <input
-                          type="text"
-                          value={editDescription}
-                          onChange={(e) => setEditDescription(e.target.value)}
-                          className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none text-left text-base"
-                          dir="ltr"
-                          data-latin="true"
-                        />
-                      ) : (
-                        <span className="text-xs md:text-sm text-[#94a3b8] dark:text-slate-400">
-                          {config.description || <em className="opacity-50">No description</em>}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 md:px-6 py-4 md:py-6">
-                      <div className="flex items-center justify-end gap-1 md:gap-2">
+                      <td className="px-3 md:px-6 py-4 md:py-6">
                         {editingKey === config.key ? (
-                          <>
-                            <button
-                              onClick={() => handleUpdate(config.key)}
-                              className="p-1.5 md:p-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/10"
-                              title={t('common.save')}
-                            >
-                              <Save size={16} className="md:w-[18px] md:h-[18px]" />
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              className="p-1.5 md:p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-650 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
-                              title={t('common.cancel')}
-                            >
-                              <X size={16} className="md:w-[18px] md:h-[18px]" />
-                            </button>
-                          </>
+                          <input
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none text-left text-base"
+                            dir="ltr"
+                            data-latin="true"
+                          />
                         ) : (
-                          <button
-                            onClick={() => startEdit(config)}
-                            className="p-1.5 md:p-2.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-xl hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 transition-all border border-[#0369a1]/5 dark:border-[#38bdf8]/10 hover:shadow-lg hover:shadow-[#0369a1]/20"
-                            title={t('common.edit')}
-                          >
-                            <Edit2 size={16} className="md:w-[18px] md:h-[18px]" />
-                          </button>
+                          <span className="font-normal text-[#1a1a1a] dark:text-slate-100 text-sm md:text-base break-all">
+                            {formatDisplayValue(config.key, config.value)}
+                          </span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="hidden lg:table-cell px-3 md:px-6 py-4 md:py-6">
+                        {editingKey === config.key ? (
+                          <input
+                            type="text"
+                            value={editDescription}
+                            onChange={(e) => setEditDescription(e.target.value)}
+                            className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none text-left text-base"
+                            dir="ltr"
+                            data-latin="true"
+                          />
+                        ) : (
+                          <span className="text-xs md:text-sm text-[#94a3b8] dark:text-slate-400">
+                            {config.description || <em className="opacity-50">No description</em>}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 md:px-6 py-4 md:py-6">
+                        <div className="flex items-center justify-end gap-1 md:gap-2">
+                          {editingKey === config.key ? (
+                            <>
+                              <button
+                                onClick={() => handleUpdate(config.key)}
+                                className="p-1.5 md:p-2.5 bg-[#0369a1] text-white rounded-xl hover:bg-[#0369a1]/90 transition-all shadow-lg shadow-[#0369a1]/10"
+                                title={t('common.save')}
+                              >
+                                <Save size={16} className="md:w-[18px] md:h-[18px]" />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="p-1.5 md:p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-650 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                                title={t('common.cancel')}
+                              >
+                                <X size={16} className="md:w-[18px] md:h-[18px]" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => startEdit(config)}
+                              className="p-1.5 md:p-2.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-xl hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 transition-all border border-[#0369a1]/5 dark:border-[#38bdf8]/10 hover:shadow-lg hover:shadow-[#0369a1]/20"
+                              title={t('common.edit')}
+                            >
+                              <Edit2 size={16} className="md:w-[18px] md:h-[18px]" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>

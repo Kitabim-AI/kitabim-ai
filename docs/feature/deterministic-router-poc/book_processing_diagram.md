@@ -1,6 +1,6 @@
 # Book Processing Pipeline Diagram
 
-Visual companion to [WORKER_DESIGN.md](../../main/WORKER_DESIGN.md). Gemini API calls are synchronous/real-time by default. OCR and embedding can each optionally run through the Gemini Batch API instead (`gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled`, both `false` by default) — see [OCR_DESIGN.md](../../main/OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](../../main/EMBEDDING_DESIGN.md#data-flow) for the batch-mode diagrams.
+Visual companion to [WORKER_DESIGN.md](../../main/WORKER_DESIGN.md). Gemini API calls are synchronous/real-time by default. OCR and embedding can each optionally run through the Gemini Batch API instead (`ocr_batch_enabled` / `embed_batch_enabled`, both `false` by default) — see [OCR_DESIGN.md](../../main/OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](../../main/EMBEDDING_DESIGN.md#data-flow) for the batch-mode diagrams.
 
 ---
 
@@ -53,7 +53,7 @@ flowchart TD
     J_KG -->|"Index entities & relations<br/>(fresh uuid per entity — no dedup at write time)"| N4J[(Neo4j)]
 
     %% Entity resolution — the second graph sub-pipeline, and the only scheduled one
-    subgraph Resolution ["Entity Resolution — same knowledge_graph_enabled flag (see KNOWLEDGE_GRAPH_DESIGN.md)"]
+    subgraph Resolution ["Entity Resolution — same kg_enabled flag (see KNOWLEDGE_GRAPH_DESIGN.md)"]
         J_KG -->|"Bulk-enqueue one row per new entity"| GQ[(graph_resolution_queue)]
         GQ --> S_GR["Graph Resolution Scanner<br/>every 5 min (scheduled)"]
         S_GR -->|"Claim batch oldest-generation-first,<br/>dispatch one job per scope"| J_GR[Graph Resolution Job]
@@ -94,8 +94,8 @@ flowchart TD
 
 > **Knowledge graph note:** the graph stage is two sub-pipelines with different trigger models — see [KNOWLEDGE_GRAPH_DESIGN.md](../../main/KNOWLEDGE_GRAPH_DESIGN.md) for the full picture.
 >
-> - **Extraction (`knowledge_graph_job`) is manual-trigger-only.** `graph_scanner.py` exists and is unit-tested, but `services/worker/worker.py` does not register it in `WorkerSettings.cron_jobs`, so it never runs on a schedule today. Combined with `knowledge_graph_enabled` defaulting to `false` in `system_configs`, extraction currently only happens via the admin "Reprocess Graph" action, which enqueues `knowledge_graph_job` directly with the admin-supplied `scope`.
-> - **Entity resolution (`graph_resolution_scanner` → `graph_resolution_job`) *is* scheduled**, every 5 minutes, and is gated by the same `knowledge_graph_enabled` flag (the scanner returns before claiming anything when it isn't `"true"`). It never enqueues extraction — it only drains `graph_resolution_queue` rows that a previous extraction run inserted, so with extraction off it has nothing to do.
+> - **Extraction (`knowledge_graph_job`) is manual-trigger-only.** `graph_scanner.py` exists and is unit-tested, but `services/worker/worker.py` does not register it in `WorkerSettings.cron_jobs`, so it never runs on a schedule today. Combined with `kg_enabled` defaulting to `false` in `system_configs`, extraction currently only happens via the admin "Reprocess Graph" action, which enqueues `knowledge_graph_job` directly with the admin-supplied `scope`.
+> - **Entity resolution (`graph_resolution_scanner` → `graph_resolution_job`) *is* scheduled**, every 5 minutes, and is gated by the same `kg_enabled` flag (the scanner returns before claiming anything when it isn't `"true"`). It never enqueues extraction — it only drains `graph_resolution_queue` rows that a previous extraction run inserted, so with extraction off it has nothing to do.
 
 ---
 
@@ -115,7 +115,7 @@ Actions available to admins/editors on a book for recovering from a stuck or fai
 | `POST /api/books/{book_id}/reprocess/chunking` | editor | Resets chunking + embedding + `spell_check_milestone` to `idle`, `retry_count=0`, `status='pending'`, `pipeline_step='chunking'`. OCR text is untouched; chunks are recreated in place by `chunking_scanner`. |
 | `POST /api/books/{book_id}/reprocess/embedding` | editor | Resets embedding + `spell_check_milestone` to `idle`, `retry_count=0`, `status='pending'`, and clears existing chunk embeddings (`embedding=NULL`) so `embedding_scanner` regenerates vectors. Chunk text is preserved. |
 | `POST /api/books/{book_id}/reprocess/spell-check` | editor | Resets `spell_check_milestone` to `idle` and `retry_count=0`. No text, chunks, or vectors are touched. |
-| `POST /api/books/{book_id}/reprocess/graph` | admin | Requires a `{"scope": "fiction" \| "nonfiction"}` body (validated at the schema level and again in the job). Sets `graph_milestone='in_progress'` then enqueues `knowledge_graph_job` directly (bypasses `graph_scanner`); rolls the milestone back to `idle` if the enqueue fails. Returns `400` if `knowledge_graph_enabled != 'true'`. |
+| `POST /api/books/{book_id}/reprocess/graph` | admin | Requires a `{"scope": "fiction" \| "nonfiction"}` body (validated at the schema level and again in the job). Sets `graph_milestone='in_progress'` then enqueues `knowledge_graph_job` directly (bypasses `graph_scanner`); rolls the milestone back to `idle` if the enqueue fails. Returns `400` if `kg_enabled != 'true'`. |
 | `POST /api/books/{book_id}/reprocess/summary` | admin | Deletes the existing `book_summaries` row and enqueues `summary_job`. |
 | `POST /api/books/{book_id}/retry-failed` | editor | Resets every `failed`/`error` milestone on the book back to `idle`, resets `retry_count=0`, sets `status='pending'` — the standard way to un-stick a book that landed in `status='error'`. |
 | `POST /api/books/{book_id}/pages/{page_num}/reset` | editor | Resets a single page's `status`, text, and all milestones so OCR reprocesses it from scratch. |

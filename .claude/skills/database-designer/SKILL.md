@@ -234,7 +234,7 @@ await session.commit()  # both the milestone update and the event in one transac
 Hot-reloadable key/value store. No migration needed for new config entries — seed them via `packages/backend-core/app/db/seeds.py` or a one-time `INSERT`. Schema:
 
 ```
-key     STRING(100) PK   — e.g. "gemini_ocr_model", "scanner_page_limit"
+key     STRING(100) PK   — e.g. "ocr_gemini_model", "scanner_page_limit"
 value   TEXT NOT NULL    — always stored as a string; cast at read time
 description TEXT         — human-readable description for the admin UI
 updated_at TIMESTAMPTZ  — auto-updated on write

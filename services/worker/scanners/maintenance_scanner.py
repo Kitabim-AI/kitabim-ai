@@ -27,7 +27,7 @@ async def run_maintenance_scanner(ctx) -> None:
         async with db_session.async_session_factory() as session:
             # 1. Fetch dynamic retention setting from DB
             repo = SystemConfigsRepository(session)
-            db_retention = await repo.get_value("maintenance_retention_days")
+            db_retention = await repo.get_value("sys_maintenance_retention_days")
 
             retention_days = (
                 int(db_retention)

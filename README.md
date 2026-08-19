@@ -40,7 +40,7 @@ Uyghur literature and historical publications exist overwhelmingly in physical f
 ## Key Features
 
 ### 📄 Ingestion & Digitization Pipeline
-- **Gemini Vision OCR**: Page-by-page text extraction from uploaded PDFs with automated text normalization for Uyghur script. Supports interactive API execution as well as asynchronous **Gemini Batch API** modes (`gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled`).
+- **Gemini Vision OCR**: Page-by-page text extraction from uploaded PDFs with automated text normalization for Uyghur script. Supports interactive API execution as well as asynchronous **Gemini Batch API** modes (`ocr_batch_enabled` / `embed_batch_enabled`).
 - **Milestone State Machine**: Resumable, multi-stage processing pipeline (`OCR → Chunking → Embedding → Spell-Check → Summary → Graph Extraction`).
 - **Event-Driven Outbox**: Low-latency reactive trigger system (`pipeline_events` outbox + Event Dispatcher) ensuring swift stage handoffs without waiting for cron intervals.
 - **Smart Chunking & Embeddings**: Overlapping window chunking stored with `pgvector` similarity indexes using Gemini Embedding v2.

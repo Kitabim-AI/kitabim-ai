@@ -759,7 +759,7 @@ async def test_maybe_embed_entity_profiles_embeds_when_enabled():
             side_effect=_config_get_value(
                 overrides={
                     "entity_semantic_matching_enabled": "true",
-                    "gemini_embedding_model": "gemini-embedding-2",
+                    "embed_gemini_model": "gemini-embedding-2",
                 }
             ),
         ),
@@ -796,7 +796,7 @@ async def test_maybe_embed_entity_profiles_swallows_embedding_failure():
             side_effect=_config_get_value(
                 overrides={
                     "entity_semantic_matching_enabled": "true",
-                    "gemini_embedding_model": "gemini-embedding-2",
+                    "embed_gemini_model": "gemini-embedding-2",
                 }
             ),
         ),
@@ -889,12 +889,12 @@ async def _maybe_embed_entity_profiles(
             ).strip().lower() == "true"
             if not semantic_enabled:
                 return
-            gemini_embedding_model = await config_repo.get_value(
-                "gemini_embedding_model"
+            embed_gemini_model = await config_repo.get_value(
+                "embed_gemini_model"
             )
-        if not gemini_embedding_model:
-            raise RuntimeError("system_config 'gemini_embedding_model' is not set")
-        embeddings_model = get_embedding_provider(gemini_embedding_model)
+        if not embed_gemini_model:
+            raise RuntimeError("system_config 'embed_gemini_model' is not set")
+        embeddings_model = get_embedding_provider(embed_gemini_model)
         await embed_and_store_entity_profiles(graph_repo, entities, embeddings_model)
     except Exception as embed_exc:
         log_json(
@@ -1292,9 +1292,9 @@ async def main(limit: int = 500):
 
     async with db_session.async_session_factory() as session:
         configs_repo = SystemConfigsRepository(session)
-        embedding_model_name = await configs_repo.get_value("gemini_embedding_model")
+        embedding_model_name = await configs_repo.get_value("embed_gemini_model")
         if not embedding_model_name:
-            print("ERROR: system_config 'gemini_embedding_model' is not set.")
+            print("ERROR: system_config 'embed_gemini_model' is not set.")
             return
         merge_rows = (
             (

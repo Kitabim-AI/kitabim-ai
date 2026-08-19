@@ -257,7 +257,7 @@ Some jobs first fetch config from `SystemConfigsRepository`. Mock the repo at th
 with patch("services.worker.jobs.ocr_job.SystemConfigsRepository") as mock_config_cls:
     mock_config = mock_config_cls.return_value
     mock_config.get_value = AsyncMock(side_effect=lambda key, default=None: {
-        "gemini_ocr_model": "gemini-pro-vision",
+        "ocr_gemini_model": "gemini-pro-vision",
         "ocr_max_parallel_pages": "4",
     }.get(key, default))
     ...
@@ -279,7 +279,7 @@ async def test_embedding_job_raises_when_model_not_configured():
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
         mock_config_cls.return_value.get_value = AsyncMock(return_value=None)
 
-        with pytest.raises(RuntimeError, match="gemini_embedding_model"):
+        with pytest.raises(RuntimeError, match="embed_gemini_model"):
             await embedding_job(ctx, [1, 2])
 ```
 

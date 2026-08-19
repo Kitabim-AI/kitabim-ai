@@ -85,11 +85,9 @@ async def _maybe_embed_entity_profiles(
             ).strip().lower() == "true"
             if not semantic_enabled:
                 return
-            gemini_embedding_model = await config_repo.get_value(
-                "gemini_embedding_model"
-            )
+            gemini_embedding_model = await config_repo.get_value("embed_gemini_model")
         if not gemini_embedding_model:
-            raise RuntimeError("system_config 'gemini_embedding_model' is not set")
+            raise RuntimeError("system_config 'embed_gemini_model' is not set")
         embeddings_model = get_embedding_provider(gemini_embedding_model)
         await embed_and_store_entity_profiles(graph_repo, entities, embeddings_model)
     except Exception as embed_exc:
@@ -120,9 +118,7 @@ async def knowledge_graph_job(ctx, book_id: str, scope: str) -> None:
         # 1. Fetch settings from PostgreSQL
         async with db_session.async_session_factory() as session:
             config_repo = SystemConfigsRepository(session)
-            kg_enabled_val = await config_repo.get_value(
-                "knowledge_graph_enabled", "false"
-            )
+            kg_enabled_val = await config_repo.get_value("kg_enabled", "false")
             if kg_enabled_val != "true":
                 await session.execute(
                     update(Book)
@@ -139,7 +135,7 @@ async def knowledge_graph_job(ctx, book_id: str, scope: str) -> None:
                 return
 
             chat_model = await config_repo.get_value(
-                "gemini_kg_extraction_model", "gemini-3.1-flash-lite"
+                "kg_gemini_extraction_model", "gemini-3.1-flash-lite"
             )
             max_parallel = int(
                 await config_repo.get_value("kg_max_parallel_chunks", "5")

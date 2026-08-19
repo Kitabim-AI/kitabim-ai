@@ -1949,7 +1949,7 @@ async def reprocess_graph(
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     configs_repo = SystemConfigsRepository(session)
-    kg_enabled = await configs_repo.get_value("knowledge_graph_enabled", "false")
+    kg_enabled = await configs_repo.get_value("kg_enabled", "false")
     if kg_enabled != "true":
         raise HTTPException(
             status_code=400, detail="Knowledge Graph generation is currently disabled."
@@ -2209,10 +2209,10 @@ async def update_page_text(
     configs_repo = SystemConfigsRepository(session)
 
     # Fetch embedding model from system_configs (no fallback — must be configured in DB)
-    gemini_embedding_model = await configs_repo.get_value("gemini_embedding_model")
+    gemini_embedding_model = await configs_repo.get_value("embed_gemini_model")
     if not gemini_embedding_model:
         raise HTTPException(
-            status_code=500, detail="system_config 'gemini_embedding_model' is not set"
+            status_code=500, detail="system_config 'embed_gemini_model' is not set"
         )
 
     new_text = normalize_markdown(payload.get("text", ""))

@@ -516,7 +516,7 @@ async def test_poll_and_process_batch_ocr_jobs_empty_response_exhausted_retries_
         mock_repo = mock_repo_cls.return_value
         mock_repo.get_value = AsyncMock(
             side_effect=lambda key, default=None: {
-                "gemini_batch_ocr_timeout_hours": "24",
+                "ocr_batch_timeout_hours": "24",
                 "ocr_max_retry_count": "3",
             }.get(key, default)
         )

@@ -133,14 +133,14 @@ class ChatOrchestrator:
             book = await books_repo.get(request_dto.book_id)
 
         configs_repo = SystemConfigsRepository(db_session)
-        chat_model = await configs_repo.get_value("gemini_chat_model") or model_name
+        chat_model = await configs_repo.get_value("rag_gemini_chat_model") or model_name
         agent_model = (
             await configs_repo.get_value("gemini_agent_loop_model") or chat_model
         )
 
-        embedding_model = await configs_repo.get_value(
-            "gemini_embedding_model"
-        ) or getattr(settings, "gemini_embedding_model", "text-embedding-004")
+        embedding_model = await configs_repo.get_value("embed_gemini_model") or getattr(
+            settings, "embed_gemini_model", "text-embedding-004"
+        )
         embeddings = llm_resources.get_embeddings(embedding_model)
 
         # 1. Build QueryContext for tool backward-compatibility & pre-processing
@@ -404,7 +404,7 @@ class ChatOrchestrator:
             if reranker_enabled:
                 try:
                     reranker_model = await configs_repo.get_value(
-                        "gemini_reranker_model", "gemini-3.1-flash-lite"
+                        "rag_gemini_reranker_model", "gemini-3.1-flash-lite"
                     )
                     effective_question = _extract_effective_question(
                         request_dto.question, observations

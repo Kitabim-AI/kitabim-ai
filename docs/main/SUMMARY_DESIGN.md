@@ -20,7 +20,7 @@ Summary generation is a post-pipeline, book-level (not page-level) stage: once a
 |---|---|---|
 | `book_id` | `varchar(64)`, PK, FK → `books.id` (`ondelete=CASCADE`) | One row per book — no history of prior summaries is kept (`upsert` overwrites in place). |
 | `summary` | `text`, not null | The full structured 7-section Uyghur summary text. |
-| `embedding` | `vector(3072)`, not null | Embedding of the summary text (`GeminiEmbeddings`, same model as chunk embeddings via `gemini_embedding_model`), used for `summary_search`'s cosine-distance ranking. |
+| `embedding` | `vector(3072)`, not null | Embedding of the summary text (`GeminiEmbeddings`, same model as chunk embeddings via `embed_gemini_model`), used for `summary_search`'s cosine-distance ranking. |
 | `generated_at` | `timestamptz`, default/server-default `now()` | Set on every insert and on every `upsert` (both the initial write and any regeneration). |
 
 `packages/backend-core/app/db/models.py`'s `BookSummary` model has only these four columns today. Two staging columns (`summary_v1`, `embedding_draft`) existed briefly for a resample/cutover migration (`039_summary_v1_backfill.sql` → `040_summary_embedding_cutover.sql`) and were dropped once the cutover completed; `BookSummariesRepository` no longer has an `upsert_draft()` method (it targeted the now-dropped `embedding_draft` column) — it has been removed, and `summary_job.py` uses `upsert()` exclusively.
@@ -55,7 +55,7 @@ flowchart TD
     end
 
     subgraph SummaryJobFlow ["SummaryJob"]
-        CONFIG{"gemini_chat_model &<br/>gemini_embedding_model<br/>set in system_configs?"}
+        CONFIG{"rag_gemini_chat_model &<br/>embed_gemini_model<br/>set in system_configs?"}
         LOADBOOK["Load Book row"]
         NOBOOK{"book found?"}
         LOAD["Load all non-TOC page.text<br/>for the book, ordered by page_number"]
@@ -144,7 +144,7 @@ flowchart TD
 **3. SummaryJob — `summary_job(ctx, book_id)`:**
 
 ```
-1. Open a session; fetch gemini_chat_model and gemini_embedding_model from
+1. Open a session; fetch rag_gemini_chat_model and embed_gemini_model from
    system_configs (both required — no code-level fallback; raises
    RuntimeError if either is unset).
 2. Load the Book row. IF not found: log warning, return (no exception).
@@ -152,17 +152,17 @@ flowchart TD
    is_toc = false, ORDER BY page_number. Close the session.
 4. IF no page texts: log warning, return.
 5. max_chars = settings.summary_max_chars (SUMMARY_MAX_CHARS env, default
-   3,000,000). IF gemini_chat_model name does NOT match any of
+   3,000,000). IF rag_gemini_chat_model name does NOT match any of
    "1.5"/"2.0"/"flash"/"pro"/"ultra" (or does match "1.0"), cap
    max_chars = min(max_chars, 100_000) — a smaller-context-window safety net.
 6. sampled_text = _sample_text(pages_text, max_chars) — see Overview for the
    40/20/40 sampling strategy; returns the full concatenation unchanged if
    under the cap.
-7. Build a text chain with BOOK_SUMMARY_PROMPT bound to gemini_chat_model;
+7. Build a text chain with BOOK_SUMMARY_PROMPT bound to rag_gemini_chat_model;
    ainvoke({title, author, text: sampled_text},
    timeout_config_key="gemini_summary_timeout"). Strip the result.
 8. IF empty: log warning, return (no book_summaries row written).
-9. Embed the summary via GeminiEmbeddings(gemini_embedding_model)
+9. Embed the summary via GeminiEmbeddings(embed_gemini_model)
    .aembed_documents([summary]) — single-element batch.
 10. Open a new session; BookSummariesRepository.upsert(book_id, summary,
     embedding); commit.
@@ -177,7 +177,7 @@ flowchart TD
 
 | Scenario | Behavior |
 |---|---|
-| `gemini_chat_model` or `gemini_embedding_model` not set in `system_configs` | `summary_job` raises `RuntimeError` immediately; no `book_summaries` row written. Job recorded as failed by arq; picked up again by the next `SummaryScanner` run (no row exists yet). |
+| `rag_gemini_chat_model` or `embed_gemini_model` not set in `system_configs` | `summary_job` raises `RuntimeError` immediately; no `book_summaries` row written. Job recorded as failed by arq; picked up again by the next `SummaryScanner` run (no row exists yet). |
 | Book not found, or book has zero non-TOC pages with text | Logged as a warning; function returns normally (not an exception) — arq sees this as a successful job run with no output. `SummaryScanner` will re-select the book on its next pass since it still has no `book_summaries` row (this can loop indefinitely if the book genuinely has no page text — there is no permanent-failure/give-up state for summary generation). |
 | LLM call raises (timeout, API error, etc.) | Exception propagates out of `summary_job`; arq marks the job failed. No row written. Retried only by the next `SummaryScanner` sweep (no dedicated retry-count/backoff mechanism specific to summaries — unlike OCR/chunking/embedding/spellcheck, there is no `retry_count` column or `PipelineDriver` reset step for this stage). |
 | LLM returns an empty/whitespace-only summary | Logged as a warning; function returns normally, no row written — same re-pickup behavior as "no page text found." |
@@ -190,11 +190,11 @@ flowchart TD
 | Key | Default | Used by |
 |---|---|---|
 | `summary_max_chars` (env `SUMMARY_MAX_CHARS`, `packages/backend-core/app/core/config.py`) | `3,000,000` | `summary_job` — the character-sampling cap `_sample_text` truncates to when the concatenated book text exceeds it. Not `SUMMARY_MAX_CHARS` as a `system_configs`/DB key — it is a plain env-backed setting (`settings.summary_max_chars`). |
-| (inline, hardcoded) 100,000-char cap for non-large-context models | `100_000` | `summary_job` — applied instead of `summary_max_chars` when `gemini_chat_model`'s name doesn't match `"1.5"`/`"2.0"`/`"flash"`/`"pro"`/`"ultra"` (or does match `"1.0"`). Not configurable via `system_configs` or env. |
+| (inline, hardcoded) 100,000-char cap for non-large-context models | `100_000` | `summary_job` — applied instead of `summary_max_chars` when `rag_gemini_chat_model`'s name doesn't match `"1.5"`/`"2.0"`/`"flash"`/`"pro"`/`"ultra"` (or does match `"1.0"`). Not configurable via `system_configs` or env. |
 | `summary_scanner_batch_size` (`system_configs`) | `"5"` (code fallback in `summary_scanner.py`; also documented as the intended steady-state value — can be raised temporarily for bulk regeneration per the scanner's own module docstring) | `summary_scanner` — books claimed per 5-minute run. |
-| `gemini_chat_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded by `seed_system_configs()`) | `summary_job` — chat model used for summary generation; no code-level fallback if the key is unset, raises `RuntimeError`. |
-| `gemini_embedding_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`; see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#configuration-reference)) | `summary_job` — embedding model for the summary vector; no code-level fallback if the key is unset, raises `RuntimeError`. |
-| `gemini_summary_timeout` (`system_configs`) | `"300"` (seconds; seeded by migration `054_add_gemini_summary_timeout_config.sql`) | `build_text_chain(...).ainvoke(..., timeout_config_key="gemini_summary_timeout")` — per-call LLM timeout for summary generation specifically (separate budget from `gemini_chat_timeout`/`gemini_ocr_timeout`). |
+| `rag_gemini_chat_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded by `seed_system_configs()`) | `summary_job` — chat model used for summary generation; no code-level fallback if the key is unset, raises `RuntimeError`. |
+| `embed_gemini_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`; see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#configuration-reference)) | `summary_job` — embedding model for the summary vector; no code-level fallback if the key is unset, raises `RuntimeError`. |
+| `gemini_summary_timeout` (`system_configs`) | `"300"` (seconds; seeded by migration `054_add_gemini_summary_timeout_config.sql`) | `build_text_chain(...).ainvoke(..., timeout_config_key="gemini_summary_timeout")` — per-call LLM timeout for summary generation specifically (separate budget from `rag_gemini_chat_timeout`/`ocr_gemini_timeout`). |
 | `summary_threshold` (env `SUMMARY_THRESHOLD`) | `0.30` | Not part of generation — read by the RAG agent's `search_books_by_summary` tool (`tools.py`) as the minimum cosine similarity for a book to be considered a routing match; included here since it's the other side of the `summary_search` cosine query defined in `book_summaries_repository.py`. |
 
 ## API Endpoints
