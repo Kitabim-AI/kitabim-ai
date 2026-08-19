@@ -16,7 +16,7 @@ Key characteristics:
 - **History dictionary extraction is a fully separate, admin-triggered sub-system.** It does not use the milestone columns/state machine described below at all — see [HistoryExtractionJob](#historyextractionjob--batchhistorypollerscanner).
 - **Transactional Outbox** — the `pipeline_events` table records a row for every milestone transition, written in the same DB transaction as the result. The Event Dispatcher polls this table and immediately enqueues the next job, so most pages move `ocr → chunking → embedding` inside seconds rather than waiting for the next 1-minute scanner tick.
 - **Per-page distributed locking** — `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` each wrap their claimed page IDs in a `MultiPageLock` (Redis `SET NX` per page, 1‑hour expiry, keyed as `lock:{prefix}:{page_id}` with each stage passing its own `prefix` — e.g. `ocr`, `chunking` — so the same page can be locked independently per pipeline stage) before processing, so the same page can never be worked on by two job instances concurrently even if a scanner double-claims it.
-- **Optional Gemini Batch API mode** — OCR, embedding, and history dictionary extraction can each independently run through the Gemini Batch API instead of the interactive API (`gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled` / `gemini_batch_history_extraction_enabled`, all `false` by default), trading latency (async submit + poll) for lower cost on high-volume ingestion. See [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the full OCR/embedding batch-mode algorithm.
+- **Optional Gemini Batch API mode** — OCR, embedding, and history dictionary extraction can each independently run through the Gemini Batch API instead of the interactive API (`ocr_batch_enabled` / `embed_batch_enabled` / `history_batch_enabled`, all `false` by default), trading latency (async submit + poll) for lower cost on high-volume ingestion. See [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the full OCR/embedding batch-mode algorithm.
 
 ## Goals
 
@@ -34,11 +34,11 @@ Several pipeline stages are gated by boolean flags in `system_configs` (checked 
 |---|---|---|
 | `spell_check_enabled` | `true` | `spell_check_scanner` — returns immediately if not `"true"` |
 | `auto_correct_enabled` | `true` | `auto_correct_scanner` — returns immediately if not `"true"` |
-| `knowledge_graph_enabled` | `false` | `graph_scanner`, `graph_resolution_scanner`, and `knowledge_graph_job` — all no-op if not `"true"` (`knowledge_graph_job` additionally resets `graph_milestone` back to `idle`); also gates `POST /{book_id}/reprocess/graph`, which returns `400` if the flag isn't `"true"` |
-| `gemini_batch_ocr_enabled` | `false` | `ocr_job` — submits a `batch_ocr_jobs` row via the Gemini Batch API instead of OCR'ing inline when `"true"` |
-| `gemini_batch_embedding_enabled` | `false` | `embedding_scanner` — submits a `batch_embedding_jobs` row via the Gemini Batch API instead of dispatching `embedding_job` when `"true"` |
+| `kg_enabled` | `false` | `graph_scanner`, `graph_resolution_scanner`, and `knowledge_graph_job` — all no-op if not `"true"` (`knowledge_graph_job` additionally resets `graph_milestone` back to `idle`); also gates `POST /{book_id}/reprocess/graph`, which returns `400` if the flag isn't `"true"` |
+| `ocr_batch_enabled` | `false` | `ocr_job` — submits a `batch_ocr_jobs` row via the Gemini Batch API instead of OCR'ing inline when `"true"` |
+| `embed_batch_enabled` | `false` | `embedding_scanner` — submits a `batch_embedding_jobs` row via the Gemini Batch API instead of dispatching `embedding_job` when `"true"` |
 | `history_extraction_enabled` | `true` | `history_extraction_job` — returns `{"status": "skipped", ...}` without processing if not `"true"`; also gates `POST /api/admin/books/{book_id}/extract-history`, which returns `400` if the flag isn't `"true"` |
-| `gemini_batch_history_extraction_enabled` | `false` | `history_extraction_job` — submits a `batch_history_extraction_jobs` row via the Gemini Batch API instead of extracting inline when `"true"` |
+| `history_batch_enabled` | `false` | `history_extraction_job` — submits a `batch_history_extraction_jobs` row via the Gemini Batch API instead of extracting inline when `"true"` |
 
 > **Knowledge graph extraction is off by default in a fresh environment.** It must be explicitly enabled via `system_configs` before `graph_scanner` or the "Reprocess Graph" admin action will do anything.
 
@@ -78,7 +78,7 @@ worker/
     batch_ocr_poller_scanner.py ← polls in-flight batch_ocr_jobs, ingests results (feature-flagged path)
     chunking_scanner.py        ← claims idle chunking pages across all books, dispatches one ChunkingJob
     embedding_scanner.py       ← claims idle embedding pages across all books, dispatches one EmbeddingJob
-                                  (or submits a batch_embedding_job inline if gemini_batch_embedding_enabled)
+                                  (or submits a batch_embedding_job inline if embed_batch_enabled)
     batch_embedding_poller_scanner.py ← polls in-flight batch_embedding_jobs, writes vectors back (feature-flagged path)
     spell_check_scanner.py     ← claims idle spell_check pages, dispatches SpellCheckJob (feature-flagged)
     event_dispatcher.py        ← polls the outbox, immediately dispatches the next job
@@ -188,7 +188,7 @@ The "claim" step re-checks that the target milestone is still `idle` (`SKIP LOCK
 
 ### MaintenanceScanner
 
-Deletes `pipeline_events` rows where `processed=true` and `created_at` is older than `maintenance_retention_days` (system_configs, default 7).
+Deletes `pipeline_events` rows where `processed=true` and `created_at` is older than `sys_maintenance_retention_days` (system_configs, default 7).
 
 ### AutoCorrectScanner
 
@@ -199,10 +199,10 @@ See [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) for the full auto-correct algor
 Unlike every other job described above, `history_extraction_job` has **no scanner that claims idle work for it** — it is admin-triggered only. `POST /api/admin/books/{book_id}/extract-history` (admin-only, `admin_history_dictionary_router.py`) enqueues the job directly with a `min_significance` threshold; it 400s if `history_extraction_enabled` isn't `"true"`.
 
 The job either:
-- runs Gemini extraction inline over the book's pages in sliding windows of `history_extraction_batch_size` pages (default 15, `history_extraction_model` default `gemini-2.5-flash`) and stages candidate terms + facts into `history_dictionary_staging`, or
-- when `gemini_batch_history_extraction_enabled` is `"true"`, submits a row to `batch_history_extraction_jobs` via the Gemini Batch API instead (mirrors the OCR/embedding batch-mode pattern).
+- runs Gemini extraction inline over the book's pages in sliding windows of `history_batch_size` pages (default 15, `history_gemini_model` default `gemini-2.5-flash`) and stages candidate terms + facts into `history_dictionary_staging`, or
+- when `history_batch_enabled` is `"true"`, submits a row to `batch_history_extraction_jobs` via the Gemini Batch API instead (mirrors the OCR/embedding batch-mode pattern).
 
-`batch_history_poller_scanner` (every 1 min) polls in-flight `batch_history_extraction_jobs` and ingests completed results the same way `batch_ocr_poller_scanner`/`batch_embedding_poller_scanner` do for their stages — but note there is currently no timeout config analogous to `gemini_batch_ocr_timeout_hours`/`gemini_batch_embedding_timeout_hours` for stuck batch history jobs. Staged candidates are reviewed and approved/rejected by an admin via the `/history-dictionary/staging` endpoints before publishing to the live `history_dictionary` table.
+`batch_history_poller_scanner` (every 1 min) polls in-flight `batch_history_extraction_jobs` and ingests completed results the same way `batch_ocr_poller_scanner`/`batch_embedding_poller_scanner` do for their stages — but note there is currently no timeout config analogous to `ocr_batch_timeout_hours`/`embed_batch_timeout_hours` for stuck batch history jobs. Staged candidates are reviewed and approved/rejected by an admin via the `/history-dictionary/staging` endpoints before publishing to the live `history_dictionary` table.
 
 ## Cron Schedule
 
@@ -213,20 +213,20 @@ Authoritative source: `WorkerSettings.cron_jobs` in `services/worker/worker.py`.
 | `gcs_discovery_scanner` | Every 5 min | List GCS bucket, register new books |
 | `pipeline_driver` | Every 1 min (+ at startup) | Initialize, reset retryable failures, mark ready/error, enqueue summary jobs |
 | `ocr_scanner` | Every 1 min | Groups claimed pages by book |
-| `batch_ocr_poller_scanner` | Every 1 min | Polls in-flight `batch_ocr_jobs` (no-op unless `gemini_batch_ocr_enabled` has been used) |
+| `batch_ocr_poller_scanner` | Every 1 min | Polls in-flight `batch_ocr_jobs` (no-op unless `ocr_batch_enabled` has been used) |
 | `chunking_scanner` | Every 1 min | Cross-book |
 | `embedding_scanner` | Every 1 min | Cross-book |
-| `batch_embedding_poller_scanner` | Every 1 min | Polls in-flight `batch_embedding_jobs` (no-op unless `gemini_batch_embedding_enabled` has been used) |
+| `batch_embedding_poller_scanner` | Every 1 min | Polls in-flight `batch_embedding_jobs` (no-op unless `embed_batch_enabled` has been used) |
 | `spell_check_scanner` | Every 1 min | Cross-book; no-op unless `spell_check_enabled` |
-| `batch_history_poller_scanner` | Every 1 min | Polls in-flight `batch_history_extraction_jobs` (no-op unless `gemini_batch_history_extraction_enabled` has been used) |
+| `batch_history_poller_scanner` | Every 1 min | Polls in-flight `batch_history_extraction_jobs` (no-op unless `history_batch_enabled` has been used) |
 | `event_dispatcher` | Every 1 min (+ at startup) | Reactive low-latency progression via the outbox |
 | `stale_watchdog` | Minute 0 and 30 (i.e. every 30 min) | Worker-heartbeat-aware reset |
 | `summary_scanner` | Every 5 min | Backfill/retry missing book summaries |
-| `graph_resolution_scanner` | Every 5 min | Claims `graph_resolution_queue` rows, dispatches one `graph_resolution_job` per scope; no-op unless `knowledge_graph_enabled` |
+| `graph_resolution_scanner` | Every 5 min | Claims `graph_resolution_queue` rows, dispatches one `graph_resolution_job` per scope; no-op unless `kg_enabled` |
 | `auto_correct_scanner` | Daily at 3:00 AM | Loops through all eligible pages in batches |
 | `maintenance_scanner` | Daily at 3:00 AM | Deletes old processed outbox events |
 
-**`graph_scanner` is not in this list.** The module (`services/worker/scanners/graph_scanner.py`) and its unit tests exist, and `worker.py`'s own module docstring claims it runs every 5 minutes, but it is never imported or added to `cron_jobs`. With `knowledge_graph_enabled` also defaulting to `false`, knowledge-graph generation today only runs via the manual admin "Reprocess Graph" action (`POST /api/books/{book_id}/reprocess/graph`), which enqueues `knowledge_graph_job` directly.
+**`graph_scanner` is not in this list.** The module (`services/worker/scanners/graph_scanner.py`) and its unit tests exist, and `worker.py`'s own module docstring claims it runs every 5 minutes, but it is never imported or added to `cron_jobs`. With `kg_enabled` also defaulting to `false`, knowledge-graph generation today only runs via the manual admin "Reprocess Graph" action (`POST /api/books/{book_id}/reprocess/graph`), which enqueues `knowledge_graph_job` directly.
 
 ## State Machine
 
@@ -326,24 +326,24 @@ All batch sizes, concurrency limits, and model names below are `system_configs` 
 | `ocr_scanner_batch_size` | `10` | `ocr_scanner` — pages claimed per book per run |
 | `scanner_book_limit` | `10` | `ocr_scanner` — books dispatched per run |
 | `scanner_page_limit` | `100` | `chunking_scanner` / `embedding_scanner` / `spell_check_scanner` — pages claimed per run |
-| `gemini_ocr_timeout` | `300` (sec) | `ocr_job` — per-page Gemini Vision call timeout |
+| `ocr_gemini_timeout` | `300` (sec) | `ocr_job` — per-page Gemini Vision call timeout |
 | `auto_correct_batch_size` | `500` | `auto_correct_scanner` — pages per dispatched batch |
 | `summary_scanner_batch_size` | `5` | `summary_scanner` — books backfilled per run |
-| `graph_scanner_batch_size` | `5` | `graph_scanner` — books backfilled per run (scanner currently unscheduled) |
+| `kg_scanner_batch_size` | `5` | `graph_scanner` — books backfilled per run (scanner currently unscheduled) |
 | `resolution_batch_size` | `20` | `graph_resolution_scanner` — `graph_resolution_queue` rows claimed per run |
 | `kg_chunk_batch_size` | `5` | `knowledge_graph_job` — chunks combined per LLM call |
 | `kg_max_parallel_chunks` | `5` | `knowledge_graph_job` — concurrent batch LLM calls |
-| `maintenance_retention_days` | `7` | `maintenance_scanner` — processed-event retention |
-| `gemini_batch_ocr_enabled` | `false` | `ocr_job` — routes OCR through the Gemini Batch API instead of inline |
-| `gemini_batch_ocr_batch_size` | `50` | `ocr_job` — pages per submitted batch-OCR sub-job |
-| `gemini_batch_embedding_enabled` | `false` | `embedding_scanner` — routes embedding through the Gemini Batch API instead of `embedding_job` |
-| `gemini_batch_embedding_max_chunks_per_job` | `100` | `batch_embedding_service` — chunks per submitted batch-embedding sub-job |
-| `gemini_batch_ocr_timeout_hours` / `gemini_batch_embedding_timeout_hours` | `24` | Poller scanners — wall-clock timeout before marking a stuck batch job's pages failed |
-| `gemini_batch_embedding_max_retry_count` | `3` | `batch_embedding_service` (poller scanner) — per-chunk retry budget before giving up. Batch OCR has no equivalent dedicated key — `batch_ocr_service` reuses `ocr_max_retry_count` (default `10`) as its per-page retry budget instead |
+| `sys_maintenance_retention_days` | `7` | `maintenance_scanner` — processed-event retention |
+| `ocr_batch_enabled` | `false` | `ocr_job` — routes OCR through the Gemini Batch API instead of inline |
+| `ocr_batch_size_per_job` | `50` | `ocr_job` — pages per submitted batch-OCR sub-job |
+| `embed_batch_enabled` | `false` | `embedding_scanner` — routes embedding through the Gemini Batch API instead of `embedding_job` |
+| `embed_batch_max_chunks_per_job` | `100` | `batch_embedding_service` — chunks per submitted batch-embedding sub-job |
+| `ocr_batch_timeout_hours` / `embed_batch_timeout_hours` | `24` | Poller scanners — wall-clock timeout before marking a stuck batch job's pages failed |
+| `embed_batch_max_retry_count` | `3` | `batch_embedding_service` (poller scanner) — per-chunk retry budget before giving up. Batch OCR has no equivalent dedicated key — `batch_ocr_service` reuses `ocr_max_retry_count` (default `10`) as its per-page retry budget instead |
 | `history_extraction_enabled` | `true` | `history_extraction_job` — pipeline-level feature flag; also gates `POST /api/admin/books/{book_id}/extract-history` |
-| `history_extraction_model` | `gemini-2.5-flash` | `history_extraction_job` / `batch_history_extraction_service` — Gemini model used for term extraction and factual synthesis |
-| `history_extraction_batch_size` | `15` | `history_extraction_service` / `batch_history_extraction_service` — pages per sliding-window/batch extraction request |
-| `gemini_batch_history_extraction_enabled` | `false` | `history_extraction_job` — routes extraction through the Gemini Batch API instead of inline; unlike batch OCR/embedding, there is no dedicated `*_timeout_hours` or `*_max_retry_count` key for stuck batch history jobs |
+| `history_gemini_model` | `gemini-2.5-flash` | `history_extraction_job` / `batch_history_extraction_service` — Gemini model used for term extraction and factual synthesis |
+| `history_batch_size` | `15` | `history_extraction_service` / `batch_history_extraction_service` — pages per sliding-window/batch extraction request |
+| `history_batch_enabled` | `false` | `history_extraction_job` — routes extraction through the Gemini Batch API instead of inline; unlike batch OCR/embedding, there is no dedicated `*_timeout_hours` or `*_max_retry_count` key for stuck batch history jobs |
 | `MAX_PARALLEL_SPELL_CHECK` (env) | `6` | `spell_check_job` — pages spell-checked concurrently |
 | `MAX_CONCURRENT_SPELL_CHECK_BOOKS` (env) | `3` | `spell_check_scanner` — books actively spell-checked at once |
 | `MAX_PARALLEL_AUTO_CORRECT` (env) | `10` | `auto_correct_job` — pages corrected concurrently |

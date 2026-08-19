@@ -2,7 +2,7 @@
 
 - **Date**: 2026-08-02
 - **Topic**: Extracting Uyghur historical figures, events, dynasties, and concepts from catalog books to populate and enrich `history_dictionary`
-- **Model**: Dynamic runtime configuration via `system_config` table (key: `history_extraction_model`, default: `gemini-2.5-flash`)
+- **Model**: Dynamic runtime configuration via `system_config` table (key: `history_gemini_model`, default: `gemini-2.5-flash`)
 - **UI Action Label**: `تارىخىي ئاتالغۇلارنى تېپىش`
 
 ---
@@ -13,7 +13,7 @@ Currently, the `history_dictionary` table primarily contains translated world hi
 
 This design introduces an on-demand, semi-automated extraction and enrichment pipeline:
 1. Admins trigger **"تارىخىي ئاتالغۇلارنى تېپىش"** (Find Historical Terms) on any book in the Admin Book Catalog.
-2. An ARQ background worker scans the book using the LLM model configured in `system_config` (`history_extraction_model`), evaluating entities across 4 categories:
+2. An ARQ background worker scans the book using the LLM model configured in `system_config` (`history_gemini_model`), evaluating entities across 4 categories:
    - **Figures** (`شەخسلەر`)
    - **Events** (`ۋەقە-ھادىسىلەر`)
    - **Dynasties & Regimes** (`خانلىقلار`)
@@ -32,7 +32,7 @@ flowchart TD
     AdminBookCatalog["Admin Book Catalog UI\n('تارىخىي ئاتالغۇلارنى تېپىش')"] -->|POST /api/v1/admin/books/:id/extract-history| FastAPIEndpoint["FastAPI Admin Route"]
     FastAPIEndpoint -->|Enqueue Task| ARQWorker["ARQ Background Worker\n(history_extraction_job)"]
     
-    ARQWorker -->|Read Config Key: history_extraction_model| SystemConfig[("system_config Table\n(history_extraction_model, min_significance)")]
+    ARQWorker -->|Read Config Key: history_gemini_model| SystemConfig[("system_config Table\n(history_gemini_model, min_significance)")]
     ARQWorker -->|Fetch Pages| BookPages[("book_pages Table")]
     
     ARQWorker -->|Batch Pages + 2-Page Window| GeminiClient["Configured Gemini Model\n(via system_config)"]
@@ -109,11 +109,11 @@ The extraction pipeline dynamically fetches settings from `system_config` at the
 
 | Config Key | Default Value | Description |
 | :--- | :--- | :--- |
-| `history_extraction_model` | `'gemini-2.5-flash'` | Model string passed to LLM client (e.g. `gemini-2.5-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`, `gemini-2.5-pro`). |
+| `history_gemini_model` | `'gemini-2.5-flash'` | Model string passed to LLM client (e.g. `gemini-2.5-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`, `gemini-2.5-pro`). |
 | `history_extraction_min_significance` | `'5'` | Minimum threshold score (1–10) required for a candidate to be staged. |
 | `history_extraction_batch_pages` | `'15'` | Number of continuous OCR pages passed per prompt batch. |
 
-* **Runtime Switching**: Admins can update `history_extraction_model` via the Admin System Settings UI or database query at any time without code redeployments.
+* **Runtime Switching**: Admins can update `history_gemini_model` via the Admin System Settings UI or database query at any time without code redeployments.
 
 ---
 
@@ -160,7 +160,7 @@ The extraction pipeline dynamically fetches settings from `system_config` at the
 
 ### Automated Verification
 1. Default ordering test: Verify `GET /api/v1/admin/history-dictionary/staging` returns candidates sorted by `significance_score DESC`.
-2. `system_config` integration test: Verify dynamic loading of `history_extraction_model`.
+2. `system_config` integration test: Verify dynamic loading of `history_gemini_model`.
 3. Re-review gate test: Verify modified existing concepts require explicit approval.
 
 ### Manual Verification

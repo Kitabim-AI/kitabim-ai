@@ -1,6 +1,6 @@
 # Book Processing Pipeline Diagram
 
-Visual companion to [WORKER_DESIGN.md](WORKER_DESIGN.md). Gemini API calls are synchronous/real-time by default. OCR, embedding, and history dictionary extraction can each optionally run through the Gemini Batch API instead (`gemini_batch_ocr_enabled` / `gemini_batch_embedding_enabled` / `gemini_batch_history_extraction_enabled`, all `false` by default) — see [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the OCR/embedding batch-mode diagrams.
+Visual companion to [WORKER_DESIGN.md](WORKER_DESIGN.md). Gemini API calls are synchronous/real-time by default. OCR, embedding, and history dictionary extraction can each optionally run through the Gemini Batch API instead (`ocr_batch_enabled` / `embed_batch_enabled` / `history_batch_enabled`, all `false` by default) — see [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the OCR/embedding batch-mode diagrams.
 
 ---
 
@@ -53,7 +53,7 @@ flowchart TD
     J_KG -->|"Index entities & relations<br/>(fresh uuid per entity — no dedup at write time)"| N4J[(Neo4j)]
 
     %% Entity resolution — the second graph sub-pipeline, and the only scheduled one
-    subgraph Resolution ["Entity Resolution — same knowledge_graph_enabled flag (see KNOWLEDGE_GRAPH_DESIGN.md)"]
+    subgraph Resolution ["Entity Resolution — same kg_enabled flag (see KNOWLEDGE_GRAPH_DESIGN.md)"]
         J_KG -->|"Bulk-enqueue one row per new entity"| GQ[(graph_resolution_queue)]
         GQ --> S_GR["Graph Resolution Scanner<br/>every 5 min (scheduled)"]
         S_GR -->|"Claim batch oldest-generation-first,<br/>dispatch one job per scope"| J_GR[Graph Resolution Job]
@@ -77,7 +77,7 @@ flowchart TD
     subgraph HistoryExtraction ["History Dictionary Extraction — admin-trigger only, independent of the milestone pipeline (history_extraction_enabled, default true)"]
         S_HX["Admin: POST /api/admin/books/{id}/extract-history"] -->|Enqueue directly| J_HX[History Extraction Job]
     end
-    J_HX -->|"Stage candidate terms + facts<br/>(or submit batch job when<br/>gemini_batch_history_extraction_enabled)"| HXQ[(history_dictionary_staging)]
+    J_HX -->|"Stage candidate terms + facts<br/>(or submit batch job when<br/>history_batch_enabled)"| HXQ[(history_dictionary_staging)]
     S_HXP["Batch History Poller Scanner<br/>every 1 min"] -.->|Poll batch_history_extraction_jobs| J_HX
 
     %% Monitoring
@@ -102,16 +102,16 @@ flowchart TD
 
 > **Knowledge graph note:** the graph stage is two sub-pipelines with different trigger models — see [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) for the full picture.
 >
-> - **Extraction (`knowledge_graph_job`) is manual-trigger-only.** `graph_scanner.py` exists and is unit-tested, but `services/worker/worker.py` does not register it in `WorkerSettings.cron_jobs`, so it never runs on a schedule today. Combined with `knowledge_graph_enabled` defaulting to `false` in `system_configs`, extraction currently only happens via the admin "Reprocess Graph" action, which enqueues `knowledge_graph_job` directly with the admin-supplied `scope`.
-> - **Entity resolution (`graph_resolution_scanner` → `graph_resolution_job`) *is* scheduled**, every 5 minutes, and is gated by the same `knowledge_graph_enabled` flag (the scanner returns before claiming anything when it isn't `"true"`). It never enqueues extraction — it only drains `graph_resolution_queue` rows that a previous extraction run inserted, so with extraction off it has nothing to do.
+> - **Extraction (`knowledge_graph_job`) is manual-trigger-only.** `graph_scanner.py` exists and is unit-tested, but `services/worker/worker.py` does not register it in `WorkerSettings.cron_jobs`, so it never runs on a schedule today. Combined with `kg_enabled` defaulting to `false` in `system_configs`, extraction currently only happens via the admin "Reprocess Graph" action, which enqueues `knowledge_graph_job` directly with the admin-supplied `scope`.
+> - **Entity resolution (`graph_resolution_scanner` → `graph_resolution_job`) *is* scheduled**, every 5 minutes, and is gated by the same `kg_enabled` flag (the scanner returns before claiming anything when it isn't `"true"`). It never enqueues extraction — it only drains `graph_resolution_queue` rows that a previous extraction run inserted, so with extraction off it has nothing to do.
 
-> **History dictionary extraction note:** `history_extraction_job` is **manual-trigger-only** and, unlike knowledge-graph extraction, has no backfill scanner at all — only an admin action (`POST /api/admin/books/{book_id}/extract-history`) enqueues it, gated by `history_extraction_enabled` (`true` by default). It stages candidate terms into `history_dictionary_staging` for admin review/approval (`/history-dictionary/staging/*` endpoints) rather than writing directly to the live `history_dictionary` table. It does not read or write any page/book milestone column, so it has no dependency on OCR/chunking/embedding completing and can run at any time after a book has pages with text. `batch_history_poller_scanner` (every 1 min, no-op unless `gemini_batch_history_extraction_enabled` has been used) polls the Gemini Batch API path the same way the OCR/embedding poller scanners do.
+> **History dictionary extraction note:** `history_extraction_job` is **manual-trigger-only** and, unlike knowledge-graph extraction, has no backfill scanner at all — only an admin action (`POST /api/admin/books/{book_id}/extract-history`) enqueues it, gated by `history_extraction_enabled` (`true` by default). It stages candidate terms into `history_dictionary_staging` for admin review/approval (`/history-dictionary/staging/*` endpoints) rather than writing directly to the live `history_dictionary` table. It does not read or write any page/book milestone column, so it has no dependency on OCR/chunking/embedding completing and can run at any time after a book has pages with text. `batch_history_poller_scanner` (every 1 min, no-op unless `history_batch_enabled` has been used) polls the Gemini Batch API path the same way the OCR/embedding poller scanners do.
 
 ---
 
 ## Batch OCR & Batch Embedding (optional)
 
-Both feature-flagged off by default. When enabled, they replace the interactive-API branch of `OCR Job`/`Embedding Scanner` with an async submit-then-poll cycle against the Gemini Batch API. See [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) for the batch-OCR diagram and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the batch-embedding diagram. History dictionary extraction has an analogous batch mode (`gemini_batch_history_extraction_enabled`) — see [HistoryExtractionJob](WORKER_DESIGN.md#historyextractionjob--batchhistorypollerscanner) in WORKER_DESIGN.md.
+Both feature-flagged off by default. When enabled, they replace the interactive-API branch of `OCR Job`/`Embedding Scanner` with an async submit-then-poll cycle against the Gemini Batch API. See [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) for the batch-OCR diagram and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the batch-embedding diagram. History dictionary extraction has an analogous batch mode (`history_batch_enabled`) — see [HistoryExtractionJob](WORKER_DESIGN.md#historyextractionjob--batchhistorypollerscanner) in WORKER_DESIGN.md.
 
 ---
 
@@ -125,7 +125,7 @@ Actions available to admins/editors on a book for recovering from a stuck or fai
 | `POST /api/books/{book_id}/reprocess/chunking` | editor | Resets chunking + embedding + `spell_check_milestone` to `idle`, `retry_count=0`, `status='pending'`, `pipeline_step='chunking'`. OCR text is untouched; chunks are recreated in place by `chunking_scanner`. |
 | `POST /api/books/{book_id}/reprocess/embedding` | editor | Resets embedding + `spell_check_milestone` to `idle`, `retry_count=0`, `status='pending'`, and clears existing chunk embeddings (`embedding=NULL`) so `embedding_scanner` regenerates vectors. Chunk text is preserved. |
 | `POST /api/books/{book_id}/reprocess/spell-check` | editor | Resets `spell_check_milestone` to `idle` and `retry_count=0`. No text, chunks, or vectors are touched. |
-| `POST /api/books/{book_id}/reprocess/graph` | admin | Requires a `{"scope": "fiction" \| "nonfiction"}` body (validated at the schema level and again in the job). Sets `graph_milestone='in_progress'` then enqueues `knowledge_graph_job` directly (bypasses `graph_scanner`); rolls the milestone back to `idle` if the enqueue fails. Returns `400` if `knowledge_graph_enabled != 'true'`. |
+| `POST /api/books/{book_id}/reprocess/graph` | admin | Requires a `{"scope": "fiction" \| "nonfiction"}` body (validated at the schema level and again in the job). Sets `graph_milestone='in_progress'` then enqueues `knowledge_graph_job` directly (bypasses `graph_scanner`); rolls the milestone back to `idle` if the enqueue fails. Returns `400` if `kg_enabled != 'true'`. |
 | `POST /api/books/{book_id}/reprocess/summary` | admin | Deletes the existing `book_summaries` row and enqueues `summary_job`. |
 | `POST /api/books/{book_id}/retry-failed` | editor | Resets every `failed`/`error` milestone on the book back to `idle`, resets `retry_count=0`, sets `status='pending'` — the standard way to un-stick a book that landed in `status='error'`. |
 | `POST /api/books/{book_id}/pages/{page_num}/reset` | editor | Resets a single page's `status`, text, and all milestones so OCR reprocesses it from scratch. |

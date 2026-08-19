@@ -15,7 +15,7 @@
 
 ### `packages/backend-core/app/db/seeds.py`
 
-- No issues found. All four new config keys (`gemini_batch_embedding_enabled`, `_timeout_hours`, `_max_chunks_per_job`, `_max_retry_count`) are actually read by `batch_embedding_service.py` — unlike `gemini_batch_ocr_batch_size`/`_poll_interval`, which were seeded but never wired up (see prior OCR review).
+- No issues found. All four new config keys (`embed_batch_enabled`, `_timeout_hours`, `_max_chunks_per_job`, `_max_retry_count`) are actually read by `batch_embedding_service.py` — unlike `ocr_batch_size_per_job`/`_poll_interval`, which were seeded but never wired up (see prior OCR review).
 
 ### `packages/backend-core/app/services/batch_embedding_service.py`
 

@@ -53,8 +53,8 @@ async def test_submit_batch_embedding_job_success():
     ):
         mock_config_repo = AsyncMock()
         mock_config_repo.get_value.side_effect = lambda key, default=None: {
-            "gemini_embedding_model": "models/gemini-embedding-2",
-            "gemini_batch_embedding_max_chunks_per_job": "5000",
+            "embed_gemini_model": "models/gemini-embedding-2",
+            "embed_batch_max_chunks_per_job": "5000",
         }.get(key, default)
         mock_config_repo_cls.return_value = mock_config_repo
 
@@ -117,8 +117,8 @@ async def test_submit_batch_embedding_job_no_chunks():
         mock_milestone_svc.update_book_milestone_for_step = AsyncMock()
         mock_config_repo = AsyncMock()
         mock_config_repo.get_value.side_effect = lambda key, default=None: {
-            "gemini_embedding_model": "models/gemini-embedding-2",
-            "gemini_batch_embedding_max_chunks_per_job": "5000",
+            "embed_gemini_model": "models/gemini-embedding-2",
+            "embed_batch_max_chunks_per_job": "5000",
         }.get(key, default)
         mock_config_repo_cls.return_value = mock_config_repo
 
@@ -163,8 +163,8 @@ async def test_submit_batch_embedding_job_submission_failure():
         mock_milestone_svc.update_book_milestone_for_step = AsyncMock()
         mock_config_repo = AsyncMock()
         mock_config_repo.get_value.side_effect = lambda key, default=None: {
-            "gemini_embedding_model": "text-embedding-004",
-            "gemini_batch_embedding_max_chunks_per_job": "5000",
+            "embed_gemini_model": "text-embedding-004",
+            "embed_batch_max_chunks_per_job": "5000",
         }.get(key, default)
         mock_config_repo_cls.return_value = mock_config_repo
 
@@ -231,8 +231,8 @@ async def test_poll_and_process_batch_embedding_jobs_success():
         mock_milestone_svc.update_book_milestone_for_step = AsyncMock()
         mock_config_repo = AsyncMock()
         mock_config_repo.get_value.side_effect = lambda key, default=None: {
-            "gemini_batch_embedding_timeout_hours": "24",
-            "gemini_batch_embedding_max_retry_count": "3",
+            "embed_batch_timeout_hours": "24",
+            "embed_batch_max_retry_count": "3",
         }.get(key, default)
         mock_config_repo_cls.return_value = mock_config_repo
 
@@ -289,8 +289,8 @@ async def test_poll_and_process_batch_embedding_jobs_timeout():
         mock_milestone_svc.update_book_milestone_for_step = AsyncMock()
         mock_config_repo = AsyncMock()
         mock_config_repo.get_value.side_effect = lambda key, default=None: {
-            "gemini_batch_embedding_timeout_hours": "24",
-            "gemini_batch_embedding_max_retry_count": "3",
+            "embed_batch_timeout_hours": "24",
+            "embed_batch_max_retry_count": "3",
         }.get(key, default)
         mock_config_repo_cls.return_value = mock_config_repo
 
@@ -350,8 +350,8 @@ async def test_poll_and_process_batch_embedding_jobs_dest_object():
         mock_milestone_svc.update_book_milestone_for_step = AsyncMock()
         mock_config_repo = AsyncMock()
         mock_config_repo.get_value.side_effect = lambda key, default=None: {
-            "gemini_batch_embedding_timeout_hours": "24",
-            "gemini_batch_embedding_max_retry_count": "3",
+            "embed_batch_timeout_hours": "24",
+            "embed_batch_max_retry_count": "3",
         }.get(key, default)
         mock_config_repo_cls.return_value = mock_config_repo
 
@@ -417,8 +417,8 @@ async def test_submit_batch_embedding_job_page_boundary_packing():
         # Set max_chunks_per_job to 2.
         # Page 1 has 2 chunks (fits in job 1). Page 2 has 1 chunk (would exceed 2 if combined, goes to job 2).
         mock_config_repo.get_value.side_effect = lambda key, default=None: {
-            "gemini_embedding_model": "models/gemini-embedding-2",
-            "gemini_batch_embedding_max_chunks_per_job": "2",
+            "embed_gemini_model": "models/gemini-embedding-2",
+            "embed_batch_max_chunks_per_job": "2",
         }.get(key, default)
         mock_config_repo_cls.return_value = mock_config_repo
 
@@ -476,8 +476,8 @@ async def test_poll_and_process_batch_embedding_jobs_failed_state():
         mock_milestone_svc.update_book_milestone_for_step = AsyncMock()
         mock_config_repo = AsyncMock()
         mock_config_repo.get_value.side_effect = lambda key, default=None: {
-            "gemini_batch_embedding_timeout_hours": "24",
-            "gemini_batch_embedding_max_retry_count": "3",
+            "embed_batch_timeout_hours": "24",
+            "embed_batch_max_retry_count": "3",
         }.get(key, default)
         mock_config_repo_cls.return_value = mock_config_repo
 
@@ -509,8 +509,8 @@ async def test_poll_and_process_batch_embedding_jobs_no_active_jobs():
     ) as mock_config_repo_cls:
         mock_config_repo = AsyncMock()
         mock_config_repo.get_value.side_effect = lambda key, default=None: {
-            "gemini_batch_embedding_timeout_hours": "24",
-            "gemini_batch_embedding_max_retry_count": "3",
+            "embed_batch_timeout_hours": "24",
+            "embed_batch_max_retry_count": "3",
         }.get(key, default)
         mock_config_repo_cls.return_value = mock_config_repo
 

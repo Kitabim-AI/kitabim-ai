@@ -10,7 +10,7 @@ We have fully implemented the end-to-end **Uyghur History Dictionary Extraction 
   - Added `category`, `significance_score`, `is_ai_generated`, and JSONB `sources` to `history_dictionary`.
   - Created `history_dictionary_staging` table with `entry_type` (`new` | `enrichment`), `status` (`pending` | `approved` | `rejected`), and `original_definition`.
   - Created pg_trgm trigram index `idx_history_dict_staging_term_trgm` for similarity matching.
-  - Added `history_extraction_model` key to `system_config` (defaulting to `gemini-2.5-flash`).
+  - Added `history_gemini_model` key to `system_config` (defaulting to `gemini-2.5-flash`).
 - **SQLAlchemy & Pydantic Models**:
   - Created `HistoryDictionaryStaging` ORM model in `packages/backend-core/app/db/models.py`.
   - Added `SourceCitation`, `HistoryStagingItem`, and `PaginatedHistoryStagingItems` Pydantic schemas in `packages/backend-core/app/models/schemas.py`.
@@ -27,7 +27,7 @@ We have fully implemented the end-to-end **Uyghur History Dictionary Extraction 
 
 ## 3. History Extraction Service & LLM Synthesis
 - **`HistoryExtractionService`**:
-  - Reads `history_extraction_model` dynamically from `system_config`.
+  - Reads `history_gemini_model` dynamically from `system_config`.
   - Continuous 15-page batching with 2-page sliding overlap window.
   - 4-tier significance rubric (default threshold $\ge 5/10$).
   - LLM Incremental Synthesis with inline footnote citations (`[1]`, `[2]`).

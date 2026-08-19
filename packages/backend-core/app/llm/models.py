@@ -323,9 +323,9 @@ async def generate_text(prompt: str, model_name: str) -> str:
 
 
 _BREAKER_TIMEOUT_CONFIGS = {
-    "llm_ocr": ("gemini_ocr_timeout", 300.0),
-    "llm_generate": ("gemini_chat_timeout", 60.0),
-    "llm_embed": ("gemini_embed_timeout", 15.0),
+    "llm_ocr": ("ocr_gemini_timeout", 300.0),
+    "llm_generate": ("rag_gemini_chat_timeout", 60.0),
+    "llm_embed": ("embed_gemini_timeout", 15.0),
 }
 
 
@@ -382,7 +382,7 @@ async def generate_text_with_image(
         max_output_tokens=settings.ocr_max_output_tokens,
     )
     effective_timeout = timeout or await get_system_config_timeout(
-        "gemini_ocr_timeout", _OCR_INVOKE_TIMEOUT
+        "ocr_gemini_timeout", _OCR_INVOKE_TIMEOUT
     )
     if effective_timeout is not None:
         config.http_options = types.HttpOptions(timeout=int(effective_timeout * 1000))

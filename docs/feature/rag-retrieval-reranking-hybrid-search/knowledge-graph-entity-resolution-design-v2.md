@@ -82,7 +82,7 @@ This is a prerequisite for §1's whole premise (two entities can share a name) a
 
 ### PostgreSQL: new tables
 
-> **Revision:** an earlier draft of this section added a persisted `books.is_fiction` column, an auto-classification-on-write hook, and an admin toggle in `AdminView.tsx`. Dropped — `run_graph_scanner` (`graph_scanner.py`) is written but never registered in `worker.py`'s `cron_jobs`, so there is no automatic milestone-driven graph extraction today. The only live path is `POST /{book_id}/reprocess/graph` (`books_router.py:1767`, admin-only, additionally gated behind the `knowledge_graph_enabled` system config), which an admin calls per book, one at a time. Since the admin is already choosing which specific books to extract, their choice *is* the fiction/non-fiction decision — see §3. No new Postgres table is needed for classification. (`fictional_categories` remains as-is, unused by this design; whether to revive it — e.g. if automatic extraction is ever turned on — is deferred.)
+> **Revision:** an earlier draft of this section added a persisted `books.is_fiction` column, an auto-classification-on-write hook, and an admin toggle in `AdminView.tsx`. Dropped — `run_graph_scanner` (`graph_scanner.py`) is written but never registered in `worker.py`'s `cron_jobs`, so there is no automatic milestone-driven graph extraction today. The only live path is `POST /{book_id}/reprocess/graph` (`books_router.py:1767`, admin-only, additionally gated behind the `kg_enabled` system config), which an admin calls per book, one at a time. Since the admin is already choosing which specific books to extract, their choice *is* the fiction/non-fiction decision — see §3. No new Postgres table is needed for classification. (`fictional_categories` remains as-is, unused by this design; whether to revive it — e.g. if automatic extraction is ever turned on — is deferred.)
 
 ```sql
 -- graph_resolution_queue: coordinates claiming of Neo4j entities for resolution.
@@ -198,7 +198,7 @@ One algorithm, parameterized by `scope`. Runs as a standard scanner+job pair, fo
 
 ### 4.1 Gray-zone LLM call
 
-Follows the existing single-shot structured-LLM pattern (`packages/backend-core/app/services/rag/judge.py:30-69` — raw `generate_content`, not ADK Agent, per project convention). New prompt constant `ENTITY_RESOLUTION_JUDGE_PROMPT` in `prompts.py`, new config key `gemini_entity_resolution_model` (seed default = `gemini_chat_model`'s value).
+Follows the existing single-shot structured-LLM pattern (`packages/backend-core/app/services/rag/judge.py:30-69` — raw `generate_content`, not ADK Agent, per project convention). New prompt constant `ENTITY_RESOLUTION_JUDGE_PROMPT` in `prompts.py`, new config key `gemini_entity_resolution_model` (seed default = `rag_gemini_chat_model`'s value).
 
 ```python
 class EntityResolutionVerdict(BaseModel):
@@ -279,8 +279,8 @@ No LLM call in the interactive path. After every successful merge/split/unmerge 
 5. **Admin API + UI** — id-keyed merge/split endpoints, merge-log-keyed unmerge endpoint, review-queue endpoints, `GraphView.tsx` extensions.
 6. **Query-time cache** — alias-lookup cache population hook on every resolution outcome; RAG retrieval reads it instead of any live disambiguation call.
 7. **Production cutover** — old graph data is name-keyed and has no `id`/`scope`/canonical `chunk_refs`; it's structurally incompatible with everything above, not just stale. Wipe it rather than migrate it in place, in this order:
-   1. Set `knowledge_graph_enabled=false` (system config) so no `reprocess_graph` call can race the cutover.
+   1. Set `kg_enabled=false` (system config) so no `reprocess_graph` call can race the cutover.
    2. Apply the Postgres migrations (§2/§5) and deploy the updated backend/worker. `init_constraints()` runs its `DROP CONSTRAINT entity_name_unique` / `CREATE CONSTRAINT entity_id_unique` / `CREATE FULLTEXT INDEX entity_search_idx` on the new code's next startup (step 1) — let that happen before the next step, so the constraint swap starts from a clean slate.
    3. Wipe Neo4j: `docker exec -it <neo4j_container> cypher-shell -u neo4j -p $NEO4J_PASSWORD "MATCH (n) DETACH DELETE n"` (`cypher-shell` is bundled in the `neo4j:5.26.0` image already in use, `deploy/gcp/docker-compose.yml:97`; auth from `NEO4J_AUTH`/`NEO4J_PASSWORD`, `deploy/gcp/docker-compose.yml:103`). No need to touch the `/mnt/kitabim-data/neo4j/data` volume directly — this clears node/edge data while leaving the running instance and its (freshly swapped) constraints intact.
    4. Bulk-reset `books.graph_milestone = 'idle'` for every book in Postgres — without this, books keep showing a stale `succeeded` from the wiped-out old graph even though Neo4j now has nothing for them. This matters more than it would have under the old automatic-scanner design, since re-extraction is manual and selective (§3) — most books will legitimately stay at `idle`/no-graph indefinitely until an admin picks them, not just transiently during a backfill window.
-   5. Set `knowledge_graph_enabled=true` again, then re-trigger `reprocess_graph` (with `scope`) per book, at whatever pace the admin chooses — no bulk/automatic re-extraction, consistent with §3.
+   5. Set `kg_enabled=true` again, then re-trigger `reprocess_graph` (with `scope`) per book, at whatever pace the admin chooses — no bulk/automatic re-extraction, consistent with §3.

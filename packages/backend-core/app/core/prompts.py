@@ -169,7 +169,7 @@ Follow-up question: {question}
 Rewritten question:"""
 
 # Used by: HistoryExtractionService._call_llm_extraction (worker + batch extraction)
-# Model: system_configs["history_extraction_model"], temperature default, thinking_budget default
+# Model: system_configs["history_gemini_model"], temperature default, thinking_budget default
 EXTRACTION_PROMPT_TEMPLATE = """You are an expert Uyghur historical researcher and scholar.
 The provided book pages are written in the Uyghur language (using Uyghur Arabic script). Your task is to analyze these pages and extract important historical entities, including historical figures, key events, dynasties/kingdoms, and historical geographical locations or concepts.
 
@@ -211,7 +211,7 @@ JSON FORMAT REQUIRED:
 """
 
 # Used by: HistoryExtractionService._classify_facts
-# Model: system_configs["history_extraction_model"], temperature default
+# Model: system_configs["history_gemini_model"], temperature default
 FACT_CLASSIFICATION_PROMPT_TEMPLATE = """You are an expert Uyghur historical editor and scholar.
 Compare the NEW CANDIDATE FACTS against the EXISTING FACTS about the historical term "{term}" and decide, for each candidate, one of:
 - "new": the candidate states information not already covered by any existing fact.
@@ -237,7 +237,7 @@ JSON FORMAT REQUIRED:
 """
 
 # Used by: HistoryExtractionService._synthesize_definition (on-demand preview + approve time)
-# Model: system_configs["history_extraction_model"], temperature default
+# Model: system_configs["history_gemini_model"], temperature default
 SYNTHESIS_PROMPT_TEMPLATE = """You are an expert Uyghur historical editor and scholar.
 Write a single, cohesive historical definition for "{term}" strictly in modern Uyghur (Uyghur Arabic script), based only on the facts listed below.
 

@@ -332,7 +332,7 @@ class WorkerSettings:
 ```python
 async with db_session.async_session_factory() as session:
     config_repo = SystemConfigsRepository(session)
-    model_name  = await config_repo.get_value("gemini_ocr_model")          # required
+    model_name  = await config_repo.get_value("ocr_gemini_model")          # required
     page_limit  = int(await config_repo.get_value("scanner_page_limit", "100"))  # with default
     max_retries = int(await config_repo.get_value("ocr_max_retry_count", "3"))
 ```

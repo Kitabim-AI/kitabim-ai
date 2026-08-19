@@ -66,8 +66,8 @@ async def test_summary_job_success():
 
         # Mock system configs
         mock_get_value.side_effect = lambda key, default=None: {
-            "gemini_chat_model": "gemini-2.0-flash",
-            "gemini_embedding_model": "text-embedding-004",
+            "rag_gemini_chat_model": "gemini-2.0-flash",
+            "embed_gemini_model": "text-embedding-004",
         }.get(key, default)
 
         # Mock build_text_chain & ainvoke

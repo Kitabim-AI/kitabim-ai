@@ -142,7 +142,7 @@ async def lifespan(app: FastAPI):
         async with db_session.async_session_factory() as session:
             await seed_system_configs(session)
             repo = SystemConfigsRepository(session)
-            log_level_val = await repo.get_value("log_level", settings.log_level)
+            log_level_val = await repo.get_value("sys_log_level", settings.log_level)
             if log_level_val:
                 new_level = getattr(logging, log_level_val.upper(), logging.INFO)
                 logging.getLogger().setLevel(new_level)
@@ -511,7 +511,7 @@ async def get_public_config(session: AsyncSession = Depends(get_session)):
     from app.db.repositories.system_configs_repository import SystemConfigsRepository
 
     repo = SystemConfigsRepository(session)
-    collection_page_size_str = await repo.get_value("collection_page_size", "40")
+    collection_page_size_str = await repo.get_value("sys_collection_page_size", "40")
     try:
         collection_page_size = int(collection_page_size_str)
     except (ValueError, TypeError):

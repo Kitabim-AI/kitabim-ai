@@ -13,7 +13,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
   const [isLoading, setIsLoading] = useState(true);
   const [hasMoreShelf, setHasMoreShelf] = useState(true);
   const [shelfPage, setShelfPage] = useState(1);
-  // Backed by system_configs 'collection_page_size' (fetched once at app
+  // Backed by system_configs 'sys_collection_page_size' (fetched once at app
   // startup via /api/config); falls back to 40 if the fetch hasn't
   // completed yet or failed — see authService.initAppConfig().
   const COLLECTION_PAGE_SIZE = getCollectionPageSize();

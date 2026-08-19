@@ -48,12 +48,12 @@ async def submit_batch_embedding_job(
         return []
 
     config_repo = SystemConfigsRepository(session)
-    gemini_embedding_model = await config_repo.get_value("gemini_embedding_model")
+    gemini_embedding_model = await config_repo.get_value("embed_gemini_model")
     if not gemini_embedding_model:
-        raise RuntimeError("system_config 'gemini_embedding_model' is not set")
+        raise RuntimeError("system_config 'embed_gemini_model' is not set")
 
     max_chunks_per_job = int(
-        await config_repo.get_value("gemini_batch_embedding_max_chunks_per_job", "100")
+        await config_repo.get_value("embed_batch_max_chunks_per_job", "100")
     )
 
     model = (
@@ -246,11 +246,9 @@ async def poll_and_process_batch_embedding_jobs(session: AsyncSession) -> int:
     """
     config_repo = SystemConfigsRepository(session)
     timeout_hours = float(
-        await config_repo.get_value("gemini_batch_embedding_timeout_hours", "24")
+        await config_repo.get_value("embed_batch_timeout_hours", "24")
     )
-    max_retries = int(
-        await config_repo.get_value("gemini_batch_embedding_max_retry_count", "3")
-    )
+    max_retries = int(await config_repo.get_value("embed_batch_max_retry_count", "3"))
 
     # Query active jobs
     result = await session.execute(

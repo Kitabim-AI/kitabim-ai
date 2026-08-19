@@ -6,7 +6,7 @@ Catches three cases:
   2. Books whose knowledge_graph_job failed (no node in Neo4j)
   3. Books whose graph needs backfilling
 
-Runs every 5 minutes. Batch size controlled by system_config 'graph_scanner_batch_size'
+Runs every 5 minutes. Batch size controlled by system_config 'kg_scanner_batch_size'
 (default 5).
 """
 
@@ -31,7 +31,7 @@ async def run_graph_scanner(ctx) -> None:
         config_repo = SystemConfigsRepository(session)
 
         # Check if Knowledge Graph is enabled
-        kg_enabled_val = await config_repo.get_value("knowledge_graph_enabled", "false")
+        kg_enabled_val = await config_repo.get_value("kg_enabled", "false")
         if kg_enabled_val != "true":
             log_json(
                 logger,
@@ -40,7 +40,7 @@ async def run_graph_scanner(ctx) -> None:
             )
             return
 
-        batch_size = int(await config_repo.get_value("graph_scanner_batch_size", "5"))
+        batch_size = int(await config_repo.get_value("kg_scanner_batch_size", "5"))
         # Find books that are 'ready' but have 'idle' or 'failed' graph milestone
         stmt = (
             select(Book.id)

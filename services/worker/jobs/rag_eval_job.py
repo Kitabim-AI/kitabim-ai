@@ -35,7 +35,7 @@ async def rag_eval_job(ctx: dict, eval_id: int) -> None:
 
         config_repo = SystemConfigsRepository(session)
         model = await config_repo.get_value(
-            "gemini_judge_model", "gemini-3.1-flash-lite"
+            "rag_gemini_judge_model", "gemini-3.1-flash-lite"
         )
 
         try:

@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Keep monorepo structure intact (`packages/backend-core`, `services/backend`, `services/worker`, `apps/frontend`).
-- System config key `history_extraction_model` (default: `'gemini-2.5-flash'`) dynamically sets the LLM model name.
+- System config key `history_gemini_model` (default: `'gemini-2.5-flash'`) dynamically sets the LLM model name.
 - Default sorting for staging candidates is `significance_score DESC, created_at DESC`.
 - Mandatory Admin Re-Review Gate: Modified live entries must NEVER overwrite `history_dictionary` automatically; they must be staged for admin review.
 - UI button title: `تارىخىي ئاتالغۇلارنى تېپىش`
@@ -278,7 +278,7 @@ git commit -m "feat(repo): implement HistoryDictionaryStaging queries with signi
 - Test: `packages/backend-core/tests/app/services/history_extraction_service_test.py`
 
 **Interfaces:**
-- Consumes: `SystemConfig` table (`history_extraction_model`, `history_extraction_min_significance`), Gemini API client, `book_pages` text chunks
+- Consumes: `SystemConfig` table (`history_gemini_model`, `history_extraction_min_significance`), Gemini API client, `book_pages` text chunks
 - Produces: `HistoryExtractionService.extract_and_stage_history_terms(book_id, min_significance)`
 
 - [ ] **Step 1: Write extraction service unit test with mocks**
@@ -326,7 +326,7 @@ Expected: FAIL ("ModuleNotFoundError: No module named 'app.services.history_extr
 - [ ] **Step 3: Implement `HistoryExtractionService`**
 
 Create `packages/backend-core/app/services/history_extraction_service.py`:
-- Read `history_extraction_model` dynamically from `system_config`.
+- Read `history_gemini_model` dynamically from `system_config`.
 - Implement continuous 15-page batching with a 2-page sliding overlap window.
 - Implement Gemini Flash JSON extraction prompt with 4-tier significance rubric.
 - Implement trigram similarity matching (`trigram_similarity > 0.85`) to detect existing staging/published records.

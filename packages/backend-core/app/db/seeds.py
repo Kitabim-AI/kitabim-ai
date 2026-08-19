@@ -12,6 +12,55 @@ async def seed_system_configs(session: AsyncSession):
     """Seed default system configurations if they don't exist"""
     repo = SystemConfigsRepository(session)
 
+    key_migrations = {
+        "gemini_chat_model": "rag_gemini_chat_model",
+        "gemini_ocr_model": "ocr_gemini_model",
+        "gemini_batch_ocr_enabled": "ocr_batch_enabled",
+        "gemini_batch_ocr_batch_size": "ocr_batch_size_per_job",
+        "gemini_batch_ocr_timeout_hours": "ocr_batch_timeout_hours",
+        "gemini_embedding_model": "embed_gemini_model",
+        "maintenance_retention_days": "sys_maintenance_retention_days",
+        "graph_scanner_batch_size": "kg_scanner_batch_size",
+        "gemini_kg_extraction_model": "kg_gemini_extraction_model",
+        "knowledge_graph_enabled": "kg_enabled",
+        "gemini_ocr_timeout": "ocr_gemini_timeout",
+        "gemini_chat_timeout": "rag_gemini_chat_timeout",
+        "gemini_embed_timeout": "embed_gemini_timeout",
+        "gemini_batch_embedding_enabled": "embed_batch_enabled",
+        "log_level": "sys_log_level",
+        "gemini_batch_embedding_timeout_hours": "embed_batch_timeout_hours",
+        "history_extraction_model": "history_gemini_model",
+        "gemini_batch_history_extraction_enabled": "history_batch_enabled",
+        "history_extraction_batch_size": "history_batch_size",
+        "gemini_batch_embedding_max_chunks_per_job": "embed_batch_max_chunks_per_job",
+        "gemini_batch_embedding_max_retry_count": "embed_batch_max_retry_count",
+        "gemini_judge_model": "rag_gemini_judge_model",
+        "gemini_reranker_model": "rag_gemini_reranker_model",
+        "collection_page_size": "sys_collection_page_size",
+        "content_search_snippet_max_chars": "sys_content_search_snippet_max_chars",
+    }
+
+    for old_key, new_key in key_migrations.items():
+        if old_key == new_key:
+            continue
+        old_config = await repo.get(old_key)
+        if old_config:
+            new_config = await repo.get(new_key)
+            if not new_config:
+                log_json(
+                    logger,
+                    logging.INFO,
+                    "Migrating legacy system config key",
+                    old_key=old_key,
+                    new_key=new_key,
+                )
+                await repo.create(
+                    key=new_key,
+                    value=old_config.value,
+                    description=old_config.description,
+                )
+            await repo.delete(old_key)
+
     defaults = [
         {
             "key": "ocr_max_retry_count",
@@ -19,37 +68,37 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Maximum number of OCR retry attempts per page before marking it as error/skipped.",
         },
         {
-            "key": "gemini_chat_model",
+            "key": "rag_gemini_chat_model",
             "value": "gemini-3.1-flash-lite",
             "description": "Gemini model used for chat responses (reader chat and global chat).",
         },
         {
-            "key": "gemini_ocr_model",
+            "key": "ocr_gemini_model",
             "value": "gemini-3.5-flash",
             "description": "Gemini model used for OCR page processing.",
         },
         {
-            "key": "gemini_batch_ocr_enabled",
+            "key": "ocr_batch_enabled",
             "value": "false",
             "description": "Globally enable/disable Gemini Batch API for OCR page processing. Set to 'true' to use Batch API (50% cost discount) or 'false' for online real-time OCR.",
         },
         {
-            "key": "gemini_batch_ocr_batch_size",
+            "key": "ocr_batch_size_per_job",
             "value": "50",
             "description": "Maximum number of pages bundled into a single Gemini Batch API job.",
         },
         {
-            "key": "gemini_batch_ocr_timeout_hours",
+            "key": "ocr_batch_timeout_hours",
             "value": "24",
             "description": "Hours after which a pending/running Gemini Batch API OCR job is considered timed out and marked stale for retry.",
         },
         {
-            "key": "gemini_embedding_model",
+            "key": "embed_gemini_model",
             "value": "gemini-embedding-2",
             "description": "Gemini model used for generating text embeddings (vector search).",
         },
         {
-            "key": "maintenance_retention_days",
+            "key": "sys_maintenance_retention_days",
             "value": "7",
             "description": "Number of days to retain processed pipeline events before automated cleanup.",
         },
@@ -69,12 +118,12 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Number of books the summary scanner enqueues per run. Increase temporarily to speed up bulk regeneration, then reset to 5.",
         },
         {
-            "key": "graph_scanner_batch_size",
+            "key": "kg_scanner_batch_size",
             "value": "5",
             "description": "Number of books the graph scanner enqueues per run. Increase temporarily to speed up bulk backfill, then reset to 5.",
         },
         {
-            "key": "gemini_kg_extraction_model",
+            "key": "kg_gemini_extraction_model",
             "value": "gemini-3.1-flash-lite",
             "description": "Gemini model used for entity/relation extraction during knowledge graph indexing.",
         },
@@ -89,7 +138,7 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Maximum number of concurrent LLM batch calls during knowledge graph extraction. Each call processes kg_chunk_batch_size chunks.",
         },
         {
-            "key": "knowledge_graph_enabled",
+            "key": "kg_enabled",
             "value": "false",
             "description": "Globally enable/disable knowledge graph extraction and the graph scanner. Set to 'true' to activate.",
         },
@@ -99,32 +148,32 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Maximum number of pages claimed and processed in a single OCR job batch.",
         },
         {
-            "key": "gemini_ocr_timeout",
+            "key": "ocr_gemini_timeout",
             "value": "300",
             "description": "Timeout in seconds for Gemini OCR vision API calls.",
         },
         {
-            "key": "gemini_chat_timeout",
+            "key": "rag_gemini_chat_timeout",
             "value": "60",
             "description": "Timeout in seconds for Gemini chat/text generation API calls.",
         },
         {
-            "key": "gemini_embed_timeout",
+            "key": "embed_gemini_timeout",
             "value": "15",
             "description": "Timeout in seconds for Gemini vector embedding API calls.",
         },
         {
-            "key": "gemini_batch_embedding_enabled",
+            "key": "embed_batch_enabled",
             "value": "false",
             "description": "Globally enable/disable Gemini Batch API embedding processing. Set to 'true' to activate.",
         },
         {
-            "key": "log_level",
+            "key": "sys_log_level",
             "value": "INFO",
             "description": "Global application logging level (DEBUG, INFO, WARNING, ERROR). Configurable dynamically in the System Configs admin panel.",
         },
         {
-            "key": "gemini_batch_embedding_timeout_hours",
+            "key": "embed_batch_timeout_hours",
             "value": "24",
             "description": "Timeout threshold in hours after which a pending/running batch embedding job is marked stale and retried.",
         },
@@ -134,27 +183,27 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Globally enable/disable Uyghur history dictionary term extraction feature. Set to 'true' to enable or 'false' to disable.",
         },
         {
-            "key": "history_extraction_model",
+            "key": "history_gemini_model",
             "value": "gemini-2.5-flash",
             "description": "Gemini model used for structured Uyghur history dictionary term extraction and factual synthesis.",
         },
         {
-            "key": "gemini_batch_history_extraction_enabled",
+            "key": "history_batch_enabled",
             "value": "false",
             "description": "Globally enable/disable Gemini Batch API for history dictionary extraction. Set to 'true' to use Batch API (50% cost discount) or 'false' for online sliding-window extraction.",
         },
         {
-            "key": "history_extraction_batch_size",
+            "key": "history_batch_size",
             "value": "15",
             "description": "Number of book pages grouped per sliding window / batch request during history dictionary extraction.",
         },
         {
-            "key": "gemini_batch_embedding_max_chunks_per_job",
+            "key": "embed_batch_max_chunks_per_job",
             "value": "100",
             "description": "Maximum number of chunks packaged into a single Gemini Batch API embedding submission. Sized for the Tier 1 batch enqueued-tokens budget (500K) assuming several concurrent jobs — raise if the Gemini API key is upgraded to a higher tier.",
         },
         {
-            "key": "gemini_batch_embedding_max_retry_count",
+            "key": "embed_batch_max_retry_count",
             "value": "3",
             "description": "Per-chunk retry ceiling before a failing chunk is skipped during batch embedding ingestion.",
         },
@@ -164,7 +213,7 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Globally enable/disable async LLM-judge scoring (faithfulness/answer_relevance/context_precision) of RAG chat turns. Set to 'false' to skip scoring and worker dispatch entirely.",
         },
         {
-            "key": "gemini_judge_model",
+            "key": "rag_gemini_judge_model",
             "value": "gemini-3.1-flash-lite",
             "description": "Gemini model used for the RAG answer-quality judge (faithfulness/answer_relevance/context_precision scoring).",
         },
@@ -174,7 +223,7 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Globally enable/disable LLM-based reranking of retrieved chunks. Adds one Gemini call to the live chat request path. Set to 'false' to fall back to the relative-score grading heuristic (_grade_context) with zero behavior change.",
         },
         {
-            "key": "gemini_reranker_model",
+            "key": "rag_gemini_reranker_model",
             "value": "gemini-3.1-flash-lite",
             "description": "Gemini model used for LLM-based reranking of retrieved chunks.",
         },
@@ -199,12 +248,12 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Hard ceiling on ADK LLM calls per retrieval-agent run (google.adk.RunConfig.max_llm_calls), enforced by the ADK runner itself. AGENT_SYSTEM_PROMPT already asks the model to stop within 6 tool calls (10 for multi-sub-question turns), but that's prose the model can ignore; this is the code-enforced backstop. Set above the prompt's own budget (tool calls + 1 final no-tool-call round) so it only catches genuine runaway loops, not normal completions. When the limit is hit mid-run, the orchestrator logs a warning and proceeds to answer synthesis with whatever evidence was gathered so far, rather than failing the turn.",
         },
         {
-            "key": "collection_page_size",
+            "key": "sys_collection_page_size",
             "value": "40",
             "description": "Batch size for infinite-scroll pagination on the library shelves and home search results.",
         },
         {
-            "key": "content_search_snippet_max_chars",
+            "key": "sys_content_search_snippet_max_chars",
             "value": "500",
             "description": "Maximum character length of content search result snippets displayed in the Home 'Content' search tab.",
         },

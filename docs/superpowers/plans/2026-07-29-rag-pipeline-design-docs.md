@@ -162,13 +162,13 @@ grep -rl "ocr_job\|OcrJob\|ocr_scanner\|OcrScanner\|ocr_service\|batch_ocr" pack
 - [ ] **Step 3: Draft `docs/main/OCR_DESIGN.md` following the Standard Template**
 
 Include:
-- Feature Flags: `gemini_batch_ocr_enabled` (default, what it gates).
+- Feature Flags: `ocr_batch_enabled` (default, what it gates).
 - Schema: `pages.ocr_milestone`, `pages.retry_count`, `pages.worker_id`/`claimed_at`, `books.ocr_milestone`, `books.pipeline_step`.
 - Data Flow: scoped mermaid diagram — `OCR_IDLE` scanner claim → job → Gemini Vision call → success/soft-skip/failure → outbox `ocr_succeeded` event → handoff to Chunking. Include the batch-mode branch as a sub-flow (reuse the shape of `BOOK_PROCESSING_DIAGRAM.md`'s "Batch OCR & Batch Embedding" diagram, OCR half only).
 - Component Responsibilities: `OcrScanner` and `OcrJob` as numbered pseudocode (re-verify against current `ocr_job.py`/`ocr_scanner.py` — the exhaustion/soft-skip logic is easy to get subtly wrong, read the actual exception-handling branch), plus `batch_ocr_service.submit_batch_ocr_job` and `batch_ocr_poller_scanner`.
 - State Machine: `ocr_milestone` states (`idle`/`in_progress`/`succeeded` incl. soft-skip/`failed`) and transitions — mermaid diagram, reusing the `WORKER_DESIGN.md` OCR portion of the full state machine but as its own standalone diagram.
 - Error Handling & Retries: distinguish "soft-skip" (never blocks book) from genuine `ocr_milestone='failed'` (only when the PDF itself can't be downloaded — this is what can push a book to `status='error'`).
-- Configuration Reference: `ocr_max_retry_count`, `ocr_max_parallel_pages`, `ocr_scanner_batch_size`, `scanner_book_limit`, `gemini_ocr_timeout`, `gemini_ocr_model`, `OCR_MAX_RETRIES`, `OCR_PAGE_ZOOM_FACTOR`, `gemini_batch_ocr_enabled`, `gemini_batch_ocr_batch_size`, `gemini_batch_ocr_timeout_hours`, `gemini_batch_ocr_max_retry_count` — confirm each still exists in `packages/backend-core/app/core/config.py` or `system_configs` seeds before citing its default.
+- Configuration Reference: `ocr_max_retry_count`, `ocr_max_parallel_pages`, `ocr_scanner_batch_size`, `scanner_book_limit`, `ocr_gemini_timeout`, `ocr_gemini_model`, `OCR_MAX_RETRIES`, `OCR_PAGE_ZOOM_FACTOR`, `ocr_batch_enabled`, `ocr_batch_size_per_job`, `ocr_batch_timeout_hours`, `gemini_batch_ocr_max_retry_count` — confirm each still exists in `packages/backend-core/app/core/config.py` or `system_configs` seeds before citing its default.
 - API Endpoints: `/reprocess/ocr`, `/pages/{page_num}/reset` (role required from actual router source).
 - Testing: files from Step 2.
 - Related Docs: link to `DOCUMENT_DISCOVERY_DESIGN.md` (previous stage) and `CHUNKING_DESIGN.md` (next stage).
@@ -243,7 +243,7 @@ git commit -m "docs: add Chunking pipeline stage design doc"
 
 - [ ] **Step 1: Read all research files**
 
-Note: the embedding model config (`gemini_embedding_model`, vector dimensionality — confirm the actual `vector(N)` column width in the current schema/migration rather than assuming 3072), batch size for embedding calls, and the full batch-embedding submit/poll cycle.
+Note: the embedding model config (`embed_gemini_model`, vector dimensionality — confirm the actual `vector(N)` column width in the current schema/migration rather than assuming 3072), batch size for embedding calls, and the full batch-embedding submit/poll cycle.
 
 - [ ] **Step 2: Locate the test file(s)**
 
@@ -254,12 +254,12 @@ grep -rl "embedding_job\|EmbeddingJob\|embedding_scanner\|EmbeddingScanner\|batc
 - [ ] **Step 3: Draft `docs/main/EMBEDDING_DESIGN.md` following the Standard Template**
 
 Include:
-- Feature Flags: `gemini_batch_embedding_enabled`.
+- Feature Flags: `embed_batch_enabled`.
 - Schema: `chunks.embedding` (confirm exact `vector(N)` dimension from the current migration file, not from memory/plan assumption), `pages.embedding_milestone`.
 - Data Flow: scoped diagram — dependency `chunking_milestone=succeeded` → scanner claim → `EmbeddingJob` (or batch submit branch) → outbox `embedding_succeeded` → handoff to book-ready evaluation (link to `WORKER_DESIGN.md`'s `PipelineDriver`, don't re-explain it here).
 - Component Responsibilities: `EmbeddingScanner`/`EmbeddingJob` numbered steps, plus `batch_embedding_service.submit_batch_embedding_job` and `batch_embedding_poller_scanner`.
 - State Machine: `embedding_milestone` states.
-- Configuration Reference: `gemini_embedding_model`, `EMBED_BATCH_SIZE`, `gemini_batch_embedding_enabled`, `gemini_batch_embedding_max_chunks_per_job`, `gemini_batch_embedding_timeout_hours`, `gemini_batch_embedding_max_retry_count`.
+- Configuration Reference: `embed_gemini_model`, `EMBED_BATCH_SIZE`, `embed_batch_enabled`, `embed_batch_max_chunks_per_job`, `embed_batch_timeout_hours`, `embed_batch_max_retry_count`.
 - API Endpoints: `/reprocess/embedding` if it exists as its own route.
 - Testing: files from Step 2.
 - Related Docs: link to `CHUNKING_DESIGN.md` and `SPELLCHECK_DESIGN.md`/`SUMMARY_DESIGN.md` (embedding is the terminal mandatory step — link forward to whichever stages key off book-ready).
@@ -420,7 +420,7 @@ git commit -m "docs: add Chat/RAG Retrieval pipeline stage design doc"
 
 - [ ] **Step 1: Read all research files**
 
-Note: `knowledge_graph_enabled` default and its no-op behavior, the extraction batching/concurrency config, fictional-category Person-entity namespacing, the entity resolution/dedup second pass, the `graph_milestone` states, and — separately — the `graph_resolution_queue`/`graph_resolution_job`/`graph_resolution_scanner` flow (this looks like a distinct sub-system from bulk extraction; read `entity_resolution_service.py` carefully to determine whether it's a separate incremental-resolution pipeline or part of the same extraction job, and document whichever is actually true in the current code — this repo has graph-related files under active modification per the session's git status, so do not assume the spec's summary is current).
+Note: `kg_enabled` default and its no-op behavior, the extraction batching/concurrency config, fictional-category Person-entity namespacing, the entity resolution/dedup second pass, the `graph_milestone` states, and — separately — the `graph_resolution_queue`/`graph_resolution_job`/`graph_resolution_scanner` flow (this looks like a distinct sub-system from bulk extraction; read `entity_resolution_service.py` carefully to determine whether it's a separate incremental-resolution pipeline or part of the same extraction job, and document whichever is actually true in the current code — this repo has graph-related files under active modification per the session's git status, so do not assume the spec's summary is current).
 
 - [ ] **Step 2: Locate the test file(s)**
 
@@ -431,12 +431,12 @@ grep -rl "knowledge_graph\|KnowledgeGraph\|graph_repository\|entity_resolution\|
 - [ ] **Step 3: Draft `docs/main/KNOWLEDGE_GRAPH_DESIGN.md` following the Standard Template**
 
 Include:
-- Feature Flags: `knowledge_graph_enabled`.
+- Feature Flags: `kg_enabled`.
 - Schema: Neo4j `Entity` node shape and `RELATED_TO` edge shape (properties, not a relational table — describe as a labeled property graph schema instead of the usual SQL table format), plus any Postgres-side tracking tables (`graph_resolution_queue` if it exists).
 - Data Flow: scoped diagram covering both bulk extraction (`KnowledgeGraphJob`) and the entity-resolution queue flow, as two connected subgraphs if they are indeed separate as determined in Step 1.
 - Component Responsibilities: `KnowledgeGraphJob`, `GraphScanner`, and the entity-resolution job/scanner pair, all as numbered steps.
 - State Machine: `graph_milestone` states (`idle`/`in_progress`/`complete`/`partial`/`failed`).
-- Configuration Reference: `gemini_kg_extraction_model`, `kg_max_parallel_chunks`, `kg_chunk_batch_size`, `graph_scanner_batch_size`, plus any entity-resolution-specific config discovered in Step 1.
+- Configuration Reference: `kg_gemini_extraction_model`, `kg_max_parallel_chunks`, `kg_chunk_batch_size`, `kg_scanner_batch_size`, plus any entity-resolution-specific config discovered in Step 1.
 - API Endpoints: routes in `graph_admin_router.py`, `/reprocess/graph`, `books_router.py`'s `/graph/merge` endpoint (referenced in this session's git status as a modified file — verify current signature), with roles.
 - Security Considerations: prompt-injection surface (entity/relation extraction runs LLM calls over OCR'd book text), admin-only graph mutation endpoints.
 - Testing: files from Step 2, explicitly confirming whether `graph_repository_test.py`'s current content still matches what the doc describes (this file was modified in the session that produced this plan).

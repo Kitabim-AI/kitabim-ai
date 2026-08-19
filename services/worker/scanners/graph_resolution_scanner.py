@@ -26,7 +26,7 @@ async def run_graph_resolution_scanner(ctx) -> None:
 
     async with db_session.async_session_factory() as session:
         config_repo = SystemConfigsRepository(session)
-        kg_enabled_val = await config_repo.get_value("knowledge_graph_enabled", "false")
+        kg_enabled_val = await config_repo.get_value("kg_enabled", "false")
         if kg_enabled_val != "true":
             log_json(
                 logger,
