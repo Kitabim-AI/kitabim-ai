@@ -609,3 +609,135 @@ async def test_get_book_summary_handles_single_string_and_singular_book_id():
         res_singular = await _run_get_book_summary({"book_id": "2ccc5b69363c"}, ctx)
         assert len(res_singular["summaries"]) == 1
         assert res_singular["summaries"][0]["book_id"] == "2ccc5b69363c"
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_context_switch_triggers_on_partial_overlap():
+    """The reactive context-switch fallback must trigger on any overlap with
+    ctx.context_book_ids, not just an exact set match — the LLM often carries over
+    a subset/superset of the prior turn's book_ids (e.g. sister-volume expansion)
+    while still fundamentally reusing stale context."""
+    from app.services.rag.agent.tools import _run_search_chunks
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = True
+    ctx.book_id = None
+    ctx.context_book_ids = ["book-1", "book-2"]
+    ctx.character_categories = []
+
+    async def fake_embed_query(query, ctx):
+        return [0.1] * 3072
+
+    call_book_ids = []
+
+    async def fake_vector_search(ctx, book_ids, query_vector=None):
+        call_book_ids.append(book_ids)
+        if book_ids == ["book-1"]:
+            return [{"text": "weak match", "score": 0.5, "book_id": "book-1"}]
+        if book_ids == ["book-9"]:
+            return [{"text": "strong match", "score": 0.9, "book_id": "book-9"}]
+        return []
+
+    async def fake_search_books_by_summary(args, ctx):
+        return ["book-9"]
+
+    with (
+        patch("app.services.rag.agent.tools.embed_query", fake_embed_query),
+        patch("app.services.rag.agent.tools.vector_search", fake_vector_search),
+        patch(
+            "app.services.rag.agent.tools._run_search_books_by_summary",
+            fake_search_books_by_summary,
+        ),
+    ):
+        result = await _run_search_chunks(
+            {"query": "some query", "book_ids": ["book-1"]}, ctx
+        )
+
+    assert call_book_ids == [["book-1"], ["book-9"]]
+    assert result == [{"text": "strong match", "score": 0.9, "book_id": "book-9"}]
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_context_switch_not_triggered_when_score_is_strong():
+    """A strong scoped-search score must not trigger the broadening fallback,
+    even though book_ids overlaps with ctx.context_book_ids."""
+    from app.services.rag.agent.tools import _run_search_chunks
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = True
+    ctx.book_id = None
+    ctx.context_book_ids = ["book-1"]
+    ctx.character_categories = []
+
+    async def fake_embed_query(query, ctx):
+        return [0.1] * 3072
+
+    summary_called = False
+
+    async def fake_vector_search(ctx, book_ids, query_vector=None):
+        return [{"text": "good match", "score": 0.85, "book_id": "book-1"}]
+
+    async def fake_search_books_by_summary(args, ctx):
+        nonlocal summary_called
+        summary_called = True
+        return ["book-9"]
+
+    with (
+        patch("app.services.rag.agent.tools.embed_query", fake_embed_query),
+        patch("app.services.rag.agent.tools.vector_search", fake_vector_search),
+        patch(
+            "app.services.rag.agent.tools._run_search_books_by_summary",
+            fake_search_books_by_summary,
+        ),
+    ):
+        result = await _run_search_chunks(
+            {"query": "some query", "book_ids": ["book-1"]}, ctx
+        )
+
+    assert summary_called is False
+    assert result == [{"text": "good match", "score": 0.85, "book_id": "book-1"}]
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_context_switch_not_triggered_without_overlap():
+    """A fresh, explicitly-discovered book_id with no overlap with
+    ctx.context_book_ids must not invoke the context-switch fallback, regardless
+    of score — there is nothing 'stale' to detect here."""
+    from app.services.rag.agent.tools import _run_search_chunks
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = True
+    ctx.book_id = None
+    ctx.context_book_ids = ["book-1"]
+    ctx.character_categories = []
+
+    async def fake_embed_query(query, ctx):
+        return [0.1] * 3072
+
+    summary_called = False
+
+    async def fake_vector_search(ctx, book_ids, query_vector=None):
+        return [{"text": "weak match", "score": 0.4, "book_id": "book-42"}]
+
+    async def fake_search_books_by_summary(args, ctx):
+        nonlocal summary_called
+        summary_called = True
+        return ["book-9"]
+
+    with (
+        patch("app.services.rag.agent.tools.embed_query", fake_embed_query),
+        patch("app.services.rag.agent.tools.vector_search", fake_vector_search),
+        patch(
+            "app.services.rag.agent.tools._run_search_books_by_summary",
+            fake_search_books_by_summary,
+        ),
+    ):
+        result = await _run_search_chunks(
+            {"query": "some query", "book_ids": ["book-42"]}, ctx
+        )
+
+    assert summary_called is False
+    assert result == [{"text": "weak match", "score": 0.4, "book_id": "book-42"}]

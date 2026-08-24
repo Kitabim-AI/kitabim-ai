@@ -10,7 +10,7 @@ from app.utils.observability import log_json
 logger = logging.getLogger("app.services.chat.context_grading")
 
 
-def _build_human_message(ctx: QueryContext, question: str) -> str:
+async def _build_human_message(ctx: QueryContext, question: str) -> str:
     lines = []
     if not ctx.is_global and ctx.book:
         book = ctx.book
@@ -24,9 +24,27 @@ def _build_human_message(ctx: QueryContext, question: str) -> str:
             lines.append(f"Current page: {ctx.current_page}")
     elif ctx.is_global:
         if ctx.context_book_ids:
-            lines.append(
-                f"Previous response book IDs: {', '.join(ctx.context_book_ids[:10])}"
-            )
+            # Titles (not just opaque IDs) let the agent judge for itself whether a
+            # topic-shifted follow-up plausibly still belongs to these books, instead
+            # of blindly reusing them and relying solely on the reactive score-based
+            # fallback in tools.py::_run_search_chunks to catch a mismatch.
+            from app.db.repositories.books_repository import BooksRepository
+
+            books_repo = BooksRepository(ctx.session)
+            books = await books_repo.find_titles_by_ids(ctx.context_book_ids[:10])
+            if books:
+                book_descriptions = []
+                for b in books:
+                    desc = f'"{b["title"]}"'
+                    if b.get("author"):
+                        desc += f" by {b['author']}"
+                    desc += f" (book_id: {b['id']})"
+                    book_descriptions.append(desc)
+                lines.append("Previous response books: " + "; ".join(book_descriptions))
+            else:
+                lines.append(
+                    f"Previous response book IDs: {', '.join(ctx.context_book_ids[:10])}"
+                )
         if ctx.character_categories:
             lines.append(f"Category filter: {', '.join(ctx.character_categories)}")
     if ctx.history:
