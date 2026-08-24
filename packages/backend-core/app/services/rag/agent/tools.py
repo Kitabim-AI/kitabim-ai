@@ -562,14 +562,19 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
 
     results = await vector_search(ctx, book_ids, query_vector=query_vector)
 
-    # Transparent context-switch fallback: if the LLM passed the previous
-    # answer's book IDs verbatim and the similarity scores are weak (different
-    # topic), rediscover relevant books via the summary index and re-search within them.
+    # Transparent context-switch fallback: if the LLM passed book_ids that overlap
+    # with the previous answer's book IDs and the similarity scores are weak
+    # (different topic), rediscover relevant books via the summary index and
+    # re-search within them. Overlap (not exact-set equality) is intentional —
+    # the LLM often expands context_book_ids with sister volumes or drops one of
+    # several, which would otherwise silently defeat this check even though it's
+    # still fundamentally carrying over stale context rather than doing a fresh
+    # title/author lookup this turn.
     if (
         ctx.is_global
         and book_ids
         and ctx.context_book_ids
-        and set(book_ids) == {str(x) for x in ctx.context_book_ids}
+        and set(book_ids) & {str(x) for x in ctx.context_book_ids}
     ):
         top_score = max((r.get("score", 0.0) for r in results), default=0.0)
         if top_score < CONTEXT_SWITCH_SCORE_THRESHOLD:

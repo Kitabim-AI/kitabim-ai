@@ -59,7 +59,7 @@ async def seed_system_configs(session: AsyncSession):
                     value=old_config.value,
                     description=old_config.description,
                 )
-            await repo.delete(old_key)
+            await repo.delete_one(old_key)
 
     defaults = [
         {
