@@ -14,6 +14,7 @@ from app.core.prompts import RAG_RERANK_PROMPT
 from app.llm.models import build_text_llm
 from app.services.rag.agent.config import (
     AGENT_MAX_CONTEXT_CHUNKS,
+    CHUNK_RESULT_TOOLS,
     MIN_CHUNKS_AFTER_GRADING,
     RERANK_MAX_INPUT_CHUNKS,
 )
@@ -26,16 +27,17 @@ _NO_DOCS_MESSAGE = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
 
 
 def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
-    """Pool chunks from every search_chunks observation, deduped by (book_id,
-    page). No relevance filtering here — that's the reranker's job, not this
-    pooling step (data hygiene only, same dedup _grade_context always did)."""
+    """Pool chunks from every search_chunks/search_keyword_phrase observation,
+    deduped by (book_id, page). No relevance filtering here — that's the reranker's
+    job, not this pooling step (data hygiene only, same dedup _grade_context always did)."""
     docs: list[Document] = []
     total_raw_chunks = 0
     seen: set[tuple] = set()
 
     for obs in observations:
-        if obs.get("tool") != "search_chunks":
+        if obs.get("tool") not in CHUNK_RESULT_TOOLS:
             continue
+
         res = obs.get("result", {})
         if not res.get("ok", False):
             continue

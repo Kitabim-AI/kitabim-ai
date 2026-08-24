@@ -109,6 +109,19 @@ _STEP_6_CONTENT = (
     "If search_chunks returns fewer than 4 results or if the query asks for specific facts, details, or passages, retry with a rephrased query or broaden by calling search_chunks with an empty book_ids list to search the entire library so a wrongly-scoped book summary set does not omit facts."
 )
 
+_STEP_6B_KEYWORD_PHRASE = (
+    "6b. Supplementary lexical search (search_keyword_phrase):\n"
+    "   - When to call search_keyword_phrase:\n"
+    "     * Call search_keyword_phrase IN ADDITION TO search_chunks (never instead of it) when the question names a specific, distinguishing term that vector similarity can blur or miss.\n"
+    "     * Examples: proper nouns (names of rare musical pieces like 'ھوزۇرۇم', obscure places, specific historical figures, titles of short works), exact dates, rare technical/historical terms, or short quoted phrases.\n"
+    "     * Pass a SHORT phrase (2–6 words) representing the exact term/phrase — NOT the full question and NOT a common/generic word (do not pass 'king' or 'book' alone).\n"
+    "     * Match book_ids to whatever scope search_chunks used for the same question.\n"
+    "   - When NOT to call search_keyword_phrase:\n"
+    "     * Do NOT call for broad, open-ended questions with no single distinguishing term (e.g. 'what is the history of X?', 'summarize Y').\n"
+    "     * Do NOT call for catalog, dictionary, or Quran questions (steps 3-5).\n"
+    "   - Call order: Call search_chunks first to establish broad context, then immediately call search_keyword_phrase with the specific term if applicable."
+)
+
 _STEP_7_STOP = (
     "7. Stop as soon as you have sufficient context (6–12 passages for content questions, "
     "or a catalog/author result for metadata questions)."
@@ -125,7 +138,7 @@ _STEP_8_MULTI_QUESTION = (
 )
 
 _HARD_LIMITS = (
-    "Hard limits: at most 6 tool calls total (for turns with [Sub-questions], the limit is raised to 10 tool calls total). Do not repeat the same query twice — this includes retrying a search or dictionary term under an alternate spelling; treat the first result (including a zero-result miss) as final.\n"
+    "Hard limits: at most 6 tool calls total (for turns with [Sub-questions], the limit is raised to 10 tool calls total). Do not repeat the same query or phrase twice — this includes retrying a search, phrase, or dictionary term under an alternate spelling; treat the first result (including a zero-result miss) as final.\n"
     "CRITICAL: Do NOT call search_chunks with an empty book_ids list as your first action. "
     "Only use an empty book_ids list after a scoped search returned fewer than 4 results, "
     "or after find_books_by_title, get_books_by_author, or search_books_by_summary found no usable book IDs.\n"
@@ -143,6 +156,7 @@ AGENT_SYSTEM_PROMPT = "\n\n".join(
         _STEP_4_DICTIONARY,
         _STEP_5_CATALOG,
         _STEP_6_CONTENT,
+        _STEP_6B_KEYWORD_PHRASE,
         _STEP_7_STOP,
         _STEP_8_MULTI_QUESTION,
         _HARD_LIMITS,

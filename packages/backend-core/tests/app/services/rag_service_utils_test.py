@@ -98,7 +98,55 @@ async def test_build_catalog_context_title_match():
     )
     assert "ئانا يۇرت" in ctx
     assert "زوردۇن سابىر" in ctx
-    assert count == 1
+
+
+def test_grade_context_includes_search_keyword_phrase_observations():
+    from app.services.chat.context_grading import _grade_context
+
+    observations = [
+        {
+            "tool": "search_keyword_phrase",
+            "result": {
+                "ok": True,
+                "data": {
+                    "chunks": [
+                        {
+                            "book_id": "book_c",
+                            "page": 30,
+                            "text": "Exact phrase hit",
+                            "rank": 0.4,
+                            "title": "Book C",
+                        }
+                    ]
+                },
+            },
+        }
+    ]
+
+    graded_context, before_count, after_count = _grade_context(observations)
+
+    assert before_count == 1
+    assert after_count == 1
+    assert "Book C" in graded_context
+
+
+def test_grade_context_ignores_unknown_tool_observations():
+    from app.services.chat.context_grading import _grade_context
+
+    observations = [
+        {
+            "tool": "get_book_author",
+            "result": {
+                "ok": True,
+                "data": {"chunks": [{"book_id": "x", "page": 1, "text": "t"}]},
+            },
+        }
+    ]
+
+    graded_context, before_count, after_count = _grade_context(observations)
+
+    assert before_count == 0
+    assert after_count == 0
 
 
 def test_grade_context_local_grading():

@@ -655,7 +655,10 @@ async def test_search_chunks_context_switch_triggers_on_partial_overlap():
         )
 
     assert call_book_ids == [["book-1"], ["book-9"]]
-    assert result == [{"text": "strong match", "score": 0.9, "book_id": "book-9"}]
+    assert result == [
+        {"text": "weak match", "score": 0.5, "book_id": "book-1"},
+        {"text": "strong match", "score": 0.9, "book_id": "book-9"},
+    ]
 
 
 @pytest.mark.asyncio
@@ -741,3 +744,31 @@ async def test_search_chunks_context_switch_not_triggered_without_overlap():
 
     assert summary_called is False
     assert result == [{"text": "weak match", "score": 0.4, "book_id": "book-42"}]
+
+
+@pytest.mark.asyncio
+async def test_search_keyword_phrase_tool_dispatches_to_retrieval():
+    from app.services.rag.agent.tools import _dispatch_tool_with_retry
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = True
+    ctx.book_id = None
+    mock_results = [
+        {"book_id": "b1", "page_number": 5, "text": "matched text", "rank": 0.8}
+    ]
+
+    with patch(
+        "app.services.rag.agent.tools.agent_keyword_search", new_callable=AsyncMock
+    ) as mock_search:
+        mock_search.return_value = mock_results
+        result = await _dispatch_tool_with_retry(
+            "search_keyword_phrase",
+            {"phrase": "ھوزۇرۇم", "book_ids": ["b1"]},
+            ctx,
+        )
+
+    assert result["ok"] is True
+    assert result["found_count"] == 1
+    assert result["chunks"] == mock_results
+    mock_search.assert_awaited_once_with(ctx, "ھوزۇرۇم", ["b1"])

@@ -131,6 +131,59 @@ async def exact_phrase_chunk_search(
     return matched[:limit]
 
 
+# Fallback default when the rag_keyword_top_k system_config row is missing —
+
+# mirrors _EXACT_PHRASE_DEFAULT_LIMIT in chat/orchestrator.py; kept as a
+# separate constant since this module has no dependency on orchestrator.py.
+_AGENT_KEYWORD_SEARCH_DEFAULT_LIMIT = 10
+
+
+async def agent_keyword_search(
+    ctx: "QueryContext",
+    phrase: str,
+    book_ids: Optional[List[str]],
+) -> List[dict]:
+    """Keyword-leg assist for the ADK retrieval agent's search_keyword_phrase
+    tool (see agent/tools.py).
+
+    Unlike exact_phrase_chunk_search (the pre-agent quoted-phrase gate in
+    phrase_intent.py, which runs standalone with no vector fusion and never
+    reaches the agent loop), this is called *by* the agent alongside
+    search_chunks for ordinary questions — the agent decides, per question,
+    whether a specific named term is worth a lexical-match check. Reuses the
+    same ChunksRepository.keyword_search leg (phraseto_tsquery phrase match,
+    same work_mem/statement_timeout guards) and the same rag_keyword_top_k
+    cap as the quoted-phrase gate, so a misused (e.g. too-generic) phrase
+    argument still can't flood or time out — see
+    docs/feature/graph-rag-with-GDS/keyword-search-rework-plan.md.
+    """
+    phrase = phrase.strip()
+    if not phrase:
+        return []
+    if book_ids is not None and not book_ids:
+        return []
+
+    from app.core.providers import get_vector_store
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
+    configs_repo = SystemConfigsRepository(ctx.session)
+    rag_keyword_top_k_str = await configs_repo.get_value(
+        "rag_keyword_top_k", str(_AGENT_KEYWORD_SEARCH_DEFAULT_LIMIT)
+    )
+    try:
+        rag_keyword_top_k = int(rag_keyword_top_k_str)
+    except ValueError:
+        rag_keyword_top_k = _AGENT_KEYWORD_SEARCH_DEFAULT_LIMIT
+
+    chunks_repo = get_vector_store(ctx.session)
+    return await chunks_repo.keyword_search(
+        phrase=phrase,
+        book_ids=book_ids,
+        categories=ctx.character_categories or None,
+        limit=rag_keyword_top_k,
+    )
+
+
 async def vector_search(
     ctx: "QueryContext",
     book_ids: Optional[List[str]],

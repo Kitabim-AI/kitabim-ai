@@ -17,6 +17,7 @@ from google.adk.tools import ToolContext
 from app.services.rag.context import QueryContext, get_current_query_context
 from app.services.rag.keywords import CURRENT_BOOK_KEYWORDS
 from app.services.rag.retrieval import (
+    agent_keyword_search,
     embed_query,
     find_books_by_title_in_question,
     graph_entity_lookup,
@@ -104,6 +105,30 @@ async def search_chunks(
     """
     args = {"query": query, "book_ids": book_ids}
     return await _execute_and_record_tool(tool_context, "search_chunks", args)
+
+
+async def search_keyword_phrase(
+    phrase: str,
+    book_ids: Optional[List[str]] = None,
+    tool_context: ToolContext = None,
+) -> dict:
+    """Exact contiguous-phrase lexical search — a supplement to search_chunks, not a replacement.
+
+    Call this IN ADDITION TO search_chunks (never instead of it) when the question names a
+    specific, distinguishing term that vector similarity can blur or miss: a proper noun, an
+    exact date, a rare technical/historical term, or a short quoted phrase. Pass a SHORT phrase
+    (2-6 words) — the single most distinguishing term or phrase from the question, not the full
+    question and not a common/generic word (e.g. not "king" or "book" alone). Do NOT call this
+    for open-ended or broad questions with no single distinguishing term.
+
+    Args:
+        phrase: A short (2-6 word), specific phrase to match verbatim (word order and adjacency
+                matter — this is not a bag-of-words search).
+        book_ids: Optional list of book IDs to restrict the search scope, matching whatever
+                  scope search_chunks used for this question.
+    """
+    args = {"phrase": phrase, "book_ids": book_ids}
+    return await _execute_and_record_tool(tool_context, "search_keyword_phrase", args)
 
 
 async def search_books_by_summary(
@@ -454,6 +479,9 @@ async def _dispatch_tool_with_retry(
     if tool_name == "search_chunks":
         chunks = await _run_search_chunks(tool_args, ctx)
         return {"ok": True, "chunks": chunks, "found_count": len(chunks)}
+    if tool_name == "search_keyword_phrase":
+        chunks = await _run_search_keyword_phrase(tool_args, ctx)
+        return {"ok": True, "chunks": chunks, "found_count": len(chunks)}
     if tool_name == "search_books_by_summary":
         book_ids = await _run_search_books_by_summary(tool_args, ctx)
         return {"ok": True, "book_ids": book_ids, "found_count": len(book_ids)}
@@ -591,13 +619,28 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
                     ctx, new_book_ids, query_vector=query_vector
                 )
                 if broader:
-                    results = broader
-                    book_ids = new_book_ids
+                    existing_keys = {
+                        (r.get("book_id"), r.get("page_number"), r.get("chunk_index"))
+                        for r in results
+                    }
+                    new_chunks = [
+                        c
+                        for c in broader
+                        if (
+                            c.get("book_id"),
+                            c.get("page_number"),
+                            c.get("chunk_index"),
+                        )
+                        not in existing_keys
+                    ]
+                    results = results + new_chunks
+                    book_ids = list(dict.fromkeys((book_ids or []) + new_book_ids))
                     log_json(
                         logger,
                         logging.INFO,
                         "Context-switch re-search succeeded",
                         new_books=len(new_book_ids),
+                        added_chunks=len(new_chunks),
                     )
 
     # Knowledge-graph entity lookup (design v2 §6) — pure cache read + Neo4j fact
@@ -628,6 +671,25 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
         logging.INFO,
         "Agent tool search_chunks",
         query=query[:60],
+        book_count=len(book_ids) if book_ids is not None else 0,
+        results=len(results),
+    )
+    return results
+
+
+async def _run_search_keyword_phrase(args: dict, ctx: QueryContext) -> List[dict]:
+    phrase = args.get("phrase") or ""
+    book_ids = _extract_book_ids(args)
+    if book_ids is None and not ctx.is_global and ctx.book_id:
+        book_ids = [ctx.book_id]
+
+    results = await agent_keyword_search(ctx, phrase, book_ids)
+
+    log_json(
+        logger,
+        logging.INFO,
+        "Agent tool search_keyword_phrase",
+        phrase=phrase[:60],
         book_count=len(book_ids) if book_ids is not None else 0,
         results=len(results),
     )
