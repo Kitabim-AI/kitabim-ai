@@ -8,6 +8,7 @@ from google.adk import Agent
 from app.services.rag.agent.prompts import AGENT_SYSTEM_PROMPT
 from app.services.rag.agent.tools import (
     search_chunks,
+    search_keyword_phrase,
     search_books_by_summary,
     find_books_by_title,
     rewrite_query,
@@ -30,6 +31,7 @@ from app.services.rag.agent.tools import (
 
 ALL_TOOLS = [
     search_chunks,
+    search_keyword_phrase,
     search_books_by_summary,
     find_books_by_title,
     rewrite_query,

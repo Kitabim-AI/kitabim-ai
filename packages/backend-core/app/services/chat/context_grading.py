@@ -59,6 +59,7 @@ def _grade_context(
 ) -> tuple[str, int, int]:
     from app.services.rag.agent.config import (
         AGENT_MAX_CONTEXT_CHUNKS,
+        CHUNK_RESULT_TOOLS,
         GRADE_RELATIVE_THRESHOLD,
         MIN_CHUNKS_AFTER_GRADING,
     )
@@ -81,8 +82,9 @@ def _grade_context(
     seen: set[tuple] = set()
 
     for obs in observations:
-        if obs.get("tool") != "search_chunks":
+        if obs.get("tool") not in CHUNK_RESULT_TOOLS:
             continue
+
         res = obs.get("result", {})
         if not res.get("ok", False):
             continue
@@ -194,10 +196,12 @@ def _grade_context(
 
 
 def _extract_used_book_ids(observations: list[dict]) -> list[str]:
-    # Collect book IDs from search_chunks results
+    from app.services.rag.agent.config import CHUNK_RESULT_TOOLS
+
+    # Collect book IDs from search_chunks / search_keyword_phrase results
     chunk_book_ids = set()
     for obs in observations:
-        if obs.get("tool") == "search_chunks":
+        if obs.get("tool") in CHUNK_RESULT_TOOLS:
             res = obs.get("result", {})
             if res.get("ok", False):
                 data = res.get("data") or res

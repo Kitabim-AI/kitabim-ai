@@ -275,3 +275,117 @@ async def test_graph_entity_lookup_resolves_book_title():
         assert hits[0]["book_id"] == "book-123"
         assert hits[0]["title"] == "«مۇغۇلىستان تارىخى» (بىلىم گىرافى)"
         assert hits[0]["page"] == 99
+
+
+@pytest.mark.asyncio
+async def test_agent_keyword_search_passes_config_limit_and_scope():
+    from app.services.rag.retrieval import agent_keyword_search
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+    from app.db.repositories.chunks_repository import ChunksRepository
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.character_categories = ["history"]
+
+    captured = {}
+
+    async def fake_get_value(self, key, default=None):
+        assert key == "rag_keyword_top_k"
+        return "7"
+
+    async def fake_keyword_search(
+        self, phrase, book_ids=None, categories=None, limit=10
+    ):
+        captured["phrase"] = phrase
+        captured["book_ids"] = book_ids
+        captured["categories"] = categories
+        captured["limit"] = limit
+        return [{"book_id": "b1", "page_number": 5, "text": "hit", "rank": 0.9}]
+
+    with (
+        patch.object(SystemConfigsRepository, "get_value", fake_get_value),
+        patch.object(ChunksRepository, "keyword_search", fake_keyword_search),
+    ):
+        result = await agent_keyword_search(ctx, "Yunus Khan", ["book-1"])
+
+    assert captured == {
+        "phrase": "Yunus Khan",
+        "book_ids": ["book-1"],
+        "categories": ["history"],
+        "limit": 7,
+    }
+    assert result == [{"book_id": "b1", "page_number": 5, "text": "hit", "rank": 0.9}]
+
+
+@pytest.mark.asyncio
+async def test_agent_keyword_search_falls_back_to_default_limit_on_bad_config():
+    from app.services.rag.retrieval import agent_keyword_search
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+    from app.db.repositories.chunks_repository import ChunksRepository
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.character_categories = []
+
+    captured = {}
+
+    async def fake_get_value(self, key, default=None):
+        return "not-a-number"
+
+    async def fake_keyword_search(
+        self, phrase, book_ids=None, categories=None, limit=10
+    ):
+        captured["limit"] = limit
+        return []
+
+    with (
+        patch.object(SystemConfigsRepository, "get_value", fake_get_value),
+        patch.object(ChunksRepository, "keyword_search", fake_keyword_search),
+    ):
+        await agent_keyword_search(ctx, "term", None)
+
+    assert captured["limit"] == 10
+
+
+@pytest.mark.asyncio
+async def test_agent_keyword_search_empty_phrase_returns_empty_without_querying():
+    from app.services.rag.retrieval import agent_keyword_search
+    from app.db.repositories.chunks_repository import ChunksRepository
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+
+    called = False
+
+    async def fake_keyword_search(self, *a, **kw):
+        nonlocal called
+        called = True
+        return []
+
+    with patch.object(ChunksRepository, "keyword_search", fake_keyword_search):
+        result = await agent_keyword_search(ctx, "   ", None)
+
+    assert result == []
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_agent_keyword_search_empty_book_ids_list_returns_empty_without_querying():
+    from app.services.rag.retrieval import agent_keyword_search
+    from app.db.repositories.chunks_repository import ChunksRepository
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+
+    called = False
+
+    async def fake_keyword_search(self, *a, **kw):
+        nonlocal called
+        called = True
+        return []
+
+    with patch.object(ChunksRepository, "keyword_search", fake_keyword_search):
+        result = await agent_keyword_search(ctx, "term", [])
+
+    assert result == []
+    assert called is False
