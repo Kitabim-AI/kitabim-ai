@@ -84,7 +84,15 @@ async def test_get_batch_stats_success():
     mock_summary_res = MagicMock()
     mock_summary_res.fetchall.return_value = []
 
-    session.execute.side_effect = [mock_books_res, mock_stats_res, mock_summary_res]
+    mock_history_res = MagicMock()
+    mock_history_res.fetchall.return_value = []
+
+    session.execute.side_effect = [
+        mock_books_res,
+        mock_stats_res,
+        mock_summary_res,
+        mock_history_res,
+    ]
 
     stats = await repo.get_batch_stats(["book-1"])
 
@@ -108,7 +116,11 @@ async def test_get_with_page_stats_ready():
     mock_summary_res = MagicMock()
     mock_summary_res.scalar.return_value = 1
 
-    # 3. Mock spell check query
+    # 3. Mock history query
+    mock_history_res = MagicMock()
+    mock_history_res.scalar.return_value = 0
+
+    # 4. Mock spell check query
     mock_row = MagicMock()
     mock_row.done = 10
     mock_row.failed = 0
@@ -116,7 +128,7 @@ async def test_get_with_page_stats_ready():
     mock_sc_res = MagicMock()
     mock_sc_res.fetchone.return_value = mock_row
 
-    session.execute.side_effect = [mock_summary_res, mock_sc_res]
+    session.execute.side_effect = [mock_summary_res, mock_history_res, mock_sc_res]
 
     result = await repo.get_with_page_stats("b1")
 
@@ -159,7 +171,15 @@ async def test_get_with_page_stats_processing():
     mock_summary_res = MagicMock()
     mock_summary_res.scalar.return_value = 0
 
-    session.execute.side_effect = [mock_stats_res, mock_summary_res]
+    # history query result
+    mock_history_res = MagicMock()
+    mock_history_res.scalar.return_value = 0
+
+    session.execute.side_effect = [
+        mock_stats_res,
+        mock_summary_res,
+        mock_history_res,
+    ]
 
     result = await repo.get_with_page_stats("b1")
 
@@ -297,3 +317,33 @@ def test_entity_matches_question_variations():
     assert _entity_matches_question(
         "جالالىد\u06d1ن بەھرام", "جالالىد\u0649ن بەھرامنىڭ ئەسەرلىرى بار؟"
     )
+
+
+@pytest.mark.asyncio
+async def test_find_titles_by_ids_returns_metadata():
+    session = AsyncMock()
+    repo = BooksRepository(session)
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = [
+        ("b1", "Title One", "Author A", 1),
+        ("b2", "Title Two", None, None),
+    ]
+    session.execute.return_value = mock_res
+
+    result = await repo.find_titles_by_ids(["b1", "b2"])
+
+    assert result == [
+        {"id": "b1", "title": "Title One", "author": "Author A", "volume": 1},
+        {"id": "b2", "title": "Title Two", "author": None, "volume": None},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_find_titles_by_ids_empty_input_no_db_call():
+    session = AsyncMock()
+    repo = BooksRepository(session)
+
+    result = await repo.find_titles_by_ids([])
+
+    assert result == []
+    session.execute.assert_not_called()

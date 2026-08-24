@@ -305,7 +305,7 @@ class ChatOrchestrator:
                 role="user",
                 parts=[
                     types.Part.from_text(
-                        text=_build_human_message(ctx, request_dto.question)
+                        text=await _build_human_message(ctx, request_dto.question)
                     )
                 ],
             )

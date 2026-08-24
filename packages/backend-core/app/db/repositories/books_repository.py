@@ -781,6 +781,23 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def find_titles_by_ids(self, book_ids: List[str]) -> List[dict]:
+        """Return [{id, title, author, volume}] for the given book IDs, title-bearing rows only.
+
+        Used to surface human-readable book identity (not just opaque IDs) to the
+        retrieval agent for carried-over conversation context.
+        """
+        if not book_ids:
+            return []
+        stmt = select(Book.id, Book.title, Book.author, Book.volume).where(
+            Book.id.in_(book_ids), Book.title.is_not(None)
+        )
+        result = await self.session.execute(stmt)
+        return [
+            {"id": str(row[0]), "title": row[1], "author": row[2], "volume": row[3]}
+            for row in result.fetchall()
+        ]
+
     async def find_volume_info_by_title_in_question(
         self,
         question: str,
