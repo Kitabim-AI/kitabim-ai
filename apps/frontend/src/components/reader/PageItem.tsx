@@ -9,14 +9,7 @@ import { cleanShareText } from '../../utils/shareText';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ShareSearchResultModal } from '../share/ShareSearchResultModal';
 
-const normalizeArabic = (text: string): string => {
-  if (!text) return '';
-  return text
-    .replace(/\u06E1/g, '\u0652') // Uthmanic Sukun -> Standard Sukun
-    .replace(/\u0671/g, '\u0627') // Alif Wasla -> Standard Alif
-    .replace(/[\u06D6-\u06DC\u06DF-\u06E0\u06E2-\u06ED]/g, '') // Remove Uthmanic signs that disrupt cursive connections
-    ;
-};
+import { normalizeArabic } from '../../utils/quranUtils';
 
 interface PageItemProps {
   page: any;

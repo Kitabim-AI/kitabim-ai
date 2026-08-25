@@ -15,14 +15,7 @@ interface ReferenceModalProps {
   graphQuery?: string;
 }
 
-const normalizeArabic = (text: string): string => {
-  if (!text) return '';
-  return text
-    .replace(/\u06E1/g, '\u0652') // Uthmanic Sukun -> Standard Sukun
-    .replace(/\u0671/g, '\u0627') // Alif Wasla -> Standard Alif
-    .replace(/[\u06D6-\u06DC\u06DF-\u06E0\u06E2-\u06ED]/g, '') // Remove Uthmanic signs that disrupt cursive connections
-    ;
-};
+import { formatQuranAyahUg, normalizeArabicWithAyah } from '../../utils/quranUtils';
 
 export const ReferenceModal: React.FC<ReferenceModalProps> = ({
   isOpen,
@@ -284,13 +277,13 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                     {/* Arabic Text */}
                     <div className="text-right mb-6" dir="rtl">
                       <p className="arabic-text text-3xl sm:text-4xl leading-[2] sm:leading-[2.2] text-slate-900 dark:text-slate-100 font-normal whitespace-pre-wrap select-all">
-                        {normalizeArabic(v.text_ar)}
+                        {normalizeArabicWithAyah(v.text_ar, v.ayah)}
                       </p>
                     </div>
                     {/* Uyghur & English Translations */}
                     <div className="space-y-3 border-t border-slate-50 dark:border-slate-800/60 pt-4 text-right">
                       <p className="uyghur-text text-base sm:text-lg leading-[1.8] text-[#1e293b] dark:text-slate-200 font-normal" dir="rtl">
-                        <span className="text-slate-400 dark:text-slate-500 font-normal ml-1">تەرجىمىسى:</span> {v.text_ug}
+                        <span className="text-slate-400 dark:text-slate-500 font-normal ml-1">تەرجىمىسى:</span> {formatQuranAyahUg(v.text_ug)}
                       </p>
                       <p className="text-sm text-slate-500 dark:text-slate-400 font-sans leading-relaxed text-left" dir="ltr">
                         <span className="text-slate-400 dark:text-slate-500 font-normal mr-1">English:</span> {v.text_en}

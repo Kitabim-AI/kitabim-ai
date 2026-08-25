@@ -33,14 +33,7 @@ interface SurahEntry {
   surah_name_ug: string;
 }
 
-const normalizeArabic = (text: string): string => {
-  if (!text) return '';
-  return text
-    .replace(/\u06E1/g, '\u0652') // Uthmanic Sukun -> Standard Sukun
-    .replace(/\u0671/g, '\u0627') // Alif Wasla -> Standard Alif
-    .replace(/[\u06D6-\u06DC\u06DF-\u06E0\u06E2-\u06ED]/g, '') // Remove Uthmanic signs that disrupt cursive connections
-    ;
-};
+import { formatQuranAyahUg, normalizeArabicWithAyah } from '../../utils/quranUtils';
 
 export const QuranView: React.FC = () => {
   const { t, language } = useI18n();
@@ -577,7 +570,7 @@ export const QuranView: React.FC = () => {
                       dir="rtl"
                       lang="ar"
                     >
-                      {normalizeArabic(entry.text_ar)}
+                      {normalizeArabicWithAyah(entry.text_ar, entry.ayah)}
                     </div>
 
                     {/* Uyghur Text */}
@@ -586,7 +579,7 @@ export const QuranView: React.FC = () => {
                       dir="rtl"
                       lang="ug"
                     >
-                      {entry.text_ug}
+                      {formatQuranAyahUg(entry.text_ug)}
                     </div>
 
                     {/* English Text */}

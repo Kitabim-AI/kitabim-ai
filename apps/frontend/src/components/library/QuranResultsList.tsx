@@ -2,6 +2,7 @@ import { RefreshCw, Search, Share2 } from 'lucide-react';
 import React, { useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 import { QuranAyah } from '../../services/searchTabsService';
+import { formatQuranAyahUg, normalizeArabicWithAyah } from '../../utils/quranUtils';
 import { ShareSearchResultModal } from '../share/ShareSearchResultModal';
 
 interface QuranResultsListProps {
@@ -66,10 +67,10 @@ export const QuranResultsList: React.FC<QuranResultsListProps> = ({ items, isLoa
             </div>
           </div>
           <p dir="rtl" className="arabic-text text-xl sm:text-2xl leading-loose text-[#1a1a1a] dark:text-slate-100 mb-3">
-            {ayah.textAr}
+            {normalizeArabicWithAyah(ayah.textAr, ayah.ayah)}
           </p>
           <p dir="rtl" className="uyghur-text text-base text-slate-600 dark:text-slate-300">
-            {ayah.textUg}
+            {formatQuranAyahUg(ayah.textUg)}
           </p>
         </div>
       ))}
@@ -77,7 +78,7 @@ export const QuranResultsList: React.FC<QuranResultsListProps> = ({ items, isLoa
       {shareAyah && (
         <ShareSearchResultModal
           title={`${shareAyah.surahNameUg} (${shareAyah.surah}:${shareAyah.ayah})`}
-          content={`${shareAyah.textAr}\n\n${shareAyah.textUg}`}
+          content={`${normalizeArabicWithAyah(shareAyah.textAr, shareAyah.ayah)}\n\n${formatQuranAyahUg(shareAyah.textUg)}`}
           sourceLabel={`Quran ${shareAyah.surah}:${shareAyah.ayah}`}
           onClose={() => setShareAyah(null)}
         />
