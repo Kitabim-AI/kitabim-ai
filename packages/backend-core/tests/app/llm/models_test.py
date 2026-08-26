@@ -8,8 +8,10 @@ from app.llm.models import GeminiEmbeddings, disabled_thinking_config
     [
         ("gemini-2.0-flash", {"thinking_budget": 0}),
         ("gemini-2.5-flash", {"thinking_budget": 0}),
-        ("gemini-3.6-flash", {"thinking_level": "MINIMAL"}),
-        ("models/gemini-3.0-pro", {"thinking_level": "MINIMAL"}),
+        ("gemini-3.7-flash", {"thinking_budget": 0}),
+        ("gemini-3.5-flash", {"thinking_budget": 0}),
+        ("gemini-3.6-flash", {"thinking_level": "LOW"}),
+        ("gemini-3.1-pro-preview", {"thinking_level": "LOW"}),
         ("gemini-embedding-2", {"thinking_budget": 0}),
     ],
 )
@@ -312,7 +314,7 @@ async def test_generate_text_with_image_uses_thinking_level_for_v3_model(
 
     kwargs = mock_generate_content.call_args.kwargs
     config = kwargs["config"]
-    assert config.thinking_config.thinking_level.value == "MINIMAL"
+    assert config.thinking_config.thinking_level.value == "LOW"
     assert config.thinking_config.thinking_budget is None
 
 

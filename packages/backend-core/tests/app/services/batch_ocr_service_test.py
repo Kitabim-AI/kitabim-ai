@@ -66,10 +66,15 @@ async def test_submit_batch_ocr_job():
         jsonl_content = mock_storage.upload_bytes.call_args.args[0]
         request_line = json.loads(jsonl_content.decode("utf-8").splitlines()[0])
         assert (
-            request_line["request"]["generation_config"]["thinking_config"][
-                "thinking_budget"
+            request_line["request"]["generationConfig"]["thinkingConfig"][
+                "thinkingBudget"
             ]
             == 0
+        )
+        assert "inlineData" in request_line["request"]["contents"][0]["parts"][1]
+        assert (
+            request_line["request"]["contents"][0]["parts"][1]["inlineData"]["mimeType"]
+            == "image/jpeg"
         )
 
 
@@ -118,10 +123,8 @@ async def test_submit_batch_ocr_job_uses_thinking_level_for_v3_model():
 
         jsonl_content = mock_storage.upload_bytes.call_args.args[0]
         request_line = json.loads(jsonl_content.decode("utf-8").splitlines()[0])
-        thinking_config = request_line["request"]["generation_config"][
-            "thinking_config"
-        ]
-        assert thinking_config == {"thinking_level": "MINIMAL"}
+        thinking_config = request_line["request"]["generationConfig"]["thinkingConfig"]
+        assert thinking_config == {"thinkingLevel": "LOW"}
 
 
 @pytest.mark.asyncio

@@ -354,14 +354,14 @@ def disabled_thinking_config(model_name: str) -> dict:
     OCR is pure transcription, not a reasoning task — without disabling
     "thinking", the model can burn its entire output budget on hidden
     thinking and return finishReason=STOP with zero actual output tokens
-    (silent, no error surfaced). Gemini 3.x+ models reject
-    thinking_budget=0 (INVALID_ARGUMENT) and require thinking_level
-    instead; pre-3.x models don't recognize thinking_level at all.
+    (silent, no error surfaced).
+    Most models (including gemini-3.7-flash, gemini-3.5-flash, gemini-2.5-flash)
+    disable thinking via thinking_budget=0. Thinking-only models (like
+    gemini-3.1-pro or gemini-3.6-flash) require thinking_level='LOW'.
+    Note: 'MINIMAL' is not supported by Google Gemini API and causes INVALID_ARGUMENT.
     """
-    match = _MODEL_MAJOR_VERSION_RE.search(model_name)
-    major = int(match.group(1)) if match else None
-    if major is not None and major >= 3:
-        return {"thinking_level": "MINIMAL"}
+    if "3.1" in model_name or "3.6" in model_name:
+        return {"thinking_level": "LOW"}
     return {"thinking_budget": 0}
 
 

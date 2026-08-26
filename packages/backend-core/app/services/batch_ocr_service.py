@@ -61,6 +61,16 @@ async def submit_batch_ocr_job(
     prompt = await _build_ocr_prompt(session)
 
     # 1. Build JSONL request entries
+    raw_thinking_config = disabled_thinking_config(gemini_ocr_model)
+    gen_config = types.GenerateContentConfig(
+        temperature=0.0,
+        thinking_config=types.ThinkingConfig(**raw_thinking_config),
+        max_output_tokens=settings.ocr_max_output_tokens,
+    )
+    gen_config_dict = gen_config.model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+
     jsonl_lines: List[str] = []
     for page in pages:
         fitz_page = doc.load_page(page.page_number - 1)  # 0-indexed
@@ -74,25 +84,23 @@ async def submit_batch_ocr_job(
 
         request_entry = {
             "custom_id": f"page_{page.id}",
+            "key": f"page_{page.id}",
             "request": {
                 "contents": [
                     {
+                        "role": "user",
                         "parts": [
                             {"text": prompt},
                             {
-                                "inline_data": {
-                                    "mime_type": "image/jpeg",
+                                "inlineData": {
+                                    "mimeType": "image/jpeg",
                                     "data": base64_img,
                                 }
                             },
-                        ]
+                        ],
                     }
                 ],
-                "generation_config": {
-                    "temperature": 0.0,
-                    "thinking_config": disabled_thinking_config(gemini_ocr_model),
-                    "max_output_tokens": settings.ocr_max_output_tokens,
-                },
+                "generationConfig": gen_config_dict,
             },
         }
         jsonl_lines.append(json.dumps(request_entry))
@@ -122,7 +130,7 @@ async def submit_batch_ocr_job(
         uploaded_file = client.files.upload(
             file=io.BytesIO(jsonl_content),
             config=types.UploadFileConfig(
-                display_name=f"batch_ocr_{job_id}", mime_type="jsonl"
+                display_name=f"batch_ocr_{job_id}", mime_type="application/jsonl"
             ),
         )
         batch_job = client.batches.create(
@@ -470,16 +478,31 @@ async def _ingest_batch_ocr_results(
             continue
         try:
             item = json.loads(line)
-            custom_id = item.get("custom_id", "")
+            custom_id = (
+                item.get("custom_id") or item.get("customId") or item.get("key") or ""
+            )
             if not custom_id.startswith("page_"):
                 continue
 
             page_id = int(custom_id.replace("page_", ""))
-            response = item.get("response", {})
-            error = item.get("error")
+            response = item.get("response") or item
+            error = item.get("error") or (
+                item.get("response", {}).get("error")
+                if isinstance(item.get("response"), dict)
+                else None
+            )
 
             if error:
                 err_msg = str(error)[:500]
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "Batch OCR page returned error from Gemini API",
+                    job_id=job.id,
+                    book_id=job.book_id,
+                    page_id=page_id,
+                    error=err_msg,
+                )
                 skipped = await _record_page_ocr_failure(
                     session,
                     page_id,
@@ -533,6 +556,7 @@ async def _ingest_batch_ocr_results(
                         text=cleaned_text,
                         is_toc=is_toc,
                         ocr_milestone="succeeded",
+                        error=None,
                         last_updated=func.now(),
                     )
                 )
