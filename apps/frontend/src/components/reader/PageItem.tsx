@@ -41,7 +41,7 @@ interface PageItemProps {
   onHighlightApplied?: () => void;
 }
 
-export const PageItem: React.FC<PageItemProps> = ({
+export const PageItem: React.FC<PageItemProps> = React.memo(({
   page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc,
   tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick,
   bookId, bookTitle, bookAuthor, highlightQuote, onHighlightApplied,
@@ -53,7 +53,7 @@ export const PageItem: React.FC<PageItemProps> = ({
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [shareState, setShareState] = React.useState<{ content: string; quote?: string } | null>(null);
 
-  const textSelection = useTextSelectionShare(contentRef);
+  const textSelection = useTextSelectionShare(contentRef, isActive);
 
   const adjustHeight = React.useCallback(() => {
     if (!isEditing || !textareaRef.current || !containerRef.current) return;
@@ -232,4 +232,4 @@ export const PageItem: React.FC<PageItemProps> = ({
       )}
     </div>
   );
-};
+});
