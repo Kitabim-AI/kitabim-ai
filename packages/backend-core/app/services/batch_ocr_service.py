@@ -61,6 +61,16 @@ async def submit_batch_ocr_job(
     prompt = await _build_ocr_prompt(session)
 
     # 1. Build JSONL request entries
+    raw_thinking_config = disabled_thinking_config(gemini_ocr_model)
+    gen_config = types.GenerateContentConfig(
+        temperature=0.0,
+        thinking_config=types.ThinkingConfig(**raw_thinking_config),
+        max_output_tokens=settings.ocr_max_output_tokens,
+    )
+    gen_config_dict = gen_config.model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+
     jsonl_lines: List[str] = []
     for page in pages:
         fitz_page = doc.load_page(page.page_number - 1)  # 0-indexed
@@ -74,25 +84,45 @@ async def submit_batch_ocr_job(
 
         request_entry = {
             "custom_id": f"page_{page.id}",
+            "key": f"page_{page.id}",
             "request": {
                 "contents": [
                     {
+                        "role": "user",
                         "parts": [
-                            {"text": prompt},
                             {
-                                "inline_data": {
-                                    "mime_type": "image/jpeg",
+                                "inlineData": {
+                                    "mimeType": "image/jpeg",
                                     "data": base64_img,
                                 }
                             },
-                        ]
+                            {"text": prompt},
+                        ],
                     }
                 ],
-                "generation_config": {
-                    "temperature": 0.0,
-                    "thinking_config": disabled_thinking_config(gemini_ocr_model),
-                    "max_output_tokens": settings.ocr_max_output_tokens,
-                },
+                "safetySettings": [
+                    {
+                        "category": "HARM_CATEGORY_HATE_SPEECH",
+                        "threshold": "BLOCK_NONE",
+                    },
+                    {
+                        "category": "HARM_CATEGORY_HARASSMENT",
+                        "threshold": "BLOCK_NONE",
+                    },
+                    {
+                        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        "threshold": "BLOCK_NONE",
+                    },
+                    {
+                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                        "threshold": "BLOCK_NONE",
+                    },
+                    {
+                        "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+                        "threshold": "BLOCK_NONE",
+                    },
+                ],
+                "generationConfig": gen_config_dict,
             },
         }
         jsonl_lines.append(json.dumps(request_entry))
@@ -122,7 +152,7 @@ async def submit_batch_ocr_job(
         uploaded_file = client.files.upload(
             file=io.BytesIO(jsonl_content),
             config=types.UploadFileConfig(
-                display_name=f"batch_ocr_{job_id}", mime_type="jsonl"
+                display_name=f"batch_ocr_{job_id}", mime_type="application/jsonl"
             ),
         )
         batch_job = client.batches.create(
@@ -470,16 +500,31 @@ async def _ingest_batch_ocr_results(
             continue
         try:
             item = json.loads(line)
-            custom_id = item.get("custom_id", "")
+            custom_id = (
+                item.get("custom_id") or item.get("customId") or item.get("key") or ""
+            )
             if not custom_id.startswith("page_"):
                 continue
 
             page_id = int(custom_id.replace("page_", ""))
-            response = item.get("response", {})
-            error = item.get("error")
+            response = item.get("response") or item
+            error = item.get("error") or (
+                item.get("response", {}).get("error")
+                if isinstance(item.get("response"), dict)
+                else None
+            )
 
             if error:
                 err_msg = str(error)[:500]
+                log_json(
+                    logger,
+                    logging.WARNING,
+                    "Batch OCR page returned error from Gemini API",
+                    job_id=job.id,
+                    book_id=job.book_id,
+                    page_id=page_id,
+                    error=err_msg,
+                )
                 skipped = await _record_page_ocr_failure(
                     session,
                     page_id,
@@ -489,28 +534,72 @@ async def _ingest_batch_ocr_results(
                 )
                 if skipped:
                     succeeded_pages += 1
+                continue
             else:
-                # Extract text from response candidates
-                candidates = response.get("candidates", [])
-                text = ""
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if parts:
-                        text = parts[0].get("text", "")
-
-                cleaned_text = clean_uyghur_text(text or "")
-
-                if not cleaned_text.strip():
+                prompt_feedback = response.get("promptFeedback") or {}
+                block_reason = prompt_feedback.get("blockReason")
+                if block_reason:
+                    err_msg = f"Prompt blocked: {block_reason}"
+                    log_json(
+                        logger,
+                        logging.WARNING,
+                        "Batch OCR page prompt was blocked by Gemini API",
+                        job_id=job.id,
+                        book_id=job.book_id,
+                        page_id=page_id,
+                        block_reason=block_reason,
+                    )
                     skipped = await _record_page_ocr_failure(
                         session,
                         page_id,
                         retry_counts.get(page_id, 0),
                         ocr_max_retry_count,
-                        "empty response",
+                        err_msg,
                     )
                     if skipped:
                         succeeded_pages += 1
                     continue
+
+                # Extract text from response candidates
+                candidates = response.get("candidates", [])
+                text = ""
+                finish_reason = None
+                if candidates:
+                    finish_reason = candidates[0].get("finishReason")
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        text = parts[0].get("text", "")
+
+                if finish_reason in (
+                    "SAFETY",
+                    "RECITATION",
+                    "BLOCKLIST",
+                    "PROHIBITED_CONTENT",
+                    "SPII",
+                    "MALICIOUS",
+                ):
+                    err_msg = f"Candidate blocked: {finish_reason}"
+                    log_json(
+                        logger,
+                        logging.WARNING,
+                        "Batch OCR page candidate blocked by safety filter",
+                        job_id=job.id,
+                        book_id=job.book_id,
+                        page_id=page_id,
+                        finish_reason=finish_reason,
+                    )
+                    skipped = await _record_page_ocr_failure(
+                        session,
+                        page_id,
+                        retry_counts.get(page_id, 0),
+                        ocr_max_retry_count,
+                        err_msg,
+                    )
+                    if skipped:
+                        succeeded_pages += 1
+                    continue
+
+                cleaned_text = clean_uyghur_text(text or "")
 
                 if is_degenerate_ocr_output(cleaned_text):
                     skipped = await _record_page_ocr_failure(
@@ -524,7 +613,7 @@ async def _ingest_batch_ocr_results(
                         succeeded_pages += 1
                     continue
 
-                is_toc = is_toc_page(cleaned_text)
+                is_toc = is_toc_page(cleaned_text) if cleaned_text.strip() else False
 
                 await session.execute(
                     update(Page)
@@ -533,6 +622,7 @@ async def _ingest_batch_ocr_results(
                         text=cleaned_text,
                         is_toc=is_toc,
                         ocr_milestone="succeeded",
+                        error=None,
                         last_updated=func.now(),
                     )
                 )

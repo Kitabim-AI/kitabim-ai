@@ -74,12 +74,12 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "ocr_gemini_model",
-            "value": "gemini-3.5-flash",
+            "value": "gemini-3.7-flash",
             "description": "Gemini model used for OCR page processing.",
         },
         {
             "key": "ocr_batch_enabled",
-            "value": "false",
+            "value": "true",
             "description": "Globally enable/disable Gemini Batch API for OCR page processing. Set to 'true' to use Batch API (50% cost discount) or 'false' for online real-time OCR.",
         },
         {

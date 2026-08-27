@@ -187,6 +187,10 @@ body {
   overscroll-behavior: none;
 }
 
+body.reader-active {
+  animation-play-state: paused;
+}
+
 /* Decorative Background Elements - Matching Prototype */
 body::before {
   content: '';
@@ -431,6 +435,7 @@ body.graph-fullscreen .navbar-wrapper {
 .dark body {
   background: linear-gradient(135deg, #0b0f19 0%, #020617 50%, #0d1226 100%);
   background-size: 200% 200%;
+  animation: gradientBG 20s ease infinite;
   color: #f1f5f9;
 }
 

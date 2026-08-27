@@ -122,10 +122,14 @@ export const ReaderView: React.FC = () => {
 
   const onClose = () => setView(previousView);
 
-  // Prevent body-level scrollbar while reader is open (reader manages its own scroll).
+  // Prevent body-level scrollbar and pause background animation while reader is open
   useEffect(() => {
     document.body.style.overflowY = 'hidden';
-    return () => { document.body.style.overflowY = ''; };
+    document.body.classList.add('reader-active');
+    return () => {
+      document.body.style.overflowY = '';
+      document.body.classList.remove('reader-active');
+    };
   }, []);
 
   useEffect(() => {
@@ -793,7 +797,7 @@ export const ReaderView: React.FC = () => {
         {/* Floating reader/chat toggle — mobile only */}
         {!isFullscreen && createPortal(
           <button
-            className="xl:hidden fixed bottom-[112px] left-6 z-50 transition-all active:scale-90 hover:opacity-70 text-[#FF9800] animate-[bob_10s_ease-in-out_infinite]"
+            className="xl:hidden fixed bottom-[112px] left-6 z-50 transition-all active:scale-90 hover:opacity-70 text-[#FF9800]"
             onClick={() => setMobileTab(prev => prev === 'reader' ? 'chat' : 'reader')}
           >
             {mobileTab === 'reader' ? <Bot size={38} strokeWidth={2} /> : <BookOpen size={38} strokeWidth={2} />}

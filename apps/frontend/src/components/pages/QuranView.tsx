@@ -33,14 +33,7 @@ interface SurahEntry {
   surah_name_ug: string;
 }
 
-const normalizeArabic = (text: string): string => {
-  if (!text) return '';
-  return text
-    .replace(/\u06E1/g, '\u0652') // Uthmanic Sukun -> Standard Sukun
-    .replace(/\u0671/g, '\u0627') // Alif Wasla -> Standard Alif
-    .replace(/[\u06D6-\u06DC\u06DF-\u06E0\u06E2-\u06ED]/g, '') // Remove Uthmanic signs that disrupt cursive connections
-    ;
-};
+import { formatQuranAyahUg, normalizeArabicWithAyah } from '../../utils/quranUtils';
 
 export const QuranView: React.FC = () => {
   const { t, language } = useI18n();
@@ -80,6 +73,7 @@ export const QuranView: React.FC = () => {
   // Fetch verses for active surah
   const fetchVerses = async (surahNum: number) => {
     setIsLoadingVerses(true);
+    setVerses([]);
     try {
       const resp = await authFetch(`/api/quran?surah=${surahNum}&limit=350`);
       if (resp.ok) {
@@ -540,100 +534,103 @@ export const QuranView: React.FC = () => {
 
       {/* Verses List Content */}
       <div className="space-y-4">
-        {isLoadingVerses && activeEntries.length === 0 && (
-           <div className="flex justify-center py-20">
-              <Loader2 size={40} className="animate-spin text-[#0369a1]/20" />
-           </div>
-        )}
-
-        {globalSearchQuery.trim() && !isSearching && suggestions.length === 0 && (
-          <div className="glass-panel rounded-[24px] md:rounded-[32px] py-8 md:py-12 px-4 md:px-8 flex flex-col items-center justify-center gap-3 md:gap-4 text-center animate-fade-in shadow-lg border border-[#0369a1]/10">
-             <div className="p-3 md:p-4 bg-amber-50 dark:bg-amber-500/10 text-amber-500 dark:text-amber-400 rounded-full shadow-inner ring-4 ring-amber-50/50 dark:ring-amber-500/10">
-                <AlertCircle className="w-6 h-6 md:w-8 md:h-8" />
-             </div>
-             <div className="space-y-1">
-                <h3 className="text-lg md:text-xl font-normal text-[#1a1a1a] dark:text-slate-100">
-                  {t('quran.ayahNotFound') || 'ئايەت تېپىلمىدى.'}
-                </h3>
-                <p className="text-slate-400 font-bold text-[9px] md:text-xs uppercase tracking-widest opacity-60 line-clamp-1">
-                  {globalSearchQuery}
-                </p>
-             </div>
+        {(isLoadingVerses || isSearching) ? (
+          <div className="flex flex-col items-center justify-center py-20 sm:py-28 gap-4 animate-fade-in">
+            <Loader2 size={44} className="animate-spin text-[#0369a1] dark:text-[#38bdf8]" />
+            <p className="text-xs text-slate-400 dark:text-slate-500 font-normal uppercase tracking-widest">
+              {t('common.loading')}
+            </p>
           </div>
-        )}
-
-        {activeEntries.length > 0 && (
-          <div className="space-y-4">
-            <div className="glass-panel rounded-[32px] p-4 md:p-6 overflow-hidden shadow-xl animate-fade-in border border-[#0369a1]/5 dark:border-[#38bdf8]/10 bg-white dark:bg-slate-900/60">
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {activeEntries.map((entry) => (
-                  <div 
-                    key={entry.id} 
-                    className="py-6 md:py-8 first:pt-2 last:pb-2 flex flex-col gap-4 w-full"
-                  >
-                    {/* Arabic Text (Centered, large, Adobe Arabic Font) */}
-                    <div 
-                      className="text-right text-3xl md:text-4xl text-slate-900 dark:text-slate-100 leading-[2] md:leading-[2.2] font-normal w-full arabic-text"
-                      dir="rtl"
-                      lang="ar"
-                    >
-                      {normalizeArabic(entry.text_ar)}
-                    </div>
-
-                    {/* Uyghur Text */}
-                    <div 
-                      className="uyghur-text text-base md:text-lg text-slate-700 dark:text-slate-200 leading-relaxed text-right mt-2"
-                      dir="rtl"
-                      lang="ug"
-                    >
-                      {entry.text_ug}
-                    </div>
-
-                    {/* English Text */}
-                    <div 
-                      className="text-left text-sm md:text-base text-slate-500 dark:text-slate-400 leading-relaxed font-sans mt-1"
-                      dir="ltr"
-                      lang="en"
-                    >
-                      {entry.text_en}
-                    </div>
-
-                    {/* Verse Badge / Info */}
-                    <div className="flex justify-between items-center mt-2 pt-3 border-t border-slate-50 dark:border-slate-800">
-                      <span className="text-[11px] md:text-xs text-[#0369a1] dark:text-[#38bdf8] font-semibold bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-3 py-1 rounded-full border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-sm whitespace-nowrap self-end uyghur-text">
-                        {t('quran.badgeTemplate', { 
-                          surah: entry.surah, 
-                          surahName: language === 'ug' ? entry.surah_name_ug : entry.surah_name_en, 
-                          ayah: entry.ayah 
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+        ) : (
+          <>
+            {globalSearchQuery.trim() && !isSearching && suggestions.length === 0 && (
+              <div className="glass-panel rounded-[24px] md:rounded-[32px] py-8 md:py-12 px-4 md:px-8 flex flex-col items-center justify-center gap-3 md:gap-4 text-center animate-fade-in shadow-lg border border-[#0369a1]/10">
+                <div className="p-3 md:p-4 bg-amber-50 dark:bg-amber-500/10 text-amber-500 dark:text-amber-400 rounded-full shadow-inner ring-4 ring-amber-50/50 dark:ring-amber-500/10">
+                  <AlertCircle className="w-6 h-6 md:w-8 md:h-8" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-lg md:text-xl font-normal text-[#1a1a1a] dark:text-slate-100">
+                    {t('quran.ayahNotFound') || 'ئايەت تېپىلمىدى.'}
+                  </h3>
+                  <p className="text-slate-400 font-bold text-[9px] md:text-xs uppercase tracking-widest opacity-60 line-clamp-1">
+                    {globalSearchQuery}
+                  </p>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {!isLoadingVerses && (
-          <div className="flex items-center justify-between gap-3 pt-2">
-            <button
-              onClick={handlePrevClick}
-              disabled={prevDisabled}
-              className="flex-1 flex items-center gap-2 justify-center px-4 py-3 md:py-3.5 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#0369a1] dark:text-[#38bdf8] font-semibold text-sm hover:border-[#0369a1]/30 dark:hover:border-[#38bdf8]/30 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none uyghur-text shadow-sm"
-            >
-              <ChevronRight size={18} strokeWidth={2.5} />
-              <span className="truncate">{prevLabel}</span>
-            </button>
-            <button
-              onClick={handleNextClick}
-              disabled={nextDisabled}
-              className="flex-1 flex items-center gap-2 justify-center px-4 py-3 md:py-3.5 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#0369a1] dark:text-[#38bdf8] font-semibold text-sm hover:border-[#0369a1]/30 dark:hover:border-[#38bdf8]/30 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none uyghur-text shadow-sm"
-            >
-              <span className="truncate">{nextLabel}</span>
-              <ChevronLeft size={18} strokeWidth={2.5} />
-            </button>
-          </div>
+            {activeEntries.length > 0 && (
+              <div className="space-y-4">
+                <div className="glass-panel rounded-[32px] p-4 md:p-6 overflow-hidden shadow-xl animate-fade-in border border-[#0369a1]/5 dark:border-[#38bdf8]/10 bg-white dark:bg-slate-900/60">
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {activeEntries.map((entry) => (
+                      <div 
+                        key={entry.id} 
+                        className="py-6 md:py-8 first:pt-2 last:pb-2 flex flex-col gap-4 w-full"
+                      >
+                        {/* Arabic Text (Centered, large, Adobe Arabic Font) */}
+                        <div 
+                          className="text-right text-3xl md:text-4xl text-slate-900 dark:text-slate-100 leading-[2] md:leading-[2.2] font-normal w-full arabic-text"
+                          dir="rtl"
+                          lang="ar"
+                        >
+                          {normalizeArabicWithAyah(entry.text_ar, entry.ayah)}
+                        </div>
+
+                        {/* Uyghur Text */}
+                        <div 
+                          className="uyghur-text text-base md:text-lg text-slate-700 dark:text-slate-200 leading-relaxed text-right mt-2"
+                          dir="rtl"
+                          lang="ug"
+                        >
+                          {formatQuranAyahUg(entry.text_ug)}
+                        </div>
+
+                        {/* English Text */}
+                        <div 
+                          className="text-left text-sm md:text-base text-slate-500 dark:text-slate-400 leading-relaxed font-sans mt-1"
+                          dir="ltr"
+                          lang="en"
+                        >
+                          {entry.text_en}
+                        </div>
+
+                        {/* Verse Badge / Info */}
+                        <div className="flex justify-between items-center mt-2 pt-3 border-t border-slate-50 dark:border-slate-800">
+                          <span className="text-[11px] md:text-xs text-[#0369a1] dark:text-[#38bdf8] font-semibold bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 px-3 py-1 rounded-full border border-[#0369a1]/20 dark:border-[#38bdf8]/20 shadow-sm whitespace-nowrap self-end uyghur-text">
+                            {t('quran.badgeTemplate', { 
+                              surah: entry.surah, 
+                              surahName: language === 'ug' ? entry.surah_name_ug : entry.surah_name_en, 
+                              ayah: entry.ayah 
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <button
+                onClick={handlePrevClick}
+                disabled={prevDisabled}
+                className="flex-1 flex items-center gap-2 justify-center px-4 py-3 md:py-3.5 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#0369a1] dark:text-[#38bdf8] font-semibold text-sm hover:border-[#0369a1]/30 dark:hover:border-[#38bdf8]/30 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none uyghur-text shadow-sm"
+              >
+                <ChevronRight size={18} strokeWidth={2.5} />
+                <span className="truncate">{prevLabel}</span>
+              </button>
+              <button
+                onClick={handleNextClick}
+                disabled={nextDisabled}
+                className="flex-1 flex items-center gap-2 justify-center px-4 py-3 md:py-3.5 bg-white dark:bg-slate-900 border-2 border-[#0369a1]/10 dark:border-[#38bdf8]/10 rounded-2xl text-[#0369a1] dark:text-[#38bdf8] font-semibold text-sm hover:border-[#0369a1]/30 dark:hover:border-[#38bdf8]/30 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none uyghur-text shadow-sm"
+              >
+                <span className="truncate">{nextLabel}</span>
+                <ChevronLeft size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>

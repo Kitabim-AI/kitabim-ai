@@ -9,14 +9,7 @@ import { cleanShareText } from '../../utils/shareText';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ShareSearchResultModal } from '../share/ShareSearchResultModal';
 
-const normalizeArabic = (text: string): string => {
-  if (!text) return '';
-  return text
-    .replace(/\u06E1/g, '\u0652') // Uthmanic Sukun -> Standard Sukun
-    .replace(/\u0671/g, '\u0627') // Alif Wasla -> Standard Alif
-    .replace(/[\u06D6-\u06DC\u06DF-\u06E0\u06E2-\u06ED]/g, '') // Remove Uthmanic signs that disrupt cursive connections
-    ;
-};
+import { normalizeArabic } from '../../utils/quranUtils';
 
 interface PageItemProps {
   page: any;
@@ -48,7 +41,7 @@ interface PageItemProps {
   onHighlightApplied?: () => void;
 }
 
-export const PageItem: React.FC<PageItemProps> = ({
+export const PageItem: React.FC<PageItemProps> = React.memo(({
   page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc,
   tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick,
   bookId, bookTitle, bookAuthor, highlightQuote, onHighlightApplied,
@@ -60,7 +53,7 @@ export const PageItem: React.FC<PageItemProps> = ({
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [shareState, setShareState] = React.useState<{ content: string; quote?: string } | null>(null);
 
-  const textSelection = useTextSelectionShare(contentRef);
+  const textSelection = useTextSelectionShare(contentRef, isActive);
 
   const adjustHeight = React.useCallback(() => {
     if (!isEditing || !textareaRef.current || !containerRef.current) return;
@@ -239,4 +232,4 @@ export const PageItem: React.FC<PageItemProps> = ({
       )}
     </div>
   );
-};
+});

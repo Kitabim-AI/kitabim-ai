@@ -14,11 +14,17 @@ export interface TextSelectionShare {
  * container).
  */
 export function useTextSelectionShare(
-  containerRef: RefObject<HTMLElement | null>
+  containerRef: RefObject<HTMLElement | null>,
+  enabled: boolean = true
 ): TextSelectionShare | null {
   const [selection, setSelection] = useState<TextSelectionShare | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setSelection(null);
+      return;
+    }
+
     const handleSelectionChange = () => {
       const sel = window.getSelection();
       const container = containerRef.current;
@@ -46,7 +52,7 @@ export function useTextSelectionShare(
 
     document.addEventListener('selectionchange', handleSelectionChange);
     return () => document.removeEventListener('selectionchange', handleSelectionChange);
-  }, [containerRef]);
+  }, [containerRef, enabled]);
 
   return selection;
 }
