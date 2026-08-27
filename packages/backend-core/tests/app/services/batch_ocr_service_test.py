@@ -71,10 +71,13 @@ async def test_submit_batch_ocr_job():
             ]
             == 0
         )
-        assert "inlineData" in request_line["request"]["contents"][0]["parts"][1]
+        assert "inlineData" in request_line["request"]["contents"][0]["parts"][0]
         assert (
-            request_line["request"]["contents"][0]["parts"][1]["inlineData"]["mimeType"]
+            request_line["request"]["contents"][0]["parts"][0]["inlineData"]["mimeType"]
             == "image/jpeg"
+        )
+        assert (
+            request_line["request"]["contents"][0]["parts"][1]["text"] == "Test Prompt"
         )
 
 
@@ -372,8 +375,7 @@ async def test_poll_and_process_batch_ocr_jobs_empty_response_marks_failed():
     jsonl_output = json.dumps(
         {
             "custom_id": "page_401",
-            "response": {"candidates": []},
-            "error": None,
+            "error": {"code": 500, "message": "API processing error"},
         }
     )
 
@@ -402,7 +404,7 @@ async def test_poll_and_process_batch_ocr_jobs_empty_response_marks_failed():
 
         processed_count = await poll_and_process_batch_ocr_jobs(mock_session)
 
-        # The batch job itself completed; the individual empty-response page
+        # The batch job itself completed; the individual error page
         # is marked failed rather than silently succeeding with blank text.
         assert processed_count == 1
         assert mock_job.status == "succeeded"
@@ -432,11 +434,17 @@ async def test_poll_and_process_batch_ocr_jobs_degenerate_response_marks_failed(
     mock_db_result.fetchall.return_value = [(403, 0)]
     mock_session.execute.return_value = mock_db_result
 
+    repetitive_text = "تېكىست " * 100
     jsonl_output = json.dumps(
         {
             "custom_id": "page_403",
             "response": {
-                "candidates": [{"content": {"parts": [{"text": "سۆز " * 100}]}}]
+                "candidates": [
+                    {
+                        "finishReason": "STOP",
+                        "content": {"parts": [{"text": repetitive_text}]},
+                    }
+                ]
             },
             "error": None,
         }
@@ -480,7 +488,7 @@ async def test_poll_and_process_batch_ocr_jobs_degenerate_response_marks_failed(
 
 
 @pytest.mark.asyncio
-async def test_poll_and_process_batch_ocr_jobs_empty_response_exhausted_retries_skips_page():
+async def test_poll_and_process_batch_ocr_jobs_error_response_exhausted_retries_skips_page():
     mock_session = AsyncMock()
     mock_job = MagicMock(spec=BatchOCRJob)
     mock_job.id = "job_444"
@@ -501,8 +509,7 @@ async def test_poll_and_process_batch_ocr_jobs_empty_response_exhausted_retries_
     jsonl_output = json.dumps(
         {
             "custom_id": "page_402",
-            "response": {"candidates": []},
-            "error": None,
+            "error": {"code": 500, "message": "Internal error"},
         }
     )
 

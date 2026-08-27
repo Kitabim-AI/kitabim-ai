@@ -8,7 +8,7 @@ from app.llm.models import GeminiEmbeddings, disabled_thinking_config
     [
         ("gemini-2.0-flash", {"thinking_budget": 0}),
         ("gemini-2.5-flash", {"thinking_budget": 0}),
-        ("gemini-3.7-flash", {"thinking_budget": 0}),
+        ("gemini-3.7-flash", {"thinking_level": "MEDIUM"}),
         ("gemini-3.5-flash", {"thinking_budget": 0}),
         ("gemini-3.6-flash", {"thinking_level": "LOW"}),
         ("gemini-3.1-pro-preview", {"thinking_level": "LOW"}),
@@ -283,8 +283,8 @@ async def test_generate_text_with_image_timeout_propagation(
     assert "config" in kwargs
     config = kwargs["config"]
     assert config.http_options.timeout == 150000
-    assert config.system_instruction == "prompt"
-    assert "prompt" not in kwargs["contents"]
+    assert config.system_instruction is None
+    assert "prompt" in kwargs["contents"]
     assert config.thinking_config.thinking_budget == 0
 
 
@@ -352,8 +352,8 @@ async def test_generate_text_with_image_timeout_fallback(
     assert "config" in kwargs
     config = kwargs["config"]
     assert config.http_options.timeout == 180000
-    assert config.system_instruction == "prompt"
-    assert "prompt" not in kwargs["contents"]
+    assert config.system_instruction is None
+    assert "prompt" in kwargs["contents"]
 
 
 @pytest.mark.asyncio

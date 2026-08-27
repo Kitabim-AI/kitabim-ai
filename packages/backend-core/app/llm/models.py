@@ -351,15 +351,13 @@ _MODEL_MAJOR_VERSION_RE = re.compile(r"gemini-(\d+)")
 
 def disabled_thinking_config(model_name: str) -> dict:
     """
-    OCR is pure transcription, not a reasoning task — without disabling
-    "thinking", the model can burn its entire output budget on hidden
-    thinking and return finishReason=STOP with zero actual output tokens
-    (silent, no error surfaced).
-    Most models (including gemini-3.7-flash, gemini-3.5-flash, gemini-2.5-flash)
-    disable thinking via thinking_budget=0. Thinking-only models (like
-    gemini-3.1-pro or gemini-3.6-flash) require thinking_level='LOW'.
-    Note: 'MINIMAL' is not supported by Google Gemini API and causes INVALID_ARGUMENT.
+    Configure thinking settings for OCR based on model capabilities.
+    gemini-3.7-flash performs best with thinking_level='MEDIUM' (matching AI Studio),
+    which avoids upstream BlockedReason.OTHER safety misclassifications on Uyghur texts.
+    Older thinking-capable models (like 3.1 or 3.6) use 'LOW', while others use budget=0.
     """
+    if "3.7" in model_name:
+        return {"thinking_level": "MEDIUM"}
     if "3.1" in model_name or "3.6" in model_name:
         return {"thinking_level": "LOW"}
     return {"thinking_budget": 0}
@@ -377,9 +375,30 @@ async def generate_text_with_image(
     image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
     config = types.GenerateContentConfig(
         temperature=0.0,
-        system_instruction=prompt,
         thinking_config=types.ThinkingConfig(**disabled_thinking_config(model)),
         max_output_tokens=settings.ocr_max_output_tokens,
+        safety_settings=[
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                threshold=types.HarmBlockThreshold.BLOCK_NONE,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold=types.HarmBlockThreshold.BLOCK_NONE,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                threshold=types.HarmBlockThreshold.BLOCK_NONE,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold=types.HarmBlockThreshold.BLOCK_NONE,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+                threshold=types.HarmBlockThreshold.BLOCK_NONE,
+            ),
+        ],
     )
     effective_timeout = timeout or await get_system_config_timeout(
         "ocr_gemini_timeout", _OCR_INVOKE_TIMEOUT
@@ -390,7 +409,7 @@ async def generate_text_with_image(
     async def _call():
         response = await client.aio.models.generate_content(
             model=model,
-            contents=[image_part],
+            contents=[image_part, prompt],
             config=config,
         )
         return response.text or ""

@@ -86,7 +86,6 @@ async def submit_batch_ocr_job(
             "custom_id": f"page_{page.id}",
             "key": f"page_{page.id}",
             "request": {
-                "systemInstruction": {"parts": [{"text": prompt}]},
                 "contents": [
                     {
                         "role": "user",
@@ -97,6 +96,7 @@ async def submit_batch_ocr_job(
                                     "data": base64_img,
                                 }
                             },
+                            {"text": prompt},
                         ],
                     }
                 ],
@@ -534,6 +534,7 @@ async def _ingest_batch_ocr_results(
                 )
                 if skipped:
                     succeeded_pages += 1
+                continue
             else:
                 prompt_feedback = response.get("promptFeedback") or {}
                 block_reason = prompt_feedback.get("blockReason")
