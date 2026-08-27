@@ -282,8 +282,39 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     }
   }, [editingPageNum, scrollParentRef, onPageChange]);
 
-  const allPageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+  const allPageNumbers = React.useMemo(() => Array.from({ length: totalPages }, (_, i) => i + 1), [totalPages]);
   const pageNumbersToRender = isEditingAny ? [editingPageNum] : allPageNumbers;
+
+  const handlePageSetActive = useCallback(() => { }, []);
+
+  const handlePageEdit = useCallback((pageNum: number, text: string) => {
+    onEdit?.(pageNum, text);
+  }, [onEdit]);
+
+  const handlePageReprocess = useCallback((pageNum: number) => {
+    onReprocess?.(pageNum);
+  }, [onReprocess]);
+
+  const handlePageSetStartPage = useCallback((pageNum: number) => {
+    onSetStartPage?.(pageNum);
+  }, [onSetStartPage]);
+
+  const handlePageToggleToc = useCallback((pageNum: number, nextIsToc: boolean) => {
+    onToggleToc?.(pageNum, nextIsToc);
+  }, [onToggleToc]);
+
+  const handlePageSave = useCallback((pageNum: number, text: string) => {
+    setPages(prev => {
+      const existing = prev.get(pageNum);
+      if (!existing) return prev;
+      return new Map(prev).set(pageNum, { ...existing, text });
+    });
+    onSave?.(pageNum, text);
+  }, [onSave]);
+
+  const handlePageCancel = useCallback(() => {
+    onCancel?.();
+  }, [onCancel]);
 
   return (
     <div
@@ -320,21 +351,15 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   bookAuthor={bookAuthor}
                   highlightQuote={pageNum === currentCenterPage ? (pendingQuoteHighlight ?? undefined) : undefined}
                   onHighlightApplied={onQuoteHighlightApplied}
-                  onSetActive={() => { }}
-                  onEdit={() => onEdit?.(pageNum, page.text || '')}
-                  onReprocess={() => onReprocess?.(pageNum)}
-                  onSetStartPage={() => onSetStartPage?.(pageNum)}
-                  onToggleToc={(nextIsToc) => onToggleToc?.(pageNum, nextIsToc)}
+                  onSetActive={handlePageSetActive}
+                  onEdit={() => handlePageEdit(pageNum, page.text || '')}
+                  onReprocess={() => handlePageReprocess(pageNum)}
+                  onSetStartPage={onSetStartPage ? () => handlePageSetStartPage(pageNum) : undefined}
+                  onToggleToc={onToggleToc ? (nextIsToc) => handlePageToggleToc(pageNum, nextIsToc) : undefined}
                   tempText={isEditingThisPage ? tempPageText : ''}
-                  onTempTextChange={(text) => onTempTextChange?.(text)}
-                  onSave={() => {
-                    setPages(prev => {
-                      const existing = prev.get(pageNum) || page;
-                      return new Map(prev).set(pageNum, { ...existing, text: tempPageText });
-                    });
-                    onSave?.(pageNum, tempPageText);
-                  }}
-                  onCancel={() => onCancel?.()}
+                  onTempTextChange={onTempTextChange}
+                  onSave={() => handlePageSave(pageNum, tempPageText)}
+                  onCancel={handlePageCancel}
                   isLoading={page.status === 'processing' || page.status === 'indexing'}
                   isSaving={isSaving}
                   isFullscreen={isFullscreen}
@@ -342,9 +367,11 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   onTocPageClick={onTocPageClick}
                 />
               ) : (
-                <div className="flex flex-col items-center justify-center min-h-[400px] bg-white/30 rounded-[32px] border border-dashed border-[#0369a1]/10 animate-pulse">
-                  <Loader2 className="animate-spin text-[#0369a1]/20 mb-4" size={32} />
-                  <p className="text-[10px] text-slate-300 font-black uppercase tracking-[0.2em]">
+                <div className="flex flex-col items-center justify-center min-h-[400px] bg-white/30 dark:bg-slate-900/30 rounded-[32px] border border-dashed border-[#0369a1]/10 dark:border-[#38bdf8]/10">
+                  <div className="w-8 h-8 rounded-full border border-[#0369a1]/15 dark:border-[#38bdf8]/15 mb-3 flex items-center justify-center">
+                    <span className="text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500">{pageNum}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-[0.2em]">
                     {t('admin.table.loading')} {pageNum}
                   </p>
                 </div>

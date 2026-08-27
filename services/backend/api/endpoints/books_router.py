@@ -2087,13 +2087,22 @@ async def retry_failed_pages(
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
     # Reset any milestone that is in 'failed' state back to 'idle'
-    # This allows the scanners to pick up where they left off.
+    # Also reset pages that were skipped during OCR after exhausting retries (succeeded with empty text and an error).
+    failed_ocr_condition = or_(
+        Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES),
+        and_(
+            Page.ocr_milestone == PAGE_MILESTONE_SUCCEEDED,
+            func.coalesce(Page.text, "") == "",
+            Page.error.isnot(None),
+        ),
+    )
+
     result = await session.execute(
         update(Page)
         .where(
             Page.book_id == book_id,
             or_(
-                Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES),
+                failed_ocr_condition,
                 Page.chunking_milestone.in_(FAILED_PAGE_MILESTONES),
                 Page.embedding_milestone.in_(FAILED_PAGE_MILESTONES),
                 Page.spell_check_milestone.in_(FAILED_PAGE_MILESTONES),
@@ -2102,7 +2111,7 @@ async def retry_failed_pages(
         .values(
             ocr_milestone=case(
                 (
-                    Page.ocr_milestone.in_(FAILED_PAGE_MILESTONES),
+                    failed_ocr_condition,
                     text(f"'{PAGE_MILESTONE_IDLE}'"),
                 ),
                 else_=Page.ocr_milestone,
@@ -2128,6 +2137,7 @@ async def retry_failed_pages(
                 ),
                 else_=Page.spell_check_milestone,
             ),
+            error=None,
             retry_count=0,  # Reset retries for manual intervention
             last_updated=datetime.now(timezone.utc),
             updated_by=current_user.email,
@@ -2137,6 +2147,9 @@ async def retry_failed_pages(
     reset_count = len(result.fetchall())
 
     if reset_count > 0:
+        from app.services.book_milestone_service import BookMilestoneService
+
+        await BookMilestoneService.update_book_milestones(session, book_id)
         await books_repo.update_one(
             book_id,
             status="pending",

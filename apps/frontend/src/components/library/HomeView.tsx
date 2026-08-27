@@ -72,6 +72,7 @@ export const HomeView: React.FC = () => {
     setSelectedCategory,
     bookActions,
     loaderRef,
+    view,
     setView,
     chat,
     loadMoreShelf,
@@ -524,6 +525,7 @@ export const HomeView: React.FC = () => {
         {!hasSearch && (
           <QuestionRotator
             className="mt-8 sm:mt-10"
+            isActive={view === 'home'}
             onQuestionClick={(q) => {
               chat.setChatInput(q);
               setView('global-chat');

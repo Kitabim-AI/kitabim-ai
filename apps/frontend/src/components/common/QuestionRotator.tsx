@@ -5,12 +5,14 @@ import { PersistenceService } from '../../services/persistenceService';
 interface QuestionRotatorProps {
   className?: string;
   intervalMs?: number;
+  isActive?: boolean;
   onQuestionClick?: (question: string) => void;
 }
 
 export const QuestionRotator: React.FC<QuestionRotatorProps> = ({
   className = '',
   intervalMs = 3500,
+  isActive = true,
   onQuestionClick,
 }) => {
   const { t } = useI18n();
@@ -25,8 +27,9 @@ export const QuestionRotator: React.FC<QuestionRotatorProps> = ({
   }, []);
 
   useEffect(() => {
-    if (questions.length < 2) return;
+    if (!isActive || questions.length < 2) return;
     const timer = setInterval(() => {
+      if (document.hidden) return;
       setVisible(false);
       setTimeout(() => {
         setCurrent(prev => (prev + 1) % questions.length);
@@ -34,7 +37,7 @@ export const QuestionRotator: React.FC<QuestionRotatorProps> = ({
       }, 400);
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [questions, intervalMs]);
+  }, [questions, intervalMs, isActive]);
 
   const question = questions[current];
   if (!question) return null;
