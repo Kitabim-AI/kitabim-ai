@@ -299,7 +299,19 @@ def assemble_toc_columns(
         full_title = " ".join(title_words).strip()
         # Clean noise artifacts
         full_title = re.sub(r"[\|\.·\-_…]{2,}", " ", full_title)
+        full_title = re.sub(r"[0oO٥ا]{4,}", " ", full_title)
         full_title = re.sub(r"\s+", " ", full_title).strip()
+
+        # If introduction (مۇقەددىمە) is joined with chapter 1 in first row, split them
+        intro_split_match = re.match(
+            r"^(.*?مۇقەددىمە.*?)\s+((?:بىرىنچى|1-)\s*(?:باب)?.*)$", full_title
+        )
+        if intro_split_match and idx == 0 and num > 1:
+            intro_title = intro_split_match.group(1).strip()
+            ch1_title = intro_split_match.group(2).strip()
+            toc_rows.append(f"| 1 | {intro_title} |")
+            toc_rows.append(f"| {num_str} | {ch1_title} |")
+            continue
 
         if full_title:
             toc_rows.append(f"| {num_str} | {full_title} |")
