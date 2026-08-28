@@ -245,8 +245,11 @@ def assemble_toc_columns(
         min_x, max_x, min_y, max_y, cx, cy = _get_box_geometry(bbox)
 
         # Check if left-column numeric page reference
-        if re.match(r"^\d{1,4}$", clean_text) and cx < (page_width * 0.30):
-            page_num_boxes.append((int(clean_text), cy, bbox, clean_text))
+        if cx < (page_width * 0.22):
+            if re.match(r"^\d{1,4}$", clean_text):
+                page_num_boxes.append((int(clean_text), cy, bbox, clean_text))
+            # Ignore non-digit noise in the page number margin
+            continue
         else:
             word_boxes.append(
                 (cy, cx, min_y, max_y, min_x, max_x, bbox, clean_text, conf)
