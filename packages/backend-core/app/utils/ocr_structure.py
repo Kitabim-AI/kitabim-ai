@@ -259,6 +259,10 @@ def assemble_toc_columns(
     page_num_boxes.sort(key=lambda it: it[1])
     page_nums = [it[3] for it in page_num_boxes]
 
+    # Prepend 1 if intro chapter page number was faint/omitted
+    if page_nums and int(page_nums[0]) > 10:
+        page_nums.insert(0, "1")
+
     # Spatial line clustering with fixed reference center (prevents centroid drift)
     word_boxes.sort(key=lambda b: b[0])
     spatial_lines: List[dict] = []
