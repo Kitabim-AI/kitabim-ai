@@ -149,8 +149,7 @@ async def ocr_page_with_easyocr(
             )
 
             # Apply autocorrect
-            if correction_pairs:
-                markdown = apply_auto_corrections(markdown, correction_pairs)
+            markdown = apply_auto_corrections(markdown, correction_pairs)
 
             return markdown
 
