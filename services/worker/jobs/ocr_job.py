@@ -19,8 +19,12 @@ from app.db import session as db_session
 from app.db.models import Book, Page, PipelineEvent
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.repositories.pages_repository import PagesRepository
+from app.db.repositories.auto_correct_rules_repository import (
+    AutoCorrectRulesRepository,
+)
 from app.services.batch_ocr_service import submit_batch_ocr_job
 from app.services.ocr_service import ocr_page_with_gemini
+from app.services.easyocr_service import ocr_page_with_easyocr
 from app.utils.text import is_toc_page
 from app.services.storage_service import storage
 from app.services.book_milestone_service import BookMilestoneService
@@ -72,27 +76,58 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
         # Fetch OCR settings from system_configs
         async with db_session.async_session_factory() as session:
             config_repo = SystemConfigsRepository(session)
-            gemini_ocr_model = await config_repo.get_value("ocr_gemini_model")
-            if not gemini_ocr_model:
-                raise RuntimeError("system_config 'ocr_gemini_model' is not set")
-            max_parallel_pages = int(
-                await config_repo.get_value("ocr_max_parallel_pages", "4")
-            )
-            gemini_ocr_timeout_str = await config_repo.get_value("ocr_gemini_timeout")
-            gemini_ocr_timeout = (
-                float(gemini_ocr_timeout_str) if gemini_ocr_timeout_str else None
-            )
+            ocr_engine = (await config_repo.get_value("ocr_engine", "easyocr")).lower()
             ocr_max_retry_count_str = await config_repo.get_value(
                 "ocr_max_retry_count", "3"
             )
             ocr_max_retry_count = int(ocr_max_retry_count_str)
-            batch_ocr_enabled_str = await config_repo.get_value(
-                "ocr_batch_enabled", "false"
-            )
-            batch_ocr_enabled = batch_ocr_enabled_str.lower() in ("true", "1", "yes")
-            batch_ocr_batch_size = int(
-                await config_repo.get_value("ocr_batch_size_per_job", "50")
-            )
+
+            if ocr_engine == "easyocr":
+                max_parallel_pages = int(
+                    await config_repo.get_value("ocr_easyocr_max_parallel_pages", "1")
+                )
+                easyocr_hf_band = float(
+                    await config_repo.get_value(
+                        "ocr_easyocr_header_footer_band_pct", "0.08"
+                    )
+                )
+                easyocr_heading_ratio = float(
+                    await config_repo.get_value("ocr_easyocr_heading_size_ratio", "1.3")
+                )
+                easyocr_min_conf = float(
+                    await config_repo.get_value("ocr_easyocr_min_confidence", "0.3")
+                )
+                easyocr_timeout_str = await config_repo.get_value("ocr_easyocr_timeout")
+                easyocr_timeout = (
+                    float(easyocr_timeout_str) if easyocr_timeout_str else None
+                )
+                batch_ocr_enabled = False
+                gemini_ocr_model = ""
+                gemini_ocr_timeout = None
+            else:
+                gemini_ocr_model = await config_repo.get_value("ocr_gemini_model")
+                if not gemini_ocr_model:
+                    raise RuntimeError("system_config 'ocr_gemini_model' is not set")
+                max_parallel_pages = int(
+                    await config_repo.get_value("ocr_max_parallel_pages", "4")
+                )
+                gemini_ocr_timeout_str = await config_repo.get_value(
+                    "ocr_gemini_timeout"
+                )
+                gemini_ocr_timeout = (
+                    float(gemini_ocr_timeout_str) if gemini_ocr_timeout_str else None
+                )
+                batch_ocr_enabled_str = await config_repo.get_value(
+                    "ocr_batch_enabled", "false"
+                )
+                batch_ocr_enabled = batch_ocr_enabled_str.lower() in (
+                    "true",
+                    "1",
+                    "yes",
+                )
+                batch_ocr_batch_size = int(
+                    await config_repo.get_value("ocr_batch_size_per_job", "50")
+                )
 
         # Mark book's active step
         async with db_session.async_session_factory() as session:
@@ -245,9 +280,23 @@ async def ocr_job(ctx, book_id: str, page_ids: List[int]) -> None:
                 start_time = time.perf_counter()
                 try:
                     fitz_page = doc.load_page(page.page_number - 1)  # fitz is 0-indexed
-                    text = await ocr_page_with_gemini(
-                        fitz_page, gemini_ocr_model, timeout=gemini_ocr_timeout
-                    )
+                    if ocr_engine == "easyocr":
+                        async with db_session.async_session_factory() as session:
+                            correction_pairs = await AutoCorrectRulesRepository(
+                                session
+                            ).get_active_pairs()
+                        text = await ocr_page_with_easyocr(
+                            fitz_page,
+                            timeout=easyocr_timeout,
+                            min_confidence=easyocr_min_conf,
+                            header_footer_band_pct=easyocr_hf_band,
+                            heading_size_ratio=easyocr_heading_ratio,
+                            correction_pairs=correction_pairs,
+                        )
+                    else:
+                        text = await ocr_page_with_gemini(
+                            fitz_page, gemini_ocr_model, timeout=gemini_ocr_timeout
+                        )
                     is_toc = is_toc_page(text)
                     duration_ms = int((time.perf_counter() - start_time) * 1000)
 

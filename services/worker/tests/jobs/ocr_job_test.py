@@ -6,6 +6,7 @@ import pathlib
 
 
 BASE_CONFIG = {
+    "ocr_engine": "gemini",
     "ocr_gemini_model": "gemini-2.0-flash",
     "ocr_max_parallel_pages": "4",
     "ocr_gemini_timeout": "30",
@@ -87,6 +88,7 @@ async def test_ocr_job_success():
 
         # Mock Configs
         mock_get_value.side_effect = lambda key, default=None: {
+            "ocr_engine": "gemini",
             "ocr_gemini_model": "gemini-2.0-flash",
             "ocr_max_parallel_pages": "4",
             "ocr_gemini_timeout": "30",
@@ -500,3 +502,103 @@ async def test_ocr_job_batch_mode_submission_error_marks_pages_failed():
 
         mock_update_milestone.assert_called_once_with(mock_session, book_id, "ocr")
         mock_doc.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ocr_job_easyocr_success():
+    ctx = {"redis": AsyncMock(), "worker_id": "test_worker"}
+    book_id = "test-book"
+    page_ids = [101]
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock()
+    mock_session.commit = AsyncMock()
+    mock_session.add = MagicMock()
+
+    mock_page = MagicMock(spec=Page)
+    mock_page.id = 101
+    mock_page.book_id = book_id
+    mock_page.page_number = 1
+    mock_page.retry_count = 0
+
+    mock_result_book = MagicMock()
+    mock_result_book.scalar_one_or_none.return_value = MagicMock(
+        spec=Book, file_name="test-book.pdf", title="Test Book"
+    )
+
+    mock_result_page = MagicMock()
+    mock_result_page.scalars().all.return_value = [mock_page]
+
+    async def mock_execute(stmt, *args, **kwargs):
+        stmt_str = str(stmt).lower()
+        if "from books" in stmt_str:
+            return mock_result_book
+        elif "from pages" in stmt_str:
+            return mock_result_page
+        else:
+            return MagicMock()
+
+    mock_session.execute.side_effect = mock_execute
+
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.jobs.ocr_job.SystemConfigsRepository.get_value",
+            new_callable=AsyncMock,
+        ) as mock_get_value,
+        patch(
+            "services.worker.jobs.ocr_job.AutoCorrectRulesRepository.get_active_pairs",
+            new_callable=AsyncMock,
+            return_value=[("wrong", "correct")],
+        ),
+        patch("app.utils.redis_lock.MultiPageLock") as mock_lock_cls,
+        patch("services.worker.jobs.ocr_job.fitz.open") as mock_fitz_open,
+        patch("services.worker.jobs.ocr_job.settings") as mock_settings,
+        patch("services.worker.jobs.ocr_job.storage") as mock_storage,
+        patch(
+            "services.worker.jobs.ocr_job.ocr_page_with_easyocr", new_callable=AsyncMock
+        ) as mock_ocr_easyocr,
+        patch(
+            "services.worker.jobs.ocr_job.BookMilestoneService.update_book_milestone_for_step",
+            new_callable=AsyncMock,
+        ),
+    ):
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+        mock_lock = AsyncMock()
+        mock_lock.__aenter__.return_value = page_ids
+        mock_lock_cls.return_value = mock_lock
+
+        mock_settings.uploads_dir = pathlib.Path("/tmp/uploads")
+        mock_storage.download_file = AsyncMock()
+
+        mock_get_value.side_effect = lambda key, default=None: {
+            "ocr_engine": "easyocr",
+            "ocr_easyocr_max_parallel_pages": "1",
+            "ocr_easyocr_header_footer_band_pct": "0.08",
+            "ocr_easyocr_heading_size_ratio": "1.3",
+            "ocr_easyocr_min_confidence": "0.3",
+            "ocr_max_retry_count": "3",
+        }.get(key, default)
+
+        mock_doc = MagicMock()
+        mock_fitz_open.return_value = mock_doc
+        mock_ocr_easyocr.return_value = "EasyOCR Text"
+
+        await ocr_job(ctx, book_id, page_ids)
+
+        mock_ocr_easyocr.assert_called_once()
+        mock_session.commit.assert_called()
+
+        found_success_update = False
+        for call in mock_session.execute.call_args_list:
+            stmt = call[0][0]
+            stmt_str = str(stmt).lower()
+            if "update" in stmt_str and "page" in stmt_str:
+                params = stmt.compile().params
+                if (
+                    params.get("ocr_milestone") == "succeeded"
+                    and params.get("text") == "EasyOCR Text"
+                ):
+                    found_success_update = True
+        assert found_success_update
