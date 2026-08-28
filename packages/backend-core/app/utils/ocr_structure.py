@@ -150,15 +150,10 @@ def detect_headings(
 def format_toc_lines(lines: List[str]) -> List[str]:
     """
     Convert TOC lines into '| page | title |' markdown table rows.
-    Handles dot leaders, trailing page numbers in RTL, and standalone heading titles.
+    Extracts numeric page numbers and cleans title text.
     """
     formatted: List[str] = []
-    toc_row_pattern = re.compile(
-        r"^(.*?)\s*(?:[\.·\-_…]{2,}|\s{2,}|\s+)\s*(\d{1,4})\s*$"
-    )
-    reverse_toc_row_pattern = re.compile(
-        r"^\s*(\d{1,4})\s*(?:[\.·\-_…]{2,}|\s{2,}|\s+)\s*(.*?)$"
-    )
+    page_num_extractor = re.compile(r"\b(\d{1,4})\b")
 
     for line in lines:
         clean_line = line.strip()
@@ -170,24 +165,18 @@ def format_toc_lines(lines: List[str]) -> List[str]:
             formatted.append("# مۇندەرىجە")
             continue
 
-        # Check title ... page_num
-        m = toc_row_pattern.match(clean_line)
-        if m and m.group(1).strip() and not m.group(1).strip().isdigit():
-            title = m.group(1).strip()
-            page_num = m.group(2).strip()
-            # Clean dot artifacts from title
-            title = re.sub(r"[\.·\-_…]{2,}", "", title).strip()
-            formatted.append(f"| {page_num} | {title} |")
-            continue
-
-        # Check page_num ... title
-        m2 = reverse_toc_row_pattern.match(clean_line)
-        if m2 and m2.group(2).strip() and not m2.group(2).strip().isdigit():
-            page_num = m2.group(1).strip()
-            title = m2.group(2).strip()
-            title = re.sub(r"[\.·\-_…]{2,}", "", title).strip()
-            formatted.append(f"| {page_num} | {title} |")
-            continue
+        # Extract numeric page number from anywhere in the TOC line
+        num_matches = page_num_extractor.findall(clean_line)
+        if num_matches:
+            page_num = num_matches[-1]  # Take the target page number
+            # Remove the page number and dot/pipe artifacts to form the title
+            title = page_num_extractor.sub("", clean_line)
+            title = re.sub(r"[\|\.·\-_…]{2,}", " ", title)
+            title = re.sub(r"\|", " ", title)
+            title = re.sub(r"\s+", " ", title).strip()
+            if title:
+                formatted.append(f"| {page_num} | {title} |")
+                continue
 
         formatted.append(clean_line)
 
