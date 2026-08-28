@@ -63,6 +63,31 @@ async def seed_system_configs(session: AsyncSession):
 
     defaults = [
         {
+            "key": "ocr_engine",
+            "value": "easyocr",
+            "description": "Active OCR engine ('easyocr' or 'gemini'). Set to 'easyocr' for self-hosted offline OCR, or 'gemini' for Gemini Vision.",
+        },
+        {
+            "key": "ocr_easyocr_max_parallel_pages",
+            "value": "1",
+            "description": "Maximum number of pages to OCR concurrently per worker process when using EasyOCR.",
+        },
+        {
+            "key": "ocr_easyocr_header_footer_band_pct",
+            "value": "0.08",
+            "description": "Top/bottom margin ratio for header and footer exclusion in EasyOCR.",
+        },
+        {
+            "key": "ocr_easyocr_heading_size_ratio",
+            "value": "1.3",
+            "description": "Bbox height multiplier threshold to detect headings in EasyOCR.",
+        },
+        {
+            "key": "ocr_easyocr_min_confidence",
+            "value": "0.3",
+            "description": "Minimum mean confidence threshold for EasyOCR pages before retry.",
+        },
+        {
             "key": "ocr_max_retry_count",
             "value": "10",
             "description": "Maximum number of OCR retry attempts per page before marking it as error/skipped.",
