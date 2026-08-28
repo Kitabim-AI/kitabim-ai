@@ -35,6 +35,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
+# Pre-download EasyOCR Uyghur model weights so worker runs completely offline
+RUN python -c "import easyocr; easyocr.Reader(['ug'], gpu=False)"
+
 # Copy shared backend-core package
 COPY packages/backend-core /app/packages/backend-core
 

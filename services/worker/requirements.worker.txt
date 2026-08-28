@@ -1,2 +1,5 @@
-# Worker-specific dependencies (currently none required beyond backend packages)
-
+# Worker-specific dependencies
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.6.0+cpu
+torchvision==0.21.0+cpu
+easyocr==1.7.2
