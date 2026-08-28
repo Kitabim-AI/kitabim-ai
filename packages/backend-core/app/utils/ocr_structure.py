@@ -216,6 +216,99 @@ def clean_ocr_artifacts(text: str) -> str:
     return "\n".join(cleaned_lines)
 
 
+def assemble_toc_columns(
+    detections: List[DetectionBox],
+    page_width: float,
+    page_height: float,
+) -> List[str]:
+    """
+    Reconstruct Table of Contents using 2-column spatial interval matching:
+    - Left Column (x < 0.30 * W): Monotonic list of page numbers.
+    - Right Column (x >= 0.15 * W): Chapter titles associated with each page number's vertical band.
+    """
+    page_num_boxes = []
+    title_boxes = []
+
+    for d in detections:
+        bbox, text, conf = d
+        clean_text = text.strip()
+
+        if clean_text == "مۇندەرىجە":
+            continue
+
+        # Ignore low-confidence dot noise artifacts
+        if re.match(r"^[وو٥0\.\s·…_-]+$", clean_text) and conf < 0.35:
+            continue
+
+        min_x, max_x, min_y, max_y, cx, cy = _get_box_geometry(bbox)
+
+        # Check if left-column numeric page reference
+        if re.match(r"^\d{1,4}$", clean_text) and cx < (page_width * 0.30):
+            page_num_boxes.append((int(clean_text), cy, bbox, clean_text))
+        else:
+            title_boxes.append((cy, bbox, clean_text, conf))
+
+    if not page_num_boxes:
+        return []
+
+    # Sort page numbers top-to-bottom
+    page_num_boxes.sort(key=lambda it: it[1])
+
+    toc_rows = ["# مۇندەرىجە"]
+    prev_y = 0.0
+
+    for idx, (num, cy, bbox, num_str) in enumerate(page_num_boxes):
+        if idx < len(page_num_boxes) - 1:
+            next_cy = page_num_boxes[idx + 1][1]
+            cutoff_y = cy + (next_cy - cy) * 0.45
+        else:
+            cutoff_y = page_height
+
+        # Claim all title boxes in this vertical band
+        matched_boxes = [b for b in title_boxes if prev_y <= b[0] < cutoff_y]
+        prev_y = cutoff_y
+
+        # Cluster matched title boxes into horizontal sub-lines
+        matched_boxes.sort(key=lambda b: _get_box_geometry(b[1])[5])
+        sublines = []
+        for b in matched_boxes:
+            b_cy = _get_box_geometry(b[1])[5]
+            b_h = _get_box_geometry(b[1])[3] - _get_box_geometry(b[1])[2]
+            matched_sub = False
+            for s in sublines:
+                if abs(b_cy - s["cy"]) <= max(8.0, b_h * 0.35):
+                    s["boxes"].append(b)
+                    matched_sub = True
+                    break
+            if not matched_sub:
+                sublines.append({"cy": b_cy, "boxes": [b]})
+
+        # Sort sub-lines top to bottom
+        sublines.sort(key=lambda s: s["cy"])
+
+        # Within each sub-line, sort RTL
+        title_words = []
+        for s in sublines:
+            s_boxes = sorted(
+                s["boxes"], key=lambda b: _get_box_geometry(b[1])[4], reverse=True
+            )
+            subline_text = " ".join(b[2] for b in s_boxes if b[2])
+            if subline_text:
+                title_words.append(subline_text)
+
+        full_title = " ".join(title_words).strip()
+        # Clean noise artifacts
+        full_title = re.sub(r"[\|\.·\-_…]{2,}", " ", full_title)
+        full_title = re.sub(r"\s+", " ", full_title).strip()
+
+        if full_title:
+            toc_rows.append(f"| {num_str} | {full_title} |")
+        else:
+            toc_rows.append(f"| {num_str} |")
+
+    return toc_rows
+
+
 def assemble_page_markdown(
     detections: List[DetectionBox],
     page_width: float,
@@ -232,6 +325,21 @@ def assemble_page_markdown(
     )
     if not body_detections:
         return ""
+
+    # Check if this page is a Table of Contents (by title or multiple left-column page numbers)
+    has_toc_title = any(re.search(r"مۇندەرىجە", d[1]) for d in detections)
+    num_digits = sum(
+        1
+        for d in detections
+        if re.match(r"^\d{1,4}$", d[1].strip())
+        and _get_box_geometry(d[0])[4] < (page_width * 0.30)
+    )
+
+    if has_toc_title or num_digits >= 4:
+        toc_lines = assemble_toc_columns(body_detections, page_width, page_height)
+        if toc_lines:
+            raw_text = "\n".join(toc_lines)
+            return clean_ocr_artifacts(raw_text)
 
     lines = cluster_lines(body_detections)
     detected_lines = detect_headings(lines, heading_size_ratio, page_width)

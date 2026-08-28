@@ -1,20 +1,46 @@
 from __future__ import annotations
 
 import re
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 
-def apply_auto_corrections(text: str, pairs: List[Tuple[str, str]]) -> str:
+COMMON_OCR_CORRECTIONS: List[Tuple[str, str]] = [
+    ("تۆز تىنچى", "تۆتىنچى"),
+    ("تۆزتىنچى", "تۆتىنچى"),
+    ("تۆتىنچاق", "تۆتىنچى"),
+    ("سەككىزد ىنچى", "سەككىزىنچى"),
+    ("سەككىزدىنچى", "سەككىزىنچى"),
+    ("سەككىزد", "سەككىزىنچى"),
+    ("رسەججاد ۇ", "سەجادە"),
+    ("رسەججادۇ", "سەجادە"),
+    ("سەججادۇ", "سەجادە"),
+    ("گېز ەندىلەر", "گېزىندىلەر"),
+    ("گېزەندىلەر", "گېزىندىلەر"),
+    ("چۈز وشكەن", "چۈشكەن"),
+    ("چۈزوشكەن", "چۈشكەن"),
+    ("چۈز", "چۈشكەن"),
+    ("وشكەن", "چۈشكەن"),
+    ("قو وغلىنىش", "قوغلىنىش"),
+]
+
+
+def apply_auto_corrections(
+    text: str, pairs: Optional[List[Tuple[str, str]]] = None
+) -> str:
     """
     Apply word-level auto-correction pairs to transcribed Uyghur text.
     Uses regex boundaries that respect Uyghur Arabic script characters.
     """
-    if not text or not pairs:
-        return text
+    if not text:
+        return ""
+
+    all_pairs = list(COMMON_OCR_CORRECTIONS)
+    if pairs:
+        all_pairs.extend(pairs)
 
     valid_pairs = [
         (wrong.strip(), correct.strip())
-        for wrong, correct in pairs
+        for wrong, correct in all_pairs
         if wrong.strip() and wrong.strip() != correct.strip()
     ]
     if not valid_pairs:

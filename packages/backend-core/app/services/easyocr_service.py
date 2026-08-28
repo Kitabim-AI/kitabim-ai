@@ -67,7 +67,15 @@ def _preprocess_image(image_bytes: bytes, contrast_factor: float = 1.0) -> bytes
 
 
 def _sync_readtext(reader, img_bytes: bytes) -> list:
-    return reader.readtext(img_bytes)
+    return reader.readtext(
+        img_bytes,
+        text_threshold=0.45,
+        link_threshold=0.3,
+        low_text=0.3,
+        contrast_ths=0.1,
+        adjust_contrast=0.7,
+        width_ths=0.7,
+    )
 
 
 async def ocr_page_with_easyocr(
