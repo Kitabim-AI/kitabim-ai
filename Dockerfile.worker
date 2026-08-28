@@ -18,6 +18,10 @@ COPY services/backend/requirements.txt .
 COPY services/backend/requirements.postgres.txt .
 COPY services/worker/requirements.worker.txt .
 
+# Install PyTorch CPU first from official index so no CUDA packages are pulled
+RUN --mount=type=cache,target=/root/.cache/pip \
+  pip install --user --index-url https://download.pytorch.org/whl/cpu torch torchvision
+
 RUN --mount=type=cache,target=/root/.cache/pip \
   pip install --user -r requirements.txt -r requirements.postgres.txt -r requirements.worker.txt
 
