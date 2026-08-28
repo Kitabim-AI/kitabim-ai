@@ -54,8 +54,7 @@ def clean_uyghur_text(text: str) -> str:
     text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
 
     # 3. Join words split by hyphen/dash at line endings (standardizing line breaks)
-    text = re.sub(r"(\w)[-—–_]\s*\n\s*(\w)", r"\1\2", text)
-    text = re.sub(r"(\w)[-—–_]\s*\n\s*", r"\1", text)
+    text = re.sub(r"(?<![|#])(\w)[-—–_]\s*\n\s*([^\s|#\d\n])", r"\1\2", text)
     text = re.sub(r"ـ+\s*\n\s*", "", text)
 
     # 4. Split into blocks by double newlines (paragraphs)
