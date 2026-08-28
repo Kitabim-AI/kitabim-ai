@@ -129,9 +129,9 @@ async def ocr_page_with_easyocr(
                     f"EasyOCR mean confidence {mean_conf:.2f} < {min_confidence}"
                 )
 
-            # Reconstruct layout
-            page_width = float(page.rect.width)
-            page_height = float(page.rect.height)
+            # Reconstruct layout using actual rendered pixmap pixel dimensions
+            page_width = float(pix.width)
+            page_height = float(pix.height)
             markdown = assemble_page_markdown(
                 detections,
                 page_width=page_width,

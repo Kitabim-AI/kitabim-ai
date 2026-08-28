@@ -132,6 +132,11 @@ def detect_headings(
     return result_lines
 
 
+_TOC_ENTRY_START = re.compile(
+    r"^(?:مۇقەددىمە|كىرىش|خاتىمە|(?:بىرىنچى|ئىككىنچى|ئۈچىنچى|تۆتىنچى|بەشىنچى|ئالتىنچى|يەتتىنچى|سەككىزىنچى|توققۇزىنچى|ئونىنچى|ئون\s+[^\s]+)\s+باب)"
+)
+
+
 def format_toc_lines(lines: List[str]) -> List[str]:
     """
     Convert TOC lines into '| page | title |' markdown table rows.
@@ -152,13 +157,22 @@ def format_toc_lines(lines: List[str]) -> List[str]:
             continue
 
         num_matches = page_num_extractor.findall(clean_line)
+        text_without_num = page_num_extractor.sub("", clean_line)
+        text_without_num = re.sub(r"[\|\.·\-_…]{2,}", " ", text_without_num)
+        text_without_num = re.sub(r"\|", " ", text_without_num)
+        text_without_num = re.sub(r"\s+", " ", text_without_num).strip()
+
+        # If this new line begins a new chapter and we already accumulated a previous entry lacking a digit
+        if _TOC_ENTRY_START.search(text_without_num) and current_title_parts:
+            prev_title = " ".join(current_title_parts).strip()
+            if "مۇقەددىمە" in prev_title:
+                formatted.append(f"| 1 | {prev_title} |")
+            else:
+                formatted.append(f"| | {prev_title} |")
+            current_title_parts = []
+
         if num_matches:
             page_num = num_matches[-1]
-            text_without_num = page_num_extractor.sub("", clean_line)
-            text_without_num = re.sub(r"[\|\.·\-_…]{2,}", " ", text_without_num)
-            text_without_num = re.sub(r"\|", " ", text_without_num)
-            text_without_num = re.sub(r"\s+", " ", text_without_num).strip()
-
             if text_without_num:
                 current_title_parts.append(text_without_num)
 
@@ -169,7 +183,8 @@ def format_toc_lines(lines: List[str]) -> List[str]:
                 formatted.append(f"| {page_num} |")
             current_title_parts = []
         else:
-            current_title_parts.append(clean_line)
+            if text_without_num:
+                current_title_parts.append(text_without_num)
 
     # Any trailing un-numbered lines
     if current_title_parts:
