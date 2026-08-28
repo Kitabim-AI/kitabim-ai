@@ -172,24 +172,23 @@ def is_toc_page(text: str) -> bool:
             # but we require dots to be present to avoid regular numbered lists.
             edge_digits.append(int(digit_match.group()))
 
-    # Pattern 3: Numeric Progression combined with dot leaders
+    # Pattern 3: Numeric Progression at line edges (e.g. 1, 31, 67, 110...)
     # Check if numbers at the edges are mostly non-decreasing
-    if len(edge_digits) >= 5 and dot_digit_count >= 3:
+    if len(edge_digits) >= 4:
         non_decreasing = sum(
             1
             for i in range(len(edge_digits) - 1)
             if edge_digits[i + 1] >= edge_digits[i]
         )
-        is_increasing = (non_decreasing / (len(edge_digits) - 1)) >= 0.8
+        is_increasing = (non_decreasing / (len(edge_digits) - 1)) >= 0.75
+        ratio_of_lines = len(edge_digits) / len(lines)
 
-        # If the page has non-decreasing edge numbers AND many dot leaders, it's a TOC.
-        # dot_digit_count check prevents regular lists (1. , 2. ) from matching
-        # unless they also use dot leaders to page numbers.
-        if is_increasing and dot_digit_count >= (len(lines) * 0.3):
+        # If >= 40% of lines have ascending edge numbers, it's a TOC page
+        if is_increasing and ratio_of_lines >= 0.4:
             return True
 
     # Final fallback: Density of dot leader lines
-    if dot_digit_count >= 5 and (dot_digit_count / len(lines)) >= 0.5:
+    if dot_digit_count >= 5 and (dot_digit_count / len(lines)) >= 0.4:
         return True
 
     return False

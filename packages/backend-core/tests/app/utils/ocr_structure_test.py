@@ -56,14 +56,16 @@ def test_detect_headings():
 
 def test_format_toc_lines():
     toc_raw = [
-        "كىرىش سۆز .................... 5",
-        "1-باپ: تارىخىي ئارقا كۆرۈنۈش ...... 12",
-        "ئاددىي بىر جۈملە تېكىست",
+        "# مۇندەرىجە",
+        "مۇقەددىمە نەمەنگانلىق خوجا 1",
+        "بىرىنچى باب موغۇلىستانغا يۈرۈش قىلىش .................... 31",
+        "ئاددىي بىر جۈملە تېكىست.",
     ]
     formatted = format_toc_lines(toc_raw)
-    assert formatted[0] == "| كىرىش سۆز | 5 |"
-    assert formatted[1] == "| 1-باپ: تارىخىي ئارقا كۆرۈنۈش | 12 |"
-    assert formatted[2] == "ئاددىي بىر جۈملە تېكىست"
+    assert formatted[0] == "# مۇندەرىجە"
+    assert formatted[1] == "| 1 | مۇقەددىمە نەمەنگانلىق خوجا |"
+    assert formatted[2] == "| 31 | بىرىنچى باب موغۇلىستانغا يۈرۈش قىلىش |"
+    assert formatted[3] == "ئاددىي بىر جۈملە تېكىست."
 
 
 def test_assemble_page_markdown_integration():

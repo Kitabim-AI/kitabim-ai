@@ -22,7 +22,7 @@ def _get_box_geometry(
 def filter_header_footer(
     detections: List[DetectionBox], page_height: float, band_pct: float = 0.08
 ) -> List[DetectionBox]:
-    """Exclude detections falling inside top or bottom margin bands."""
+    """Exclude detections falling inside top or bottom margin bands, preserving main TOC headers."""
     if page_height <= 0:
         return detections
     top_threshold = page_height * band_pct
@@ -32,59 +32,76 @@ def filter_header_footer(
     for item in detections:
         bbox, text, conf = item
         _, _, _, _, _, cy = _get_box_geometry(bbox)
-        if top_threshold <= cy <= bottom_threshold:
+        # Always preserve TOC title if at the top
+        if "مۇندەرىجە" in text:
+            filtered.append(item)
+        elif top_threshold <= cy <= bottom_threshold:
             filtered.append(item)
     return filtered
 
 
 def cluster_lines(
-    detections: List[DetectionBox], line_tol_ratio: float = 0.6
+    detections: List[DetectionBox], line_tol_ratio: float = 0.5
 ) -> List[List[DetectionBox]]:
-    """Group detection boxes into horizontal lines based on overlapping vertical coordinates."""
+    """Group detection boxes into horizontal lines based on vertical overlap without centroid drift."""
     if not detections:
         return []
 
-    # Sort boxes primarily by vertical center
-    sorted_boxes = sorted(detections, key=lambda it: _get_box_geometry(it[0])[5])
+    # Sort boxes primarily by top coordinate (min_y) then vertical center
+    sorted_boxes = sorted(
+        detections,
+        key=lambda item: (_get_box_geometry(item[0])[2], _get_box_geometry(item[0])[5]),
+    )
 
-    lines: List[List[DetectionBox]] = []
-    current_line: List[DetectionBox] = []
-    current_line_y = 0.0
-    current_line_h = 0.0
+    lines_meta: List[dict] = []
 
     for item in sorted_boxes:
         bbox, text, conf = item
         _, _, min_y, max_y, _, cy = _get_box_geometry(bbox)
-        h = max_y - min_y
+        h = max(1.0, max_y - min_y)
 
-        if not current_line:
-            current_line.append(item)
-            current_line_y = cy
-            current_line_h = h
-            continue
+        matched = False
+        for line in lines_meta:
+            line_min_y = line["min_y"]
+            line_max_y = line["max_y"]
+            line_h = line["ref_h"]
+            ref_cy = line["ref_cy"]
 
-        tolerance = max(current_line_h, h) * line_tol_ratio
-        if abs(cy - current_line_y) <= tolerance:
-            current_line.append(item)
-            current_line_y = sum(
-                _get_box_geometry(b[0])[5] for b in current_line
-            ) / len(current_line)
-            current_line_h = max(current_line_h, h)
-        else:
-            lines.append(current_line)
-            current_line = [item]
-            current_line_y = cy
-            current_line_h = h
+            # Calculate vertical overlap
+            overlap = min(max_y, line_max_y) - max(min_y, line_min_y)
+            min_box_h = min(h, line_h)
 
-    if current_line:
-        lines.append(current_line)
+            overlap_ratio = overlap / min_box_h if min_box_h > 0 else 0.0
+            center_diff = abs(cy - ref_cy)
 
-    return lines
+            if overlap_ratio >= 0.4 or center_diff <= (line_h * line_tol_ratio):
+                line["boxes"].append(item)
+                line["min_y"] = min(line["min_y"], min_y)
+                line["max_y"] = max(line["max_y"], max_y)
+                matched = True
+                break
+
+        if not matched:
+            lines_meta.append(
+                {
+                    "min_y": min_y,
+                    "max_y": max_y,
+                    "ref_cy": cy,
+                    "ref_h": h,
+                    "boxes": [item],
+                }
+            )
+
+    # Sort lines top-to-bottom by their vertical minimum/center
+    lines_meta.sort(key=lambda line_dict: line_dict["ref_cy"])
+    return [line_dict["boxes"] for line_dict in lines_meta]
 
 
 def order_line_rtl(line_boxes: List[DetectionBox]) -> List[DetectionBox]:
     """Sort items within a line right-to-left (x descending)."""
-    return sorted(line_boxes, key=lambda it: _get_box_geometry(it[0])[4], reverse=True)
+    return sorted(
+        line_boxes, key=lambda item: _get_box_geometry(item[0])[4], reverse=True
+    )
 
 
 def detect_headings(
@@ -131,18 +148,73 @@ def detect_headings(
 
 
 def format_toc_lines(lines: List[str]) -> List[str]:
-    """Convert lines with dot leaders / trailing page numbers into '| title | page |' markdown table rows."""
-    dot_pattern = re.compile(r"(\.{3,}|_{3,}|-{3,}|·{3,}|…{2,})")
-    formatted = []
+    """
+    Convert TOC lines into '| page | title |' markdown table rows.
+    Handles dot leaders, trailing page numbers in RTL, and standalone heading titles.
+    """
+    formatted: List[str] = []
+    toc_row_pattern = re.compile(
+        r"^(.*?)\s*(?:[\.·\-_…]{2,}|\s{2,}|\s+)\s*(\d{1,4})\s*$"
+    )
+    reverse_toc_row_pattern = re.compile(
+        r"^\s*(\d{1,4})\s*(?:[\.·\-_…]{2,}|\s{2,}|\s+)\s*(.*?)$"
+    )
+
     for line in lines:
-        if dot_pattern.search(line):
-            m = re.search(r"^(.*?)\s*(?:[\.·\-_…]{2,}|\s{3,})\s*(\d+)\s*$", line)
-            if m:
-                title, page_num = m.group(1).strip(), m.group(2).strip()
-                formatted.append(f"| {title} | {page_num} |")
-                continue
-        formatted.append(line)
+        clean_line = line.strip()
+        if not clean_line:
+            continue
+
+        # Check if line is the TOC title header
+        if re.match(r"^#*\s*مۇندەرىجە\s*$", clean_line):
+            formatted.append("# مۇندەرىجە")
+            continue
+
+        # Check title ... page_num
+        m = toc_row_pattern.match(clean_line)
+        if m and m.group(1).strip() and not m.group(1).strip().isdigit():
+            title = m.group(1).strip()
+            page_num = m.group(2).strip()
+            # Clean dot artifacts from title
+            title = re.sub(r"[\.·\-_…]{2,}", "", title).strip()
+            formatted.append(f"| {page_num} | {title} |")
+            continue
+
+        # Check page_num ... title
+        m2 = reverse_toc_row_pattern.match(clean_line)
+        if m2 and m2.group(2).strip() and not m2.group(2).strip().isdigit():
+            page_num = m2.group(1).strip()
+            title = m2.group(2).strip()
+            title = re.sub(r"[\.·\-_…]{2,}", "", title).strip()
+            formatted.append(f"| {page_num} | {title} |")
+            continue
+
+        formatted.append(clean_line)
+
     return formatted
+
+
+def clean_ocr_artifacts(text: str) -> str:
+    """Fix common OCR character splitting, broken quotes, and isolated punctuation artifacts."""
+    if not text:
+        return ""
+
+    # Fix underscores splitting Uyghur Arabic letters (e.g. '_يىدىن' or 'مر_اسخور')
+    text = re.sub(r"([\u0600-\u06FF])_+([\u0600-\u06FF])", r"\1\2", text)
+    text = re.sub(r"(^|\s)_+([\u0600-\u06FF])", r"\1\2", text)
+    text = re.sub(r"([\u0600-\u06FF])_+(\s|$)", r"\1\2", text)
+
+    # Standardize reversed quote pairs (»...« -> «...»)
+    text = re.sub(r"»([^«\n]+)«", r"«\1»", text)
+
+    # Strip lines consisting solely of isolated OCR punctuation noise (e.g. solitary ';', '؛', '.')
+    cleaned_lines = []
+    for line in text.splitlines():
+        if re.match(r"^\s*([؛;,.:\-–_…\s]{1,3})\s*$", line):
+            continue
+        cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines)
 
 
 def assemble_page_markdown(
@@ -170,4 +242,5 @@ def assemble_page_markdown(
         detected_lines = format_toc_lines(detected_lines)
         raw_text = "\n".join(detected_lines)
 
-    return clean_uyghur_text(raw_text)
+    cleaned = clean_ocr_artifacts(raw_text)
+    return clean_uyghur_text(cleaned)
