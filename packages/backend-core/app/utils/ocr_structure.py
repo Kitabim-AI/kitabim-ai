@@ -41,17 +41,14 @@ def filter_header_footer(
 
 
 def cluster_lines(
-    detections: List[DetectionBox], line_tol_ratio: float = 0.5
+    detections: List[DetectionBox], line_tol_ratio: float = 0.35
 ) -> List[List[DetectionBox]]:
-    """Group detection boxes into horizontal lines based on vertical overlap without centroid drift."""
+    """Group detection boxes into horizontal lines strictly using reference vertical centers."""
     if not detections:
         return []
 
-    # Sort boxes primarily by top coordinate (min_y) then vertical center
-    sorted_boxes = sorted(
-        detections,
-        key=lambda item: (_get_box_geometry(item[0])[2], _get_box_geometry(item[0])[5]),
-    )
+    # Sort boxes primarily by vertical center
+    sorted_boxes = sorted(detections, key=lambda item: _get_box_geometry(item[0])[5])
 
     lines_meta: List[dict] = []
 
@@ -62,37 +59,25 @@ def cluster_lines(
 
         matched = False
         for line in lines_meta:
-            line_min_y = line["min_y"]
-            line_max_y = line["max_y"]
-            line_h = line["ref_h"]
             ref_cy = line["ref_cy"]
+            ref_h = line["ref_h"]
 
-            # Calculate vertical overlap
-            overlap = min(max_y, line_max_y) - max(min_y, line_min_y)
-            min_box_h = min(h, line_h)
-
-            overlap_ratio = overlap / min_box_h if min_box_h > 0 else 0.0
-            center_diff = abs(cy - ref_cy)
-
-            if overlap_ratio >= 0.4 or center_diff <= (line_h * line_tol_ratio):
+            # Strict center difference check against fixed initial reference center
+            if abs(cy - ref_cy) <= (min(h, ref_h) * line_tol_ratio):
                 line["boxes"].append(item)
-                line["min_y"] = min(line["min_y"], min_y)
-                line["max_y"] = max(line["max_y"], max_y)
                 matched = True
                 break
 
         if not matched:
             lines_meta.append(
                 {
-                    "min_y": min_y,
-                    "max_y": max_y,
                     "ref_cy": cy,
                     "ref_h": h,
                     "boxes": [item],
                 }
             )
 
-    # Sort lines top-to-bottom by their vertical minimum/center
+    # Sort lines top-to-bottom by their vertical center
     lines_meta.sort(key=lambda line_dict: line_dict["ref_cy"])
     return [line_dict["boxes"] for line_dict in lines_meta]
 
@@ -150,9 +135,10 @@ def detect_headings(
 def format_toc_lines(lines: List[str]) -> List[str]:
     """
     Convert TOC lines into '| page | title |' markdown table rows.
-    Extracts numeric page numbers and cleans title text.
+    Handles multi-line wrapped chapter entries and extracts numeric page numbers.
     """
     formatted: List[str] = []
+    current_title_parts: List[str] = []
     page_num_extractor = re.compile(r"\b(\d{1,4})\b")
 
     for line in lines:
@@ -165,20 +151,29 @@ def format_toc_lines(lines: List[str]) -> List[str]:
             formatted.append("# مۇندەرىجە")
             continue
 
-        # Extract numeric page number from anywhere in the TOC line
         num_matches = page_num_extractor.findall(clean_line)
         if num_matches:
-            page_num = num_matches[-1]  # Take the target page number
-            # Remove the page number and dot/pipe artifacts to form the title
-            title = page_num_extractor.sub("", clean_line)
-            title = re.sub(r"[\|\.·\-_…]{2,}", " ", title)
-            title = re.sub(r"\|", " ", title)
-            title = re.sub(r"\s+", " ", title).strip()
-            if title:
-                formatted.append(f"| {page_num} | {title} |")
-                continue
+            page_num = num_matches[-1]
+            text_without_num = page_num_extractor.sub("", clean_line)
+            text_without_num = re.sub(r"[\|\.·\-_…]{2,}", " ", text_without_num)
+            text_without_num = re.sub(r"\|", " ", text_without_num)
+            text_without_num = re.sub(r"\s+", " ", text_without_num).strip()
 
-        formatted.append(clean_line)
+            if text_without_num:
+                current_title_parts.append(text_without_num)
+
+            full_title = " ".join(current_title_parts).strip()
+            if full_title:
+                formatted.append(f"| {page_num} | {full_title} |")
+            else:
+                formatted.append(f"| {page_num} |")
+            current_title_parts = []
+        else:
+            current_title_parts.append(clean_line)
+
+    # Any trailing un-numbered lines
+    if current_title_parts:
+        formatted.append(" ".join(current_title_parts))
 
     return formatted
 
