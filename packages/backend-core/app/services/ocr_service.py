@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 import asyncio
-import fitz
+import pymupdf as fitz
 
 from app.core.config import settings
 from app.core.prompts import OCR_PROMPT

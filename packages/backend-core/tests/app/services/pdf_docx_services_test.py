@@ -16,7 +16,7 @@ from app.services.docx_service import (
 
 # PDF Service Tests
 def test_read_pdf_page_count():
-    with patch("fitz.open") as mock_open:
+    with patch("pymupdf.open") as mock_open:
         mock_doc = mock_open.return_value
         mock_doc.__len__.return_value = 5
 
@@ -31,7 +31,7 @@ def test_read_pdf_page_count_fail():
 
 
 def test_extract_pdf_cover():
-    with patch("fitz.open") as mock_open:
+    with patch("pymupdf.open") as mock_open:
         mock_doc = mock_open.return_value
         mock_doc.__len__.return_value = 1
         mock_page = mock_doc.load_page.return_value

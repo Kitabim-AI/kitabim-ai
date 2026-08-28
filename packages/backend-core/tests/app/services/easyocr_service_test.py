@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-import fitz
+import pymupdf as fitz
 from app.services.easyocr_service import ocr_page_with_easyocr, LowConfidenceOcrError
 
 

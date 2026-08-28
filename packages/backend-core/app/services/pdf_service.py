@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def read_pdf_page_count(path: Path) -> int:
     """Return the number of pages in a PDF, or 0 on failure."""
     try:
-        import fitz
+        import pymupdf as fitz
 
         doc = fitz.open(path)
         count = len(doc)
@@ -31,7 +31,7 @@ def read_pdf_page_count(path: Path) -> int:
 def extract_pdf_cover(pdf_path: Path, cover_path: Path) -> bool:
     """Render the first page of a PDF to a JPEG at cover_path. Returns True on success."""
     try:
-        import fitz
+        import pymupdf as fitz
 
         doc = fitz.open(pdf_path)
         if len(doc) > 0:

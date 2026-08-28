@@ -24,8 +24,14 @@ Cron schedule:
 
 import functools
 import logging
+import warnings
 from arq.connections import RedisSettings
 from arq.cron import cron
+
+# Suppress PyTorch internal quantization and dataloader pin_memory notices on CPU
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="torch")
+logging.getLogger("easyocr").setLevel(logging.ERROR)
 
 from app.core.config import settings
 from app.queue import worker_startup, worker_shutdown

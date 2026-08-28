@@ -11,7 +11,7 @@ import asyncio
 import logging
 from typing import List
 
-import fitz
+import pymupdf as fitz
 
 import time
 from app.core.config import settings

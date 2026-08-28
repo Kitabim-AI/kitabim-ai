@@ -188,7 +188,7 @@ def _sha256(path) -> str:
 
 def _extract_pdf_metadata(path, remote_path: str) -> tuple[str | None, str | None, int]:
     try:
-        import fitz
+        import pymupdf as fitz
 
         doc = fitz.open(path)
         meta = doc.metadata or {}

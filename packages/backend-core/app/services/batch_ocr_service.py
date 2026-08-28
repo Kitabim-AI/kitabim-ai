@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Any, Optional
 
-import fitz
+import pymupdf as fitz
 from google import genai
 from google.genai import types
 from sqlalchemy import select, update, func

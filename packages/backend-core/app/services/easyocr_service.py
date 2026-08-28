@@ -3,11 +3,17 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple, Optional
-import fitz
+import pymupdf as fitz
 import numpy as np
 from PIL import Image, ImageEnhance
+
+# Suppress PyTorch internal quantization and dataloader pin_memory notices on CPU
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="torch")
+logging.getLogger("easyocr").setLevel(logging.ERROR)
 
 from app.core.config import settings
 from app.utils.ocr_structure import assemble_page_markdown
