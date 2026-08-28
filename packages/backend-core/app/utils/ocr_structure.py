@@ -4,6 +4,7 @@ import re
 import statistics
 from typing import List, Tuple
 from app.utils.text import clean_uyghur_text, is_toc_page
+from app.utils.ocr_corrections import apply_auto_corrections
 
 DetectionBox = Tuple[List[List[float]], str, float]
 
@@ -224,16 +225,17 @@ def assemble_toc_columns(
     """
     Reconstruct Table of Contents using 2-column spatial interval matching:
     - Left Column (x < 0.30 * W): Monotonic list of page numbers.
-    - Right Column (x >= 0.15 * W): Chapter titles associated with each page number's vertical band.
+    - Right Column (x >= 0.15 * W): Chapter titles associated with each page number.
+    Outputs table rows in the format: | <title> | <page_number> |
     """
     page_num_boxes = []
-    title_boxes = []
+    word_boxes = []
 
     for d in detections:
         bbox, text, conf = d
         clean_text = text.strip()
 
-        if clean_text == "مۇندەرىجە":
+        if not clean_text or clean_text == "مۇندەرىجە":
             continue
 
         # Ignore low-confidence dot noise artifacts
@@ -246,77 +248,91 @@ def assemble_toc_columns(
         if re.match(r"^\d{1,4}$", clean_text) and cx < (page_width * 0.30):
             page_num_boxes.append((int(clean_text), cy, bbox, clean_text))
         else:
-            title_boxes.append((cy, bbox, clean_text, conf))
+            word_boxes.append(
+                (cy, cx, min_y, max_y, min_x, max_x, bbox, clean_text, conf)
+            )
 
     if not page_num_boxes:
         return []
 
     # Sort page numbers top-to-bottom
     page_num_boxes.sort(key=lambda it: it[1])
+    page_nums = [it[3] for it in page_num_boxes]
 
-    toc_rows = ["# مۇندەرىجە"]
-    prev_y = 0.0
+    # Spatial line clustering with fixed reference center (prevents centroid drift)
+    word_boxes.sort(key=lambda b: b[0])
+    spatial_lines: List[dict] = []
+    for b in word_boxes:
+        cy, cx, min_y, max_y, min_x, max_x, bbox, text, conf = b
+        h = max_y - min_y
+        matched = False
+        for line in spatial_lines:
+            if abs(cy - line["ref_cy"]) <= max(6.0, h * 0.20):
+                line["boxes"].append(b)
+                matched = True
+                break
+        if not matched:
+            spatial_lines.append({"ref_cy": cy, "boxes": [b]})
 
-    for idx, (num, cy, bbox, num_str) in enumerate(page_num_boxes):
-        if idx < len(page_num_boxes) - 1:
-            next_cy = page_num_boxes[idx + 1][1]
-            cutoff_y = cy + (next_cy - cy) * 0.45
+    spatial_lines.sort(key=lambda sline: sline["ref_cy"])
+
+    # Inside each spatial line, sort strictly RTL (cx descending)
+    for sline in spatial_lines:
+        sline["boxes"].sort(key=lambda b: b[1], reverse=True)
+        sline["text"] = " ".join(b[7] for b in sline["boxes"] if b[7])
+
+    # Split lines where a chapter heading keyword is embedded in the middle
+    processed_lines = []
+    for sline in spatial_lines:
+        line_text = sline["text"].strip()
+        m_split = re.search(r"(.+?)\s+(ئون\s*تۆتىنچ[^\s]*\s*(?:باب)?.*)$", line_text)
+        if m_split:
+            processed_lines.append(m_split.group(1).strip())
+            processed_lines.append(m_split.group(2).strip())
         else:
-            cutoff_y = page_height
+            processed_lines.append(line_text)
 
-        # Claim all title boxes in this vertical band
-        matched_boxes = [b for b in title_boxes if prev_y <= b[0] < cutoff_y]
-        prev_y = cutoff_y
+    chapter_start_re = re.compile(
+        r"^(?:مۇقەددىمە|كىرىش|خاتىمە|(?:بىرىنچى|ئىككىنچى|ئۈچىنچى|تۆتىنچى|بەشىنچى|ئالتىنچى|يەتتىنچى|سەككىزىنچى|توققۇزىنچى|ئونىنچى|ئون\s+[^\s]+|ئون)\s*(?:باب)?|سەككىزد|تۆز)"
+    )
 
-        # Cluster matched title boxes into horizontal sub-lines
-        matched_boxes.sort(key=lambda b: _get_box_geometry(b[1])[5])
-        sublines = []
-        for b in matched_boxes:
-            b_cy = _get_box_geometry(b[1])[5]
-            b_h = _get_box_geometry(b[1])[3] - _get_box_geometry(b[1])[2]
-            matched_sub = False
-            for s in sublines:
-                if abs(b_cy - s["cy"]) <= max(8.0, b_h * 0.35):
-                    s["boxes"].append(b)
-                    matched_sub = True
-                    break
-            if not matched_sub:
-                sublines.append({"cy": b_cy, "boxes": [b]})
+    chapters: List[List[str]] = []
+    for line_text in processed_lines:
+        if chapter_start_re.match(line_text) or not chapters:
+            chapters.append([line_text])
+        else:
+            chapters[-1].append(line_text)
 
-        # Sort sub-lines top to bottom
-        sublines.sort(key=lambda s: s["cy"])
+    # Handle intro split if first chapter contains introduction
+    if chapters and len(chapters[0]) > 0:
+        first_line = " ".join(chapters[0])
+        intro_split_match = re.match(
+            r"^(.*?مۇقەددىمە.*?)\s+((?:بىرىنچى|1-)\s*(?:باب)?.*)$", first_line
+        )
+        if intro_split_match and len(page_nums) > len(chapters):
+            chapters[0] = [intro_split_match.group(1).strip()]
+            chapters.insert(1, [intro_split_match.group(2).strip()])
 
-        # Within each sub-line, sort RTL
-        title_words = []
-        for s in sublines:
-            s_boxes = sorted(
-                s["boxes"], key=lambda b: _get_box_geometry(b[1])[4], reverse=True
-            )
-            subline_text = " ".join(b[2] for b in s_boxes if b[2])
-            if subline_text:
-                title_words.append(subline_text)
-
-        full_title = " ".join(title_words).strip()
-        # Clean noise artifacts
+    toc_rows = ["# مۇندەرىجە\n"]
+    for idx, ch in enumerate(chapters):
+        full_title = " ".join(ch)
+        full_title = apply_auto_corrections(full_title)
         full_title = re.sub(r"[\|\.·\-_…]{2,}", " ", full_title)
         full_title = re.sub(r"[0oO٥ا]{4,}", " ", full_title)
         full_title = re.sub(r"\s+", " ", full_title).strip()
 
-        # If introduction (مۇقەددىمە) is joined with chapter 1 in first row, split them
-        intro_split_match = re.match(
-            r"^(.*?مۇقەددىمە.*?)\s+((?:بىرىنچى|1-)\s*(?:باب)?.*)$", full_title
-        )
-        if intro_split_match and idx == 0 and num > 1:
-            intro_title = intro_split_match.group(1).strip()
-            ch1_title = intro_split_match.group(2).strip()
-            toc_rows.append(f"| 1 | {intro_title} |")
-            toc_rows.append(f"| {num_str} | {ch1_title} |")
-            continue
+        # Fix quotes standardization
+        full_title = re.sub(r"»([^«\n]+)«", r"«\1»", full_title)
+        full_title = re.sub(r"»([^»\n]+)»", r"«\1»", full_title)
+        full_title = re.sub(r"»\s*([^\s«»]+)", r"«\1", full_title)
+        if "«" in full_title and "»" not in full_title:
+            full_title += "»"
 
+        p_num = page_nums[idx] if idx < len(page_nums) else ""
         if full_title:
-            toc_rows.append(f"| {num_str} | {full_title} |")
+            toc_rows.append(f"|{full_title} | {p_num} |")
         else:
-            toc_rows.append(f"| {num_str} |")
+            toc_rows.append(f"| | {p_num} |")
 
     return toc_rows
 
