@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
@@ -7,12 +9,18 @@ from typing import Optional
 
 import fitz
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from engine.recognize import (
+    LowConfidenceOcrError,
+    get_recognition_predictor,
+    ocr_page_with_surya,
+)
 from kitabim_client.api import KitabimClient
 from engine.workdir import OcrWorkDir
+from preview.server import list_pages_response
 
 _APP_HTML = """<!doctype html>
 <html><head><title>Surya OCR Client</title>
@@ -244,6 +252,56 @@ class StartExistingRequest(BaseModel):
     bookId: str
 
 
+def _create_upload_workdir(pdf_bytes: bytes, work_root: Path) -> OcrWorkDir:
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    total_pages = len(doc)
+
+    out_dir = work_root / f"upload-{int(time.time() * 1000)}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = out_dir / "book.pdf"
+    pdf_path.write_bytes(pdf_bytes)
+
+    workdir = OcrWorkDir.create(out_dir, source_pdf=pdf_path, total_pages=total_pages)
+    for page_number in range(1, total_pages + 1):
+        workdir.image_path(page_number).write_bytes(render_page_png(doc, page_number))
+        workdir.set_page(
+            page_number, text="", is_toc=False, confidence=0.0, status="pending"
+        )
+    workdir.save()
+    return workdir
+
+
+async def _run_ocr_background(workdir: OcrWorkDir, state: "AppState") -> None:
+    try:
+        doc = fitz.open(workdir.source_pdf)
+        predictor = await get_recognition_predictor()
+        for page_number in range(1, workdir.total_pages + 1):
+            fitz_page = doc.load_page(page_number - 1)
+            try:
+                text = await ocr_page_with_surya(fitz_page, predictor)
+                workdir.set_page(
+                    page_number, text=text, is_toc=False, confidence=1.0, status="ocrd"
+                )
+            except LowConfidenceOcrError as exc:
+                workdir.set_page(
+                    page_number,
+                    text="",
+                    is_toc=False,
+                    confidence=0.0,
+                    status="failed",
+                    error=str(exc),
+                )
+            workdir.save()
+        state.stage = "review"
+    except Exception as exc:
+        state.stage = "error"
+        state.error = str(exc)
+
+
+def _start_background_task(coro) -> None:
+    asyncio.create_task(coro)
+
+
 @dataclass
 class AppState:
     client: KitabimClient
@@ -304,6 +362,27 @@ def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
         state.stage = "review"
         state.error = None
         return {"stage": "review"}
+
+    @app.post("/api/start/upload")
+    async def start_upload(file: UploadFile = File(...)):
+        _require_landing_stage(state)
+        pdf_bytes = await file.read()
+        try:
+            workdir = await asyncio.to_thread(
+                _create_upload_workdir, pdf_bytes, state.work_root
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Not a valid PDF: {exc}")
+        state.workdir = workdir
+        state.stage = "processing"
+        state.error = None
+        _start_background_task(_run_ocr_background(workdir, state))
+        return {"stage": "processing"}
+
+    @app.get("/api/pages")
+    def list_pages():
+        _require_active_workdir(state)
+        return list_pages_response(state.workdir)
 
     return app
 

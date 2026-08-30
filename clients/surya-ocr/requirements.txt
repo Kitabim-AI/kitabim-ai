@@ -3,6 +3,7 @@ pymupdf
 pillow
 beautifulsoup4
 fastapi
+python-multipart
 uvicorn
 httpx
 pytest

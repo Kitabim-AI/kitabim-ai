@@ -833,8 +833,10 @@ git commit -m "feat(surya-ocr-client): add existing-book start route with resume
 - Modify: `clients/surya-ocr/requirements.txt` (add `python-multipart`, required by FastAPI's `UploadFile`/`File`)
 
 **Interfaces:**
-- Consumes: `render_page_png` (Task 5), `AppState`/`_require_landing_stage` (Task 3), `engine.recognize.{LowConfidenceOcrError, get_recognition_predictor, ocr_page_with_surya}` (unchanged).
+- Consumes: `render_page_png` (Task 5), `AppState`/`_require_landing_stage`/`_require_active_workdir` (Task 3), `engine.recognize.{LowConfidenceOcrError, get_recognition_predictor, ocr_page_with_surya}` (unchanged), `list_pages_response` (Task 1).
 - Produces: `_start_background_task(coro) -> None` — thin wrapper around `asyncio.create_task`, overridden in tests so HTTP-level tests don't depend on real background-task timing.
+
+> **Execution note:** the `test_start_upload_route_creates_pending_pages_and_schedules_background_task` test below needs `GET /api/pages` to observe the pre-populated pending pages, but that route was originally scheduled for Task 7. Pulled it forward here: `GET /api/pages` (using `list_pages_response` from Task 1) is added in this task instead, and Task 7 below only adds the remaining three routes (image/redo/push).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1181,7 +1183,7 @@ Expected: FAIL with 404s (routes don't exist yet)
 
 - [ ] **Step 3: Add the routes**
 
-In `clients/surya-ocr/preview/app_server.py`:
+In `clients/surya-ocr/preview/app_server.py` (`GET /api/pages` was already added in Task 6, per that task's execution note — this task adds the remaining three):
 
 Update the `fastapi.responses` import line to add `Response` (it already imports `HTMLResponse` from Task 3):
 
@@ -1189,7 +1191,7 @@ Update the `fastapi.responses` import line to add `Response` (it already imports
 from fastapi.responses import HTMLResponse, Response
 ```
 
-Add a new import block for the review-route helpers from `preview/server.py`:
+Update the `preview.server` import line (it already imports `list_pages_response` from Task 6) to add the rest of the review-route helpers:
 
 ```python
 from preview.server import (
@@ -1201,14 +1203,9 @@ from preview.server import (
 )
 ```
 
-Add routes inside `create_landing_app` (after `start_upload`, before `return app`):
+Add routes inside `create_landing_app` (after `list_pages`, before `return app`):
 
 ```python
-    @app.get("/api/pages")
-    def list_pages():
-        _require_active_workdir(state)
-        return list_pages_response(state.workdir)
-
     @app.get("/api/pages/{page_number}/image")
     def get_page_image(page_number: int):
         _require_active_workdir(state)
