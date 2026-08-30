@@ -27,7 +27,7 @@ from engine.text_cleanup import clean_uyghur_text, is_degenerate_ocr_output
 if TYPE_CHECKING:
     from surya.recognition.schema import PageOCRResult
 
-logger = logging.getLogger("surya_ocr_client.engine.recognize")
+logger = logging.getLogger("kitabim_ocr_client.engine.recognize")
 
 # Local equivalents of packages/backend-core's OCR_MAX_RETRIES /
 # OCR_PAGE_ZOOM_FACTOR env-configured settings (poc/easy-ocr-v2 only -
@@ -76,7 +76,7 @@ def _get_executor(max_workers: int) -> ThreadPoolExecutor:
     global _executor
     if _executor is None:
         _executor = ThreadPoolExecutor(
-            max_workers=max(1, max_workers), thread_name_prefix="surya_ocr"
+            max_workers=max(1, max_workers), thread_name_prefix="ocr"
         )
     return _executor
 
@@ -173,7 +173,7 @@ def _process_page_sync(
     return markdown, mean_confidence
 
 
-async def ocr_page_with_surya(
+async def ocr_page(
     page: "fitz.Page",
     recognition_predictor: "RecognitionPredictor",
     timeout: float | None = None,

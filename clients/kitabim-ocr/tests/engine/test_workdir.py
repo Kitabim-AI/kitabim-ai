@@ -85,3 +85,18 @@ def test_all_pages_sorted_by_page_number(tmp_path: Path):
 
     numbers = [p.page_number for p in wd.all_pages()]
     assert numbers == [1, 2]
+
+
+def test_create_and_load_with_original_filename(tmp_path: Path):
+    wd = OcrWorkDir.create(
+        tmp_path / "work",
+        source_pdf=Path("book.pdf"),
+        total_pages=2,
+        original_filename="مۇقەددەس_بۇلاق.pdf",
+    )
+    assert wd.original_filename == "مۇقەددەس_بۇلاق.pdf"
+    assert wd.root == tmp_path / "work"
+
+    reloaded = OcrWorkDir.load(tmp_path / "work")
+    assert reloaded.original_filename == "مۇقەددەس_بۇلاق.pdf"
+    assert reloaded.root == tmp_path / "work"

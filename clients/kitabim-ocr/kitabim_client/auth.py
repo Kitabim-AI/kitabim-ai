@@ -77,9 +77,7 @@ def _login(base_url: str, provider: str, timeout: float = 120.0) -> str:
     thread.start()
 
     redirect_uri = f"http://127.0.0.1:{port}/oauth-callback"
-    login_url = f"{base_url}/auth/{provider}/login?" + urlencode(
-        {"redirect_uri": redirect_uri}
-    )
+    login_url = f"{base_url}/auth/{provider}/login?" + urlencode({"next": redirect_uri})
     print(f"Opening browser to log in: {login_url}")
     webbrowser.open(login_url)
 

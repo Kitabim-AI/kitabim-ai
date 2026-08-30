@@ -1,32 +1,32 @@
+import { APP_CLIENT_ID } from '../config';
+
 /**
  * Authentication service for handling auth API calls.
  */
 const API_BASE = '/api/auth';
 const SESSION_TOKEN_KEY = 'kitabim_access_token_session';
 
-// App ID fetched from /api/config at startup — never hardcoded or baked into the bundle.
-let _appClientId = '';
+// App ID configured via build config or environment variable at build/runtime.
+let _appClientId = APP_CLIENT_ID || (import.meta as any).env?.VITE_SECURITY_APP_ID || '';
 let _configPromise: Promise<void> | null = null;
 
 const DEFAULT_COLLECTION_PAGE_SIZE = 40;
 let _collectionPageSize = DEFAULT_COLLECTION_PAGE_SIZE;
 
 export async function initAppConfig(): Promise<void> {
-  if (_appClientId) return;
   if (!_configPromise) {
     _configPromise = (async () => {
       try {
         const res = await fetch('/api/config');
         if (res.ok) {
           const data = await res.json();
-          _appClientId = data.appId ?? '';
           _collectionPageSize =
             typeof data.collectionPageSize === 'number'
               ? data.collectionPageSize
               : DEFAULT_COLLECTION_PAGE_SIZE;
         }
       } catch {
-        // Non-fatal — requests will be sent without the app ID header
+        // Non-fatal — defaults used
       } finally {
         _configPromise = null;
       }

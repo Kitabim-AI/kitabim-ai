@@ -111,7 +111,7 @@ def test_process_page_sync_skips_discarded_and_errored_blocks():
 
 
 @pytest.mark.asyncio
-async def test_ocr_page_with_surya_happy_path():
+async def test_ocr_page_happy_path():
     mock_page = MagicMock()
     mock_pix = MagicMock()
     mock_pix.samples = bytes(([10, 250] * 1500))
@@ -122,29 +122,27 @@ async def test_ocr_page_with_surya_happy_path():
         patch("engine.recognize._process_page_sync", return_value=("متن", 0.9)),
         patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
     ):
-        result = await svc.ocr_page_with_surya(
-            mock_page, MagicMock(), min_confidence=0.3
-        )
+        result = await svc.ocr_page(mock_page, MagicMock(), min_confidence=0.3)
 
     assert result == "متن"
 
 
 @pytest.mark.asyncio
-async def test_ocr_page_with_surya_blank_page_returns_empty_without_processing():
+async def test_ocr_page_blank_page_returns_empty_without_processing():
     mock_page = MagicMock()
     mock_pix = MagicMock()
     mock_pix.samples = bytes([128] * 3000)
     mock_page.get_pixmap.return_value = mock_pix
 
     with patch("engine.recognize._process_page_sync") as mock_process:
-        result = await svc.ocr_page_with_surya(mock_page, MagicMock())
+        result = await svc.ocr_page(mock_page, MagicMock())
 
     assert result == ""
     mock_process.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_ocr_page_with_surya_retries_on_low_confidence():
+async def test_ocr_page_retries_on_low_confidence():
     mock_page = MagicMock()
     mock_pix = MagicMock()
     mock_pix.samples = bytes(([10, 250] * 1500))
@@ -160,13 +158,13 @@ async def test_ocr_page_with_surya_retries_on_low_confidence():
         patch("engine.recognize.OCR_MAX_RETRIES", 2),
     ):
         with pytest.raises(svc.LowConfidenceOcrError):
-            await svc.ocr_page_with_surya(mock_page, MagicMock(), min_confidence=0.5)
+            await svc.ocr_page(mock_page, MagicMock(), min_confidence=0.5)
 
     assert mock_page.get_pixmap.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_ocr_page_with_surya_retries_on_degenerate_repetition_loop():
+async def test_ocr_page_retries_on_degenerate_repetition_loop():
     mock_page = MagicMock()
     mock_pix = MagicMock()
     mock_pix.samples = bytes(([10, 250] * 1500))
@@ -184,6 +182,6 @@ async def test_ocr_page_with_surya_retries_on_degenerate_repetition_loop():
         patch("engine.recognize.OCR_MAX_RETRIES", 2),
     ):
         with pytest.raises(svc.LowConfidenceOcrError):
-            await svc.ocr_page_with_surya(mock_page, MagicMock(), min_confidence=0.3)
+            await svc.ocr_page(mock_page, MagicMock(), min_confidence=0.3)
 
     assert mock_page.get_pixmap.call_count == 2

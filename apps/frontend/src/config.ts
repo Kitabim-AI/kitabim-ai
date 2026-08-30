@@ -1,4 +1,5 @@
 /**
  * API configuration for the frontend application.
- * The app client ID is fetched from /api/config at startup — see authService.initAppConfig().
  */
+export const APP_CLIENT_ID = 'e8f28793b7868a80cc384fcbc59955c9';
+

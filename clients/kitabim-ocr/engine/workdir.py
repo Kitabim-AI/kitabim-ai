@@ -28,12 +28,18 @@ class OcrWorkDir:
         total_pages: int,
         book_id: Optional[str] = None,
         pages: Optional[dict[int, PageState]] = None,
+        original_filename: Optional[str] = None,
     ) -> None:
         self.path = path
         self.source_pdf = source_pdf
         self.total_pages = total_pages
         self.book_id = book_id
         self._pages: dict[int, PageState] = pages or {}
+        self.original_filename = original_filename
+
+    @property
+    def root(self) -> Path:
+        return self.path
 
     @classmethod
     def create(
@@ -42,10 +48,17 @@ class OcrWorkDir:
         source_pdf: Path,
         total_pages: int,
         book_id: Optional[str] = None,
+        original_filename: Optional[str] = None,
     ) -> "OcrWorkDir":
         path.mkdir(parents=True, exist_ok=True)
         (path / "pages").mkdir(exist_ok=True)
-        wd = cls(path, source_pdf, total_pages, book_id)
+        wd = cls(
+            path,
+            source_pdf,
+            total_pages,
+            book_id=book_id,
+            original_filename=original_filename,
+        )
         wd.save()
         return wd
 
@@ -61,8 +74,9 @@ class OcrWorkDir:
             path,
             source_pdf=Path(book_meta["source_pdf"]),
             total_pages=book_meta["total_pages"],
-            book_id=book_meta["book_id"],
+            book_id=book_meta.get("book_id"),
             pages=pages,
+            original_filename=book_meta.get("original_filename"),
         )
 
     def save(self) -> None:
@@ -72,6 +86,7 @@ class OcrWorkDir:
                     "source_pdf": str(self.source_pdf),
                     "book_id": self.book_id,
                     "total_pages": self.total_pages,
+                    "original_filename": self.original_filename,
                 },
                 indent=2,
             )

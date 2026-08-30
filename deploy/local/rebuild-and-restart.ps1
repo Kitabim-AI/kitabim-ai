@@ -22,6 +22,10 @@ if ($Component -eq "all") {
         (Get-Content .env) -replace '^SECURITY_APP_ID=.*', "SECURITY_APP_ID=$newAppId" |
             Set-Content .env
     }
+    if (Test-Path apps/frontend/src/config.ts) {
+        (Get-Content apps/frontend/src/config.ts) -replace "export const APP_CLIENT_ID = '.*';", "export const APP_CLIENT_ID = '$newAppId';" |
+            Set-Content apps/frontend/src/config.ts
+    }
 
     docker compose build
 

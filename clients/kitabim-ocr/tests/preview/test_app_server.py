@@ -33,6 +33,9 @@ def test_index_returns_landing_page_html(tmp_path: Path):
     assert 'id="landing"' in response.text
     assert 'id="processing"' in response.text
     assert 'id="review"' in response.text
+    assert 'id="livePreviewModal"' in response.text
+    assert "openLivePreview" in response.text
+    assert 'id="previewModalText"' in response.text
 
 
 def test_state_defaults_to_landing(tmp_path: Path):
@@ -64,11 +67,28 @@ def test_list_books_route_proxies_to_client(tmp_path: Path):
     app = create_landing_app(mock_client, tmp_path / "work")
     client = TestClient(app)
 
-    response = client.get("/api/books?q=tarikh&page=2")
+    response = client.get(
+        "/api/books?q=tarikh&page=2&pageSize=40&sortBy=uploadDate&order=-1"
+    )
 
     assert response.status_code == 200
     assert response.json() == {"books": [{"id": "b1", "title": "Tarikh"}], "total": 1}
-    mock_client.list_books.assert_called_once_with(q="tarikh", page=2)
+    mock_client.list_books.assert_called_once_with(
+        q="tarikh", page=2, page_size=40, sort_by="uploadDate", order=-1
+    )
+
+
+def test_serve_font_endpoint(tmp_path: Path):
+    mock_client = MagicMock()
+    app = create_landing_app(mock_client, tmp_path / "work")
+    client = TestClient(app)
+
+    response = client.get("/fonts/alkatip-basma.woff2")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "font/woff2"
+
+    not_found = client.get("/fonts/nonexistent.woff2")
+    assert not_found.status_code == 404
 
 
 def test_start_existing_book_downloads_and_seeds_workdir_when_new(tmp_path: Path):
@@ -183,7 +203,7 @@ async def test_run_ocr_background_ocrs_every_page_then_marks_review(tmp_path: Pa
             AsyncMock(return_value="predictor"),
         ),
         patch(
-            "preview.app_server.ocr_page_with_surya",
+            "preview.app_server.ocr_page",
             AsyncMock(side_effect=["text one", "text two"]),
         ),
     ):
@@ -206,7 +226,7 @@ async def test_run_ocr_background_flags_failed_page_and_continues(tmp_path: Path
             AsyncMock(return_value="predictor"),
         ),
         patch(
-            "preview.app_server.ocr_page_with_surya",
+            "preview.app_server.ocr_page",
             AsyncMock(side_effect=[LowConfidenceOcrError("bad page"), "text two"]),
         ),
     ):
@@ -336,3 +356,169 @@ def test_back_to_library_clears_active_workdir(tmp_path: Path):
     assert response.status_code == 200
     assert client.get("/api/state").json()["stage"] == "landing"
     assert client.get("/api/pages").status_code == 409
+
+
+def test_update_page_saves_text_and_toc(tmp_path: Path):
+    mock_client = MagicMock()
+    mock_client.download_book_pdf.side_effect = (
+        lambda book_id, dest: dest.write_bytes(_minimal_pdf_bytes(1)) or dest
+    )
+    mock_client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "initial text", "isToc": False}
+    ]
+    app = create_landing_app(mock_client, tmp_path / "work")
+    client = TestClient(app)
+    client.post("/api/start/existing", json={"bookId": "book123"})
+
+    res = client.post(
+        "/api/pages/1/update",
+        json={"text": "updated text", "isToc": True},
+    )
+    assert res.status_code == 200
+    assert res.json() == {"status": "ok", "pageNumber": 1}
+
+    pages = client.get("/api/pages").json()
+    assert pages[0]["text"] == "updated text"
+    assert pages[0]["isToc"] is True
+
+
+def test_get_sessions_lists_local_folders(tmp_path: Path):
+    work_root = tmp_path / "work"
+    work_root.mkdir(parents=True)
+    pdf_bytes = _minimal_pdf_bytes(2)
+
+    # Create session 1: 1 of 2 pages completed with original_filename
+    s1_dir = work_root / "upload-123"
+    w1 = OcrWorkDir.create(
+        s1_dir,
+        source_pdf=s1_dir / "book.pdf",
+        total_pages=2,
+        original_filename="ئۇيغۇر_تارىخى.pdf",
+    )
+    (s1_dir / "book.pdf").write_bytes(pdf_bytes)
+    w1.set_page(1, text="p1", is_toc=False, confidence=1.0, status="ocrd")
+    w1.set_page(2, text="", is_toc=False, confidence=0.0, status="pending")
+    w1.save()
+
+    # Create session 2: all pages complete with book_id
+    s2_dir = work_root / "book-999"
+    w2 = OcrWorkDir.create(
+        s2_dir, source_pdf=s2_dir / "book.pdf", total_pages=1, book_id="book-999"
+    )
+    (s2_dir / "book.pdf").write_bytes(_minimal_pdf_bytes(1))
+    w2.set_page(1, text="p1", is_toc=False, confidence=1.0, status="ocrd")
+    w2.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+    client = TestClient(app)
+
+    res = client.get("/api/sessions")
+    assert res.status_code == 200
+    sessions = res.json()
+    assert len(sessions) == 2
+
+    s_map = {s["id"]: s for s in sessions}
+    assert s_map["upload-123"]["title"] == "ئۇيغۇر_تارىخى.pdf"
+    assert s_map["upload-123"]["originalFilename"] == "ئۇيغۇر_تارىخى.pdf"
+    assert s_map["upload-123"]["totalPages"] == 2
+    assert s_map["upload-123"]["completedPages"] == 1
+    assert s_map["upload-123"]["isComplete"] is False
+
+    assert s_map["book-999"]["totalPages"] == 1
+    assert s_map["book-999"]["completedPages"] == 1
+    assert s_map["book-999"]["isComplete"] is True
+    assert "book-999" in s_map["book-999"]["title"]
+
+
+def test_resume_session_routes_to_processing_or_review(tmp_path: Path):
+    work_root = tmp_path / "work"
+    work_root.mkdir(parents=True)
+    pdf_bytes = _minimal_pdf_bytes(2)
+
+    # Session 1: unfinished -> processing
+    s1_dir = work_root / "upload-123"
+    w1 = OcrWorkDir.create(s1_dir, source_pdf=s1_dir / "book.pdf", total_pages=2)
+    (s1_dir / "book.pdf").write_bytes(pdf_bytes)
+    w1.set_page(1, text="p1", is_toc=False, confidence=1.0, status="ocrd")
+    w1.set_page(2, text="", is_toc=False, confidence=0.0, status="pending")
+    w1.save()
+
+    # Session 2: finished -> review
+    s2_dir = work_root / "upload-456"
+    w2 = OcrWorkDir.create(s2_dir, source_pdf=s2_dir / "book.pdf", total_pages=1)
+    (s2_dir / "book.pdf").write_bytes(_minimal_pdf_bytes(1))
+    w2.set_page(1, text="p1", is_toc=False, confidence=1.0, status="ocrd")
+    w2.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+    client = TestClient(app)
+
+    with patch("preview.app_server._start_background_task") as mock_bg:
+        res1 = client.post("/api/sessions/upload-123/resume")
+        assert res1.status_code == 200
+        assert res1.json()["stage"] == "processing"
+        mock_bg.assert_called_once()
+
+        # Resuming the same active processing session returns processing without 409
+        res1_again = client.post("/api/sessions/upload-123/resume")
+        assert res1_again.status_code == 200
+        assert res1_again.json()["stage"] == "processing"
+
+        # Resuming a different session while processing returns 409
+        res_conflict = client.post("/api/sessions/upload-456/resume")
+        assert res_conflict.status_code == 409
+
+    # App in review stage can seamlessly switch to another session without reset
+    app2 = create_landing_app(MagicMock(), work_root)
+    client2 = TestClient(app2)
+
+    res2 = client2.post("/api/sessions/upload-456/resume")
+    assert res2.status_code == 200
+    assert res2.json()["stage"] == "review"
+
+    # Resuming the same active review session returns review
+    res2_again = client2.post("/api/sessions/upload-456/resume")
+    assert res2_again.status_code == 200
+    assert res2_again.json()["stage"] == "review"
+
+    # Non-existent session
+    res_err = client2.post("/api/sessions/upload-nonexistent/resume")
+    assert res_err.status_code == 404
+
+
+def test_delete_session(tmp_path: Path):
+    work_root = tmp_path / "work"
+    work_root.mkdir(parents=True)
+    s_dir = work_root / "upload-to-del"
+    w = OcrWorkDir.create(s_dir, source_pdf=s_dir / "book.pdf", total_pages=1)
+    (s_dir / "book.pdf").write_bytes(_minimal_pdf_bytes(1))
+    w.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+    client = TestClient(app)
+
+    assert (work_root / "upload-to-del").exists()
+    res = client.delete("/api/sessions/upload-to-del")
+    assert res.status_code == 200
+    assert not (work_root / "upload-to-del").exists()
+
+    res_404 = client.delete("/api/sessions/upload-to-del")
+    assert res_404.status_code == 404
+
+
+def test_locales_endpoints(tmp_path: Path):
+    app = create_landing_app(MagicMock(), tmp_path / "work")
+    client = TestClient(app)
+
+    res_ug = client.get("/api/locales/ug")
+    assert res_ug.status_code == 200
+    assert "header" in res_ug.json()
+    assert res_ug.json()["tabs"]["sessions"] == "يەرلىكتىكى خىزمەتلەر"
+
+    res_en = client.get("/api/locales/en")
+    assert res_en.status_code == 200
+    assert res_en.json()["tabs"]["sessions"] == "Local Sessions"
+
+    res_def = client.get("/api/locales")
+    assert res_def.status_code == 200
+    assert res_def.json()["tabs"]["sessions"] == "يەرلىكتىكى خىزمەتلەر"

@@ -26,6 +26,10 @@ def normalize_uyghur_chars(text: str) -> str:
 
     return (
         text.replace("ئ", "ئ")  # ئ (Yeh + Hamza) -> ئ (Hamza seat)
+        .replace("\u064a\u0654", "\u0626")
+        .replace("ة", "ە")  # Arabic Teh Marbuta -> Uyghur E
+        .replace("ہ", "ە")  # Urdu Heh Goal -> Uyghur E
+        .replace("ے", "ې")  # Urdu Bari Ye -> Uyghur E
         .replace("‌", "")  # Remove ZWNJ
         .replace("‍", "")  # Remove ZWJ
         .replace("​", "")  # Remove Zero-width space
@@ -40,13 +44,15 @@ def clean_uyghur_text(text: str) -> str:
     if not text:
         return ""
 
+    # 1. Join hyphenated and tatweel-split words across line endings before stripping them
+    text = re.sub(r"([^\W\d_])[-—–_ـ\u00ad־]+\s*\n\s*([^\W\d_])", r"\1\2", text)
+    text = re.sub(r"([^\W\d_])[-—–_ـ\u00ad־]+\s*\n\s*", r"\1\n", text)
+
+    # 2. Normalize characters
     text = normalize_uyghur_chars(text)
 
+    # 3. Strip OCR markers
     text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
-
-    text = re.sub(r"(\w)[-—–_]\s*\n\s*(\w)", r"\1\2", text)
-    text = re.sub(r"(\w)[-—–_]\s*\n\s*", r"\1", text)
-    text = re.sub(r"ـ+\s*\n\s*", "", text)
 
     blocks = re.split(r"\n\s*\n", text)
     cleaned_blocks = []

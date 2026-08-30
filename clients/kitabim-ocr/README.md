@@ -1,11 +1,11 @@
-# Surya OCR Client
+# Kitabim OCR Client
 
-Standalone desktop tool: runs Surya OCR locally on your own hardware (no
-Docker, full GPU/CPU access), lets you preview and redo pages before
-committing, then pushes finished text to Kitabim over its public API.
-Kitabim's own OCR stage (Gemini, in `services/worker`) is unaffected —
-this tool only ever talks to Kitabim's HTTP API as an authenticated
-editor/admin user.
+Standalone desktop tool: runs OCR locally on your own hardware (currently
+Surya OCR under the hood — no Docker, full GPU/CPU access), lets you
+preview and redo pages before committing, then pushes finished text to
+Kitabim over its public API. Kitabim's own OCR stage (Gemini, in
+`services/worker`) is unaffected — this tool only ever talks to Kitabim's
+HTTP API as an authenticated editor/admin user.
 
 ## Setup
 
@@ -17,17 +17,17 @@ editor/admin user.
 
 Set the two required variables, either in your shell:
 
-    export KITABIM_BASE_URL=https://api.kitabim.ai   # Kitabim backend to talk to
-    export KITABIM_WORK_DIR=~/surya-ocr-work          # where local OCR sessions are stored
+    export KITABIM_BASE_URL=https://kitabim.ai/api    # Kitabim backend to talk to
+    export KITABIM_WORK_DIR=~/kitabim-ocr-work        # where local OCR sessions are stored
 
 or once, in a `.env` file next to `cli.py` (copy `.env.example` to `.env`
 and fill it in) so you don't have to re-export them every session — a
 shell-exported value always wins if both are set. Neither variable is a
 secret (the actual login token lives separately, in
-`~/.config/surya-ocr-client/`), so `.env` is safe to use for this; it's
+`~/.config/kitabim-ocr-client/`), so `.env` is safe to use for this; it's
 already gitignored.
 
-    python cli.py app
+    python main.py
 
 This starts a local server on `http://127.0.0.1:8765` and opens it in
 your default browser automatically. The landing page lets you search for
@@ -45,8 +45,8 @@ to stop it.
 
 ## Other commands
 
-    python cli.py preview <workdir>                 # reopen a previous session directly
-    python cli.py push <workdir> --base-url https://api.kitabim.ai
+    python main.py preview <workdir>                 # reopen a previous session directly
+    python main.py push <workdir> --base-url https://kitabim.ai/api
 
 See `docs/superpowers/specs/2026-08-30-surya-ocr-client-design.md` and
 `docs/superpowers/specs/2026-08-30-surya-ocr-client-landing-page-design.md`

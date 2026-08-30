@@ -507,7 +507,7 @@ app.include_router(
 
 @app.get("/api/config")
 async def get_public_config(session: AsyncSession = Depends(get_session)):
-    """Public endpoint — returns config the frontend needs before it can authenticate."""
+    """Public endpoint — returns public configuration like collectionPageSize."""
     from app.db.repositories.system_configs_repository import SystemConfigsRepository
 
     repo = SystemConfigsRepository(session)
@@ -518,7 +518,6 @@ async def get_public_config(session: AsyncSession = Depends(get_session)):
         collection_page_size = 40
 
     return {
-        "appId": settings.security_app_id,
         "collectionPageSize": collection_page_size,
     }
 

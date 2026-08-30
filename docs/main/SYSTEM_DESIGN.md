@@ -79,7 +79,7 @@ flowchart LR
 ## 4) Monorepo Structure
 ```
 apps/frontend          # React/Vite SPA
-clients/surya-ocr        # Standalone local Surya OCR client (not deployed, not containerized)
+clients/kitabim-ocr      # Standalone local OCR client (currently Surya OCR; not deployed, not containerized)
 packages/backend-core   # Shared models, repositories, LLM clients, services
 packages/shared          # Generated OpenAPI TypeScript types, shared by the frontend
 services/backend        # FastAPI HTTP API

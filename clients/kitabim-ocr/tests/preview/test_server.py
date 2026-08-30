@@ -58,7 +58,7 @@ def test_redo_pages_reruns_ocr_on_selected_pages_only(tmp_path: Path):
             AsyncMock(return_value="predictor"),
         ),
         patch(
-            "preview.server.ocr_page_with_surya",
+            "preview.server.ocr_page",
             AsyncMock(return_value="re-ocr'd text"),
         ),
         patch("preview.server.fitz.open") as mock_fitz_open,
@@ -89,7 +89,7 @@ def test_redo_pages_flags_failed_page_instead_of_crashing(tmp_path: Path):
             AsyncMock(return_value="predictor"),
         ),
         patch(
-            "preview.server.ocr_page_with_surya",
+            "preview.server.ocr_page",
             AsyncMock(side_effect=LowConfidenceOcrError("confidence too low")),
         ),
         patch("preview.server.fitz.open") as mock_fitz_open,
@@ -111,7 +111,7 @@ def test_push_new_book_calls_client_push_new_book(tmp_path: Path):
     wd = _workdir(tmp_path)  # book_id=None -> new-book mode
     (tmp_path / "book.pdf").write_bytes(b"%PDF-fake")
     mock_client = AsyncMock()
-    mock_client.push_new_book = lambda pdf_path, pages: {
+    mock_client.push_new_book = lambda pdf_path, pages, filename=None: {
         "bookId": "new1",
         "status": "uploaded",
     }
@@ -140,3 +140,33 @@ def test_push_corrections_calls_client_push_page_correction_per_page(tmp_path: P
 
     assert response.status_code == 200
     assert calls == [("existingbook", 1), ("existingbook", 2)]
+
+
+def test_update_page_endpoint(tmp_path: Path):
+    wd = _workdir(tmp_path)
+    app = create_app(wd, client=None)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/pages/1/update",
+        json={"text": "new text content", "isToc": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "pageNumber": 1}
+    assert wd.get_page(1).text == "new text content"
+    assert wd.get_page(1).is_toc is True
+    assert wd.get_page(1).status == "reviewed"
+
+
+def test_serve_font_endpoint(tmp_path: Path):
+    wd = _workdir(tmp_path)
+    app = create_app(wd, client=None)
+    client = TestClient(app)
+
+    response = client.get("/fonts/alkatip-basma.woff2")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "font/woff2"
+
+    not_found = client.get("/fonts/nonexistent.woff2")
+    assert not_found.status_code == 404

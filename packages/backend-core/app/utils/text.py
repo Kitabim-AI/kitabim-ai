@@ -25,9 +25,13 @@ def normalize_uyghur_chars(text: str) -> str:
     # This is critical for search consistency but changes string length.
     text = "".join(_PRES_FORM_MAP.get(ord(c), c) for c in text)
 
-    # 2. Normalize common OCR artifacts (invisible characters)
+    # 2. Normalize common OCR artifacts (invisible characters and Arabic/Urdu variants)
     return (
         text.replace("\u064a\u0654", "\u0626")  # ئ (Yeh + Hamza) -> ئ (Hamza seat)
+        .replace("ئ", "ئ")
+        .replace("ة", "ە")  # Arabic Teh Marbuta -> Uyghur E
+        .replace("ہ", "ە")  # Urdu Heh Goal -> Uyghur E
+        .replace("ے", "ې")  # Urdu Bari Ye -> Uyghur E
         .replace("\u200c", "")  # Remove ZWNJ
         .replace("\u200d", "")  # Remove ZWJ
         .replace("\u200b", "")  # Remove Zero-width space
@@ -47,16 +51,15 @@ def clean_uyghur_text(text: str) -> str:
     if not text:
         return ""
 
+    # 1. Join hyphenated and tatweel-split words across line endings before stripping them
+    text = re.sub(r"([^\W\d_])[-—–_ـ\u00ad־]+\s*\n\s*([^\W\d_])", r"\1\2", text)
+    text = re.sub(r"([^\W\d_])[-—–_ـ\u00ad־]+\s*\n\s*", r"\1\n", text)
+
+    # 2. Normalize characters
     text = normalize_uyghur_chars(text)
 
-    # 1. Strip OCR structural markers ([Header] ..., [Footer] ...) and any
-    # trailing page-furniture text after them, wherever they appear in a line.
+    # 3. Strip OCR structural markers ([Header] ..., [Footer] ...)
     text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
-
-    # 3. Join words split by hyphen/dash at line endings (standardizing line breaks)
-    text = re.sub(r"(\w)[-—–_]\s*\n\s*(\w)", r"\1\2", text)
-    text = re.sub(r"(\w)[-—–_]\s*\n\s*", r"\1", text)
-    text = re.sub(r"ـ+\s*\n\s*", "", text)
 
     # 4. Split into blocks by double newlines (paragraphs)
     blocks = re.split(r"\n\s*\n", text)

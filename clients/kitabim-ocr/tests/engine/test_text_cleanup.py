@@ -10,10 +10,28 @@ def test_normalize_uyghur_chars_removes_zero_width_chars():
     assert normalize_uyghur_chars("سا‌لام") == "سالام"
 
 
+def test_normalize_uyghur_chars_normalizes_urdu_and_arabic_variants():
+    assert normalize_uyghur_chars("قلعة") == "قلعە"
+    assert normalize_uyghur_chars("مكتوبہ") == "مكتوبە"
+    assert normalize_uyghur_chars("ہوججەت") == "ەوججەت"
+    assert normalize_uyghur_chars("كتاب كے") == "كتاب كې"
+
+
 def test_clean_uyghur_text_strips_header_footer_markers():
     result = clean_uyghur_text("بۇ مەزمۇن.[Footer] 3")
     assert "[Footer]" not in result
     assert "3" not in result
+
+
+def test_clean_uyghur_text_joins_hyphenated_and_tatweel_line_breaks():
+    text = "مۇكاپاتقا ئېرىش-\nكەن. قەشقەر"
+    assert clean_uyghur_text(text) == "مۇكاپاتقا ئېرىشكەن. قەشقەر"
+
+    text2 = "دادامغا يېزىلغان خەتـ\nلەر ناملىق"
+    assert clean_uyghur_text(text2) == "دادامغا يېزىلغان خەتلەر ناملىق"
+
+    text3 = "شىنجاڭ شۆبىسىـ\nنىڭ ئەزاسى."
+    assert clean_uyghur_text(text3) == "شىنجاڭ شۆبىسىنىڭ ئەزاسى."
 
 
 def test_clean_uyghur_text_empty_input():

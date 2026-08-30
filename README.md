@@ -197,7 +197,7 @@ kitabim-ai/
 ├── apps/
 │   └── frontend/              # React 19 + Vite + TypeScript SPA
 ├── clients/
-│   └── surya-ocr/             # Standalone local Surya OCR client (not deployed, not containerized)
+│   └── kitabim-ocr/           # Standalone local OCR client (currently Surya OCR; not deployed, not containerized)
 ├── packages/
 │   ├── backend-core/          # Shared Python core: models, repos, LLM clients, services, ADK tools
 │   └── shared/                # Generated OpenAPI TypeScript types (npm workspace package)

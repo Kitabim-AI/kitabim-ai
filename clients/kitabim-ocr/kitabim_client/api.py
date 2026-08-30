@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,15 +19,31 @@ class KitabimAPIError(Exception):
 
 class KitabimClient:
     def __init__(
-        self, base_url: str, config_path: Path, provider: str = "google"
+        self,
+        base_url: str,
+        config_path: Path,
+        provider: str = "google",
+        app_id: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.config_path = config_path
         self.provider = provider
+        self._app_id = (
+            app_id
+            if app_id is not None
+            else (
+                os.environ.get("KITABIM_APP_ID")
+                or os.environ.get("SECURITY_APP_ID")
+                or ""
+            )
+        )
 
     def _headers(self) -> dict:
         token = get_valid_token(self.base_url, self.config_path, self.provider)
-        return {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}"}
+        if self._app_id:
+            headers["X-Kitabim-App-Id"] = self._app_id
+        return headers
 
     def _check(self, response: httpx.Response) -> dict:
         if response.status_code >= 400:
@@ -35,7 +52,12 @@ class KitabimClient:
             )
         return response.json()
 
-    def push_new_book(self, pdf_path: Path, pages: list["PageState"]) -> dict:
+    def push_new_book(
+        self,
+        pdf_path: Path,
+        pages: list["PageState"],
+        filename: str | None = None,
+    ) -> dict:
         pages_json = json.dumps(
             [
                 {"pageNumber": p.page_number, "text": p.text, "isToc": p.is_toc}
@@ -43,11 +65,14 @@ class KitabimClient:
             ],
             ensure_ascii=False,
         )
+        upload_filename = filename or pdf_path.name
+        if not upload_filename.lower().endswith(".pdf"):
+            upload_filename = f"{upload_filename}.pdf"
         with open(pdf_path, "rb") as f:
             response = httpx.post(
                 f"{self.base_url}/books/upload-ocrd",
                 headers=self._headers(),
-                files={"file": (pdf_path.name, f, "application/pdf")},
+                files={"file": (upload_filename, f, "application/pdf")},
                 data={"pages": pages_json},
                 timeout=120.0,
             )
@@ -83,11 +108,24 @@ class KitabimClient:
         dest.write_bytes(response.content)
         return dest
 
-    def list_books(self, q: str = "", page: int = 1, page_size: int = 20) -> dict:
+    def list_books(
+        self,
+        q: str = "",
+        page: int = 1,
+        page_size: int = 40,
+        sort_by: str = "uploadDate",
+        order: int = -1,
+    ) -> dict:
         response = httpx.get(
             f"{self.base_url}/books/",
             headers=self._headers(),
-            params={"q": q, "page": page, "pageSize": page_size, "sortBy": "title"},
+            params={
+                "q": q,
+                "page": page,
+                "pageSize": page_size,
+                "sortBy": sort_by,
+                "order": order,
+            },
             timeout=30.0,
         )
         return self._check(response)

@@ -11,7 +11,7 @@ from kitabim_client.api import KitabimClient
 from preview.app_server import serve_app
 from preview.server import serve
 
-DEFAULT_CONFIG_PATH = Path.home() / ".config" / "surya-ocr-client" / "token.json"
+DEFAULT_CONFIG_PATH = Path.home() / ".config" / "kitabim-ocr-client" / "token.json"
 DOTENV_PATH = Path(__file__).resolve().parent / ".env"
 
 
@@ -42,7 +42,11 @@ def cmd_push(workdir_path: Path, base_url: str) -> None:
     workdir = OcrWorkDir.load(workdir_path)
     client = KitabimClient(base_url=base_url, config_path=DEFAULT_CONFIG_PATH)
     if workdir.book_id is None:
-        result = client.push_new_book(workdir.source_pdf, workdir.all_pages())
+        result = client.push_new_book(
+            workdir.source_pdf,
+            workdir.all_pages(),
+            filename=workdir.original_filename,
+        )
     else:
         for page in workdir.all_pages():
             client.push_page_correction(workdir.book_id, page)
@@ -51,8 +55,8 @@ def cmd_push(workdir_path: Path, base_url: str) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Local Surya OCR client for Kitabim")
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(description="Kitabim OCR Desktop Client")
+    sub = parser.add_subparsers(dest="command", required=False)
 
     sub.add_parser(
         "app",
@@ -82,11 +86,13 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    if args.command == "app":
+    command = args.command or "app"
+
+    if command == "app":
         cmd_app()
-    elif args.command == "preview":
+    elif command == "preview":
         cmd_preview(Path(args.workdir), args.base_url)
-    elif args.command == "push":
+    elif command == "push":
         cmd_push(Path(args.workdir), args.base_url)
 
 

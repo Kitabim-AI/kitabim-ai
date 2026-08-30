@@ -7,9 +7,11 @@ from engine.workdir import PageState
 from kitabim_client.api import KitabimAPIError, KitabimClient
 
 
-def _client(tmp_path: Path) -> KitabimClient:
+def _client(tmp_path: Path, app_id: str | None = "test-app-id") -> KitabimClient:
     return KitabimClient(
-        base_url="http://localhost:8000", config_path=tmp_path / "token.json"
+        base_url="http://localhost:8000",
+        config_path=tmp_path / "token.json",
+        app_id=app_id,
     )
 
 
@@ -38,6 +40,32 @@ def test_push_new_book_posts_multipart_with_pages_json(tmp_path: Path):
     assert call.args[0] == "http://localhost:8000/books/upload-ocrd"
     assert call.kwargs["headers"]["Authorization"] == "Bearer tok123"
     assert "pages" in call.kwargs["data"]
+    assert call.kwargs["files"]["file"][0] == "book.pdf"
+
+
+def test_push_new_book_uses_custom_filename_with_pdf_extension(tmp_path: Path):
+    client = _client(tmp_path)
+    pdf_path = tmp_path / "book.pdf"
+    pdf_path.write_bytes(b"%PDF-fake")
+    pages = [
+        PageState(
+            page_number=1, text="hi", is_toc=False, confidence=0.9, status="reviewed"
+        )
+    ]
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"bookId": "abc123", "status": "uploaded"}
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.post", return_value=mock_response) as mock_post,
+    ):
+        result = client.push_new_book(pdf_path, pages, filename="تارىخى_رەشىدىي.pdf")
+
+    assert result == {"bookId": "abc123", "status": "uploaded"}
+    call = mock_post.call_args
+    assert call.kwargs["files"]["file"][0] == "تارىخى_رەشىدىي.pdf"
 
 
 def test_push_page_correction_calls_update_then_toc(tmp_path: Path):
@@ -132,8 +160,9 @@ def test_list_books_gets_paginated_books_with_query_params(tmp_path: Path):
     assert call.kwargs["params"] == {
         "q": "tarikh",
         "page": 2,
-        "pageSize": 20,
-        "sortBy": "title",
+        "pageSize": 40,
+        "sortBy": "uploadDate",
+        "order": -1,
     }
 
 
@@ -150,3 +179,24 @@ def test_error_response_raises_kitabim_api_error(tmp_path: Path):
     ):
         with pytest.raises(KitabimAPIError):
             client.download_book_pdf("missing", tmp_path / "x.pdf")
+
+
+def test_headers_includes_app_id_when_provided(tmp_path: Path):
+    client = _client(tmp_path, app_id="custom-app-id")
+    with patch("kitabim_client.api.get_valid_token", return_value="tok123"):
+        headers = client._headers()
+
+    assert headers["Authorization"] == "Bearer tok123"
+    assert headers["X-Kitabim-App-Id"] == "custom-app-id"
+
+
+def test_headers_reads_app_id_from_env(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("KITABIM_APP_ID", "env-app-id-456")
+    client = KitabimClient(
+        base_url="http://localhost:8000", config_path=tmp_path / "token.json"
+    )
+    with patch("kitabim_client.api.get_valid_token", return_value="tok123"):
+        headers = client._headers()
+
+    assert headers["Authorization"] == "Bearer tok123"
+    assert headers["X-Kitabim-App-Id"] == "env-app-id-456"
