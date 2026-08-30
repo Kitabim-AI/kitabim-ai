@@ -4,15 +4,19 @@ import argparse
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from engine.workdir import OcrWorkDir
 from kitabim_client.api import KitabimClient
 from preview.app_server import serve_app
 from preview.server import serve
 
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "surya-ocr-client" / "token.json"
+DOTENV_PATH = Path(__file__).resolve().parent / ".env"
 
 
 def cmd_app() -> None:
+    load_dotenv(DOTENV_PATH)
     base_url = os.environ.get("KITABIM_BASE_URL")
     if not base_url:
         raise SystemExit("KITABIM_BASE_URL environment variable is required")
@@ -21,7 +25,7 @@ def cmd_app() -> None:
         raise SystemExit("KITABIM_WORK_DIR environment variable is required")
 
     client = KitabimClient(base_url=base_url, config_path=DEFAULT_CONFIG_PATH)
-    serve_app(client, Path(work_dir))
+    serve_app(client, Path(work_dir).expanduser())
 
 
 def cmd_preview(workdir_path: Path, base_url: str | None) -> None:

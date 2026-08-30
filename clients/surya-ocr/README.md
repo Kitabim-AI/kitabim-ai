@@ -15,8 +15,17 @@ editor/admin user.
 
 ## Starting the app
 
+Set the two required variables, either in your shell:
+
     export KITABIM_BASE_URL=https://api.kitabim.ai   # Kitabim backend to talk to
     export KITABIM_WORK_DIR=~/surya-ocr-work          # where local OCR sessions are stored
+
+or once, in a `.env` file next to `cli.py` (copy `.env.example` to `.env`
+and fill it in) so you don't have to re-export them every session — a
+shell-exported value always wins if both are set. Neither variable is a
+secret (the actual login token lives separately, in
+`~/.config/surya-ocr-client/`), so `.env` is safe to use for this; it's
+already gitignored.
 
     python cli.py app
 

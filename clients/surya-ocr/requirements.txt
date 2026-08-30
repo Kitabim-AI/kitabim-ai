@@ -2,6 +2,7 @@ surya-ocr==0.22.1
 pymupdf
 pillow
 beautifulsoup4
+python-dotenv
 fastapi
 python-multipart
 uvicorn
