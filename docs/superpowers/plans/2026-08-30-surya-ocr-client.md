@@ -1877,7 +1877,6 @@ Create `clients/surya-ocr/tests/kitabim_client/test_api.py`:
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import httpx
 import pytest
 
 from engine.workdir import PageState
@@ -1885,10 +1884,12 @@ from kitabim_client.api import KitabimAPIError, KitabimClient
 
 
 def _client(tmp_path: Path) -> KitabimClient:
-    with patch("kitabim_client.api.get_valid_token", return_value="tok123"):
-        return KitabimClient(
-            base_url="http://localhost:8000", config_path=tmp_path / "token.json"
-        )
+    # get_valid_token() is called fresh inside _headers() on every request
+    # (not cached at construction time), so each test below patches it
+    # around the actual client call, not just around the constructor here.
+    return KitabimClient(
+        base_url="http://localhost:8000", config_path=tmp_path / "token.json"
+    )
 
 
 def test_push_new_book_posts_multipart_with_pages_json(tmp_path: Path):
@@ -1903,7 +1904,10 @@ def test_push_new_book_posts_multipart_with_pages_json(tmp_path: Path):
     mock_response.status_code = 200
     mock_response.json.return_value = {"bookId": "abc123", "status": "uploaded"}
 
-    with patch("kitabim_client.api.httpx.post", return_value=mock_response) as mock_post:
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.post", return_value=mock_response) as mock_post,
+    ):
         result = client.push_new_book(pdf_path, pages)
 
     assert result == {"bookId": "abc123", "status": "uploaded"}
@@ -1921,7 +1925,10 @@ def test_push_page_correction_calls_update_then_toc(tmp_path: Path):
     mock_response.status_code = 200
     mock_response.json.return_value = {"status": "page_updated"}
 
-    with patch("kitabim_client.api.httpx.post", return_value=mock_response) as mock_post:
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.post", return_value=mock_response) as mock_post,
+    ):
         client.push_page_correction("book123", page)
 
     urls_called = [c.args[0] for c in mock_post.call_args_list]
@@ -1939,7 +1946,10 @@ def test_download_book_pdf_writes_response_bytes_to_dest(tmp_path: Path):
     mock_response.status_code = 200
     mock_response.content = b"%PDF-content"
 
-    with patch("kitabim_client.api.httpx.get", return_value=mock_response):
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.get", return_value=mock_response),
+    ):
         result = client.download_book_pdf("book123", dest)
 
     assert result == dest
@@ -1957,9 +1967,13 @@ def test_get_book_pages_loops_pagination_until_short_page(tmp_path: Path):
     page2_response.status_code = 200
     page2_response.json.return_value = [{"pageNumber": 101}]
 
-    with patch(
-        "kitabim_client.api.httpx.get", side_effect=[page1_response, page2_response]
-    ) as mock_get:
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch(
+            "kitabim_client.api.httpx.get",
+            side_effect=[page1_response, page2_response],
+        ) as mock_get,
+    ):
         result = client.get_book_pages("book123")
 
     assert len(result) == 101
@@ -1973,7 +1987,10 @@ def test_error_response_raises_kitabim_api_error(tmp_path: Path):
     mock_response.status_code = 404
     mock_response.text = "Book not found"
 
-    with patch("kitabim_client.api.httpx.get", return_value=mock_response):
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.get", return_value=mock_response),
+    ):
         with pytest.raises(KitabimAPIError):
             client.download_book_pdf("missing", tmp_path / "x.pdf")
 ```
