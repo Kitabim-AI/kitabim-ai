@@ -576,3 +576,168 @@ async def test_upload_pdf_exceeds_size_limit():
 
     assert excinfo.value.status_code == 413
     assert "File size exceeds maximum limit" in excinfo.value.detail
+
+
+@pytest.mark.asyncio
+async def test_upload_ocrd_rejects_page_count_mismatch():
+    setup_paths()
+    from api.endpoints.books_router import upload_pdf_ocrd
+    import fitz
+
+    # A real 1-page PDF so read_pdf_page_count() sees total_pages=1.
+    doc = fitz.open()
+    doc.new_page()
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    mock_file = AsyncMock()
+    mock_file.filename = "book.pdf"
+    mock_file.read = AsyncMock(side_effect=[pdf_bytes, b""])
+
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+    mock_session = AsyncMock()
+
+    mock_repo = MagicMock()
+    mock_repo.find_by_hash = AsyncMock(return_value=None)
+
+    with patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo):
+        with pytest.raises(HTTPException) as excinfo:
+            await upload_pdf_ocrd(
+                file=mock_file,
+                pages='[{"pageNumber": 1, "text": "a"}, {"pageNumber": 2, "text": "b"}]',
+                current_user=mock_user,
+                session=mock_session,
+            )
+
+    assert excinfo.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_upload_ocrd_rejects_invalid_pages_json():
+    setup_paths()
+    from api.endpoints.books_router import upload_pdf_ocrd
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page()
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    mock_file = AsyncMock()
+    mock_file.filename = "book.pdf"
+    mock_file.read = AsyncMock(side_effect=[pdf_bytes, b""])
+
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+    mock_session = AsyncMock()
+
+    with patch("api.endpoints.books_router.BooksRepository", return_value=MagicMock()):
+        with pytest.raises(HTTPException) as excinfo:
+            await upload_pdf_ocrd(
+                file=mock_file,
+                pages="not json",
+                current_user=mock_user,
+                session=mock_session,
+            )
+
+    assert excinfo.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_upload_ocrd_returns_existing_book_on_duplicate_hash():
+    setup_paths()
+    from api.endpoints.books_router import upload_pdf_ocrd
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page()
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    mock_file = AsyncMock()
+    mock_file.filename = "book.pdf"
+    mock_file.read = AsyncMock(side_effect=[pdf_bytes, b""])
+
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+    mock_session = AsyncMock()
+
+    existing_book = MagicMock()
+    existing_book.id = "existingid123"
+    mock_repo = MagicMock()
+    mock_repo.find_by_hash = AsyncMock(return_value=existing_book)
+
+    with patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo):
+        result = await upload_pdf_ocrd(
+            file=mock_file,
+            pages='[{"pageNumber": 1, "text": "a"}]',
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert result == {"bookId": "existingid123", "status": "existing"}
+
+
+@pytest.mark.asyncio
+async def test_upload_ocrd_creates_book_with_prefilled_pages_on_success():
+    setup_paths()
+    from api.endpoints.books_router import upload_pdf_ocrd
+    from app.core.pipeline import PAGE_MILESTONE_SUCCEEDED, PIPELINE_STEP_CHUNKING
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page()
+    doc.new_page()
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    mock_file = AsyncMock()
+    mock_file.filename = "my book.pdf"
+    mock_file.read = AsyncMock(side_effect=[pdf_bytes, b""])
+
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+    mock_session = AsyncMock()
+
+    mock_repo = MagicMock()
+    mock_repo.find_by_hash = AsyncMock(return_value=None)
+    mock_repo.create = AsyncMock()
+
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.storage") as mock_storage,
+        patch("api.endpoints.books_router.cache_service") as mock_cache,
+    ):
+        mock_storage.upload_file = AsyncMock()
+        mock_cache.bump_namespace_version = AsyncMock()
+
+        result = await upload_pdf_ocrd(
+            file=mock_file,
+            pages=(
+                '[{"pageNumber": 1, "text": "first page", "isToc": false},'
+                ' {"pageNumber": 2, "text": "second page", "isToc": true}]'
+            ),
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert result["status"] == "uploaded"
+    assert "bookId" in result
+
+    create_kwargs = mock_repo.create.call_args.kwargs
+    assert create_kwargs["source"] == "surya_local"
+    assert create_kwargs["ocr_milestone"] == "complete"
+    assert create_kwargs["pipeline_step"] == PIPELINE_STEP_CHUNKING
+    assert create_kwargs["total_pages"] == 2
+
+    added_pages = [call.args[0] for call in mock_session.add.call_args_list] + [
+        p for call in mock_session.add_all.call_args_list for p in call.args[0]
+    ]
+    assert len(added_pages) == 2
+    by_number = {p.page_number: p for p in added_pages}
+    assert by_number[1].text == "first page"
+    assert by_number[1].is_toc is False
+    assert by_number[2].text == "second page"
+    assert by_number[2].is_toc is True
+    assert all(p.ocr_milestone == PAGE_MILESTONE_SUCCEEDED for p in added_pages)

@@ -1031,7 +1031,7 @@
           "books"
         ],
         "summary": "Get Global Graph",
-        "description": "Retrieve global knowledge graph data for public visualization.",
+        "description": "Retrieve global or book-specific knowledge graph data for visualization.",
         "operationId": "get_global_graph_api_books_graph_get",
         "security": [
           {
@@ -1054,6 +1054,23 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "name": "book_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Book Id"
             }
           }
         ],
@@ -1728,6 +1745,51 @@
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_upload_pdf_api_books_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/books/upload-ocrd": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Upload Pdf Ocrd",
+        "description": "Upload a PDF whose OCR has already been done externally (e.g. the\nlocal Surya OCR client). Pages arrive pre-filled and the book enters\nthe pipeline at chunking, the same shape DOCX uploads already use.",
+        "operationId": "upload_pdf_ocrd_api_books_upload_ocrd_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_pdf_ocrd_api_books_upload_ocrd_post"
               }
             }
           },
@@ -5908,6 +5970,72 @@
         }
       }
     },
+    "/api/share/page/{book_id}/{page_number}": {
+      "get": {
+        "tags": [
+          "share"
+        ],
+        "summary": "Share Page",
+        "operationId": "share_page_api_share_page__book_id___page_number__get",
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Number"
+            }
+          },
+          {
+            "name": "quote",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quote"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/cache/invalidate": {
       "post": {
         "tags": [
@@ -7537,6 +7665,25 @@
           "file"
         ],
         "title": "Body_upload_pdf_api_books_upload_post"
+      },
+      "Body_upload_pdf_ocrd_api_books_upload_ocrd_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "pages": {
+            "type": "string",
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "pages"
+        ],
+        "title": "Body_upload_pdf_ocrd_api_books_upload_ocrd_post"
       },
       "Book": {
         "properties": {
@@ -9389,6 +9536,17 @@
               }
             ],
             "title": "Bookid"
+          },
+          "bookTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booktitle"
           },
           "userId": {
             "anyOf": [

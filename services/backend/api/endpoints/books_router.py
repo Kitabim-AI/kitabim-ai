@@ -15,6 +15,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     File,
+    Form,
     HTTPException,
     Query,
     Response,
@@ -51,6 +52,7 @@ from app.models.schemas import (
     ContentSearchHit,
     PaginatedContentHits,
     ExtractionResult,
+    OcrPageInput,
     PageTocUpdate,
     to_camel,
 )
@@ -1687,6 +1689,152 @@ async def upload_pdf(
     await session.commit()
 
     # Invalidate lists by bumping versions
+    await cache_service.bump_namespace_version("books:list")
+    await cache_service.bump_namespace_version("category")
+
+    return {"bookId": book_id, "status": "uploaded"}
+
+
+@router.post("/upload-ocrd")
+async def upload_pdf_ocrd(
+    file: UploadFile = File(...),
+    pages: str = Form(...),
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Upload a PDF whose OCR has already been done externally (e.g. the
+    local Surya OCR client). Pages arrive pre-filled and the book enters
+    the pipeline at chunking, the same shape DOCX uploads already use."""
+    from pydantic import TypeAdapter, ValidationError
+
+    try:
+        raw_pages = json.loads(pages)
+        pages_data = TypeAdapter(List[OcrPageInput]).validate_python(raw_pages)
+    except (json.JSONDecodeError, ValidationError):
+        raise HTTPException(status_code=400, detail=t("errors.invalid_pages_payload"))
+
+    books_repo = BooksRepository(session)
+
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=400, detail=t("errors.invalid_file_type", allowed=".pdf")
+        )
+
+    temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}.pdf"
+    hasher = hashlib.sha256()
+    total_bytes = 0
+    try:
+        with open(temp_path, "wb") as handle:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > settings.max_book_upload_bytes:
+                    handle.close()
+                    temp_path.unlink(missing_ok=True)
+                    max_mb = settings.max_book_upload_bytes // (1024 * 1024)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File size exceeds maximum limit of {max_mb}MB",
+                    )
+                hasher.update(chunk)
+                handle.write(chunk)
+
+        content_hash = hasher.hexdigest()
+
+        existing = await books_repo.find_by_hash(content_hash)
+        if existing:
+            temp_path.unlink(missing_ok=True)
+            return {"bookId": str(existing.id), "status": "existing"}
+
+        page_count = read_pdf_page_count(temp_path)
+        expected_numbers = set(range(1, page_count + 1))
+        got_numbers = {p.page_number for p in pages_data}
+        if len(pages_data) != page_count or got_numbers != expected_numbers:
+            temp_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400,
+                detail=t(
+                    "errors.pages_count_mismatch",
+                    total=page_count,
+                    count=len(pages_data),
+                ),
+            )
+
+        book_id = secrets.token_hex(6)
+        remote_path = f"uploads/{book_id}.pdf"
+        cover_url = None
+        cover_temp_path = settings.uploads_dir / f".cover_{book_id}.jpg"
+
+        if extract_pdf_cover(temp_path, cover_temp_path):
+            try:
+                remote_cover_path = f"covers/{book_id}.jpg"
+                await storage.upload_file(cover_temp_path, remote_cover_path)
+                cover_url = remote_cover_path
+            finally:
+                cover_temp_path.unlink(missing_ok=True)
+        await storage.upload_file(temp_path, remote_path)
+        temp_path.unlink(missing_ok=True)
+
+    except HTTPException:
+        raise
+    except Exception:
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+        raise
+
+    now = datetime.now(timezone.utc)
+    ext = ".pdf"
+    title_raw = file.filename[: file.filename.lower().rfind(ext)]
+
+    await books_repo.create(
+        id=book_id,
+        content_hash=content_hash,
+        title=normalize_uyghur_chars(title_raw),
+        file_name=file.filename,
+        file_type="pdf",
+        author="",
+        volume=None,
+        total_pages=page_count,
+        cover_url=cover_url,
+        status="ocr_done",
+        pipeline_step=PIPELINE_STEP_CHUNKING,
+        upload_date=now,
+        last_updated=now,
+        created_by=current_user.email,
+        updated_by=current_user.email,
+        categories=[],
+        visibility="private",
+        source="surya_local",
+        ocr_milestone="complete",
+        chunking_milestone=PAGE_MILESTONE_IDLE,
+        embedding_milestone=PAGE_MILESTONE_IDLE,
+        spell_check_milestone=PAGE_MILESTONE_IDLE,
+    )
+
+    pages_by_number = {p.page_number: p for p in pages_data}
+    session.add_all(
+        [
+            Page(
+                book_id=book_id,
+                page_number=n,
+                text=pages_by_number[n].text,
+                is_toc=pages_by_number[n].is_toc,
+                pipeline_step=PIPELINE_STEP_CHUNKING,
+                milestone=PAGE_MILESTONE_IDLE,
+                status="ocr_done",
+                ocr_milestone=PAGE_MILESTONE_SUCCEEDED,
+                chunking_milestone=PAGE_MILESTONE_IDLE,
+                embedding_milestone=PAGE_MILESTONE_IDLE,
+                spell_check_milestone=PAGE_MILESTONE_IDLE,
+            )
+            for n in range(1, page_count + 1)
+        ]
+    )
+
+    await session.commit()
+
     await cache_service.bump_namespace_version("books:list")
     await cache_service.bump_namespace_version("category")
 

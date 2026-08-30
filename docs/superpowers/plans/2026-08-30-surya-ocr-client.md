@@ -260,7 +260,10 @@ async def test_upload_ocrd_rejects_page_count_mismatch():
     mock_user.email = "editor@example.com"
     mock_session = AsyncMock()
 
-    with patch("api.endpoints.books_router.BooksRepository", return_value=MagicMock()):
+    mock_repo = MagicMock()
+    mock_repo.find_by_hash = AsyncMock(return_value=None)
+
+    with patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo):
         with pytest.raises(HTTPException) as excinfo:
             await upload_pdf_ocrd(
                 file=mock_file,
