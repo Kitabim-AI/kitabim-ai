@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import fitz
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
 from kitabim_client.api import KitabimClient
 from engine.workdir import OcrWorkDir
@@ -195,6 +197,53 @@ init();
 </body></html>"""
 
 
+RENDER_ZOOM = 1.5
+
+
+def render_page_png(
+    doc: "fitz.Document", page_number: int, zoom: float = RENDER_ZOOM
+) -> bytes:
+    page = doc.load_page(page_number - 1)
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+    return pix.tobytes("png")
+
+
+def _start_existing_book(
+    book_id: str, client: KitabimClient, work_root: Path
+) -> OcrWorkDir:
+    out_dir = work_root / book_id
+    if (out_dir / "book.json").exists():
+        return OcrWorkDir.load(out_dir)
+
+    pdf_path = out_dir / "book.pdf"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    client.download_book_pdf(book_id, pdf_path)
+
+    existing_pages = client.get_book_pages(book_id)
+    doc = fitz.open(pdf_path)
+
+    workdir = OcrWorkDir.create(
+        out_dir, source_pdf=pdf_path, total_pages=len(doc), book_id=book_id
+    )
+    for page in existing_pages:
+        workdir.image_path(page["pageNumber"]).write_bytes(
+            render_page_png(doc, page["pageNumber"])
+        )
+        workdir.set_page(
+            page["pageNumber"],
+            text=page.get("text") or "",
+            is_toc=bool(page.get("isToc")),
+            confidence=1.0,
+            status="from_kitabim",
+        )
+    workdir.save()
+    return workdir
+
+
+class StartExistingRequest(BaseModel):
+    bookId: str
+
+
 @dataclass
 class AppState:
     client: KitabimClient
@@ -240,6 +289,21 @@ def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
     @app.get("/api/books")
     def list_books_route(q: str = "", page: int = 1):
         return state.client.list_books(q=q, page=page)
+
+    @app.post("/api/start/existing")
+    def start_existing(body: StartExistingRequest):
+        _require_landing_stage(state)
+        try:
+            state.workdir = _start_existing_book(
+                body.bookId, state.client, state.work_root
+            )
+        except Exception as exc:
+            state.stage = "error"
+            state.error = str(exc)
+            raise HTTPException(status_code=502, detail=str(exc))
+        state.stage = "review"
+        state.error = None
+        return {"stage": "review"}
 
     return app
 
