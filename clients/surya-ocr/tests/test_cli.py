@@ -1,124 +1,56 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 import cli
 
 
-@pytest.mark.asyncio
-async def test_cmd_ocr_renders_and_ocrs_every_page_then_serves(tmp_path: Path):
-    pdf_path = tmp_path / "book.pdf"
-    pdf_path.write_bytes(b"%PDF-fake")
-    out_dir = tmp_path / "out"
-
-    mock_doc = MagicMock()
-    mock_doc.__len__.return_value = 2
-    mock_doc.load_page.return_value = "fake-fitz-page"
-    mock_pix = MagicMock()
-    mock_pix.tobytes.return_value = b"\x89PNG fake"
-
-    with (
-        patch("cli.fitz.open", return_value=mock_doc),
-        patch("cli.get_recognition_predictor", AsyncMock(return_value="predictor")),
-        patch(
-            "cli.ocr_page_with_surya",
-            AsyncMock(side_effect=["text one", "text two"]),
-        ),
-        patch("cli.render_page_png", return_value=b"\x89PNG fake"),
-        patch("cli.serve") as mock_serve,
-    ):
-        await cli.cmd_ocr(pdf_path, out_dir, open_preview=True)
-
-    from engine.workdir import OcrWorkDir
-
-    wd = OcrWorkDir.load(out_dir)
-    assert wd.total_pages == 2
-    assert wd.get_page(1).text == "text one"
-    assert wd.get_page(2).text == "text two"
-    mock_serve.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_cmd_ocr_flags_failed_page_and_continues(tmp_path: Path):
-    pdf_path = tmp_path / "book.pdf"
-    pdf_path.write_bytes(b"%PDF-fake")
-    out_dir = tmp_path / "out"
-
-    mock_doc = MagicMock()
-    mock_doc.__len__.return_value = 2
-    mock_doc.load_page.return_value = "fake-fitz-page"
-
-    from engine.recognize import LowConfidenceOcrError
-
-    with (
-        patch("cli.fitz.open", return_value=mock_doc),
-        patch("cli.get_recognition_predictor", AsyncMock(return_value="predictor")),
-        patch(
-            "cli.ocr_page_with_surya",
-            AsyncMock(side_effect=[LowConfidenceOcrError("bad page"), "text two"]),
-        ),
-        patch("cli.render_page_png", return_value=b"\x89PNG fake"),
-        patch("cli.serve") as mock_serve,
-    ):
-        await cli.cmd_ocr(pdf_path, out_dir, open_preview=True)
-
-    from engine.workdir import OcrWorkDir
-
-    wd = OcrWorkDir.load(out_dir)
-    assert wd.get_page(1).status == "failed"
-    assert "bad page" in wd.get_page(1).error
-    assert wd.get_page(2).text == "text two"
-    mock_serve.assert_called_once()  # one bad page doesn't abort the whole run
-
-
-@pytest.mark.asyncio
-async def test_cmd_correct_seeds_workdir_from_existing_book_pages(tmp_path: Path):
-    out_dir = tmp_path / "out"
-    mock_client = MagicMock()
-    mock_client.download_book_pdf.return_value = tmp_path / "downloaded.pdf"
-    mock_client.get_book_pages.return_value = [
-        {"pageNumber": 1, "text": "existing one", "isToc": False},
-        {"pageNumber": 2, "text": "existing two", "isToc": True},
-    ]
-    (tmp_path / "downloaded.pdf").write_bytes(b"%PDF-fake")
-
-    mock_doc = MagicMock()
-    mock_doc.__len__.return_value = 2
-
-    with (
-        patch("cli.KitabimClient", return_value=mock_client),
-        patch("cli.fitz.open", return_value=mock_doc),
-        patch("cli.render_page_png", return_value=b"\x89PNG fake"),
-        patch("cli.serve") as mock_serve,
-    ):
-        await cli.cmd_correct(
-            "book123", out_dir, base_url="http://localhost:8000", open_preview=True
-        )
-
-    from engine.workdir import OcrWorkDir
-
-    wd = OcrWorkDir.load(out_dir)
-    assert wd.book_id == "book123"
-    assert wd.get_page(1).text == "existing one"
-    assert wd.get_page(2).is_toc is True
-    mock_serve.assert_called_once()
-
-
-def test_build_parser_ocr_command():
+def test_build_parser_app_command():
     parser = cli.build_parser()
-    args = parser.parse_args(["ocr", "book.pdf", "--out", "workdir"])
-    assert args.command == "ocr"
-    assert args.pdf == "book.pdf"
-    assert args.out == "workdir"
+    args = parser.parse_args(["app"])
+    assert args.command == "app"
 
 
-def test_build_parser_correct_command():
+def test_build_parser_preview_command():
     parser = cli.build_parser()
-    args = parser.parse_args(
-        ["correct", "book123", "--out", "workdir", "--base-url", "http://x"]
-    )
-    assert args.command == "correct"
-    assert args.book_id == "book123"
-    assert args.out == "workdir"
+    args = parser.parse_args(["preview", "workdir"])
+    assert args.command == "preview"
+    assert args.workdir == "workdir"
+
+
+def test_build_parser_push_command():
+    parser = cli.build_parser()
+    args = parser.parse_args(["push", "workdir", "--base-url", "http://x"])
+    assert args.command == "push"
     assert args.base_url == "http://x"
+
+
+def test_cmd_app_requires_kitabim_base_url_env_var(monkeypatch):
+    monkeypatch.delenv("KITABIM_BASE_URL", raising=False)
+    monkeypatch.setenv("KITABIM_WORK_DIR", "/tmp/work")
+
+    with pytest.raises(SystemExit, match="KITABIM_BASE_URL"):
+        cli.cmd_app()
+
+
+def test_cmd_app_requires_kitabim_work_dir_env_var(monkeypatch):
+    monkeypatch.setenv("KITABIM_BASE_URL", "http://localhost:8000")
+    monkeypatch.delenv("KITABIM_WORK_DIR", raising=False)
+
+    with pytest.raises(SystemExit, match="KITABIM_WORK_DIR"):
+        cli.cmd_app()
+
+
+def test_cmd_app_starts_server_with_env_config(monkeypatch):
+    monkeypatch.setenv("KITABIM_BASE_URL", "http://localhost:8000")
+    monkeypatch.setenv("KITABIM_WORK_DIR", "/tmp/work")
+
+    with patch("cli.serve_app") as mock_serve_app:
+        cli.cmd_app()
+
+    mock_serve_app.assert_called_once()
+    client_arg, work_root_arg = mock_serve_app.call_args.args
+    assert isinstance(client_arg, cli.KitabimClient)
+    assert client_arg.base_url == "http://localhost:8000"
+    assert work_root_arg == Path("/tmp/work")
