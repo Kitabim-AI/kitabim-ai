@@ -83,6 +83,10 @@ def clean_uyghur_text(text: str) -> str:
                 is_markdown_list = bool(list_marker_pattern.match(raw_line))
                 is_markdown_header = raw_line.startswith(header_prefixes)
                 is_toc_line = bool(dot_leader_pattern.search(line))
+                # A following header/table-row line must never get the current
+                # line's content merged into its front - check the *next*
+                # line's own prefix too, not just the current line's.
+                is_next_markdown_header = raw_next.startswith(header_prefixes)
 
                 if (
                     is_markdown_list
@@ -92,6 +96,7 @@ def clean_uyghur_text(text: str) -> str:
                     or is_new_item
                     or is_list_marker
                     or is_digit_marker
+                    or is_next_markdown_header
                 ):
                     result_block += line + "\n"
                 else:

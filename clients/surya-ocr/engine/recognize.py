@@ -30,9 +30,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger("surya_ocr_client.engine.recognize")
 
 # Local equivalents of packages/backend-core's OCR_MAX_RETRIES /
-# OCR_PAGE_ZOOM_FACTOR env-configured settings (defaults match main's).
+# OCR_PAGE_ZOOM_FACTOR env-configured settings (poc/easy-ocr-v2 only -
+# these don't exist on main). 2.5 matches the zoom bump that shipped
+# alongside the EasyOCR->Surya recognition swap there (mean confidence
+# ~0.75-0.78 -> ~0.97-0.98 on the same real pages, model+zoom verified
+# together).
 OCR_MAX_RETRIES = 4
-OCR_PAGE_ZOOM_FACTOR = 1.5
+OCR_PAGE_ZOOM_FACTOR = 2.5
 
 FOOTNOTE_LABELS = frozenset({"Footnote"})
 DISCARD_LABELS = frozenset({"PageHeader", "PageFooter"})
