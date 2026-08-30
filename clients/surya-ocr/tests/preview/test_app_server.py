@@ -285,3 +285,54 @@ def test_start_upload_route_rejects_when_not_landing(tmp_path: Path):
     )
 
     assert response.status_code == 409
+
+
+def test_pages_routes_require_an_active_workdir(tmp_path: Path):
+    app = create_landing_app(MagicMock(), tmp_path / "work")
+    client = TestClient(app)
+
+    assert client.get("/api/pages").status_code == 409
+    assert client.post("/api/pages/redo", json={"pageNumbers": [1]}).status_code == 409
+    assert client.post("/api/push").status_code == 409
+
+
+def test_pages_routes_work_once_a_book_is_active(tmp_path: Path):
+    mock_client = MagicMock()
+    mock_client.download_book_pdf.side_effect = (
+        lambda book_id, dest: dest.write_bytes(_minimal_pdf_bytes(1)) or dest
+    )
+    mock_client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "hi", "isToc": False}
+    ]
+    mock_client.push_page_correction.return_value = {"status": "page_updated"}
+    app = create_landing_app(mock_client, tmp_path / "work")
+    client = TestClient(app)
+    client.post("/api/start/existing", json={"bookId": "book123"})
+
+    pages = client.get("/api/pages").json()
+    assert pages[0]["text"] == "hi"
+
+    image_response = client.get("/api/pages/1/image")
+    assert image_response.status_code == 200
+    assert image_response.content.startswith(b"\x89PNG")
+
+    push_response = client.post("/api/push")
+    assert push_response.status_code == 200
+    mock_client.push_page_correction.assert_called_once()
+
+
+def test_back_to_library_clears_active_workdir(tmp_path: Path):
+    mock_client = MagicMock()
+    mock_client.download_book_pdf.side_effect = (
+        lambda book_id, dest: dest.write_bytes(_minimal_pdf_bytes(1)) or dest
+    )
+    mock_client.get_book_pages.return_value = [{"pageNumber": 1, "text": "hi"}]
+    app = create_landing_app(mock_client, tmp_path / "work")
+    client = TestClient(app)
+    client.post("/api/start/existing", json={"bookId": "book123"})
+
+    response = client.post("/api/reset")
+
+    assert response.status_code == 200
+    assert client.get("/api/state").json()["stage"] == "landing"
+    assert client.get("/api/pages").status_code == 409

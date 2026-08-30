@@ -10,7 +10,7 @@ from typing import Optional
 import fitz
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 from engine.recognize import (
@@ -20,7 +20,13 @@ from engine.recognize import (
 )
 from kitabim_client.api import KitabimClient
 from engine.workdir import OcrWorkDir
-from preview.server import list_pages_response
+from preview.server import (
+    RedoRequest,
+    get_page_image_bytes,
+    list_pages_response,
+    push_response,
+    redo_pages_response,
+)
 
 _APP_HTML = """<!doctype html>
 <html><head><title>Surya OCR Client</title>
@@ -383,6 +389,24 @@ def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
     def list_pages():
         _require_active_workdir(state)
         return list_pages_response(state.workdir)
+
+    @app.get("/api/pages/{page_number}/image")
+    def get_page_image(page_number: int):
+        _require_active_workdir(state)
+        return Response(
+            content=get_page_image_bytes(state.workdir, page_number),
+            media_type="image/png",
+        )
+
+    @app.post("/api/pages/redo")
+    async def redo_pages(body: RedoRequest):
+        _require_active_workdir(state)
+        return await redo_pages_response(state.workdir, body.pageNumbers)
+
+    @app.post("/api/push")
+    def push():
+        _require_active_workdir(state)
+        return push_response(state.workdir, state.client)
 
     return app
 
