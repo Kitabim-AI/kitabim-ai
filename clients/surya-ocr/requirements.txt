@@ -1,0 +1,9 @@
+surya-ocr==0.22.1
+pymupdf
+pillow
+beautifulsoup4
+fastapi
+uvicorn
+httpx
+pytest
+pytest-asyncio
