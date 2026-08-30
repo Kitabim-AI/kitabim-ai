@@ -105,6 +105,38 @@ def test_get_book_pages_loops_pagination_until_short_page(tmp_path: Path):
     assert mock_get.call_count == 2
 
 
+def test_list_books_gets_paginated_books_with_query_params(tmp_path: Path):
+    client = _client(tmp_path)
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "books": [{"id": "b1", "title": "Tarikh"}],
+        "total": 1,
+        "totalReady": 1,
+        "page": 2,
+        "pageSize": 20,
+    }
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.get", return_value=mock_response) as mock_get,
+    ):
+        result = client.list_books(q="tarikh", page=2)
+
+    assert result["total"] == 1
+    assert result["books"][0]["id"] == "b1"
+    call = mock_get.call_args
+    assert call.args[0] == "http://localhost:8000/books/"
+    assert call.kwargs["headers"]["Authorization"] == "Bearer tok123"
+    assert call.kwargs["params"] == {
+        "q": "tarikh",
+        "page": 2,
+        "pageSize": 20,
+        "sortBy": "title",
+    }
+
+
 def test_error_response_raises_kitabim_api_error(tmp_path: Path):
     client = _client(tmp_path)
 

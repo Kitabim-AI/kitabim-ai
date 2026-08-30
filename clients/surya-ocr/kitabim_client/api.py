@@ -83,6 +83,15 @@ class KitabimClient:
         dest.write_bytes(response.content)
         return dest
 
+    def list_books(self, q: str = "", page: int = 1, page_size: int = 20) -> dict:
+        response = httpx.get(
+            f"{self.base_url}/books/",
+            headers=self._headers(),
+            params={"q": q, "page": page, "pageSize": page_size, "sortBy": "title"},
+            timeout=30.0,
+        )
+        return self._check(response)
+
     def get_book_pages(self, book_id: str) -> list[dict]:
         all_pages: list[dict] = []
         skip = 0
