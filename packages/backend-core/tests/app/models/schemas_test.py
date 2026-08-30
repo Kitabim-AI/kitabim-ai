@@ -1,8 +1,22 @@
 import pytest
 from datetime import datetime, timezone
 from pydantic import ValidationError
-from app.models.schemas import ChatRequest, RagQuestionAdmin
+from app.models.schemas import ChatRequest, RagQuestionAdmin, OcrPageInput
 from app.db.models import RAGEvaluation
+
+
+def test_ocr_page_input_accepts_camel_case_payload():
+    page = OcrPageInput.model_validate(
+        {"pageNumber": 3, "text": "سالام دۇنيا", "isToc": True}
+    )
+    assert page.page_number == 3
+    assert page.text == "سالام دۇنيا"
+    assert page.is_toc is True
+
+
+def test_ocr_page_input_is_toc_defaults_false():
+    page = OcrPageInput.model_validate({"pageNumber": 1, "text": ""})
+    assert page.is_toc is False
 
 
 def test_chat_request_validation_valid():

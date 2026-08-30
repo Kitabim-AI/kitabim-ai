@@ -28,6 +28,8 @@
     "config_already_exists": "سەپلىمە ئاچقۇچى '{key}' ئالدىن مەۋجۇت",
     "book_title_not_found": "'{title}' سەرلەۋھىلىك كىتاب تېپىلمىدى",
     "invalid_file_type": "ئىناۋەتسىز ھۆججەت تىپى. رۇخسەت قىلىنىدىغانلىرى: {allowed}",
+    "invalid_pages_payload": "ئىناۋەتسىز بەت مەزمۇنى: چوقۇم {{pageNumber, text, isToc}} گۇرۇپپىسىدىن تۈزۈلگەن JSON بولۇشى كېرەك",
+    "pages_count_mismatch": "بەتلەر گۇرۇپپىسى 1 دىن {total} گىچە بولغان ھەممە بەتنى بىر قېتىمدىن ئۆز ئىچىگە ئېلىشى كېرەك ({total} بەتلىك PDF ئۈچۈن {count} تۈر تاپشۇرۇلدى)",
     "image_process_failed": "رەسىم بىر تەرەپ قىلىش مەغلۇپ بولدى: {error}",
     "spell_check_failed": "ئىملا تەكشۈرۈش مەغلۇپ بولدى: {error}",
     "page_not_found_with_num": "{page_num}-بەت تېپىلمىدى",

@@ -56,6 +56,16 @@ class PageTocUpdate(BaseModel):
     is_toc: bool  # API: isToc
 
 
+class OcrPageInput(BaseModel):
+    """One page's pre-OCR'd content, for POST /books/upload-ocrd."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    page_number: int  # API: pageNumber
+    text: str
+    is_toc: bool = False  # API: isToc
+
+
 class Book(BaseModel):
     """
     Book schema with automatic camelCase conversion from SQLAlchemy models.

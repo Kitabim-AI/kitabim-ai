@@ -28,6 +28,8 @@
     "config_already_exists": "Config key '{key}' already exists",
     "book_title_not_found": "Book with title '{title}' not found",
     "invalid_file_type": "Invalid file type. Allowed: {allowed}",
+    "invalid_pages_payload": "Invalid pages payload: must be a JSON array of {{pageNumber, text, isToc}}",
+    "pages_count_mismatch": "Pages array must cover every page from 1 to {total} exactly once (got {count} entries for a {total}-page PDF)",
     "image_process_failed": "Failed to process image: {error}",
     "spell_check_failed": "Spell check failed: {error}",
     "page_not_found_with_num": "Page {page_num} not found",
