@@ -2594,9 +2594,12 @@ def test_build_parser_ocr_command():
 
 def test_build_parser_correct_command():
     parser = cli.build_parser()
-    args = parser.parse_args(["correct", "book123", "--base-url", "http://x"])
+    args = parser.parse_args(
+        ["correct", "book123", "--out", "workdir", "--base-url", "http://x"]
+    )
     assert args.command == "correct"
     assert args.book_id == "book123"
+    assert args.out == "workdir"
     assert args.base_url == "http://x"
 ```
 
