@@ -83,6 +83,71 @@ class RedoRequest(BaseModel):
     pageNumbers: list[int]
 
 
+def list_pages_response(workdir: OcrWorkDir) -> list[dict]:
+    return [
+        {
+            "pageNumber": p.page_number,
+            "text": p.text,
+            "isToc": p.is_toc,
+            "confidence": p.confidence,
+            "status": p.status,
+        }
+        for p in workdir.all_pages()
+    ]
+
+
+def get_page_image_bytes(workdir: OcrWorkDir, page_number: int) -> bytes:
+    return workdir.image_path(page_number).read_bytes()
+
+
+async def redo_pages_response(
+    workdir: OcrWorkDir, page_numbers: list[int]
+) -> list[dict]:
+    doc = fitz.open(workdir.source_pdf)
+    predictor = await get_recognition_predictor()
+    for page_number in page_numbers:
+        fitz_page = doc.load_page(page_number - 1)
+        try:
+            text = await ocr_page_with_surya(fitz_page, predictor)
+            workdir.set_page(
+                page_number, text=text, is_toc=False, confidence=1.0, status="ocrd"
+            )
+        except LowConfidenceOcrError as exc:
+            # Never silently push a page that failed OCR - flag it and
+            # keep going, so one bad page doesn't abort the whole batch.
+            try:
+                previous_text = workdir.get_page(page_number).text
+            except KeyError:
+                previous_text = ""
+            workdir.set_page(
+                page_number,
+                text=previous_text,
+                is_toc=False,
+                confidence=0.0,
+                status="failed",
+                error=str(exc),
+            )
+    workdir.save()
+    return [
+        {
+            "pageNumber": p.page_number,
+            "text": p.text,
+            "status": p.status,
+            "error": p.error,
+        }
+        for p in workdir.all_pages()
+    ]
+
+
+def push_response(workdir: OcrWorkDir, client) -> dict:
+    if workdir.book_id is None:
+        return client.push_new_book(workdir.source_pdf, workdir.all_pages())
+    results = []
+    for page in workdir.all_pages():
+        results.append(client.push_page_correction(workdir.book_id, page))
+    return {"status": "corrections_pushed", "count": len(results)}
+
+
 def create_app(workdir: OcrWorkDir, client) -> FastAPI:
     app = FastAPI()
 
@@ -92,69 +157,22 @@ def create_app(workdir: OcrWorkDir, client) -> FastAPI:
 
     @app.get("/api/pages")
     def list_pages():
-        return [
-            {
-                "pageNumber": p.page_number,
-                "text": p.text,
-                "isToc": p.is_toc,
-                "confidence": p.confidence,
-                "status": p.status,
-            }
-            for p in workdir.all_pages()
-        ]
+        return list_pages_response(workdir)
 
     @app.get("/api/pages/{page_number}/image")
     def get_page_image(page_number: int):
         return Response(
-            content=workdir.image_path(page_number).read_bytes(),
+            content=get_page_image_bytes(workdir, page_number),
             media_type="image/png",
         )
 
     @app.post("/api/pages/redo")
     async def redo_pages(body: RedoRequest):
-        doc = fitz.open(workdir.source_pdf)
-        predictor = await get_recognition_predictor()
-        for page_number in body.pageNumbers:
-            fitz_page = doc.load_page(page_number - 1)
-            try:
-                text = await ocr_page_with_surya(fitz_page, predictor)
-                workdir.set_page(
-                    page_number, text=text, is_toc=False, confidence=1.0, status="ocrd"
-                )
-            except LowConfidenceOcrError as exc:
-                # Never silently push a page that failed OCR - flag it and
-                # keep going, so one bad page doesn't abort the whole batch.
-                try:
-                    previous_text = workdir.get_page(page_number).text
-                except KeyError:
-                    previous_text = ""
-                workdir.set_page(
-                    page_number,
-                    text=previous_text,
-                    is_toc=False,
-                    confidence=0.0,
-                    status="failed",
-                    error=str(exc),
-                )
-        workdir.save()
-        return [
-            {
-                "pageNumber": p.page_number,
-                "text": p.text,
-                "status": p.status,
-                "error": p.error,
-            }
-            for p in workdir.all_pages()
-        ]
+        return await redo_pages_response(workdir, body.pageNumbers)
 
     @app.post("/api/push")
     def push():
-        if workdir.book_id is None:
-            return client.push_new_book(workdir.source_pdf, workdir.all_pages())
-        results = []
-        for page in workdir.all_pages():
-            results.append(client.push_page_correction(workdir.book_id, page))
-        return {"status": "corrections_pushed", "count": len(results)}
+        return push_response(workdir, client)
 
     return app
 
