@@ -237,6 +237,10 @@ def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
         state.error = None
         return {"stage": "landing"}
 
+    @app.get("/api/books")
+    def list_books_route(q: str = "", page: int = 1):
+        return state.client.list_books(q=q, page=page)
+
     return app
 
 

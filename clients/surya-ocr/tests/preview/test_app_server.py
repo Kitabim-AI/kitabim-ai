@@ -36,3 +36,19 @@ def test_reset_from_landing_is_a_no_op(tmp_path: Path):
 
     assert response.status_code == 200
     assert response.json() == {"stage": "landing"}
+
+
+def test_list_books_route_proxies_to_client(tmp_path: Path):
+    mock_client = MagicMock()
+    mock_client.list_books.return_value = {
+        "books": [{"id": "b1", "title": "Tarikh"}],
+        "total": 1,
+    }
+    app = create_landing_app(mock_client, tmp_path / "work")
+    client = TestClient(app)
+
+    response = client.get("/api/books?q=tarikh&page=2")
+
+    assert response.status_code == 200
+    assert response.json() == {"books": [{"id": "b1", "title": "Tarikh"}], "total": 1}
+    mock_client.list_books.assert_called_once_with(q="tarikh", page=2)
