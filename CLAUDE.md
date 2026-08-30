@@ -41,6 +41,7 @@ This project has a set of skills in `.claude/skills/`. Invoke the right one befo
 | `services/backend/` | FastAPI API server |
 | `services/worker/` | arq background worker |
 | `apps/frontend/` | React/Vite SPA |
+| `clients/surya-ocr/` | Standalone local Surya OCR client — not part of the deployed product, not containerized, talks to the backend only over its public API |
 | `packages/backend-core/` | Shared Python code (models, services, repos, config) |
 | `packages/backend-core/migrations/` | SQL migration files |
 | `deploy/local/` | Local dev rebuild scripts |

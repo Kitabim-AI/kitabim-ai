@@ -15,6 +15,9 @@ This file provides guidance for automated agents working in this repo.
 - **Shared backend library**: `packages/backend-core/` — DB models, repos, services, RAG, utils
 - **Shared TS types**: `packages/shared/` — TypeScript API contracts shared with frontend
 
+## Standalone Tools (not deployed)
+- **Surya OCR client**: `clients/surya-ocr/` — standalone, non-containerized local desktop tool. Runs Surya OCR on the user's own hardware and pushes results to Kitabim over its public API. It is not part of Docker Compose, `deploy/local/`, or `deploy/gcp/` — do not add it to rebuild/deploy scripts.
+
 ## Technology Stack
 - **Frontend**: React 19, TypeScript, Vite, Tailwind CSS
 - **Backend API**: Python, FastAPI, SQLAlchemy
