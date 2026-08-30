@@ -1,0 +1,249 @@
+from __future__ import annotations
+
+import webbrowser
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
+
+from kitabim_client.api import KitabimClient
+from engine.workdir import OcrWorkDir
+
+_APP_HTML = """<!doctype html>
+<html><head><title>Surya OCR Client</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 1rem; }
+  section { display: none; }
+  section.active { display: block; }
+  .book-row { display: flex; gap: 1rem; align-items: center; border-bottom: 1px solid #ccc; padding: 0.5rem 0; }
+  .book-row .title { flex: 1; }
+  .progress-bar { background: #eee; height: 1rem; border-radius: 4px; overflow: hidden; max-width: 400px; }
+  .progress-bar-fill { background: #4a90d9; height: 100%; width: 0%; }
+  .page { display: flex; gap: 1rem; border-bottom: 1px solid #ccc; padding: 0.75rem 0; }
+  .page img { max-width: 300px; }
+  .page textarea { flex: 1; min-height: 200px; }
+  .error { color: #b00020; }
+  button { margin: 0.25rem; }
+</style>
+</head><body>
+<h1>Surya OCR Client</h1>
+
+<section id="landing">
+  <h2>Correct an existing Kitabim book</h2>
+  <input type="text" id="bookSearch" placeholder="Search by title or author...">
+  <div id="bookResults"></div>
+
+  <h2>OCR a new local PDF</h2>
+  <form id="uploadForm">
+    <input type="file" id="uploadFile" accept="application/pdf" required>
+    <button type="submit">Start OCR</button>
+  </form>
+  <p id="landingError" class="error"></p>
+</section>
+
+<section id="processing">
+  <h2>Processing...</h2>
+  <div class="progress-bar"><div class="progress-bar-fill" id="progressFill"></div></div>
+  <p id="progressLabel"></p>
+</section>
+
+<section id="review">
+  <div>
+    <button onclick="backToLibrary()">&larr; Back to library</button>
+    <button onclick="redoSelected()">Redo selected pages</button>
+    <button onclick="redoAll()">Redo whole book</button>
+    <button onclick="push()">Push to Kitabim</button>
+  </div>
+  <div id="pages"></div>
+</section>
+
+<script>
+const sections = {
+  landing: document.getElementById('landing'),
+  processing: document.getElementById('processing'),
+  review: document.getElementById('review'),
+};
+function showSection(name) {
+  for (const key in sections) sections[key].classList.toggle('active', key === name);
+}
+
+let searchTimer = null;
+document.getElementById('bookSearch').addEventListener('input', (e) => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => searchBooks(e.target.value), 300);
+});
+
+async function searchBooks(q) {
+  const res = await fetch('/api/books?q=' + encodeURIComponent(q));
+  const body = await res.json();
+  const container = document.getElementById('bookResults');
+  container.innerHTML = '';
+  for (const b of body.books) {
+    const row = document.createElement('div');
+    row.className = 'book-row';
+    row.innerHTML = `<span class="title">${b.title} — ${b.author} (${b.totalPages}p, ${b.ocrMilestone})</span><button>Correct this book</button>`;
+    row.querySelector('button').onclick = () => startExisting(b.id);
+    container.appendChild(row);
+  }
+}
+
+async function startExisting(bookId) {
+  const res = await fetch('/api/start/existing', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({bookId: bookId}),
+  });
+  if (!res.ok) { showLandingError(await res.text()); return; }
+  const body = await res.json();
+  if (body.stage === 'review') { showSection('review'); loadPages(); }
+}
+
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById('uploadFile');
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  const res = await fetch('/api/start/upload', {method: 'POST', body: formData});
+  if (!res.ok) { showLandingError(await res.text()); return; }
+  showSection('processing');
+  pollProgress();
+});
+
+function showLandingError(text) {
+  document.getElementById('landingError').textContent = text;
+}
+
+async function pollProgress() {
+  const res = await fetch('/api/pages');
+  const pages = await res.json();
+  const total = pages.length;
+  const done = pages.filter(p => p.status !== 'pending').length;
+  document.getElementById('progressLabel').textContent = done + ' / ' + total + ' pages';
+  document.getElementById('progressFill').style.width = total ? ((done / total) * 100) + '%' : '0%';
+
+  const stateRes = await fetch('/api/state');
+  const state = await stateRes.json();
+  if (state.stage === 'review') { showSection('review'); loadPages(); return; }
+  if (state.stage === 'error') { showSection('landing'); showLandingError(state.error || 'Processing failed'); return; }
+  setTimeout(pollProgress, 1000);
+}
+
+async function loadPages() {
+  const res = await fetch('/api/pages');
+  const pages = await res.json();
+  const container = document.getElementById('pages');
+  container.innerHTML = '';
+  for (const p of pages) {
+    const div = document.createElement('div');
+    div.className = 'page';
+    div.innerHTML = `
+      <input type="checkbox" class="select" value="${p.pageNumber}">
+      <img src="/api/pages/${p.pageNumber}/image">
+      <textarea data-page="${p.pageNumber}">${p.text}</textarea>
+    `;
+    container.appendChild(div);
+  }
+}
+function selectedPageNumbers() {
+  return Array.from(document.querySelectorAll('.select:checked')).map(c => parseInt(c.value));
+}
+function allPageNumbers() {
+  return Array.from(document.querySelectorAll('.select')).map(c => parseInt(c.value));
+}
+async function redoSelected() {
+  await fetch('/api/pages/redo', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({pageNumbers: selectedPageNumbers()}),
+  });
+  loadPages();
+}
+async function redoAll() {
+  await fetch('/api/pages/redo', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({pageNumbers: allPageNumbers()}),
+  });
+  loadPages();
+}
+async function push() {
+  const res = await fetch('/api/push', {method: 'POST'});
+  const body = await res.json();
+  alert('Push result: ' + JSON.stringify(body));
+}
+async function backToLibrary() {
+  await fetch('/api/reset', {method: 'POST'});
+  document.getElementById('bookResults').innerHTML = '';
+  document.getElementById('landingError').textContent = '';
+  showSection('landing');
+}
+
+async function init() {
+  const res = await fetch('/api/state');
+  const state = await res.json();
+  if (state.stage === 'processing') { showSection('processing'); pollProgress(); }
+  else if (state.stage === 'review') { showSection('review'); loadPages(); }
+  else {
+    showSection('landing');
+    searchBooks('');
+    if (state.error) showLandingError(state.error);
+  }
+}
+init();
+</script>
+</body></html>"""
+
+
+@dataclass
+class AppState:
+    client: KitabimClient
+    work_root: Path
+    stage: str = "landing"
+    workdir: Optional[OcrWorkDir] = None
+    error: Optional[str] = None
+
+
+def _require_landing_stage(state: AppState) -> None:
+    if state.stage != "landing":
+        raise HTTPException(
+            status_code=409, detail="A book is already active; reset first"
+        )
+
+
+def _require_active_workdir(state: AppState) -> None:
+    if state.workdir is None:
+        raise HTTPException(status_code=409, detail="No active book")
+
+
+def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
+    state = AppState(client=client, work_root=work_root)
+    app = FastAPI()
+
+    @app.get("/", response_class=HTMLResponse)
+    def index():
+        return _APP_HTML
+
+    @app.get("/api/state")
+    def get_state():
+        return {"stage": state.stage, "error": state.error}
+
+    @app.post("/api/reset")
+    def reset():
+        if state.stage == "processing":
+            raise HTTPException(status_code=409, detail="Cannot reset while processing")
+        state.workdir = None
+        state.stage = "landing"
+        state.error = None
+        return {"stage": "landing"}
+
+    return app
+
+
+def serve_app(
+    client: KitabimClient, work_root: Path, port: int = 8765, open_browser: bool = True
+) -> None:
+    app = create_landing_app(client, work_root)
+    if open_browser:
+        webbrowser.open(f"http://127.0.0.1:{port}")
+    uvicorn.run(app, host="127.0.0.1", port=port)
