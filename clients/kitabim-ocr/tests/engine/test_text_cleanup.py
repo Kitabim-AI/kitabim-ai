@@ -34,6 +34,14 @@ def test_clean_uyghur_text_joins_hyphenated_and_tatweel_line_breaks():
     assert clean_uyghur_text(text3) == "شىنجاڭ شۆبىسىنىڭ ئەزاسى."
 
 
+def test_clean_uyghur_text_joins_hyphenated_line_breaks_flattened_to_space():
+    # Full-page OCR mode reflows the source page's line break into a plain
+    # space instead of a literal newline - the join must still fire on that
+    # flattened form, not just the raw pre-flatten "hyphen + \n" case above.
+    text = "تەييارلىنىپلا تۇرات- تى. لېكىن كېچىلىرى"
+    assert clean_uyghur_text(text) == "تەييارلىنىپلا تۇراتتى. لېكىن كېچىلىرى"
+
+
 def test_clean_uyghur_text_empty_input():
     assert clean_uyghur_text("") == ""
 

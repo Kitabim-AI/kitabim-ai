@@ -895,7 +895,7 @@ _APP_HTML = """<!doctype html>
       </a>
 
       <div class="steps-indicator">
-        <div class="step-item active" id="step1Indicator">1. كىتاب تاللاش</div>
+        <div class="step-item active" id="step1Indicator" onclick="backToLibrary()" style="cursor: pointer;" title="باش بەتكە قايتىش">1. كىتاب تاللاش</div>
         <div>&larr;</div>
         <div class="step-item" id="step2Indicator">2. OCR نازارەت</div>
         <div>&larr;</div>
@@ -1071,6 +1071,19 @@ _APP_HTML = """<!doctype html>
 
     <!-- 2. PROCESSING & MONITORING SECTION -->
     <section id="processing">
+      <div class="glass-panel review-toolbar">
+        <div class="toolbar-group">
+          <button class="btn btn-secondary" onclick="backToLibrary()" id="processingBackBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            <span id="processingBackLabel">باش بەتكە قايتىش</span>
+          </button>
+        </div>
+        <div class="toolbar-group" style="font-size: 0.88rem; color: var(--slate-600); font-weight: 500;">
+          <span class="status-dot active"></span>
+          <span id="processingBackgroundBadge">ئارقا سەھنىدە ئىشلەۋاتىدۇ</span>
+        </div>
+      </div>
+
       <div class="glass-panel monitor-card">
         <div class="progress-header">
           <div>
@@ -1535,6 +1548,9 @@ _APP_HTML = """<!doctype html>
     }
 
     async function pollProgress() {
+      if (!sections.processing.classList.contains('active')) {
+        return;
+      }
       try {
         const res = await fetch('/api/pages');
         if (res.ok) {
@@ -1548,6 +1564,9 @@ _APP_HTML = """<!doctype html>
 
         const stateRes = await fetch('/api/state');
         const state = await stateRes.json();
+        if (!sections.processing.classList.contains('active')) {
+          return;
+        }
         if (state.stage === 'review') {
           showSection('review');
           loadPages();
@@ -1560,7 +1579,9 @@ _APP_HTML = """<!doctype html>
         }
         setTimeout(pollProgress, 1000);
       } catch (err) {
-        setTimeout(pollProgress, 2000);
+        if (sections.processing.classList.contains('active')) {
+          setTimeout(pollProgress, 2000);
+        }
       }
     }
 
@@ -2064,7 +2085,9 @@ _APP_HTML = """<!doctype html>
     }
 
     async function backToLibrary() {
-      await fetch('/api/reset', {method: 'POST'});
+      try {
+        await fetch('/api/reset', {method: 'POST'});
+      } catch (_) {}
       showLandingError('');
       showSection('landing');
       const sessions = await loadLocalSessions();
@@ -2094,6 +2117,10 @@ _APP_HTML = """<!doctype html>
       if (tabLibraryLabel) tabLibraryLabel.textContent = t('tabs.library');
       const tabUploadLabel = document.getElementById('tabUploadLabel');
       if (tabUploadLabel) tabUploadLabel.textContent = t('tabs.upload');
+      const processingBackLabel = document.getElementById('processingBackLabel');
+      if (processingBackLabel) processingBackLabel.textContent = t('processing.btn_back_home');
+      const processingBackgroundBadge = document.getElementById('processingBackgroundBadge');
+      if (processingBackgroundBadge) processingBackgroundBadge.textContent = t('processing.running_in_background');
     }
 
     async function init() {

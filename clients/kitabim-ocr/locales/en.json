@@ -81,6 +81,8 @@
     "starting": "Starting..."
   },
   "processing": {
+    "btn_back_home": "Back to Home",
+    "running_in_background": "Running in background",
     "title": "Processing document...",
     "subtitle": "Surya OCR engine is recognizing pages in order",
     "matrix_title": "Page Matrix Status:",
