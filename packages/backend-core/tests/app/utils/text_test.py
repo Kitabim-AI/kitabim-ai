@@ -2,7 +2,17 @@ from app.utils.text import (
     normalize_uyghur_chars,
     clean_uyghur_text,
     generate_uyghur_regex,
+    is_degenerate_ocr_output,
 )
+
+
+def test_is_degenerate_ocr_output():
+    assert is_degenerate_ocr_output("") is False
+    assert is_degenerate_ocr_output("بۇ ئادەتتىكى بىر پارچە تېكىست.") is False
+
+    # Runaway repetition
+    text = " ".join(["المجتمع"] * 25 + ["ئادەتتىكى", "تېكىست", "مەزمۇن"] * 20)
+    assert is_degenerate_ocr_output(text) is True
 
 
 def test_normalize_uyghur_chars():
@@ -37,6 +47,14 @@ def test_clean_uyghur_text():
 
     # Empty
     assert clean_uyghur_text("") == ""
+
+
+def test_clean_uyghur_text_joins_hyphenated_line_break_flattened_to_space():
+    # Full-page VLM OCR modes (Gemini, Surya) reflow the source page's line
+    # break into a plain space instead of emitting a literal "\n" - the join
+    # must still fire on that flattened form, not just the raw "hyphen + \n".
+    text = "بۇ كىت- اب"
+    assert clean_uyghur_text(text) == "بۇ كىتاب"
 
 
 def test_clean_uyghur_text_strips_ocr_markers():

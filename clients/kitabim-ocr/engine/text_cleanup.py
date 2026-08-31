@@ -175,7 +175,7 @@ def is_degenerate_ocr_output(text: str) -> bool:
         return True
 
     words = [w for w in text.split() if any(ch.isalnum() for ch in w)]
-    if len(words) < 50:
+    if len(words) < 30:
         return False
     _, most_common_count = Counter(words).most_common(1)[0]
-    return most_common_count >= 50 and most_common_count / len(words) >= 0.3
+    return most_common_count >= 20 and (most_common_count / len(words)) >= 0.2

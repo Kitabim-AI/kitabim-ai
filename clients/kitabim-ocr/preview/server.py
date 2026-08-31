@@ -17,6 +17,7 @@ from engine.recognize import (
     ocr_page,
 )
 from engine.workdir import OcrWorkDir
+from kitabim_client.api import KitabimAPIError
 
 FONTS_DIR = Path(__file__).parent / "static" / "fonts"
 
@@ -428,7 +429,7 @@ _PAGE_HTML = """<!doctype html>
           </div>
           <div class="page-card-body">
             <div class="page-image-wrap">
-              <img src="/api/pages/${p.pageNumber}/image" alt="بەت ${p.pageNumber}" loading="lazy">
+              <img src="/api/pages/${p.pageNumber}/image?v=${Date.now()}" alt="بەت ${p.pageNumber}" loading="lazy">
             </div>
             <div>
               <textarea class="ocr-textarea" data-page="${p.pageNumber}" oninput="autoSavePageText(${p.pageNumber}, this.value)">${escapeHtml(p.text || '')}</textarea>
@@ -687,16 +688,19 @@ def push_response(workdir: OcrWorkDir, client) -> dict:
         raise HTTPException(
             status_code=400, detail="Cannot push without KitabimClient configured"
         )
-    if workdir.book_id is None:
-        return client.push_new_book(
-            workdir.source_pdf,
-            workdir.all_pages(),
-            filename=workdir.original_filename,
-        )
-    results = []
-    for page in workdir.all_pages():
-        results.append(client.push_page_correction(workdir.book_id, page))
-    return {"status": "corrections_pushed", "count": len(results)}
+    try:
+        if workdir.book_id is None:
+            return client.push_new_book(
+                workdir.source_pdf,
+                workdir.all_pages(),
+                filename=workdir.original_filename,
+            )
+        results = []
+        for page in workdir.all_pages():
+            results.append(client.push_page_correction(workdir.book_id, page))
+        return {"status": "corrections_pushed", "count": len(results)}
+    except KitabimAPIError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 def create_app(workdir: OcrWorkDir, client) -> FastAPI:
@@ -722,6 +726,11 @@ def create_app(workdir: OcrWorkDir, client) -> FastAPI:
         return Response(
             content=get_page_image_bytes(workdir, page_number),
             media_type="image/png",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
         )
 
     @app.post("/api/pages/redo")

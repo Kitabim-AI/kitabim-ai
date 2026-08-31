@@ -45,6 +45,7 @@ def test_get_page_image_returns_png_bytes(tmp_path: Path):
 
     assert response.status_code == 200
     assert response.content == b"\x89PNG\r\n fake"
+    assert "no-cache" in response.headers.get("Cache-Control", "")
 
 
 def test_redo_pages_reruns_ocr_on_selected_pages_only(tmp_path: Path):

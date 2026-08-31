@@ -51,8 +51,10 @@ def clean_uyghur_text(text: str) -> str:
     if not text:
         return ""
 
-    # 1. Join hyphenated and tatweel-split words across line endings before stripping them
-    text = re.sub(r"([^\W\d_])[-—–_ـ\u00ad־]+\s*\n\s*([^\W\d_])", r"\1\2", text)
+    # 1. Join hyphenated and tatweel-split words across line endings before
+    # stripping them. Full-page VLM OCR modes reflow the source page's line
+    # break into a plain space rather than a literal "\n" - \s+ covers both.
+    text = re.sub(r"([^\W\d_])[-—–_ـ\u00ad־]+\s+([^\W\d_])", r"\1\2", text)
     text = re.sub(r"([^\W\d_])[-—–_ـ\u00ad־]+\s*\n\s*", r"\1\n", text)
 
     # 2. Normalize characters
@@ -220,10 +222,10 @@ def is_degenerate_ocr_output(text: str) -> bool:
     # quote marks) legitimately repeat dozens of times in real content, so
     # only real words count toward the repetition ratio.
     words = [w for w in text.split() if any(ch.isalnum() for ch in w)]
-    if len(words) < 50:
+    if len(words) < 30:
         return False
     _, most_common_count = Counter(words).most_common(1)[0]
-    return most_common_count >= 50 and most_common_count / len(words) >= 0.3
+    return most_common_count >= 20 and (most_common_count / len(words)) >= 0.2
 
 
 def generate_uyghur_regex(q: str) -> str:

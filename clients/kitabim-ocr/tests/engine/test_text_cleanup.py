@@ -72,5 +72,11 @@ def test_is_degenerate_ocr_output_flags_repeated_word():
     assert is_degenerate_ocr_output(text) is True
 
 
+def test_is_degenerate_ocr_output_flags_moderate_repetition():
+    # 25 repeated words in an 80-word text (> 20 occurrences and > 20% frequency)
+    text = " ".join(["المجتمع"] * 25 + ["ئادەتتىكى", "تېكىست", "مەزمۇن"] * 20)
+    assert is_degenerate_ocr_output(text) is True
+
+
 def test_is_degenerate_ocr_output_false_for_normal_text():
     assert is_degenerate_ocr_output("بۇ ئادەتتىكى بىر پارچە تېكىست.") is False

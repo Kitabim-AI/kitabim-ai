@@ -1556,7 +1556,7 @@ _APP_HTML = """<!doctype html>
         if (res.ok) {
           const pages = await res.json();
           const total = pages.length;
-          const done = pages.filter(p => p.status !== 'pending').length;
+          const done = pages.filter(p => p.status === 'ocrd' || p.status === 'from_kitabim' || p.status === 'reviewed' || p.status === 'failed').length;
           document.getElementById('progressLabel').textContent = t('sessions.pages_completed_stat', {done: done, total: total});
           document.getElementById('progressFill').style.width = total ? ((done / total) * 100) + '%' : '0%';
           renderPageMatrix(pages);
@@ -1587,6 +1587,7 @@ _APP_HTML = """<!doctype html>
 
     let currentProcessingPages = [];
     let currentPreviewPageNumber = null;
+    let currentSessionVersion = Date.now();
 
     function renderPageMatrix(pages) {
       currentProcessingPages = pages || [];
@@ -1651,7 +1652,7 @@ _APP_HTML = """<!doctype html>
         badge.className = 'milestone-badge milestone-ready';
         badge.textContent = page.status === 'from_kitabim' ? t('review.status_from_kitabim_badge') : t('review.status_ocrd_badge');
       }
-      document.getElementById('previewModalImage').src = `/api/pages/${page.pageNumber}/image`;
+      document.getElementById('previewModalImage').src = `/api/pages/${page.pageNumber}/image?v=${currentSessionVersion}`;
       
       const textArea = document.getElementById('previewModalText');
       if (document.activeElement !== textArea) {
@@ -1729,6 +1730,7 @@ _APP_HTML = """<!doctype html>
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({pageNumbers: [pageNum]}),
         });
+        currentSessionVersion = Date.now();
         const res = await fetch('/api/pages');
         if (res.ok) {
           const pages = await res.json();
@@ -1791,7 +1793,13 @@ _APP_HTML = """<!doctype html>
       if (currentPreviewPageNumber !== null) {
         if (e.key === 'Escape') {
           closeLivePreview();
-        } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+          return;
+        }
+        const isEditing = ['TEXTAREA', 'INPUT'].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+        if (isEditing) {
+          return;
+        }
+        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
           navigateLivePreview(-1);
         } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
           navigateLivePreview(1);
@@ -1843,7 +1851,7 @@ _APP_HTML = """<!doctype html>
           </div>
           <div class="page-card-body">
             <div class="page-image-wrap">
-              <img src="/api/pages/${p.pageNumber}/image" alt="${t('review.page_title_format', {pageNumber: p.pageNumber})}" loading="lazy">
+              <img src="/api/pages/${p.pageNumber}/image?v=${currentSessionVersion}" alt="${t('review.page_title_format', {pageNumber: p.pageNumber})}" loading="lazy">
             </div>
             <div class="page-editor-wrap">
               <textarea class="ocr-textarea uyghur-text" data-page="${p.pageNumber}" oninput="autoSavePageText(${p.pageNumber}, this.value)" placeholder="${t('review.textarea_placeholder')}">${escapeHtml(p.text || '')}</textarea>
@@ -1906,6 +1914,7 @@ _APP_HTML = """<!doctype html>
     }
 
     async function redoSinglePage(pageNum) {
+      currentSessionVersion = Date.now();
       await fetch('/api/pages/redo', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1917,6 +1926,7 @@ _APP_HTML = """<!doctype html>
     async function redoSelected() {
       const pages = selectedPageNumbers();
       if (!pages.length) return;
+      currentSessionVersion = Date.now();
       const btn = document.getElementById('redoSelectedBtn');
       btn.disabled = true;
       btn.textContent = t('review.redo_in_progress');
@@ -1937,6 +1947,7 @@ _APP_HTML = """<!doctype html>
       const pages = allPageNumbers();
       if (!pages.length) return;
       if (!confirm(t('review.redo_all_confirm'))) return;
+      currentSessionVersion = Date.now();
       const btn = document.getElementById('redoAllBtn');
       btn.disabled = true;
       btn.textContent = t('review.redo_in_progress');
@@ -1959,6 +1970,10 @@ _APP_HTML = """<!doctype html>
       btn.textContent = t('review.push_in_progress');
       try {
         const res = await fetch('/api/push', {method: 'POST'});
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `Push failed (HTTP ${res.status})`);
+        }
         const body = await res.json();
         let message = body.count ? t('push_modal.corrections_message', {count: body.count}) : t('push_modal.new_book_message');
         document.getElementById('pushModalMessage').textContent = message;
@@ -2243,7 +2258,7 @@ async def _run_ocr_background(
         save_lock = asyncio.Lock()
 
         async def process_one(page_number: int):
-            current_page = workdir.get_page(page_number)
+            current_page = workdir._pages.get(page_number)
             if current_page and current_page.status in (
                 "ocrd",
                 "reviewed",
@@ -2283,6 +2298,17 @@ async def _run_ocr_background(
                             confidence=0.0,
                             status="failed",
                             error=str(exc),
+                        )
+                        workdir.save()
+                except Exception as exc:
+                    async with save_lock:
+                        workdir.set_page(
+                            page_number,
+                            text="",
+                            is_toc=False,
+                            confidence=0.0,
+                            status="failed",
+                            error=f"Unexpected OCR error: {exc}",
                         )
                         workdir.save()
 
@@ -2346,8 +2372,14 @@ def list_local_sessions(work_root: Path) -> list[dict]:
     return sessions
 
 
-def _start_background_task(coro) -> None:
-    asyncio.create_task(coro)
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def _start_background_task(coro) -> asyncio.Task:
+    task = asyncio.create_task(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
 
 
 @dataclass
@@ -2396,7 +2428,11 @@ def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
 
     @app.get("/api/state")
     def get_state():
-        return {"stage": state.stage, "error": state.error}
+        return {
+            "stage": state.stage,
+            "error": state.error,
+            "sessionId": state.workdir.root.name if state.workdir else None,
+        }
 
     @app.get("/api/sessions")
     def get_sessions():
@@ -2528,6 +2564,11 @@ def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
         return Response(
             content=get_page_image_bytes(state.workdir, page_number),
             media_type="image/png",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
         )
 
     @app.post("/api/pages/redo")

@@ -45,7 +45,7 @@ def test_state_defaults_to_landing(tmp_path: Path):
     response = client.get("/api/state")
 
     assert response.status_code == 200
-    assert response.json() == {"stage": "landing", "error": None}
+    assert response.json() == {"stage": "landing", "error": None, "sessionId": None}
 
 
 def test_reset_from_landing_is_a_no_op(tmp_path: Path):
@@ -335,6 +335,7 @@ def test_pages_routes_work_once_a_book_is_active(tmp_path: Path):
     image_response = client.get("/api/pages/1/image")
     assert image_response.status_code == 200
     assert image_response.content.startswith(b"\x89PNG")
+    assert "no-cache" in image_response.headers.get("Cache-Control", "")
 
     push_response = client.post("/api/push")
     assert push_response.status_code == 200
@@ -522,3 +523,45 @@ def test_locales_endpoints(tmp_path: Path):
     res_def = client.get("/api/locales")
     assert res_def.status_code == 200
     assert res_def.json()["tabs"]["sessions"] == "يەرلىكتىكى خىزمەتلەر"
+
+
+@pytest.mark.asyncio
+async def test_start_background_task_retains_reference():
+    import asyncio
+    from preview.app_server import _start_background_task, _BACKGROUND_TASKS
+
+    async def simple_task():
+        await asyncio.sleep(0.01)
+
+    task = _start_background_task(simple_task())
+    assert task in _BACKGROUND_TASKS
+    await task
+    assert task not in _BACKGROUND_TASKS
+
+
+@pytest.mark.asyncio
+async def test_run_ocr_background_unexpected_error(tmp_path: Path):
+    from preview.app_server import _run_ocr_background, AppState
+
+    workdir_path = tmp_path / "workdir"
+    pdf_path = workdir_path / "book.pdf"
+    pdf_bytes = _minimal_pdf_bytes(1)
+    workdir_path.mkdir(parents=True)
+    pdf_path.write_bytes(pdf_bytes)
+
+    workdir = OcrWorkDir.create(workdir_path, source_pdf=pdf_path, total_pages=1)
+    workdir.save()
+
+    state = AppState(client=MagicMock(), work_root=tmp_path)
+
+    with patch("preview.app_server.ocr_page", side_effect=RuntimeError("GPU crash")):
+        with patch(
+            "preview.app_server.get_recognition_predictor",
+            new=AsyncMock(return_value=MagicMock()),
+        ):
+            await _run_ocr_background(workdir, state)
+
+    assert state.stage == "review"
+    page = workdir.get_page(1)
+    assert page.status == "failed"
+    assert "GPU crash" in page.error
