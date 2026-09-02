@@ -27,12 +27,6 @@ def test_normalize_uyghur_chars():
 
 
 def test_clean_uyghur_text():
-    # Hyphen at line end
-    text = "بۇ كىت-\nاب"
-    # Note: re.sub(r"(\w)[-—–_]\s*\n\s*(\w)", r"\1\2", text)
-    # The hyphen is removed
-    assert "بۇ كىتاب" in clean_uyghur_text(text)
-
     # Paragraph splitting
     text = "P1 line 1\nP1 line 2\n\nP2"
     cleaned = clean_uyghur_text(text)
@@ -47,14 +41,6 @@ def test_clean_uyghur_text():
 
     # Empty
     assert clean_uyghur_text("") == ""
-
-
-def test_clean_uyghur_text_joins_hyphenated_line_break_flattened_to_space():
-    # Full-page VLM OCR modes (Gemini, Surya) reflow the source page's line
-    # break into a plain space instead of emitting a literal "\n" - the join
-    # must still fire on that flattened form, not just the raw "hyphen + \n".
-    text = "بۇ كىت- اب"
-    assert clean_uyghur_text(text) == "بۇ كىتاب"
 
 
 def test_clean_uyghur_text_strips_ocr_markers():

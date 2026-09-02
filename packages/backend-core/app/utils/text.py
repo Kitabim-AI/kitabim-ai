@@ -51,16 +51,10 @@ def clean_uyghur_text(text: str) -> str:
     if not text:
         return ""
 
-    # 1. Join hyphenated and tatweel-split words across line endings before
-    # stripping them. Full-page VLM OCR modes reflow the source page's line
-    # break into a plain space rather than a literal "\n" - \s+ covers both.
-    text = re.sub(r"([^\W\d_])[-—–_ـ\u00ad־]+\s+([^\W\d_])", r"\1\2", text)
-    text = re.sub(r"([^\W\d_])[-—–_ـ\u00ad־]+\s*\n\s*", r"\1\n", text)
-
-    # 2. Normalize characters
+    # 1. Normalize characters
     text = normalize_uyghur_chars(text)
 
-    # 3. Strip OCR structural markers ([Header] ..., [Footer] ...)
+    # 2. Strip OCR structural markers ([Header] ..., [Footer] ...)
     text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
 
     # 4. Split into blocks by double newlines (paragraphs)

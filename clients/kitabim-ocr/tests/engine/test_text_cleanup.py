@@ -23,25 +23,6 @@ def test_clean_uyghur_text_strips_header_footer_markers():
     assert "3" not in result
 
 
-def test_clean_uyghur_text_joins_hyphenated_and_tatweel_line_breaks():
-    text = "مۇكاپاتقا ئېرىش-\nكەن. قەشقەر"
-    assert clean_uyghur_text(text) == "مۇكاپاتقا ئېرىشكەن. قەشقەر"
-
-    text2 = "دادامغا يېزىلغان خەتـ\nلەر ناملىق"
-    assert clean_uyghur_text(text2) == "دادامغا يېزىلغان خەتلەر ناملىق"
-
-    text3 = "شىنجاڭ شۆبىسىـ\nنىڭ ئەزاسى."
-    assert clean_uyghur_text(text3) == "شىنجاڭ شۆبىسىنىڭ ئەزاسى."
-
-
-def test_clean_uyghur_text_joins_hyphenated_line_breaks_flattened_to_space():
-    # Full-page OCR mode reflows the source page's line break into a plain
-    # space instead of a literal newline - the join must still fire on that
-    # flattened form, not just the raw pre-flatten "hyphen + \n" case above.
-    text = "تەييارلىنىپلا تۇرات- تى. لېكىن كېچىلىرى"
-    assert clean_uyghur_text(text) == "تەييارلىنىپلا تۇراتتى. لېكىن كېچىلىرى"
-
-
 def test_clean_uyghur_text_empty_input():
     assert clean_uyghur_text("") == ""
 
