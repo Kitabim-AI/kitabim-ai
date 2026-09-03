@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import webbrowser
 from pathlib import Path
 from typing import Optional
@@ -695,14 +696,23 @@ def push_response(workdir: OcrWorkDir, client) -> dict:
         )
     try:
         if workdir.book_id is None:
-            return client.push_new_book(
+            res = client.push_new_book(
                 workdir.source_pdf,
                 workdir.all_pages(),
                 filename=workdir.original_filename,
             )
+            workdir.uploaded = True
+            workdir.uploaded_at = time.time()
+            if isinstance(res, dict) and res.get("bookId"):
+                workdir.book_id = str(res["bookId"])
+            workdir.save()
+            return res
         results = []
         for page in workdir.all_pages():
             results.append(client.push_page_correction(workdir.book_id, page))
+        workdir.uploaded = True
+        workdir.uploaded_at = time.time()
+        workdir.save()
         return {"status": "corrections_pushed", "count": len(results)}
     except KitabimAPIError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

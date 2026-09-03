@@ -23,9 +23,11 @@ class BookQueueManager:
         self,
         work_root: Path,
         runner: Callable[[OcrWorkDir], Awaitable[None]],
+        task_launcher: Optional[Callable[[Awaitable], asyncio.Task]] = None,
     ) -> None:
         self.work_root = work_root
         self.runner = runner
+        self.task_launcher = task_launcher or asyncio.create_task
         self._queue: list[str] = []
         self._active_session_id: Optional[str] = None
         self._worker_task: Optional[asyncio.Task] = None
@@ -73,22 +75,17 @@ class BookQueueManager:
                         "Failed to update queue_status for %s: %s", session_id, exc
                     )
 
+            if self._active_session_id is None:
+                self._active_session_id = session_id
+                self._ensure_worker_running()
+                return (0, True)
+
             if session_id not in self._queue:
                 self._queue.append(session_id)
 
             self._ensure_worker_running()
-
-        # Yield to allow the worker loop to pick up the item if idle
-        await asyncio.sleep(0)
-
-        async with self._lock:
-            if self._active_session_id == session_id:
-                return (0, True)
-            try:
-                pos = self._queue.index(session_id) + 1
-                return (pos, False)
-            except ValueError:
-                return (0, self._active_session_id == session_id)
+            pos = self._queue.index(session_id) + 1
+            return (pos, False)
 
     def cancel(self, session_id: str) -> bool:
         """Removes a session from the queue if not yet active."""
@@ -107,22 +104,26 @@ class BookQueueManager:
 
     def _ensure_worker_running(self) -> None:
         if self._worker_task is None or self._worker_task.done():
-            self._worker_task = asyncio.create_task(self._process_loop())
+            self._worker_task = self.task_launcher(self._process_loop())
 
     async def _process_loop(self) -> None:
         while True:
             session_id: Optional[str] = None
             async with self._lock:
-                if not self._queue:
+                if self._active_session_id is not None:
+                    session_id = self._active_session_id
+                elif self._queue:
+                    session_id = self._queue.pop(0)
+                    self._active_session_id = session_id
+                else:
                     self._active_session_id = None
                     break
-                session_id = self._queue.pop(0)
-                self._active_session_id = session_id
 
             session_dir = self.work_root / session_id
             if not (session_dir / "book.json").exists():
                 async with self._lock:
-                    self._active_session_id = None
+                    if self._active_session_id == session_id:
+                        self._active_session_id = None
                 continue
 
             workdir: Optional[OcrWorkDir] = None

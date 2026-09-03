@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from engine.config import get_configured_engine
+from engine.queue import BookQueueManager
 from engine.recognize import (
     LowConfidenceOcrError,
     get_recognition_predictor,
@@ -2327,7 +2328,9 @@ async def _run_ocr_background(
         state.error = str(exc)
 
 
-def list_local_sessions(work_root: Path) -> list[dict]:
+def list_local_sessions(
+    work_root: Path, queue_manager: Optional[BookQueueManager] = None
+) -> list[dict]:
     sessions = []
     if not work_root.exists():
         return sessions
@@ -2360,6 +2363,10 @@ def list_local_sessions(work_root: Path) -> list[dict]:
                 title = item.name
 
             mtime = item.stat().st_mtime
+            queue_pos = (
+                queue_manager.get_queue_position(item.name) if queue_manager else None
+            )
+
             sessions.append(
                 {
                     "id": item.name,
@@ -2372,6 +2379,10 @@ def list_local_sessions(work_root: Path) -> list[dict]:
                     "pendingPages": pending,
                     "modifiedAt": mtime,
                     "isComplete": (done + failed >= total) and total > 0,
+                    "uploaded": workdir.uploaded,
+                    "uploadedAt": workdir.uploaded_at,
+                    "queueStatus": workdir.queue_status,
+                    "queuePosition": queue_pos,
                 }
             )
         except Exception:
@@ -2397,6 +2408,7 @@ class AppState:
     workdir: Optional[OcrWorkDir] = None
     error: Optional[str] = None
     engine: str = field(default_factory=get_configured_engine)
+    queue_manager: Optional[BookQueueManager] = None
 
 
 def _require_landing_stage(state: AppState) -> None:
@@ -2419,7 +2431,25 @@ def create_landing_app(
         work_root=work_root,
         engine=(engine or get_configured_engine()).strip().lower(),
     )
+
+    async def ocr_runner(workdir: OcrWorkDir):
+        state.workdir = workdir
+        state.stage = "processing"
+        await _run_ocr_background(workdir, state)
+
+    def launch_bg(coro):
+        return _start_background_task(coro)
+
+    queue_manager = BookQueueManager(
+        work_root=work_root, runner=ocr_runner, task_launcher=launch_bg
+    )
+    state.queue_manager = queue_manager
+
     app = FastAPI()
+
+    @app.on_event("startup")
+    async def on_startup():
+        await queue_manager.recover_queue()
 
     @app.get("/", response_class=HTMLResponse)
     def index(lang: str = "ug"):
@@ -2442,26 +2472,32 @@ def create_landing_app(
 
     @app.get("/api/state")
     def get_state():
+        active_id = (
+            state.queue_manager.active_session_id if state.queue_manager else None
+        )
         return {
             "stage": state.stage,
             "error": state.error,
-            "sessionId": state.workdir.root.name if state.workdir else None,
+            "sessionId": state.workdir.root.name if state.workdir else active_id,
+            "activeSessionId": active_id,
+            "queuedSessions": (
+                state.queue_manager.queued_session_ids if state.queue_manager else []
+            ),
             "engine": state.engine,
         }
 
     @app.get("/api/sessions")
     def get_sessions():
-        return list_local_sessions(state.work_root)
+        return list_local_sessions(state.work_root, state.queue_manager)
 
     @app.post("/api/sessions/{session_id}/resume")
     async def resume_session(session_id: str):
-        if state.workdir and state.workdir.root.name == session_id:
-            return {"stage": state.stage}
-
-        if state.stage == "processing":
-            raise HTTPException(
-                status_code=409, detail="A book is currently processing; please wait"
-            )
+        if (
+            state.workdir
+            and state.workdir.root.name == session_id
+            and state.stage != "landing"
+        ):
+            return {"stage": state.stage, "sessionId": session_id}
 
         session_dir = state.work_root / session_id
         if not session_dir.is_dir() or not (session_dir / "book.json").exists():
@@ -2473,31 +2509,41 @@ def create_landing_app(
                 status_code=500, detail=f"Failed to load session: {exc}"
             )
 
-        state.workdir = workdir
-        state.error = None
-
         pages = workdir.all_pages()
         unfinished = [
             p for p in pages if p.status not in ("ocrd", "reviewed", "from_kitabim")
         ]
         if unfinished:
-            state.stage = "processing"
-            _start_background_task(_run_ocr_background(workdir, state))
+            pos, is_active = await state.queue_manager.enqueue(workdir.root.name)
+            if is_active:
+                state.workdir = workdir
+                state.stage = "processing"
+                state.error = None
+            return {
+                "stage": "processing" if is_active else "queued",
+                "sessionId": workdir.root.name,
+                "queuePosition": pos,
+                "isProcessing": is_active,
+            }
         else:
+            state.workdir = workdir
             state.stage = "review"
-
-        return {"stage": state.stage}
+            state.error = None
+            return {
+                "stage": "review",
+                "sessionId": workdir.root.name,
+                "queuePosition": None,
+                "isProcessing": False,
+            }
 
     @app.delete("/api/sessions/{session_id}")
     def delete_session(session_id: str):
-        if (
-            state.workdir
-            and state.workdir.root.name == session_id
-            and state.stage == "processing"
-        ):
+        if state.queue_manager and state.queue_manager.active_session_id == session_id:
             raise HTTPException(
                 status_code=409, detail="Cannot delete active processing session"
             )
+        if state.queue_manager:
+            state.queue_manager.cancel(session_id)
         session_dir = state.work_root / session_id
         if not session_dir.is_dir():
             raise HTTPException(status_code=404, detail="Session not found")
@@ -2514,8 +2560,6 @@ def create_landing_app(
 
     @app.post("/api/reset")
     def reset():
-        if state.stage == "processing":
-            raise HTTPException(status_code=409, detail="Cannot reset while processing")
         state.workdir = None
         state.stage = "landing"
         state.error = None
@@ -2538,23 +2582,38 @@ def create_landing_app(
         )
 
     @app.post("/api/start/existing")
-    def start_existing(body: StartExistingRequest):
-        _require_landing_stage(state)
+    async def start_existing(body: StartExistingRequest):
         try:
-            state.workdir = _start_existing_book(
-                body.bookId, state.client, state.work_root
-            )
+            workdir = _start_existing_book(body.bookId, state.client, state.work_root)
         except Exception as exc:
             state.stage = "error"
             state.error = str(exc)
             raise HTTPException(status_code=502, detail=str(exc))
-        state.stage = "review"
-        state.error = None
-        return {"stage": "review"}
+
+        pages = workdir.all_pages()
+        unfinished = [
+            p for p in pages if p.status not in ("ocrd", "reviewed", "from_kitabim")
+        ]
+        if unfinished:
+            pos, is_active = await state.queue_manager.enqueue(workdir.root.name)
+            if is_active:
+                state.workdir = workdir
+                state.stage = "processing"
+                state.error = None
+            return {
+                "stage": "processing" if is_active else "queued",
+                "sessionId": workdir.root.name,
+                "queuePosition": pos,
+                "isProcessing": is_active,
+            }
+        else:
+            state.workdir = workdir
+            state.stage = "review"
+            state.error = None
+            return {"stage": "review"}
 
     @app.post("/api/start/upload")
     async def start_upload(file: UploadFile = File(...)):
-        _require_landing_stage(state)
         pdf_bytes = await file.read()
         try:
             workdir = await asyncio.to_thread(
@@ -2562,11 +2621,18 @@ def create_landing_app(
             )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Not a valid PDF: {exc}")
-        state.workdir = workdir
-        state.stage = "processing"
-        state.error = None
-        _start_background_task(_run_ocr_background(workdir, state))
-        return {"stage": "processing"}
+
+        pos, is_active = await state.queue_manager.enqueue(workdir.root.name)
+        if is_active:
+            state.workdir = workdir
+            state.stage = "processing"
+            state.error = None
+        return {
+            "stage": "processing" if is_active else "queued",
+            "sessionId": workdir.root.name,
+            "queuePosition": pos,
+            "isProcessing": is_active,
+        }
 
     @app.get("/api/pages")
     def list_pages():

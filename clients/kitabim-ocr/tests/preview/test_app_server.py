@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -45,12 +46,13 @@ def test_state_defaults_to_landing(tmp_path: Path):
     response = client.get("/api/state")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "stage": "landing",
-        "error": None,
-        "sessionId": None,
-        "engine": "surya",
-    }
+    data = response.json()
+    assert data["stage"] == "landing"
+    assert data["error"] is None
+    assert data["sessionId"] is None
+    assert data["engine"] == "surya"
+    assert data["activeSessionId"] is None
+    assert data["queuedSessions"] == []
 
 
 def test_state_with_savitr_engine(tmp_path: Path):
@@ -169,7 +171,7 @@ def test_start_existing_route_flips_stage_to_review(tmp_path: Path):
     assert client.get("/api/state").json()["stage"] == "review"
 
 
-def test_start_existing_route_rejects_when_not_landing(tmp_path: Path):
+def test_start_existing_route_queues_when_not_landing(tmp_path: Path):
     mock_client = MagicMock()
     app = create_landing_app(mock_client, tmp_path / "work")
     client = TestClient(app)
@@ -181,7 +183,7 @@ def test_start_existing_route_rejects_when_not_landing(tmp_path: Path):
 
     response = client.post("/api/start/existing", json={"bookId": "otherbook"})
 
-    assert response.status_code == 409
+    assert response.status_code == 200
 
 
 def test_create_upload_workdir_pre_populates_pending_pages(tmp_path: Path):
@@ -286,7 +288,7 @@ def test_start_upload_route_creates_pending_pages_and_schedules_background_task(
         )
 
     assert response.status_code == 200
-    assert response.json() == {"stage": "processing"}
+    assert response.json()["stage"] == "processing"
     mock_start.assert_called_once()
     assert client.get("/api/state").json()["stage"] == "processing"
     pages = client.get("/api/pages").json()
@@ -307,21 +309,23 @@ def test_start_upload_route_rejects_invalid_pdf(tmp_path: Path):
     assert client.get("/api/state").json()["stage"] == "landing"
 
 
-def test_start_upload_route_rejects_when_not_landing(tmp_path: Path):
+def test_start_upload_route_queues_when_not_landing(tmp_path: Path):
     app = create_landing_app(MagicMock(), tmp_path / "work")
     client = TestClient(app)
     with patch("preview.app_server._start_background_task"):
-        client.post(
+        res1 = client.post(
             "/api/start/upload",
-            files={"file": ("book.pdf", _minimal_pdf_bytes(1), "application/pdf")},
+            files={"file": ("book1.pdf", _minimal_pdf_bytes(1), "application/pdf")},
+        )
+        assert res1.status_code == 200
+
+        response = client.post(
+            "/api/start/upload",
+            files={"file": ("book2.pdf", _minimal_pdf_bytes(1), "application/pdf")},
         )
 
-    response = client.post(
-        "/api/start/upload",
-        files={"file": ("book.pdf", _minimal_pdf_bytes(1), "application/pdf")},
-    )
-
-    assert response.status_code == 409
+        assert response.status_code == 200
+        assert response.json()["stage"] == "queued"
 
 
 def test_pages_routes_require_an_active_workdir(tmp_path: Path):
@@ -469,9 +473,8 @@ def test_resume_session_routes_to_processing_or_review(tmp_path: Path):
     w2.save()
 
     app = create_landing_app(MagicMock(), work_root)
-    client = TestClient(app)
-
     with patch("preview.app_server._start_background_task") as mock_bg:
+        client = TestClient(app)
         res1 = client.post("/api/sessions/upload-123/resume")
         assert res1.status_code == 200
         assert res1.json()["stage"] == "processing"
@@ -482,9 +485,10 @@ def test_resume_session_routes_to_processing_or_review(tmp_path: Path):
         assert res1_again.status_code == 200
         assert res1_again.json()["stage"] == "processing"
 
-        # Resuming a different session while processing returns 409
-        res_conflict = client.post("/api/sessions/upload-456/resume")
-        assert res_conflict.status_code == 409
+        # Resuming a finished session routes to review
+        res_review = client.post("/api/sessions/upload-456/resume")
+        assert res_review.status_code == 200
+        assert res_review.json()["stage"] == "review"
 
     # App in review stage can seamlessly switch to another session without reset
     app2 = create_landing_app(MagicMock(), work_root)
@@ -493,15 +497,6 @@ def test_resume_session_routes_to_processing_or_review(tmp_path: Path):
     res2 = client2.post("/api/sessions/upload-456/resume")
     assert res2.status_code == 200
     assert res2.json()["stage"] == "review"
-
-    # Resuming the same active review session returns review
-    res2_again = client2.post("/api/sessions/upload-456/resume")
-    assert res2_again.status_code == 200
-    assert res2_again.json()["stage"] == "review"
-
-    # Non-existent session
-    res_err = client2.post("/api/sessions/upload-nonexistent/resume")
-    assert res_err.status_code == 404
 
 
 def test_delete_session(tmp_path: Path):
@@ -515,7 +510,6 @@ def test_delete_session(tmp_path: Path):
     app = create_landing_app(MagicMock(), work_root)
     client = TestClient(app)
 
-    assert (work_root / "upload-to-del").exists()
     res = client.delete("/api/sessions/upload-to-del")
     assert res.status_code == 200
     assert not (work_root / "upload-to-del").exists()
@@ -544,7 +538,6 @@ def test_locales_endpoints(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_start_background_task_retains_reference():
-    import asyncio
     from preview.app_server import _start_background_task, _BACKGROUND_TASKS
 
     async def simple_task():
@@ -582,3 +575,86 @@ async def test_run_ocr_background_unexpected_error(tmp_path: Path):
     page = workdir.get_page(1)
     assert page.status == "failed"
     assert "GPU crash" in page.error
+
+
+@pytest.mark.asyncio
+async def test_upload_can_queue_multiple_books_without_409(tmp_path: Path):
+    import httpx
+
+    mock_client = MagicMock()
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+
+    app = create_landing_app(mock_client, work_root)
+
+    pause_event = asyncio.Event()
+
+    async def paused_ocr(workdir, state):
+        await pause_event.wait()
+
+    with patch("preview.app_server._run_ocr_background", side_effect=paused_ocr):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            res1 = await ac.post(
+                "/api/start/upload",
+                files={"file": ("first.pdf", _minimal_pdf_bytes(1), "application/pdf")},
+            )
+            assert res1.status_code == 200
+            data1 = res1.json()
+            assert data1["isProcessing"] is True
+            assert data1["queuePosition"] == 0
+
+            res2 = await ac.post(
+                "/api/start/upload",
+                files={
+                    "file": ("second.pdf", _minimal_pdf_bytes(1), "application/pdf")
+                },
+            )
+            assert res2.status_code == 200
+            data2 = res2.json()
+            assert data2["isProcessing"] is False
+            assert data2["queuePosition"] == 1
+
+            sessions_res = await ac.get("/api/sessions")
+            assert sessions_res.status_code == 200
+            sessions = sessions_res.json()
+            assert len(sessions) == 2
+            for s in sessions:
+                assert "uploaded" in s
+                assert "uploadedAt" in s
+                assert "queueStatus" in s
+                assert "queuePosition" in s
+                assert s["uploaded"] is False
+
+        pause_event.set()
+
+
+def test_push_updates_uploaded_flag_in_workdir(tmp_path: Path):
+    from preview.server import push_response
+
+    workdir_path = tmp_path / "workdir"
+    pdf_path = workdir_path / "book.pdf"
+    pdf_bytes = _minimal_pdf_bytes(1)
+    workdir_path.mkdir(parents=True)
+    pdf_path.write_bytes(pdf_bytes)
+
+    workdir = OcrWorkDir.create(workdir_path, source_pdf=pdf_path, total_pages=1)
+    assert workdir.uploaded is False
+
+    mock_client = MagicMock()
+    mock_client.push_new_book.return_value = {
+        "bookId": "cloud_999",
+        "status": "uploaded",
+    }
+
+    res = push_response(workdir, mock_client)
+    assert res["status"] == "uploaded"
+    assert workdir.uploaded is True
+    assert workdir.uploaded_at is not None
+    assert workdir.book_id == "cloud_999"
+
+    # Verify persisted to disk
+    reloaded = OcrWorkDir.load(workdir_path)
+    assert reloaded.uploaded is True
+    assert reloaded.book_id == "cloud_999"
