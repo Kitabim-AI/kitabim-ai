@@ -37,6 +37,8 @@ def test_index_returns_landing_page_html(tmp_path: Path):
     assert 'id="livePreviewModal"' in response.text
     assert "openLivePreview" in response.text
     assert 'id="previewModalText"' in response.text
+    assert 'data-i18n="sessions.th_uploaded"' in response.text
+    assert "ensureSessionsAutoRefresh" in response.text
 
 
 def test_state_defaults_to_landing(tmp_path: Path):

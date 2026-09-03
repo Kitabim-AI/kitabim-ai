@@ -44,12 +44,16 @@
     "th_book_file": "Book / File",
     "th_progress": "Pages & Progress",
     "th_status": "Status",
+    "th_uploaded": "Uploaded",
     "th_modified": "Last Modified",
     "th_action": "Action",
     "checking": "Checking local sessions...",
     "empty": "No local sessions found. Start from Kitabim library or upload a PDF.",
     "status_completed": "✓ Completed ({count} pages)",
     "status_processing": "⚡ Processing ({done}/{total} pages, {pct}%)",
+    "status_queued": "Queued (#{pos})",
+    "uploaded_yes": "Uploaded",
+    "uploaded_no": "Not Uploaded",
     "pages_completed_stat": "{done} / {total} pages done",
     "pages_error_stat": "({count} errors)",
     "btn_resume": "Resume",
@@ -78,7 +82,8 @@
     "drop_title": "Drag & drop local PDF file or choose file",
     "drop_subtitle": "Surya OCR engine recognizes full-page documents using your GPU/CPU",
     "btn_start": "Start OCR",
-    "starting": "Starting..."
+    "starting": "Starting...",
+    "toast_queued": "Book added to queue (Position: #{pos})"
   },
   "processing": {
     "btn_back_home": "Back to Home",

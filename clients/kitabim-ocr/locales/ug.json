@@ -44,12 +44,16 @@
     "th_book_file": "كىتاب / ھۆججەت",
     "th_progress": "بەت سانى ۋە ھالىتى",
     "th_status": "ھالىتى",
+    "th_uploaded": "يۈكلەنگەن ھالىتى",
     "th_modified": "ئۆزگەرتىلگەن ۋاقتى",
     "th_action": "مەشغۇلات",
     "checking": "يەرلىك خىزمەتلەر تەكشۈرۈلۈۋاتىدۇ...",
     "empty": "ھازىرچە يەرلىكتە ساقلانغان خىزمەت يوق. كىتابلار ئامبىرى ياكى يېڭى PDF قىستۇرۇش ئارقىلىق باشلاڭ.",
     "status_completed": "✓ تاماملاشتى ({count} بەت)",
     "status_processing": "⚡ بىر تەرەپ قىلىنىۋاتىدۇ ({done}/{total} بەت, {pct}%)",
+    "status_queued": "نۆۋەتتە (#{pos})",
+    "uploaded_yes": "يۈكلەنگەن",
+    "uploaded_no": "يۈكلەنمىگەن",
     "pages_completed_stat": "{done} / {total} بەت پۈتتى",
     "pages_error_stat": "({count} خاتالىق)",
     "btn_resume": "داۋاملاشتۇرۇش",
@@ -78,7 +82,8 @@
     "drop_title": "يەرلىكتىكى PDF ھۆججىتىنى سۆرەپ ئەكىلىڭ ياكى تاللاڭ",
     "drop_subtitle": "Surya OCR موتورى كومپيۇتېرىڭىزنىڭ GPU/CPU كۈچى بىلەن تولۇق بەت ھۆججەتنى تونۇيدۇ",
     "btn_start": "OCR نى باشلاش",
-    "starting": "قوزغىلىۋاتىدۇ..."
+    "starting": "قوزغىلىۋاتىدۇ...",
+    "toast_queued": "كىتاب نۆۋەتكە قوشۇلدى (نۆۋەت نومۇرى: #{pos})"
   },
   "processing": {
     "btn_back_home": "باش بەتكە قايتىش",

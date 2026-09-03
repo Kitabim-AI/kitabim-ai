@@ -964,19 +964,20 @@ _APP_HTML = """<!doctype html>
           <table class="books-table">
             <thead>
               <tr>
-                <th>كىتاب / ھۆججەت</th>
-                <th>بەت سانى ۋە تەرەققىياتى</th>
-                <th>ھالىتى</th>
-                <th>ئۆزگەرتىلگەن ۋاقتى</th>
-                <th style="text-align: left;">مەشغۇلات</th>
+                <th data-i18n="sessions.th_book_file">كىتاب / ھۆججەت</th>
+                <th data-i18n="sessions.th_progress">بەت سانى ۋە تەرەققىياتى</th>
+                <th data-i18n="sessions.th_status">ھالىتى</th>
+                <th data-i18n="sessions.th_uploaded">يۈكلەنگەن ھالىتى</th>
+                <th data-i18n="sessions.th_modified">ئۆزگەرتىلگەن ۋاقتى</th>
+                <th style="text-align: left;" data-i18n="sessions.th_action">مەشغۇلات</th>
               </tr>
             </thead>
             <tbody id="sessionsTableBody">
               <tr>
-                <td colspan="5" style="text-align: center; padding: 3rem; color: var(--slate-400);">
+                <td colspan="6" style="text-align: center; padding: 3rem; color: var(--slate-400);">
                   <div style="display: inline-flex; align-items: center; gap: 0.5rem; justify-content: center;">
                     <span style="width: 18px; height: 18px; border: 2px solid rgba(3, 105, 161, 0.2); border-top-color: var(--primary); border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite;"></span>
-                    <span>يەرلىك خىزمەتلەر تەكشۈرۈلۈۋاتىدۇ...</span>
+                    <span data-i18n="sessions.checking">يەرلىك خىزمەتلەر تەكشۈرۈلۈۋاتىدۇ...</span>
                   </div>
                 </td>
               </tr>
@@ -1471,6 +1472,14 @@ _APP_HTML = """<!doctype html>
         if (body.stage === 'review') {
           showSection('review');
           loadPages();
+        } else if (body.isProcessing) {
+          showSection('processing');
+          pollProgress();
+        } else {
+          if (btn) { btn.disabled = false; btn.textContent = 'نۆۋەتتە'; }
+          switchLandingTab('sessions');
+          loadLocalSessions();
+          showToast(t('upload.toast_queued', {pos: body.queuePosition || 1}));
         }
       } catch (err) {
         showLandingError(err.message);
@@ -1519,24 +1528,66 @@ _APP_HTML = """<!doctype html>
 
       const startBtn = document.getElementById('startUploadBtn');
       startBtn.disabled = true;
-      startBtn.innerHTML = '<span style="display:inline-block; animation: spin 1s infinite linear;">⚙️</span> باشلىنىۋاتىدۇ...';
+      startBtn.innerHTML = '<span style="display:inline-block; animation: spin 1s infinite linear;">⚙️</span> ' + t('upload.starting');
 
       try {
         const res = await fetch('/api/start/upload', {method: 'POST', body: formData});
         if (!res.ok) {
           showLandingError(await res.text());
           startBtn.disabled = false;
-          startBtn.textContent = 'OCR نى باشلاش';
+          startBtn.textContent = t('upload.btn_start');
           return;
         }
-        showSection('processing');
-        pollProgress();
+        const data = await res.json();
+        if (data.isProcessing) {
+          showSection('processing');
+          pollProgress();
+        } else {
+          startBtn.disabled = false;
+          startBtn.textContent = t('upload.btn_start');
+          fileInput.value = '';
+          document.getElementById('selectedFileCard').style.display = 'none';
+          switchLandingTab('sessions');
+          loadLocalSessions();
+          showToast(t('upload.toast_queued', {pos: data.queuePosition || 1}));
+        }
       } catch (err) {
         showLandingError(err.message);
         startBtn.disabled = false;
         startBtn.textContent = t('upload.btn_start');
       }
     });
+
+    function showToast(msg) {
+      let toast = document.getElementById('globalToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'globalToast';
+        toast.style.position = 'fixed';
+        toast.style.bottom = '2rem';
+        toast.style.left = '50%';
+        toast.style.transform = 'translateX(-50%)';
+        toast.style.background = 'var(--slate-900)';
+        toast.style.color = '#fff';
+        toast.style.padding = '0.75rem 1.5rem';
+        toast.style.borderRadius = '9999px';
+        toast.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.3)';
+        toast.style.fontSize = '0.9rem';
+        toast.style.fontWeight = '600';
+        toast.style.zIndex = '9999';
+        toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        toast.style.opacity = '0';
+        toast.style.pointerEvents = 'none';
+        document.body.appendChild(toast);
+      }
+      toast.textContent = msg;
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateX(-50%) translateY(0)';
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(10px)';
+      }, 4000);
+    }
 
     function showLandingError(text) {
       const banner = document.getElementById('landingError');
@@ -1992,6 +2043,19 @@ _APP_HTML = """<!doctype html>
       document.getElementById('pushModal').classList.remove('active');
     }
 
+    let sessionsAutoRefreshTimer = null;
+
+    function ensureSessionsAutoRefresh() {
+      if (sessionsAutoRefreshTimer) return;
+      sessionsAutoRefreshTimer = setInterval(() => {
+        const isLanding = sections.landing && sections.landing.classList.contains('active');
+        const isSessionsTab = document.getElementById('tabSessionsContent') && document.getElementById('tabSessionsContent').style.display !== 'none';
+        if (isLanding && (isSessionsTab || window._hasQueuedOrProcessing)) {
+          loadLocalSessions();
+        }
+      }, 10000);
+    }
+
     async function loadLocalSessions() {
       const tbody = document.getElementById('sessionsTableBody');
       try {
@@ -2005,10 +2069,12 @@ _APP_HTML = """<!doctype html>
           badge.style.display = 'none';
         }
 
+        window._hasQueuedOrProcessing = sessions && sessions.some(s => s.queueStatus === 'queued' || s.queueStatus === 'processing' || !s.isComplete);
+
         if (!sessions || sessions.length === 0) {
           tbody.innerHTML = `
             <tr>
-              <td colspan="5" style="text-align: center; padding: 3rem; color: var(--slate-400);">
+              <td colspan="6" style="text-align: center; padding: 3rem; color: var(--slate-400);">
                 ${t('sessions.empty')}
               </td>
             </tr>
@@ -2018,9 +2084,19 @@ _APP_HTML = """<!doctype html>
 
         tbody.innerHTML = sessions.map(s => {
           const pct = s.totalPages > 0 ? Math.round((s.completedPages / s.totalPages) * 100) : 0;
-          const statusBadge = s.isComplete 
-            ? `<span class="tag-badge success">${t('sessions.status_completed', {count: s.completedPages})}</span>` 
-            : `<span class="tag-badge pending">${t('sessions.status_processing', {done: s.completedPages, total: s.totalPages, pct: pct})}</span>`;
+          let statusBadge;
+          if (s.queueStatus === 'queued') {
+            statusBadge = `<span class="tag-badge" style="background: rgba(99, 102, 241, 0.12); color: #4f46e5; font-size: 0.78rem;">⏳ ${t('sessions.status_queued', {pos: s.queuePosition || 1})}</span>`;
+          } else if (s.isComplete) {
+            statusBadge = `<span class="tag-badge success">${t('sessions.status_completed', {count: s.completedPages})}</span>`;
+          } else {
+            statusBadge = `<span class="tag-badge pending">${t('sessions.status_processing', {done: s.completedPages, total: s.totalPages, pct: pct})}</span>`;
+          }
+
+          const uploadedBadge = s.uploaded
+            ? `<span class="tag-badge success" style="font-size: 0.78rem;">✓ ${t('sessions.uploaded_yes')}</span>`
+            : `<span class="tag-badge" style="background: rgba(245, 158, 11, 0.12); color: #d97706; font-size: 0.78rem;">⏳ ${t('sessions.uploaded_no')}</span>`;
+
           const dateStr = s.modifiedAt ? new Date(s.modifiedAt * 1000).toLocaleString() : '-';
 
           return `
@@ -2041,6 +2117,7 @@ _APP_HTML = """<!doctype html>
                 </div>
               </td>
               <td>${statusBadge}</td>
+              <td>${uploadedBadge}</td>
               <td style="font-size: 0.82rem; color: var(--slate-500);">${escapeHtml(dateStr)}</td>
               <td>
                 <div style="display: flex; align-items: center; gap: 0.4rem;">
@@ -2066,7 +2143,7 @@ _APP_HTML = """<!doctype html>
 
         return sessions;
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 2rem; color: var(--accent-rose);">${t('errors.generic', {error: escapeHtml(err.message)})}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--accent-rose);">${t('errors.generic', {error: escapeHtml(err.message)})}</td></tr>`;
       }
     }
 
@@ -2138,10 +2215,16 @@ _APP_HTML = """<!doctype html>
       if (processingBackLabel) processingBackLabel.textContent = t('processing.btn_back_home');
       const processingBackgroundBadge = document.getElementById('processingBackgroundBadge');
       if (processingBackgroundBadge) processingBackgroundBadge.textContent = t('processing.running_in_background');
+
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (key) el.textContent = t(key);
+      });
     }
 
     async function init() {
       applyStaticI18n();
+      ensureSessionsAutoRefresh();
       const res = await fetch('/api/state');
       const state = await res.json();
       if (state.stage === 'processing') {
