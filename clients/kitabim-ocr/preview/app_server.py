@@ -2094,8 +2094,8 @@ _APP_HTML = """<!doctype html>
           }
 
           const uploadedBadge = s.uploaded
-            ? `<span class="tag-badge success" style="font-size: 0.78rem;">✓ ${t('sessions.uploaded_yes')}</span>`
-            : `<span class="tag-badge" style="background: rgba(245, 158, 11, 0.12); color: #d97706; font-size: 0.78rem;">⏳ ${t('sessions.uploaded_no')}</span>`;
+            ? `<span class="tag-badge success" onclick="toggleUploaded('${escapeHtml(s.id)}')" title="ئۆزگەرتىش ئۈچۈن چېكىڭ / Click to toggle" style="cursor: pointer; user-select: none; font-size: 0.78rem;">✓ ${t('sessions.uploaded_yes')}</span>`
+            : `<span class="tag-badge" onclick="toggleUploaded('${escapeHtml(s.id)}')" title="ئۆزگەرتىش ئۈچۈن چېكىڭ / Click to toggle" style="cursor: pointer; user-select: none; background: rgba(245, 158, 11, 0.12); color: #d97706; font-size: 0.78rem;">⏳ ${t('sessions.uploaded_no')}</span>`;
 
           const dateStr = s.modifiedAt ? new Date(s.modifiedAt * 1000).toLocaleString() : '-';
 
@@ -2144,6 +2144,19 @@ _APP_HTML = """<!doctype html>
         return sessions;
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--accent-rose);">${t('errors.generic', {error: escapeHtml(err.message)})}</td></tr>`;
+      }
+    }
+
+    async function toggleUploaded(sessionId) {
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/toggle-uploaded`, {method: 'POST'});
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Failed to toggle status');
+        }
+        loadLocalSessions();
+      } catch (err) {
+        alert(err.message);
       }
     }
 
@@ -2640,6 +2653,21 @@ def create_landing_app(
                 status_code=500, detail=f"Failed to delete session: {exc}"
             )
         return {"status": "deleted", "id": session_id}
+
+    @app.post("/api/sessions/{session_id}/toggle-uploaded")
+    def toggle_session_uploaded(session_id: str):
+        session_dir = state.work_root / session_id
+        if not (session_dir / "book.json").exists():
+            raise HTTPException(status_code=404, detail="Session not found")
+        workdir = OcrWorkDir.load(session_dir)
+        workdir.uploaded = not workdir.uploaded
+        workdir.uploaded_at = time.time() if workdir.uploaded else None
+        workdir.save()
+        return {
+            "id": session_id,
+            "uploaded": workdir.uploaded,
+            "uploadedAt": workdir.uploaded_at,
+        }
 
     @app.post("/api/reset")
     def reset():

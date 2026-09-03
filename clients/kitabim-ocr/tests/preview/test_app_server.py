@@ -660,3 +660,32 @@ def test_push_updates_uploaded_flag_in_workdir(tmp_path: Path):
     reloaded = OcrWorkDir.load(workdir_path)
     assert reloaded.uploaded is True
     assert reloaded.book_id == "cloud_999"
+
+
+def test_toggle_session_uploaded_route(tmp_path: Path):
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    s_dir = work_root / "upload-toggle"
+    w = OcrWorkDir.create(s_dir, source_pdf=s_dir / "book.pdf", total_pages=1)
+    (s_dir / "book.pdf").write_bytes(_minimal_pdf_bytes(1))
+    w.uploaded = False
+    w.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+    client = TestClient(app)
+
+    # Toggle to true
+    res = client.post("/api/sessions/upload-toggle/toggle-uploaded")
+    assert res.status_code == 200
+    assert res.json()["uploaded"] is True
+    assert OcrWorkDir.load(s_dir).uploaded is True
+
+    # Toggle to false
+    res2 = client.post("/api/sessions/upload-toggle/toggle-uploaded")
+    assert res2.status_code == 200
+    assert res2.json()["uploaded"] is False
+    assert OcrWorkDir.load(s_dir).uploaded is False
+
+    # 404 for nonexistent session
+    res_404 = client.post("/api/sessions/nonexistent/toggle-uploaded")
+    assert res_404.status_code == 404

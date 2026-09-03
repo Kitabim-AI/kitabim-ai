@@ -89,19 +89,20 @@ class OcrWorkDir:
 
         # Backward compatibility inference
         book_id = book_meta.get("book_id")
-        uploaded = book_meta.get("uploaded")
-        if uploaded is None:
-            uploaded = bool(book_id)
 
         queue_status = book_meta.get("queue_status")
         if queue_status is None:
             done = sum(
                 1
                 for p in pages.values()
-                if p.status in ("ocrd", "reviewed", "from_kitabim")
+                if p.status in ("ocrd", "reviewed", "from_kitabim", "failed")
             )
             total = book_meta.get("total_pages", len(pages))
             queue_status = "completed" if (done >= total and total > 0) else "idle"
+
+        uploaded = book_meta.get("uploaded")
+        if uploaded is None:
+            uploaded = (queue_status == "completed") or bool(book_id)
 
         return cls(
             path,
