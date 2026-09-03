@@ -46,6 +46,64 @@ def normalize_uyghur_chars(text: str) -> str:
 # retrievable content.
 _OCR_MARKER_RE = re.compile(r"\s*\[(?:Header|Footer)\].*", re.IGNORECASE)
 
+_PAGE_NUMBER_RE = re.compile(
+    r"""^\s*
+    (?:
+        # Decorated / standalone digits: e.g. "- 4 -", "( 12 )", "[3]", "· 4 ·", "4", "— 123 —"
+        (?:[-—–•·*#\(\[\{/\\~]\s*)*
+        [0-9\u0660-\u0669\u06F0-\u06F9]{1,4}
+        (?:\s*[-—–•·*#\)\]\}/\\~])*
+        |
+        # Uyghur / English page labels: e.g. "4 - بەت", "بەت: 4", "Page 4", "p. 4"
+        (?:بەت|page|p\.)\s*[:\-\s]*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}
+        |
+        [0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*[:\-]?\s*(?:بەت|page)
+    )\s*$""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def is_isolated_page_number(text: str) -> bool:
+    """Return True if text is a standalone page number, decorated digit, or page label."""
+    if not text:
+        return False
+    return bool(_PAGE_NUMBER_RE.match(text.strip()))
+
+
+def strip_page_numbers(text: str) -> str:
+    """Strip isolated header and footer page numbers from the top and bottom of page text."""
+    if not text:
+        return ""
+
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
+    if not blocks:
+        return ""
+
+    # Strip trailing footer page numbers
+    while blocks and is_isolated_page_number(blocks[-1]):
+        blocks.pop()
+
+    # Strip leading header page numbers
+    while blocks and is_isolated_page_number(blocks[0]):
+        blocks.pop(0)
+
+    if not blocks:
+        return ""
+
+    # Check if the very last line of the last block is an isolated page number
+    last_lines = [line for line in blocks[-1].split("\n") if line.strip()]
+    if len(last_lines) > 1 and is_isolated_page_number(last_lines[-1]):
+        last_lines.pop()
+        blocks[-1] = "\n".join(last_lines)
+
+    # Check if the very first line of the first block is an isolated page number
+    first_lines = [line for line in blocks[0].split("\n") if line.strip()]
+    if len(first_lines) > 1 and is_isolated_page_number(first_lines[0]):
+        first_lines.pop(0)
+        blocks[0] = "\n".join(first_lines)
+
+    return "\n\n".join(b for b in blocks if b.strip())
+
 
 def clean_uyghur_text(text: str) -> str:
     if not text:
@@ -56,6 +114,9 @@ def clean_uyghur_text(text: str) -> str:
 
     # 2. Strip OCR structural markers ([Header] ..., [Footer] ...)
     text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
+
+    # 3. Strip header and footer page numbers
+    text = strip_page_numbers(text)
 
     # 4. Split into blocks by double newlines (paragraphs)
     blocks = re.split(r"\n\s*\n", text)
@@ -118,7 +179,8 @@ def clean_uyghur_text(text: str) -> str:
 
         cleaned_blocks.append(result_block)
 
-    return "\n\n".join(cleaned_blocks)
+    cleaned = "\n\n".join(cleaned_blocks)
+    return strip_page_numbers(cleaned)
 
 
 def is_toc_page(text: str) -> bool:

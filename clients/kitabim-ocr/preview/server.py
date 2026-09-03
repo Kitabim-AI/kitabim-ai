@@ -633,10 +633,13 @@ def update_page_response(
 
 
 async def redo_pages_response(
-    workdir: OcrWorkDir, page_numbers: list[int], concurrency: int = 4
+    workdir: OcrWorkDir,
+    page_numbers: list[int],
+    concurrency: int = 4,
+    engine: str | None = None,
 ) -> list[dict]:
     doc = fitz.open(workdir.source_pdf)
-    predictor = await get_recognition_predictor()
+    predictor = await get_recognition_predictor(engine)
     sem = asyncio.Semaphore(max(1, concurrency))
     save_lock = asyncio.Lock()
 
@@ -644,7 +647,9 @@ async def redo_pages_response(
         async with sem:
             fitz_page = doc.load_page(page_number - 1)
             try:
-                text = await ocr_page(fitz_page, predictor)
+                text = await ocr_page(
+                    fitz_page, predictor, max_parallel_pages=concurrency
+                )
                 async with save_lock:
                     workdir.set_page(
                         page_number,

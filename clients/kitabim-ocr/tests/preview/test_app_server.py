@@ -45,7 +45,24 @@ def test_state_defaults_to_landing(tmp_path: Path):
     response = client.get("/api/state")
 
     assert response.status_code == 200
-    assert response.json() == {"stage": "landing", "error": None, "sessionId": None}
+    assert response.json() == {
+        "stage": "landing",
+        "error": None,
+        "sessionId": None,
+        "engine": "surya",
+    }
+
+
+def test_state_with_savitr_engine(tmp_path: Path):
+    app = create_landing_app(MagicMock(), tmp_path / "work", engine="savitr")
+    client = TestClient(app)
+
+    response = client.get("/api/state")
+    assert response.status_code == 200
+    assert response.json()["engine"] == "savitr"
+
+    html_resp = client.get("/")
+    assert "Savitr OCR (MLX)" in html_resp.text
 
 
 def test_reset_from_landing_is_a_no_op(tmp_path: Path):

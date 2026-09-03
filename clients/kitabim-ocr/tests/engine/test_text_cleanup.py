@@ -61,3 +61,32 @@ def test_is_degenerate_ocr_output_flags_moderate_repetition():
 
 def test_is_degenerate_ocr_output_false_for_normal_text():
     assert is_degenerate_ocr_output("بۇ ئادەتتىكى بىر پارچە تېكىست.") is False
+
+
+def test_clean_uyghur_text_strips_trailing_footer_page_numbers():
+    text = "بۇ بىرىنچى ئابزاس.\n\nبۇ ئىككىنچى ئابزاس.\n\n4"
+    cleaned = clean_uyghur_text(text)
+    assert "4" not in cleaned
+    assert "بۇ ئىككىنچى ئابزاس." in cleaned
+
+
+def test_clean_uyghur_text_strips_decorated_footer_page_numbers():
+    assert clean_uyghur_text("تېكىست.\n\n- 4 -") == "تېكىست."
+    assert clean_uyghur_text("تېكىست.\n\n— 12 —") == "تېكىست."
+    assert clean_uyghur_text("تېكىست.\n\n( 42 )") == "تېكىست."
+    assert clean_uyghur_text("تېكىست.\n\n[ 4 ]") == "تېكىست."
+    assert clean_uyghur_text("تېكىست.\n\n4 - بەت") == "تېكىست."
+    assert clean_uyghur_text("تېكىست.\n\nبەت: 12") == "تېكىست."
+
+
+def test_clean_uyghur_text_strips_leading_header_page_numbers():
+    text = "4\n\nبۇ بىرىنچى ئابزاس."
+    cleaned = clean_uyghur_text(text)
+    assert cleaned == "بۇ بىرىنچى ئابزاس."
+
+
+def test_clean_uyghur_text_preserves_numbered_lists_and_tables():
+    text = "1. بىرىنچى تۈر\n2. ئىككىنچى تۈر"
+    cleaned = clean_uyghur_text(text)
+    assert "1. بىرىنچى تۈر" in cleaned
+    assert "2. ئىككىنچى تۈر" in cleaned

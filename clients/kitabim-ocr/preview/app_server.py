@@ -4,7 +4,7 @@ import asyncio
 import shutil
 import time
 import webbrowser
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +14,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
+from engine.config import get_configured_engine
 from engine.recognize import (
     LowConfidenceOcrError,
     get_recognition_predictor,
@@ -905,7 +906,7 @@ _APP_HTML = """<!doctype html>
       <div class="header-badges">
         <div class="status-pill">
           <span class="status-dot active"></span>
-          <span>Surya OCR</span>
+          <span>__OCR_ENGINE_LABEL__</span>
         </div>
         <div class="status-pill">
           <span class="status-dot active"></span>
@@ -1577,10 +1578,10 @@ _APP_HTML = """<!doctype html>
           showLandingError(state.error || t('errors.processing_failed'));
           return;
         }
-        setTimeout(pollProgress, 1000);
+        setTimeout(pollProgress, 2000);
       } catch (err) {
         if (sections.processing.classList.contains('active')) {
-          setTimeout(pollProgress, 2000);
+          setTimeout(pollProgress, 4000);
         }
       }
     }
@@ -2167,9 +2168,13 @@ _APP_HTML = """<!doctype html>
 </html>"""
 
 
-def get_app_html(lang: str = "ug") -> str:
+def get_app_html(lang: str = "ug", engine: Optional[str] = None) -> str:
     i18n_json = get_translations_json(lang)
-    return _APP_HTML.replace("__I18N_JSON__", i18n_json)
+    engine_name = (engine or get_configured_engine()).strip().lower()
+    engine_label = "Savitr OCR (MLX)" if engine_name == "savitr" else "Surya OCR"
+    return _APP_HTML.replace("__I18N_JSON__", i18n_json).replace(
+        "__OCR_ENGINE_LABEL__", engine_label
+    )
 
 
 RENDER_ZOOM = 1.5
@@ -2253,7 +2258,7 @@ async def _run_ocr_background(
 ) -> None:
     try:
         doc = fitz.open(workdir.source_pdf)
-        predictor = await get_recognition_predictor()
+        predictor = await get_recognition_predictor(state.engine)
         sem = asyncio.Semaphore(max(1, concurrency))
         save_lock = asyncio.Lock()
 
@@ -2279,7 +2284,9 @@ async def _run_ocr_background(
 
                 fitz_page = doc.load_page(page_number - 1)
                 try:
-                    text = await ocr_page(fitz_page, predictor)
+                    text = await ocr_page(
+                        fitz_page, predictor, max_parallel_pages=concurrency
+                    )
                     async with save_lock:
                         workdir.set_page(
                             page_number,
@@ -2389,6 +2396,7 @@ class AppState:
     stage: str = "landing"
     workdir: Optional[OcrWorkDir] = None
     error: Optional[str] = None
+    engine: str = field(default_factory=get_configured_engine)
 
 
 def _require_landing_stage(state: AppState) -> None:
@@ -2403,13 +2411,19 @@ def _require_active_workdir(state: AppState) -> None:
         raise HTTPException(status_code=409, detail="No active book")
 
 
-def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
-    state = AppState(client=client, work_root=work_root)
+def create_landing_app(
+    client: KitabimClient, work_root: Path, engine: Optional[str] = None
+) -> FastAPI:
+    state = AppState(
+        client=client,
+        work_root=work_root,
+        engine=(engine or get_configured_engine()).strip().lower(),
+    )
     app = FastAPI()
 
     @app.get("/", response_class=HTMLResponse)
     def index(lang: str = "ug"):
-        return get_app_html(lang)
+        return get_app_html(lang, engine=state.engine)
 
     @app.get("/fonts/{filename}")
     def serve_font(filename: str):
@@ -2432,6 +2446,7 @@ def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
             "stage": state.stage,
             "error": state.error,
             "sessionId": state.workdir.root.name if state.workdir else None,
+            "engine": state.engine,
         }
 
     @app.get("/api/sessions")
@@ -2574,7 +2589,9 @@ def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
     @app.post("/api/pages/redo")
     async def redo_pages(body: RedoRequest):
         _require_active_workdir(state)
-        return await redo_pages_response(state.workdir, body.pageNumbers)
+        return await redo_pages_response(
+            state.workdir, body.pageNumbers, engine=state.engine
+        )
 
     @app.post("/api/pages/{page_number}/update")
     def update_page(page_number: int, body: UpdatePageRequest):
@@ -2590,9 +2607,13 @@ def create_landing_app(client: KitabimClient, work_root: Path) -> FastAPI:
 
 
 def serve_app(
-    client: KitabimClient, work_root: Path, port: int = 8765, open_browser: bool = True
+    client: KitabimClient,
+    work_root: Path,
+    port: int = 8765,
+    open_browser: bool = True,
+    engine: Optional[str] = None,
 ) -> None:
-    app = create_landing_app(client, work_root)
+    app = create_landing_app(client, work_root, engine=engine)
     if open_browser:
         webbrowser.open(f"http://127.0.0.1:{port}")
     uvicorn.run(app, host="127.0.0.1", port=port)

@@ -1,8 +1,7 @@
 import io
-
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from PIL import Image
 
 import engine.recognize as svc
@@ -10,9 +9,11 @@ import engine.recognize as svc
 
 @pytest.fixture(autouse=True)
 def reset_singleton():
-    svc._recognition_predictor = None
+    svc._surya_predictor = None
+    svc._savitr_predictor = None
     yield
-    svc._recognition_predictor = None
+    svc._surya_predictor = None
+    svc._savitr_predictor = None
 
 
 def _fake_png_bytes() -> bytes:
@@ -22,14 +23,43 @@ def _fake_png_bytes() -> bytes:
 
 
 @pytest.mark.asyncio
-async def test_get_recognition_predictor_constructs_once_and_caches():
-    with patch("engine.recognize.RecognitionPredictor") as mock_cls:
+async def test_get_recognition_predictor_surya_constructs_once_and_caches():
+    with patch("surya.recognition.RecognitionPredictor") as mock_cls:
         mock_cls.return_value = "predictor-instance"
-        p1 = await svc.get_recognition_predictor()
-        p2 = await svc.get_recognition_predictor()
+        p1 = await svc.get_recognition_predictor(engine="surya")
+        p2 = await svc.get_recognition_predictor(engine="surya")
     assert p1 == "predictor-instance"
     assert p1 is p2
     mock_cls.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_get_recognition_predictor_savitr_constructs_and_caches():
+    with (
+        patch("engine.recognize.is_apple_silicon", return_value=True),
+        patch("engine.savitr_engine.SavitrPredictor") as mock_cls,
+    ):
+        mock_cls.return_value = "savitr-instance"
+        p1 = await svc.get_recognition_predictor(engine="savitr")
+        p2 = await svc.get_recognition_predictor(engine="savitr")
+    assert p1 == "savitr-instance"
+    assert p1 is p2
+    mock_cls.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_recognition_predictor_savitr_raises_on_non_apple_silicon():
+    with patch("engine.recognize.is_apple_silicon", return_value=False):
+        with pytest.raises(
+            RuntimeError, match="Savitr OCR is optimized for Apple Silicon"
+        ):
+            await svc.get_recognition_predictor(engine="savitr")
+
+
+@pytest.mark.asyncio
+async def test_get_recognition_predictor_unknown_engine_raises_value_error():
+    with pytest.raises(ValueError, match="Unknown OCR engine"):
+        await svc.get_recognition_predictor(engine="nonexistent")
 
 
 def test_recognize_page_calls_predictor_full_page_and_returns_first_result():
@@ -41,6 +71,16 @@ def test_recognize_page_calls_predictor_full_page_and_returns_first_result():
 
     mock_predictor.assert_called_once_with(["fake-image"], full_page=True)
     assert result is mock_result
+
+
+def test_recognize_page_with_savitr_predictor():
+    mock_predictor = MagicMock(spec=svc.SavitrPredictor)
+    mock_predictor.recognize_image.return_value = ("<p>test</p>", 1.0)
+
+    result = svc.recognize_page(mock_predictor, image="fake-image")
+
+    mock_predictor.recognize_image.assert_called_once_with("fake-image")
+    assert result == ("<p>test</p>", 1.0)
 
 
 def test_label_sets_are_disjoint():
@@ -91,6 +131,39 @@ def test_process_page_sync_renders_each_block_type_and_appends_footnotes_last():
     assert blocks[2] == "| باب بىر | 3 |"
     assert blocks[3] == "پايدىلانما 12"
     assert mean_conf == 0.9
+
+
+def test_process_page_sync_with_savitr_predictor():
+    img = Image.new("RGB", (200, 200))
+    mock_predictor = MagicMock(spec=svc.SavitrPredictor)
+    mock_predictor.recognize_image.return_value = (
+        "<h1>چوڭ ماۋزۇ</h1><p>بۇ ئادەتتىكى تېكىست.</p><table><tr><td>باب بىر</td><td>3</td></tr></table>",
+        1.0,
+    )
+
+    markdown, mean_conf = svc._process_page_sync(img, mock_predictor)
+    assert "# چوڭ ماۋزۇ" in markdown
+    assert "بۇ ئادەتتىكى تېكىست." in markdown
+    assert mean_conf == 1.0
+
+
+def test_process_savitr_html_nested_containers_no_duplication():
+    nested_html = """
+    <div>
+        <div>
+            <p>مەسئۇل مۇھەررىرى: ئابلىكىم ھەسەن</p>
+            <p>مەسئۇل كۇررېكتورى: دىليار تۇرسۇن</p>
+        </div>
+        <h2>گۈلنىڭ ئېچىلىشى قىيىن</h2>
+        <p>(رومان)</p>
+    </div>
+    """
+    result = svc._process_savitr_html(nested_html)
+    assert result.count("مەسئۇل مۇھەررىرى: ئابلىكىم ھەسەن") == 1
+    assert result.count("مەسئۇل كۇررېكتورى: دىليار تۇرسۇن") == 1
+    assert result.count("گۈلنىڭ ئېچىلىشى قىيىن") == 1
+    assert "## گۈلنىڭ ئېچىلىشى قىيىن" in result
+    assert result.count("(رومان)") == 1
 
 
 def test_process_page_sync_skips_discarded_and_errored_blocks():
@@ -185,3 +258,72 @@ async def test_ocr_page_retries_on_degenerate_repetition_loop():
             await svc.ocr_page(mock_page, MagicMock(), min_confidence=0.3)
 
     assert mock_page.get_pixmap.call_count == 2
+
+
+def test_get_executor_scales_and_reuses():
+    svc._executor = None
+    exec1 = svc._get_executor(2)
+    assert exec1._max_workers == 2
+
+    # Calling with same or smaller worker count reuses existing executor
+    exec2 = svc._get_executor(2)
+    assert exec2 is exec1
+
+    # Calling with larger worker count expands executor
+    exec3 = svc._get_executor(4)
+    assert exec3._max_workers == 4
+    assert exec3 is not exec1
+    svc._executor = None
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_passes_max_parallel_to_executor():
+    mock_page = MagicMock()
+    mock_pix = MagicMock()
+    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.tobytes.return_value = _fake_png_bytes()
+    mock_page.get_pixmap.return_value = mock_pix
+
+    with (
+        patch("engine.recognize._process_page_sync", return_value=("متن", 0.9)),
+        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
+    ):
+        result = await svc.ocr_page(mock_page, MagicMock(), max_parallel_pages=8)
+
+    assert result == "متن"
+    assert svc._executor is not None
+    assert svc._executor._max_workers >= 8
+    svc._executor = None
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_executes_concurrently_in_parallel():
+    import asyncio
+    import time
+
+    svc._executor = None
+
+    def _slow_sync_process(img, predictor):
+        time.sleep(0.08)
+        return "متن", 0.95
+
+    mock_page = MagicMock()
+    mock_pix = MagicMock()
+    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.tobytes.return_value = _fake_png_bytes()
+    mock_page.get_pixmap.return_value = mock_pix
+
+    with (
+        patch("engine.recognize._process_page_sync", side_effect=_slow_sync_process),
+        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
+    ):
+        start = time.perf_counter()
+        tasks = [
+            svc.ocr_page(mock_page, MagicMock(), max_parallel_pages=4) for _ in range(4)
+        ]
+        results = await asyncio.gather(*tasks)
+        elapsed = time.perf_counter() - start
+
+    assert len(results) == 4
+    assert elapsed < 0.28, f"Expected parallel execution (<0.28s), got {elapsed:.3f}s"
+    svc._executor = None

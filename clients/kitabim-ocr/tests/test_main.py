@@ -56,13 +56,21 @@ def test_cmd_app_starts_server_with_env_config(monkeypatch, tmp_path):
     monkeypatch.setenv("KITABIM_WORK_DIR", "/tmp/work")
 
     with patch("main.serve_app") as mock_serve_app:
-        main.cmd_app()
+        main.cmd_app(engine="savitr")
 
     mock_serve_app.assert_called_once()
     client_arg, work_root_arg = mock_serve_app.call_args.args
     assert isinstance(client_arg, main.KitabimClient)
     assert client_arg.base_url == "http://localhost:8000"
     assert work_root_arg == Path("/tmp/work")
+    assert mock_serve_app.call_args.kwargs.get("engine") == "savitr"
+
+
+def test_build_parser_engine_option():
+    parser = main.build_parser()
+    args = parser.parse_args(["app", "--engine", "savitr"])
+    assert args.command == "app"
+    assert args.engine == "savitr"
 
 
 def test_cmd_app_loads_config_from_dotenv_file(monkeypatch, tmp_path):
@@ -114,3 +122,22 @@ def test_cmd_push_passes_original_filename(tmp_path: Path):
 
     mock_push.assert_called_once()
     assert mock_push.call_args.kwargs["filename"] == "ئۇيغۇر_تارىخى.pdf"
+
+
+def test_build_parser_setup_savitr_command():
+    parser = main.build_parser()
+    args = parser.parse_args(
+        ["setup-savitr", "--output", "/tmp/model", "--q-bits", "8"]
+    )
+    assert args.command == "setup-savitr"
+    assert args.output == "/tmp/model"
+    assert args.q_bits == 8
+
+
+def test_cmd_setup_savitr_invokes_converter():
+    with patch(
+        "engine.savitr_engine.convert_surya_mlx_model", return_value="/custom/model"
+    ) as mock_conv:
+        main.cmd_setup_savitr(output_path="/custom/model", q_bits=4)
+
+    mock_conv.assert_called_once_with(output_dir="/custom/model", q_bits=4)
