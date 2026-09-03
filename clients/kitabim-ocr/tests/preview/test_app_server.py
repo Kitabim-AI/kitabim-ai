@@ -189,6 +189,8 @@ def test_start_existing_route_queues_when_not_landing(tmp_path: Path):
 
 
 def test_create_upload_workdir_pre_populates_pending_pages(tmp_path: Path):
+    from preview.server import get_page_image_bytes
+
     work_root = tmp_path / "work"
     pdf_bytes = _minimal_pdf_bytes(3)
 
@@ -200,6 +202,8 @@ def test_create_upload_workdir_pre_populates_pending_pages(tmp_path: Path):
         page = workdir.get_page(page_number)
         assert page.status == "pending"
         assert page.text == ""
+        img = get_page_image_bytes(workdir, page_number)
+        assert len(img) > 0
         assert workdir.image_path(page_number).exists()
 
 

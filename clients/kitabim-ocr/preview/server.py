@@ -605,8 +605,28 @@ def list_pages_response(workdir: OcrWorkDir) -> list[dict]:
     ]
 
 
+RENDER_ZOOM = 1.5
+
+
+def render_page_png(
+    doc: "fitz.Document", page_number: int, zoom: float = RENDER_ZOOM
+) -> bytes:
+    page = doc.load_page(page_number - 1)
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+    return pix.tobytes("png")
+
+
 def get_page_image_bytes(workdir: OcrWorkDir, page_number: int) -> bytes:
-    return workdir.image_path(page_number).read_bytes()
+    img_path = workdir.image_path(page_number)
+    if img_path.exists():
+        return img_path.read_bytes()
+    if workdir.source_pdf.exists():
+        doc = fitz.open(workdir.source_pdf)
+        png_bytes = render_page_png(doc, page_number)
+        img_path.parent.mkdir(parents=True, exist_ok=True)
+        img_path.write_bytes(png_bytes)
+        return png_bytes
+    raise FileNotFoundError(f"Page image {page_number} not found")
 
 
 def update_page_response(

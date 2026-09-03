@@ -2339,7 +2339,6 @@ def _create_upload_workdir(
         original_filename=filename,
     )
     for page_number in range(1, total_pages + 1):
-        workdir.image_path(page_number).write_bytes(render_page_png(doc, page_number))
         workdir.set_page(
             page_number, text="", is_toc=False, confidence=0.0, status="pending"
         )
@@ -2380,6 +2379,13 @@ async def _run_ocr_background(
                     workdir.save()
 
                 fitz_page = doc.load_page(page_number - 1)
+                img_path = workdir.image_path(page_number)
+                if not img_path.exists():
+                    try:
+                        img_path.parent.mkdir(parents=True, exist_ok=True)
+                        img_path.write_bytes(render_page_png(doc, page_number))
+                    except Exception:
+                        pass
                 try:
                     text = await ocr_page(
                         fitz_page, predictor, max_parallel_pages=concurrency
