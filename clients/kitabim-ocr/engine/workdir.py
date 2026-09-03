@@ -29,6 +29,10 @@ class OcrWorkDir:
         book_id: Optional[str] = None,
         pages: Optional[dict[int, PageState]] = None,
         original_filename: Optional[str] = None,
+        queue_status: str = "idle",
+        queued_at: Optional[float] = None,
+        uploaded: bool = False,
+        uploaded_at: Optional[float] = None,
     ) -> None:
         self.path = path
         self.source_pdf = source_pdf
@@ -36,6 +40,10 @@ class OcrWorkDir:
         self.book_id = book_id
         self._pages: dict[int, PageState] = pages or {}
         self.original_filename = original_filename
+        self.queue_status = queue_status
+        self.queued_at = queued_at
+        self.uploaded = uploaded
+        self.uploaded_at = uploaded_at
 
     @property
     def root(self) -> Path:
@@ -49,6 +57,10 @@ class OcrWorkDir:
         total_pages: int,
         book_id: Optional[str] = None,
         original_filename: Optional[str] = None,
+        queue_status: str = "idle",
+        queued_at: Optional[float] = None,
+        uploaded: bool = False,
+        uploaded_at: Optional[float] = None,
     ) -> "OcrWorkDir":
         path.mkdir(parents=True, exist_ok=True)
         (path / "pages").mkdir(exist_ok=True)
@@ -58,6 +70,10 @@ class OcrWorkDir:
             total_pages,
             book_id=book_id,
             original_filename=original_filename,
+            queue_status=queue_status,
+            queued_at=queued_at,
+            uploaded=uploaded,
+            uploaded_at=uploaded_at,
         )
         wd.save()
         return wd
@@ -70,13 +86,34 @@ class OcrWorkDir:
         if pages_path.exists():
             pages_raw = json.loads(pages_path.read_text())
         pages = {p["page_number"]: PageState(**p) for p in pages_raw}
+
+        # Backward compatibility inference
+        book_id = book_meta.get("book_id")
+        uploaded = book_meta.get("uploaded")
+        if uploaded is None:
+            uploaded = bool(book_id)
+
+        queue_status = book_meta.get("queue_status")
+        if queue_status is None:
+            done = sum(
+                1
+                for p in pages.values()
+                if p.status in ("ocrd", "reviewed", "from_kitabim")
+            )
+            total = book_meta.get("total_pages", len(pages))
+            queue_status = "completed" if (done >= total and total > 0) else "idle"
+
         return cls(
             path,
             source_pdf=Path(book_meta["source_pdf"]),
             total_pages=book_meta["total_pages"],
-            book_id=book_meta.get("book_id"),
+            book_id=book_id,
             pages=pages,
             original_filename=book_meta.get("original_filename"),
+            queue_status=queue_status,
+            queued_at=book_meta.get("queued_at"),
+            uploaded=uploaded,
+            uploaded_at=book_meta.get("uploaded_at"),
         )
 
     def save(self) -> None:
@@ -87,6 +124,10 @@ class OcrWorkDir:
                     "book_id": self.book_id,
                     "total_pages": self.total_pages,
                     "original_filename": self.original_filename,
+                    "queue_status": self.queue_status,
+                    "queued_at": self.queued_at,
+                    "uploaded": self.uploaded,
+                    "uploaded_at": self.uploaded_at,
                 },
                 indent=2,
             )

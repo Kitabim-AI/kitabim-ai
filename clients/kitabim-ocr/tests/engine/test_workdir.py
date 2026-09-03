@@ -100,3 +100,55 @@ def test_create_and_load_with_original_filename(tmp_path: Path):
     reloaded = OcrWorkDir.load(tmp_path / "work")
     assert reloaded.original_filename == "مۇقەددەس_بۇلاق.pdf"
     assert reloaded.root == tmp_path / "work"
+
+
+def test_workdir_queue_and_upload_defaults(tmp_path: Path):
+    pdf = tmp_path / "source.pdf"
+    pdf.write_bytes(b"%PDF-1.4 mock")
+    workdir = OcrWorkDir.create(tmp_path / "session_1", source_pdf=pdf, total_pages=5)
+    assert workdir.queue_status == "idle"
+    assert workdir.queued_at is None
+    assert workdir.uploaded is False
+    assert workdir.uploaded_at is None
+
+
+def test_workdir_preserves_queue_and_upload_status(tmp_path: Path):
+    pdf = tmp_path / "source.pdf"
+    pdf.write_bytes(b"%PDF-1.4 mock")
+    session_dir = tmp_path / "session_2"
+    OcrWorkDir.create(
+        session_dir,
+        source_pdf=pdf,
+        total_pages=5,
+        queue_status="queued",
+        queued_at=123456.78,
+        uploaded=True,
+        uploaded_at=234567.89,
+    )
+    loaded = OcrWorkDir.load(session_dir)
+    assert loaded.queue_status == "queued"
+    assert loaded.queued_at == 123456.78
+    assert loaded.uploaded is True
+    assert loaded.uploaded_at == 234567.89
+
+
+def test_workdir_backward_compatibility(tmp_path: Path):
+    import json
+
+    pdf = tmp_path / "source.pdf"
+    pdf.write_bytes(b"%PDF-1.4 mock")
+    session_dir = tmp_path / "session_old"
+    session_dir.mkdir()
+    (session_dir / "book.json").write_text(
+        json.dumps(
+            {
+                "source_pdf": str(pdf),
+                "book_id": "book_123",
+                "total_pages": 3,
+                "original_filename": "old.pdf",
+            }
+        )
+    )
+    loaded = OcrWorkDir.load(session_dir)
+    assert loaded.uploaded is True  # Inferred from book_id
+    assert loaded.queue_status == "idle"
