@@ -8,14 +8,13 @@ import io
 import re
 import warnings
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Union
 
 from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
     File,
-    Form,
     HTTPException,
     Query,
     Response,
@@ -1698,7 +1697,7 @@ async def upload_pdf(
 @router.post("/upload-ocrd")
 async def upload_pdf_ocrd(
     file: UploadFile = File(...),
-    pages: str = Form(...),
+    pages: Union[UploadFile, str] = File(...),
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1708,9 +1707,25 @@ async def upload_pdf_ocrd(
     from pydantic import TypeAdapter, ValidationError
 
     try:
-        raw_pages = json.loads(pages)
+        if isinstance(pages, str):
+            raw_pages = json.loads(pages)
+        elif hasattr(pages, "read"):
+            pages_bytes = await pages.read()
+            raw_pages = json.loads(
+                pages_bytes.decode("utf-8")
+                if isinstance(pages_bytes, bytes)
+                else pages_bytes
+            )
+        else:
+            raise ValueError("Invalid pages payload type")
         pages_data = TypeAdapter(List[OcrPageInput]).validate_python(raw_pages)
-    except (json.JSONDecodeError, ValidationError):
+    except (
+        json.JSONDecodeError,
+        ValidationError,
+        UnicodeDecodeError,
+        ValueError,
+        AttributeError,
+    ):
         raise HTTPException(status_code=400, detail=t("errors.invalid_pages_payload"))
 
     books_repo = BooksRepository(session)

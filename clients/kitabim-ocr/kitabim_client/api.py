@@ -72,8 +72,14 @@ class KitabimClient:
             response = httpx.post(
                 f"{self.base_url}/books/upload-ocrd",
                 headers=self._headers(),
-                files={"file": (upload_filename, f, "application/pdf")},
-                data={"pages": pages_json},
+                files={
+                    "file": (upload_filename, f, "application/pdf"),
+                    "pages": (
+                        "pages.json",
+                        pages_json.encode("utf-8"),
+                        "application/json",
+                    ),
+                },
                 timeout=120.0,
             )
         return self._check(response)

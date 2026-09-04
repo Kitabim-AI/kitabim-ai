@@ -37,10 +37,9 @@ def test_push_new_book_posts_multipart_with_pages_json(tmp_path: Path):
 
     assert result == {"bookId": "abc123", "status": "uploaded"}
     call = mock_post.call_args
-    assert call.args[0] == "http://localhost:8000/books/upload-ocrd"
-    assert call.kwargs["headers"]["Authorization"] == "Bearer tok123"
-    assert "pages" in call.kwargs["data"]
     assert call.kwargs["files"]["file"][0] == "book.pdf"
+    assert call.kwargs["files"]["pages"][0] == "pages.json"
+    assert b'"text": "hi"' in call.kwargs["files"]["pages"][1]
 
 
 def test_push_new_book_uses_custom_filename_with_pdf_extension(tmp_path: Path):

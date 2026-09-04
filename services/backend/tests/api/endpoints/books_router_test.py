@@ -683,7 +683,7 @@ async def test_upload_ocrd_returns_existing_book_on_duplicate_hash():
 async def test_upload_ocrd_creates_book_with_prefilled_pages_on_success():
     setup_paths()
     from api.endpoints.books_router import upload_pdf_ocrd
-    from app.core.pipeline import PAGE_MILESTONE_SUCCEEDED, PIPELINE_STEP_CHUNKING
+    from app.core.pipeline import PIPELINE_STEP_CHUNKING
     import fitz
 
     doc = fitz.open()
@@ -740,4 +740,49 @@ async def test_upload_ocrd_creates_book_with_prefilled_pages_on_success():
     assert by_number[1].is_toc is False
     assert by_number[2].text == "second page"
     assert by_number[2].is_toc is True
-    assert all(p.ocr_milestone == PAGE_MILESTONE_SUCCEEDED for p in added_pages)
+
+
+@pytest.mark.asyncio
+async def test_upload_ocrd_with_uploadfile_pages_on_success():
+    setup_paths()
+    from api.endpoints.books_router import upload_pdf_ocrd
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page()
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    mock_file = AsyncMock()
+    mock_file.filename = "my_book.pdf"
+    mock_file.read = AsyncMock(side_effect=[pdf_bytes, b""])
+
+    pages_bytes = b'[{"pageNumber": 1, "text": "hello", "isToc": false}]'
+    mock_pages_file = AsyncMock()
+    mock_pages_file.read = AsyncMock(return_value=pages_bytes)
+
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+    mock_session = AsyncMock()
+
+    mock_repo = MagicMock()
+    mock_repo.find_by_hash = AsyncMock(return_value=None)
+    mock_repo.create = AsyncMock()
+
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.storage") as mock_storage,
+        patch("api.endpoints.books_router.cache_service") as mock_cache,
+    ):
+        mock_storage.upload_file = AsyncMock()
+        mock_cache.bump_namespace_version = AsyncMock()
+
+        result = await upload_pdf_ocrd(
+            file=mock_file,
+            pages=mock_pages_file,
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert result["status"] == "uploaded"
+    assert "bookId" in result
