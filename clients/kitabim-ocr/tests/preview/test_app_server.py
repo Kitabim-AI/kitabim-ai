@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import fitz
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -693,3 +694,111 @@ def test_toggle_session_uploaded_route(tmp_path: Path):
     # 404 for nonexistent session
     res_404 = client.post("/api/sessions/nonexistent/toggle-uploaded")
     assert res_404.status_code == 404
+
+
+def test_open_session_route_opens_review_stage(tmp_path: Path):
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    s_dir = work_root / "upload-review"
+    w = OcrWorkDir.create(s_dir, source_pdf=s_dir / "book.pdf", total_pages=2)
+    (s_dir / "book.pdf").write_bytes(_minimal_pdf_bytes(2))
+    w.set_page(1, text="Hello", is_toc=False, confidence=1.0, status="ocrd")
+    w.set_page(
+        2, text="", is_toc=False, confidence=0.0, status="failed", error="Low conf"
+    )
+    w.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+    client = TestClient(app)
+
+    res = client.post("/api/sessions/upload-review/open")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["stage"] == "review"
+    assert data["sessionId"] == "upload-review"
+
+    # State now in review
+    state_res = client.get("/api/state")
+    assert state_res.json()["stage"] == "review"
+    assert state_res.json()["sessionId"] == "upload-review"
+
+
+def test_resume_session_with_failed_page_opens_review(tmp_path: Path):
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    s_dir = work_root / "upload-failed-only"
+    w = OcrWorkDir.create(s_dir, source_pdf=s_dir / "book.pdf", total_pages=2)
+    (s_dir / "book.pdf").write_bytes(_minimal_pdf_bytes(2))
+    w.set_page(1, text="Page 1", is_toc=False, confidence=1.0, status="ocrd")
+    w.set_page(
+        2, text="", is_toc=False, confidence=0.0, status="failed", error="Low conf"
+    )
+    w.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+    client = TestClient(app)
+
+    # Calling resume on completed run with 0 pending pages should open review, not queue
+    res = client.post("/api/sessions/upload-failed-only/resume")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["stage"] == "review"
+    assert data["isProcessing"] is False
+    assert data["queuePosition"] is None
+
+
+@pytest.mark.asyncio
+async def test_reviewing_session_protected_from_concurrent_background_runner(
+    tmp_path: Path,
+):
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+
+    # Create Book A (being reviewed)
+    dir_a = work_root / "book-a"
+    w_a = OcrWorkDir.create(dir_a, source_pdf=dir_a / "book.pdf", total_pages=1)
+    (dir_a / "book.pdf").write_bytes(_minimal_pdf_bytes(1))
+    w_a.set_page(1, text="Book A Text", is_toc=False, confidence=1.0, status="ocrd")
+    w_a.save()
+
+    # Create Book B (being processed in background)
+    dir_b = work_root / "book-b"
+    w_b = OcrWorkDir.create(dir_b, source_pdf=dir_b / "book.pdf", total_pages=1)
+    (dir_b / "book.pdf").write_bytes(_minimal_pdf_bytes(1))
+    w_b.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Open Book A for review
+        res_open = await ac.post("/api/sessions/book-a/open")
+        assert res_open.status_code == 200
+        assert res_open.json()["stage"] == "review"
+
+        # Check /api/state is review on book-a
+        state_before = (await ac.get("/api/state")).json()
+        assert state_before["stage"] == "review"
+        assert state_before["sessionId"] == "book-a"
+
+        # Simulate background runner for book B finishing
+        state = None
+        # Retrieve state from route endpoint or test directly
+        from preview.app_server import _run_ocr_background, AppState
+
+        state = AppState(
+            client=MagicMock(), work_root=work_root, stage="review", workdir=w_a
+        )
+
+        with (
+            patch(
+                "preview.app_server.get_recognition_predictor",
+                AsyncMock(return_value="pred"),
+            ),
+            patch("preview.app_server.ocr_page", AsyncMock(return_value="Book B Text")),
+        ):
+            await _run_ocr_background(w_b, state)
+
+        # state.stage must STILL be review and state.workdir must STILL be Book A!
+        assert state.stage == "review"
+        assert state.workdir.root.name == "book-a"

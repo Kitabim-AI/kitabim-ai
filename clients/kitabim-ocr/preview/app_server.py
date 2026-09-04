@@ -2122,7 +2122,7 @@ _APP_HTML = """<!doctype html>
               <td>
                 <div style="display: flex; align-items: center; gap: 0.4rem;">
                   ${s.isComplete ? `
-                  <button class="btn btn-primary" onclick="resumeSession('${escapeHtml(s.id)}')" style="padding: 0.35rem 0.85rem; font-size: 0.85rem;">
+                  <button class="btn btn-primary" onclick="viewResults('${escapeHtml(s.id)}')" style="padding: 0.35rem 0.85rem; font-size: 0.85rem;">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                     ${t('sessions.btn_view_results')}
                   </button>
@@ -2160,11 +2160,25 @@ _APP_HTML = """<!doctype html>
       }
     }
 
+    async function viewResults(sessionId) {
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/open`, {method: 'POST'});
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Failed to open results');
+        }
+        showSection('review');
+        loadPages();
+      } catch (err) {
+        alert(t('errors.failed_to_start', {error: err.message}));
+      }
+    }
+
     async function resumeSession(sessionId) {
       try {
         const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/resume`, {method: 'POST'});
         if (!res.ok) {
-          const err = await res.json();
+          const err = await res.json().catch(() => ({}));
           throw new Error(err.detail || 'Resume failed');
         }
         const body = await res.json();
@@ -2174,6 +2188,8 @@ _APP_HTML = """<!doctype html>
         } else if (body.stage === 'review') {
           showSection('review');
           loadPages();
+        } else if (body.stage === 'queued') {
+          loadLocalSessions();
         }
       } catch (err) {
         alert(t('errors.failed_to_start', {error: err.message}));
@@ -2424,10 +2440,22 @@ async def _run_ocr_background(
 
         tasks = [process_one(p) for p in range(1, workdir.total_pages + 1)]
         await asyncio.gather(*tasks)
-        state.stage = "review"
+        is_reviewing_other = (
+            state.stage == "review"
+            and state.workdir is not None
+            and state.workdir.root.name != workdir.root.name
+        )
+        if not is_reviewing_other:
+            state.stage = "review"
     except Exception as exc:
-        state.stage = "error"
-        state.error = str(exc)
+        is_reviewing_other = (
+            state.stage == "review"
+            and state.workdir is not None
+            and state.workdir.root.name != workdir.root.name
+        )
+        if not is_reviewing_other:
+            state.stage = "error"
+            state.error = str(exc)
 
 
 def list_local_sessions(
@@ -2468,6 +2496,10 @@ def list_local_sessions(
             queue_pos = (
                 queue_manager.get_queue_position(item.name) if queue_manager else None
             )
+            is_complete = (done + failed >= total) and total > 0
+            q_status = workdir.queue_status
+            if is_complete and q_status in ("queued", None, "idle"):
+                q_status = "completed"
 
             sessions.append(
                 {
@@ -2480,10 +2512,10 @@ def list_local_sessions(
                     "failedPages": failed,
                     "pendingPages": pending,
                     "modifiedAt": mtime,
-                    "isComplete": (done + failed >= total) and total > 0,
+                    "isComplete": is_complete,
                     "uploaded": workdir.uploaded,
                     "uploadedAt": workdir.uploaded_at,
-                    "queueStatus": workdir.queue_status,
+                    "queueStatus": q_status,
                     "queuePosition": queue_pos,
                 }
             )
@@ -2535,8 +2567,14 @@ def create_landing_app(
     )
 
     async def ocr_runner(workdir: OcrWorkDir):
-        state.workdir = workdir
-        state.stage = "processing"
+        is_reviewing_other = (
+            state.stage == "review"
+            and state.workdir is not None
+            and state.workdir.root.name != workdir.root.name
+        )
+        if not is_reviewing_other:
+            state.workdir = workdir
+            state.stage = "processing"
         await _run_ocr_background(workdir, state)
 
     def launch_bg(coro):
@@ -2592,6 +2630,27 @@ def create_landing_app(
     def get_sessions():
         return list_local_sessions(state.work_root, state.queue_manager)
 
+    @app.post("/api/sessions/{session_id}/open")
+    def open_session(session_id: str):
+        session_dir = state.work_root / session_id
+        if not session_dir.is_dir() or not (session_dir / "book.json").exists():
+            raise HTTPException(status_code=404, detail="Session not found")
+        try:
+            workdir = OcrWorkDir.load(session_dir)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to load session: {exc}"
+            )
+
+        state.workdir = workdir
+        state.stage = "review"
+        state.error = None
+        return {
+            "stage": "review",
+            "sessionId": workdir.root.name,
+            "title": workdir.original_filename or workdir.root.name,
+        }
+
     @app.post("/api/sessions/{session_id}/resume")
     async def resume_session(session_id: str):
         if (
@@ -2612,10 +2671,12 @@ def create_landing_app(
             )
 
         pages = workdir.all_pages()
-        unfinished = [
-            p for p in pages if p.status not in ("ocrd", "reviewed", "from_kitabim")
+        pending = [
+            p
+            for p in pages
+            if p.status not in ("ocrd", "reviewed", "from_kitabim", "failed")
         ]
-        if unfinished:
+        if pending:
             pos, is_active = await state.queue_manager.enqueue(workdir.root.name)
             if is_active:
                 state.workdir = workdir

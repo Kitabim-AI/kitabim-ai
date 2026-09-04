@@ -176,6 +176,16 @@ class BookQueueManager:
             try:
                 wd = OcrWorkDir.load(item)
                 if wd.queue_status in ("queued", "processing"):
+                    total = wd.total_pages
+                    done_or_failed = sum(
+                        1
+                        for p in wd.all_pages()
+                        if p.status in ("ocrd", "reviewed", "from_kitabim", "failed")
+                    )
+                    if total > 0 and done_or_failed >= total:
+                        wd.queue_status = "completed"
+                        wd.save()
+                        continue
                     q_time = wd.queued_at or item.stat().st_mtime
                     pending.append((q_time, item.name))
             except Exception:
