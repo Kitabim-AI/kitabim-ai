@@ -2586,12 +2586,13 @@ def create_landing_app(
         work_root=work_root, runner=ocr_runner, task_launcher=launch_bg
     )
     state.queue_manager = queue_manager
+    queue_manager.reset_interrupted_sessions()
 
     app = FastAPI()
 
     @app.on_event("startup")
     async def on_startup():
-        await queue_manager.recover_queue()
+        queue_manager.reset_interrupted_sessions()
 
     @app.get("/", response_class=HTMLResponse)
     def index(lang: str = "ug"):

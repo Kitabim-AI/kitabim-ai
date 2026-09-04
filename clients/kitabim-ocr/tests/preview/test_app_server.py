@@ -802,3 +802,48 @@ async def test_reviewing_session_protected_from_concurrent_background_runner(
         # state.stage must STILL be review and state.workdir must STILL be Book A!
         assert state.stage == "review"
         assert state.workdir.root.name == "book-a"
+
+
+@pytest.mark.asyncio
+async def test_startup_does_not_auto_start_processing(tmp_path: Path):
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+
+    # Create a book left in 'processing' status from a previous run
+    dir_interrupted = work_root / "interrupted-book"
+    pdf = dir_interrupted / "book.pdf"
+    w = OcrWorkDir.create(
+        dir_interrupted,
+        source_pdf=pdf,
+        total_pages=5,
+        queue_status="processing",
+    )
+    pdf.write_bytes(_minimal_pdf_bytes(5))
+    w.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+
+    # Trigger lifespan/startup handlers
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        state_res = await ac.get("/api/state")
+        assert state_res.status_code == 200
+        state = state_res.json()
+
+        # Must start in landing mode, not processing
+        assert state["stage"] == "landing"
+        assert state["activeSessionId"] is None
+        assert state["queuedSessions"] == []
+
+        # Interrupted book must be reset to idle on disk
+        reloaded = OcrWorkDir.load(dir_interrupted)
+        assert reloaded.queue_status == "idle"
+
+        # In sessions table, it should be listed with Resume button available
+        sessions_res = await ac.get("/api/sessions")
+        sessions = sessions_res.json()
+        assert len(sessions) == 1
+        assert sessions[0]["id"] == "interrupted-book"
+        assert sessions[0]["queueStatus"] == "idle"
+        assert sessions[0]["isComplete"] is False

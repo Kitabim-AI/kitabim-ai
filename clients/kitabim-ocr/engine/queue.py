@@ -164,6 +164,52 @@ class BookQueueManager:
                     self._ensure_worker_running()
             await asyncio.sleep(0.01)
 
+    def reset_interrupted_sessions(self) -> int:
+        """Resets any lingering 'processing' or 'queued' sessions to 'idle' or 'completed'
+        without starting OCR processing automatically on startup. Also resets any pages stuck
+        in 'processing' status back to 'pending'.
+        """
+        if not self.work_root.exists():
+            return 0
+
+        count = 0
+        for item in self.work_root.iterdir():
+            if not item.is_dir() or not (item / "book.json").exists():
+                continue
+            try:
+                wd = OcrWorkDir.load(item)
+                has_changes = False
+                if wd.queue_status in ("queued", "processing"):
+                    total = wd.total_pages
+                    done_or_failed = sum(
+                        1
+                        for p in wd.all_pages()
+                        if p.status in ("ocrd", "reviewed", "from_kitabim", "failed")
+                    )
+                    if total > 0 and done_or_failed >= total:
+                        wd.queue_status = "completed"
+                    else:
+                        wd.queue_status = "idle"
+                    has_changes = True
+
+                for p in wd.all_pages():
+                    if p.status == "processing":
+                        wd.set_page(
+                            p.page_number,
+                            text=p.text or "",
+                            is_toc=p.is_toc,
+                            confidence=p.confidence,
+                            status="pending",
+                        )
+                        has_changes = True
+
+                if has_changes:
+                    wd.save()
+                    count += 1
+            except Exception:
+                continue
+        return count
+
     async def recover_queue(self) -> int:
         """Scans work_root on startup for queued or interrupted sessions."""
         if not self.work_root.exists():

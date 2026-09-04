@@ -150,3 +150,56 @@ async def test_queue_startup_recovery(tmp_path: Path):
     assert recovered == 2
     await qm.wait_all()
     assert processed == ["rec1", "rec2"]
+
+
+def test_reset_interrupted_sessions_resets_status_without_starting_runner(
+    tmp_path: Path,
+):
+    pdf = tmp_path / "mock.pdf"
+    pdf.write_bytes(b"%PDF-1.4 mock")
+
+    w_proc1 = OcrWorkDir.create(
+        tmp_path / "proc1",
+        source_pdf=pdf,
+        total_pages=2,
+        queue_status="processing",
+    )
+    w_proc1.set_page(
+        1, text="midway", is_toc=False, confidence=0.5, status="processing"
+    )
+    w_proc1.save()
+    OcrWorkDir.create(
+        tmp_path / "queued1",
+        source_pdf=pdf,
+        total_pages=2,
+        queue_status="queued",
+    )
+    w_done = OcrWorkDir.create(
+        tmp_path / "done1",
+        source_pdf=pdf,
+        total_pages=1,
+        queue_status="processing",
+    )
+    w_done.set_page(1, text="done", is_toc=False, confidence=1.0, status="ocrd")
+    w_done.save()
+
+    runner_called = False
+
+    async def mock_runner(wd):
+        nonlocal runner_called
+        runner_called = True
+
+    qm = BookQueueManager(work_root=tmp_path, runner=mock_runner)
+    reset_count = qm.reset_interrupted_sessions()
+
+    assert reset_count == 3
+    assert not runner_called
+    assert qm.active_session_id is None
+    assert qm.queued_session_ids == []
+
+    # Check statuses on disk
+    loaded_proc1 = OcrWorkDir.load(tmp_path / "proc1")
+    assert loaded_proc1.queue_status == "idle"
+    assert loaded_proc1.get_page(1).status == "pending"
+    assert OcrWorkDir.load(tmp_path / "queued1").queue_status == "idle"
+    assert OcrWorkDir.load(tmp_path / "done1").queue_status == "completed"
