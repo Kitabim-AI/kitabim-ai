@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import socket
+import threading
 import time
 import webbrowser
 from dataclasses import dataclass, field
@@ -2850,6 +2852,26 @@ def create_landing_app(
     return app
 
 
+def _open_browser_when_ready(
+    url: str, host: str = "127.0.0.1", port: int = 8765, timeout: float = 10.0
+) -> None:
+    def _poll_and_open():
+        deadline = time.time() + timeout
+        connected = False
+        while time.time() < deadline:
+            try:
+                with socket.create_connection((host, port), timeout=0.2):
+                    connected = True
+                    break
+            except (OSError, ConnectionRefusedError):
+                time.sleep(0.1)
+        if connected:
+            time.sleep(0.15)
+            webbrowser.open(url)
+
+    threading.Thread(target=_poll_and_open, daemon=True).start()
+
+
 def serve_app(
     client: KitabimClient,
     work_root: Path,
@@ -2859,5 +2881,7 @@ def serve_app(
 ) -> None:
     app = create_landing_app(client, work_root, engine=engine)
     if open_browser:
-        webbrowser.open(f"http://127.0.0.1:{port}")
+        _open_browser_when_ready(
+            f"http://127.0.0.1:{port}", host="127.0.0.1", port=port
+        )
     uvicorn.run(app, host="127.0.0.1", port=port)
