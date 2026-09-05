@@ -44,3 +44,17 @@ def test_get_translations():
 def test_get_translations_json():
     json_str = get_translations_json("ug")
     assert "يەرلىكتىكى خىزمەتلەر" in json_str
+
+
+def test_redo_page_translations():
+    ug_redo = t("review.redo_page_in_progress", lang="ug", pageNumber=3)
+    assert "3-بەت قايتا تونۇتۇلۇۋاتىدۇ..." in ug_redo
+
+    en_redo = t("review.redo_page_in_progress", lang="en", pageNumber=3)
+    assert "Page 3 is being reprocessed..." in en_redo
+
+    ug_success = t("review.redo_page_success", lang="ug", pageNumber=3)
+    assert "3-بەتنى قايتا تونۇتۇش تاماملاندى" in ug_success
+
+    en_success = t("review.redo_page_success", lang="en", pageNumber=3)
+    assert "Page 3 reprocessed successfully" in en_success

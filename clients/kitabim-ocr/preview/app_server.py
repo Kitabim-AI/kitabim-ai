@@ -1560,7 +1560,8 @@ _APP_HTML = """<!doctype html>
       }
     });
 
-    function showToast(msg) {
+    let toastTimeout = null;
+    function showToast(msg, isError = false) {
       let toast = document.getElementById('globalToast');
       if (!toast) {
         toast = document.createElement('div');
@@ -1569,23 +1570,25 @@ _APP_HTML = """<!doctype html>
         toast.style.bottom = '2rem';
         toast.style.left = '50%';
         toast.style.transform = 'translateX(-50%)';
-        toast.style.background = 'var(--slate-900)';
-        toast.style.color = '#fff';
         toast.style.padding = '0.75rem 1.5rem';
         toast.style.borderRadius = '9999px';
         toast.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.3)';
-        toast.style.fontSize = '0.9rem';
+        toast.style.fontSize = '0.95rem';
         toast.style.fontWeight = '600';
         toast.style.zIndex = '9999';
         toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
         toast.style.opacity = '0';
         toast.style.pointerEvents = 'none';
+        toast.style.direction = 'rtl';
         document.body.appendChild(toast);
       }
+      toast.style.background = isError ? '#dc2626' : 'var(--slate-900)';
+      toast.style.color = '#fff';
       toast.textContent = msg;
       toast.style.opacity = '1';
       toast.style.transform = 'translateX(-50%) translateY(0)';
-      setTimeout(() => {
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(-50%) translateY(10px)';
       }, 4000);
@@ -1779,16 +1782,31 @@ _APP_HTML = """<!doctype html>
       const btn = document.getElementById('previewRedoBtn');
       btn.disabled = true;
       btn.innerHTML = `<span style="display:inline-block; animation: spin 1s infinite linear;">⚙️</span> ${t('review.redo_in_progress')}`;
+      const badge = document.getElementById('previewModalBadge');
+      let prevBadgeClass = '';
+      let prevBadgeText = '';
+      if (badge) {
+        prevBadgeClass = badge.className;
+        prevBadgeText = badge.textContent;
+        badge.className = 'milestone-badge milestone-in_progress';
+        badge.textContent = t('review.status_processing_badge');
+      }
+      showToast(t('review.redo_page_in_progress', {pageNumber: pageNum}));
       try {
-        await fetch('/api/pages/redo', {
+        const res = await fetch('/api/pages/redo', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({pageNumbers: [pageNum]}),
         });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
         currentSessionVersion = Date.now();
-        const res = await fetch('/api/pages');
-        if (res.ok) {
-          const pages = await res.json();
+        showToast(t('review.redo_page_success', {pageNumber: pageNum}));
+        const pagesRes = await fetch('/api/pages');
+        if (pagesRes.ok) {
+          const pages = await pagesRes.json();
           currentProcessingPages = pages;
           renderPageMatrix(pages);
           const page = pages.find(p => p.pageNumber === pageNum);
@@ -1798,6 +1816,11 @@ _APP_HTML = """<!doctype html>
         }
       } catch (e) {
         console.error('Failed to redo page from preview', pageNum, e);
+        showToast(t('review.redo_page_error', {pageNumber: pageNum, error: e.message || e}), true);
+        if (badge && prevBadgeClass) {
+          badge.className = prevBadgeClass;
+          badge.textContent = prevBadgeText;
+        }
       } finally {
         btn.disabled = false;
         btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg> ${t('review.btn_re_ocr')}`;
@@ -1898,7 +1921,7 @@ _APP_HTML = """<!doctype html>
                 <input type="checkbox" class="toc-toggle" data-page="${p.pageNumber}" ${p.isToc ? 'checked' : ''} onchange="toggleToc(${p.pageNumber}, this.checked)">
                 ${t('review.chk_toc_label')}
               </label>
-              <button class="btn btn-secondary btn-sm" onclick="redoSinglePage(${p.pageNumber})">
+              <button class="btn btn-secondary btn-sm" id="redoBtn-${p.pageNumber}" onclick="redoSinglePage(${p.pageNumber})">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
                 ${t('review.btn_re_ocr')}
               </button>
@@ -1969,13 +1992,51 @@ _APP_HTML = """<!doctype html>
     }
 
     async function redoSinglePage(pageNum) {
+      showToast(t('review.redo_page_in_progress', {pageNumber: pageNum}));
+
+      const btn = document.getElementById(`redoBtn-${pageNum}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span style="display:inline-block; animation: spin 1s infinite linear;">⚙️</span> ${t('review.redo_in_progress')}`;
+      }
+
+      const card = document.getElementById(`page-card-${pageNum}`);
+      const badge = card ? card.querySelector('.milestone-badge') : null;
+      let prevBadgeClass = '';
+      let prevBadgeText = '';
+      if (badge) {
+        prevBadgeClass = badge.className;
+        prevBadgeText = badge.textContent;
+        badge.className = 'milestone-badge milestone-in_progress';
+        badge.textContent = t('review.status_processing_badge');
+      }
+
       currentSessionVersion = Date.now();
-      await fetch('/api/pages/redo', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({pageNumbers: [pageNum]}),
-      });
-      loadPages();
+      try {
+        const res = await fetch('/api/pages/redo', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({pageNumbers: [pageNum]}),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        showToast(t('review.redo_page_success', {pageNumber: pageNum}));
+        await loadPages();
+      } catch (err) {
+        console.error('Failed to redo page', pageNum, err);
+        showToast(t('review.redo_page_error', {pageNumber: pageNum, error: err.message || err}), true);
+        if (badge && prevBadgeClass) {
+          badge.className = prevBadgeClass;
+          badge.textContent = prevBadgeText;
+        }
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg> ${t('review.btn_re_ocr')}`;
+        }
+      }
     }
 
     async function redoSelected() {
@@ -1985,13 +2046,30 @@ _APP_HTML = """<!doctype html>
       const btn = document.getElementById('redoSelectedBtn');
       btn.disabled = true;
       btn.textContent = t('review.redo_in_progress');
+      if (pages.length === 1) {
+        showToast(t('review.redo_page_in_progress', {pageNumber: pages[0]}));
+      } else {
+        const pagesStr = pages.length <= 5 ? pages.join(', ') : `${pages.slice(0, 3).join(', ')}... (${pages.length})`;
+        showToast(t('review.redo_pages_in_progress', {pages: pagesStr}));
+      }
       try {
-        await fetch('/api/pages/redo', {
+        const res = await fetch('/api/pages/redo', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({pageNumbers: pages}),
         });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        if (pages.length === 1) {
+          showToast(t('review.redo_page_success', {pageNumber: pages[0]}));
+        } else {
+          showToast(t('review.redo_pages_success'));
+        }
         await loadPages();
+      } catch (err) {
+        showToast(t('errors.generic', {error: err.message || err}), true);
       } finally {
         btn.disabled = false;
         btn.textContent = t('review.btn_redo_selected');
@@ -2006,13 +2084,21 @@ _APP_HTML = """<!doctype html>
       const btn = document.getElementById('redoAllBtn');
       btn.disabled = true;
       btn.textContent = t('review.redo_in_progress');
+      showToast(t('review.redo_all_in_progress'));
       try {
-        await fetch('/api/pages/redo', {
+        const res = await fetch('/api/pages/redo', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({pageNumbers: pages}),
         });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        showToast(t('review.redo_all_success'));
         await loadPages();
+      } catch (err) {
+        showToast(t('errors.generic', {error: err.message || err}), true);
       } finally {
         btn.disabled = false;
         btn.textContent = t('review.btn_redo_all');

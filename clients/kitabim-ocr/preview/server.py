@@ -427,7 +427,7 @@ _PAGE_HTML = """<!doctype html>
                 <input type="checkbox" class="toc-toggle" data-page="${p.pageNumber}" ${p.isToc ? 'checked' : ''} onchange="toggleToc(${p.pageNumber}, this.checked)">
                 مۇندەرىجە بەت
               </label>
-              <button class="btn btn-secondary btn-sm" onclick="redoSinglePage(${p.pageNumber})">قايتا تونۇتۇش</button>
+              <button class="btn btn-secondary btn-sm" id="redoBtn-${p.pageNumber}" onclick="redoSinglePage(${p.pageNumber})">قايتا تونۇتۇش</button>
             </div>
           </div>
           <div class="page-card-body">
@@ -495,13 +495,67 @@ _PAGE_HTML = """<!doctype html>
       }
     }
 
+    let toastTimeout = null;
+    function showToast(msg, isError = false) {
+      let toast = document.getElementById('globalToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'globalToast';
+        toast.style.position = 'fixed';
+        toast.style.bottom = '2rem';
+        toast.style.left = '50%';
+        toast.style.transform = 'translateX(-50%)';
+        toast.style.padding = '0.75rem 1.5rem';
+        toast.style.borderRadius = '9999px';
+        toast.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.3)';
+        toast.style.fontSize = '0.95rem';
+        toast.style.fontWeight = '600';
+        toast.style.zIndex = '9999';
+        toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        toast.style.opacity = '0';
+        toast.style.pointerEvents = 'none';
+        toast.style.direction = 'rtl';
+        document.body.appendChild(toast);
+      }
+      toast.style.background = isError ? '#dc2626' : 'var(--slate-900)';
+      toast.style.color = '#fff';
+      toast.textContent = msg;
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateX(-50%) translateY(0)';
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(10px)';
+      }, 4000);
+    }
+
     async function redoSinglePage(pageNum) {
-      await fetch('/api/pages/redo', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({pageNumbers: [pageNum]}),
-      });
-      loadPages();
+      showToast(`${pageNum}-بەت قايتا تونۇتۇلۇۋاتىدۇ...`);
+      const btn = document.getElementById(`redoBtn-${pageNum}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'قايتا تونۇتۇلۇۋاتىدۇ...';
+      }
+      try {
+        const res = await fetch('/api/pages/redo', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({pageNumbers: [pageNum]}),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        showToast(`${pageNum}-بەتنى قايتا تونۇتۇش تاماملاندى`);
+        await loadPages();
+      } catch (err) {
+        showToast(`${pageNum}-بەتنى قايتا تونۇتۇشتا خاتالىق: ${err.message}`, true);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'قايتا تونۇتۇش';
+        }
+      }
     }
 
     async function redoSelected() {
@@ -510,13 +564,30 @@ _PAGE_HTML = """<!doctype html>
       const btn = document.getElementById('redoSelectedBtn');
       btn.disabled = true;
       btn.textContent = 'قايتا تونۇتۇلۇۋاتىدۇ...';
+      if (pages.length === 1) {
+        showToast(`${pages[0]}-بەت قايتا تونۇتۇلۇۋاتىدۇ...`);
+      } else {
+        const pagesStr = pages.length <= 5 ? pages.join(', ') : `${pages.slice(0, 3).join(', ')}... (${pages.length})`;
+        showToast(`${pagesStr}-بەتلەر قايتا تونۇتۇلۇۋاتىدۇ...`);
+      }
       try {
-        await fetch('/api/pages/redo', {
+        const res = await fetch('/api/pages/redo', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({pageNumbers: pages}),
         });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        if (pages.length === 1) {
+          showToast(`${pages[0]}-بەتنى قايتا تونۇتۇش تاماملاندى`);
+        } else {
+          showToast('تاللانغان بەتلەرنى قايتا تونۇتۇش تاماملاندى');
+        }
         await loadPages();
+      } catch (err) {
+        showToast(`خاتالىق كۆرۈلدى: ${err.message}`, true);
       } finally {
         btn.disabled = false;
         btn.textContent = 'تاللانغاننى قايتا تونۇتۇش';
@@ -530,13 +601,21 @@ _PAGE_HTML = """<!doctype html>
       const btn = document.getElementById('redoAllBtn');
       btn.disabled = true;
       btn.textContent = 'قايتا تونۇتۇلۇۋاتىدۇ...';
+      showToast('بارلىق بەتلەر قايتا تونۇتۇلۇۋاتىدۇ...');
       try {
-        await fetch('/api/pages/redo', {
+        const res = await fetch('/api/pages/redo', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({pageNumbers: pages}),
         });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        showToast('بارلىق بەتلەرنى قايتا تونۇتۇش تاماملاندى');
         await loadPages();
+      } catch (err) {
+        showToast(`خاتالىق كۆرۈلدى: ${err.message}`, true);
       } finally {
         btn.disabled = false;
         btn.textContent = 'ھەممىنى قايتا تونۇتۇش';
