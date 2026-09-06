@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
+from engine.config import get_configured_engine, resolve_concurrency
 from engine.recognize import (
     LowConfidenceOcrError,
     get_recognition_predictor,
@@ -409,37 +410,69 @@ _PAGE_HTML = """<!doctype html>
       const res = await fetch('/api/pages');
       const pages = await res.json();
       const container = document.getElementById('pages');
-      container.innerHTML = '';
+      if (!container) return;
+
+      if (container.children.length !== pages.length) {
+        container.innerHTML = '';
+        for (const p of pages) {
+          const div = document.createElement('div');
+          div.className = 'glass-card page-card';
+          div.id = `page-card-${p.pageNumber}`;
+          div.innerHTML = `
+            <div class="page-card-header">
+              <div style="display: flex; align-items: center; gap: 0.8rem;">
+                <input type="checkbox" class="select" value="${p.pageNumber}" onchange="updateSelectedCount()" style="width: 18px; height: 18px; cursor: pointer;">
+                <span style="font-weight: 700; font-size: 1.1rem; color: var(--slate-900);">بەت ${p.pageNumber}</span>
+                <span class="milestone-badge ${p.status === 'failed' ? 'milestone-failed' : 'milestone-ready'}">
+                  ${p.status === 'from_kitabim' ? 'Kitabim دىن' : p.status === 'ocrd' ? 'OCR پۈتتى' : p.status === 'failed' ? 'مەغلۇپ بولدى' : p.status}
+                </span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 1rem;">
+                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; color: var(--slate-700);">
+                  <input type="checkbox" class="toc-toggle" data-page="${p.pageNumber}" ${p.isToc ? 'checked' : ''} onchange="toggleToc(${p.pageNumber}, this.checked)">
+                  مۇندەرىجە بەت
+                </label>
+                <button class="btn btn-secondary btn-sm" id="redoBtn-${p.pageNumber}" onclick="redoSinglePage(${p.pageNumber})">قايتا تونۇتۇش</button>
+              </div>
+            </div>
+            <div class="page-card-body">
+              <div class="page-image-wrap">
+                <img src="/api/pages/${p.pageNumber}/image?v=${Date.now()}" alt="بەت ${p.pageNumber}" loading="lazy">
+              </div>
+              <div>
+                <textarea class="ocr-textarea" data-page="${p.pageNumber}" oninput="autoSavePageText(${p.pageNumber}, this.value)">${escapeHtml(p.text || '')}</textarea>
+              </div>
+            </div>
+          `;
+          container.appendChild(div);
+        }
+        updateSelectedCount();
+        return;
+      }
+
       for (const p of pages) {
-        const div = document.createElement('div');
-        div.className = 'glass-card page-card';
-        div.innerHTML = `
-          <div class="page-card-header">
-            <div style="display: flex; align-items: center; gap: 0.8rem;">
-              <input type="checkbox" class="select" value="${p.pageNumber}" onchange="updateSelectedCount()" style="width: 18px; height: 18px; cursor: pointer;">
-              <span style="font-weight: 700; font-size: 1.1rem; color: var(--slate-900);">بەت ${p.pageNumber}</span>
-              <span class="milestone-badge ${p.status === 'failed' ? 'milestone-failed' : 'milestone-ready'}">
-                ${p.status === 'from_kitabim' ? 'Kitabim دىن' : p.status === 'ocrd' ? 'OCR پۈتتى' : p.status === 'failed' ? 'مەغلۇپ بولدى' : p.status}
-              </span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 1rem;">
-              <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; color: var(--slate-700);">
-                <input type="checkbox" class="toc-toggle" data-page="${p.pageNumber}" ${p.isToc ? 'checked' : ''} onchange="toggleToc(${p.pageNumber}, this.checked)">
-                مۇندەرىجە بەت
-              </label>
-              <button class="btn btn-secondary btn-sm" id="redoBtn-${p.pageNumber}" onclick="redoSinglePage(${p.pageNumber})">قايتا تونۇتۇش</button>
-            </div>
-          </div>
-          <div class="page-card-body">
-            <div class="page-image-wrap">
-              <img src="/api/pages/${p.pageNumber}/image?v=${Date.now()}" alt="بەت ${p.pageNumber}" loading="lazy">
-            </div>
-            <div>
-              <textarea class="ocr-textarea" data-page="${p.pageNumber}" oninput="autoSavePageText(${p.pageNumber}, this.value)">${escapeHtml(p.text || '')}</textarea>
-            </div>
-          </div>
-        `;
-        container.appendChild(div);
+        const card = document.getElementById(`page-card-${p.pageNumber}`);
+        if (!card) continue;
+
+        const badge = card.querySelector('.milestone-badge');
+        if (badge) {
+          badge.textContent = p.status === 'from_kitabim' ? 'Kitabim دىن' : p.status === 'ocrd' ? 'OCR پۈتتى' : p.status === 'failed' ? 'مەغلۇپ بولدى' : p.status;
+          badge.className = `milestone-badge ${p.status === 'failed' ? 'milestone-failed' : 'milestone-ready'}`;
+        }
+
+        const img = card.querySelector('img');
+        if (img) {
+          img.src = `/api/pages/${p.pageNumber}/image?v=${Date.now()}`;
+        }
+
+        const textarea = card.querySelector('.ocr-textarea');
+        if (textarea) {
+          const isFocused = document.activeElement === textarea;
+          const hasPendingSave = Boolean(saveTimeouts[p.pageNumber]);
+          if (!isFocused && !hasPendingSave && textarea.value !== (p.text || '')) {
+            textarea.value = p.text || '';
+          }
+        }
       }
       updateSelectedCount();
     }
@@ -713,64 +746,77 @@ def get_page_image_bytes(workdir: OcrWorkDir, page_number: int) -> bytes:
 def update_page_response(
     workdir: OcrWorkDir, page_number: int, body: UpdatePageRequest
 ) -> dict:
-    try:
-        page = workdir.get_page(page_number)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Page not found")
+    # Shares workdir.save_lock with the background OCR job (and redo), which
+    # may be mutating and saving other pages of the same book concurrently
+    # from the asyncio event-loop thread while this runs on FastAPI's
+    # threadpool thread.
+    with workdir.save_lock:
+        try:
+            page = workdir.get_page(page_number)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Page not found")
 
-    text = body.text if body.text is not None else page.text
-    is_toc = body.isToc if body.isToc is not None else page.is_toc
-    status = "reviewed" if page.status != "failed" else "failed"
+        text = body.text if body.text is not None else page.text
+        is_toc = body.isToc if body.isToc is not None else page.is_toc
+        status = "reviewed" if page.status != "failed" else "failed"
 
-    workdir.set_page(
-        page_number,
-        text=text,
-        is_toc=is_toc,
-        confidence=page.confidence,
-        status=status,
-        error=page.error,
-    )
-    workdir.save()
+        workdir.set_page(
+            page_number,
+            text=text,
+            is_toc=is_toc,
+            confidence=page.confidence,
+            status=status,
+            error=page.error,
+        )
+        workdir.save()
     return {"status": "ok", "pageNumber": page_number}
 
 
 async def redo_pages_response(
     workdir: OcrWorkDir,
     page_numbers: list[int],
-    concurrency: int = 4,
+    concurrency: int | None = None,
     engine: str | None = None,
 ) -> list[dict]:
+    target_concurrency = resolve_concurrency(engine, concurrency)
     doc = fitz.open(workdir.source_pdf)
     predictor = await get_recognition_predictor(engine)
-    sem = asyncio.Semaphore(max(1, concurrency))
-    save_lock = asyncio.Lock()
+    sem = asyncio.Semaphore(max(1, target_concurrency))
 
     async def redo_one(page_number: int):
         async with sem:
             fitz_page = doc.load_page(page_number - 1)
             try:
                 text = await ocr_page(
-                    fitz_page, predictor, max_parallel_pages=concurrency
+                    fitz_page, predictor, max_parallel_pages=target_concurrency
                 )
-                async with save_lock:
+                with workdir.save_lock:
+                    try:
+                        existing = workdir.get_page(page_number)
+                        is_toc = existing.is_toc
+                    except KeyError:
+                        is_toc = False
                     workdir.set_page(
                         page_number,
                         text=text,
-                        is_toc=False,
+                        is_toc=is_toc,
                         confidence=1.0,
                         status="ocrd",
                     )
                     workdir.save()
             except LowConfidenceOcrError as exc:
-                try:
-                    previous_text = workdir.get_page(page_number).text
-                except KeyError:
-                    previous_text = ""
-                async with save_lock:
+                with workdir.save_lock:
+                    try:
+                        existing = workdir.get_page(page_number)
+                        previous_text = existing.text
+                        is_toc = existing.is_toc
+                    except KeyError:
+                        previous_text = ""
+                        is_toc = False
                     workdir.set_page(
                         page_number,
                         text=previous_text,
-                        is_toc=False,
+                        is_toc=is_toc,
                         confidence=0.0,
                         status="failed",
                         error=str(exc),
@@ -795,27 +841,69 @@ def push_response(workdir: OcrWorkDir, client) -> dict:
         raise HTTPException(
             status_code=400, detail="Cannot push without KitabimClient configured"
         )
-    try:
-        if workdir.book_id is None:
-            res = client.push_new_book(
-                workdir.source_pdf,
-                workdir.all_pages(),
-                filename=workdir.original_filename,
+    with workdir.save_lock:
+        unfinished = [
+            p.page_number
+            for p in workdir.all_pages()
+            if p.status in ("pending", "processing")
+        ]
+        if unfinished:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot push while pages are still processing or pending ({len(unfinished)} pages incomplete)",
             )
+        pages_to_push = workdir.all_pages()
+
+    def _do_push_new() -> dict:
+        if not workdir.source_pdf or not Path(workdir.source_pdf).exists():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Source PDF not found at {workdir.source_pdf}. Cannot upload as new book.",
+            )
+        res = client.push_new_book(
+            workdir.source_pdf,
+            pages_to_push,
+            filename=workdir.original_filename,
+        )
+        with workdir.save_lock:
             workdir.uploaded = True
             workdir.uploaded_at = time.time()
             if isinstance(res, dict) and res.get("bookId"):
                 workdir.book_id = str(res["bookId"])
-            workdir.save()
-            return res
+            workdir.save_metadata()
+        return res
+
+    try:
+        if workdir.book_id is not None:
+            if hasattr(client, "book_exists") and not client.book_exists(
+                workdir.book_id
+            ):
+                with workdir.save_lock:
+                    workdir.book_id = None
+                    workdir.uploaded = False
+                    workdir.save_metadata()
+
+        if workdir.book_id is None:
+            return _do_push_new()
+
         results = []
-        for page in workdir.all_pages():
+        for page in pages_to_push:
             results.append(client.push_page_correction(workdir.book_id, page))
-        workdir.uploaded = True
-        workdir.uploaded_at = time.time()
-        workdir.save()
+        with workdir.save_lock:
+            workdir.uploaded = True
+            workdir.uploaded_at = time.time()
+            workdir.save_metadata()
         return {"status": "corrections_pushed", "count": len(results)}
     except KitabimAPIError as exc:
+        if "404 from Kitabim API" in str(exc) and workdir.book_id is not None:
+            if hasattr(client, "book_exists") and not client.book_exists(
+                workdir.book_id
+            ):
+                with workdir.save_lock:
+                    workdir.book_id = None
+                    workdir.uploaded = False
+                    workdir.save_metadata()
+                return _do_push_new()
         raise HTTPException(status_code=400, detail=str(exc))
 
 
@@ -851,7 +939,9 @@ def create_app(workdir: OcrWorkDir, client) -> FastAPI:
 
     @app.post("/api/pages/redo")
     async def redo_pages(body: RedoRequest):
-        return await redo_pages_response(workdir, body.pageNumbers)
+        return await redo_pages_response(
+            workdir, body.pageNumbers, engine=get_configured_engine()
+        )
 
     @app.post("/api/pages/{page_number}/update")
     def update_page(page_number: int, body: UpdatePageRequest):

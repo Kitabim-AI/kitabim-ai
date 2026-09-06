@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
@@ -44,6 +46,11 @@ class OcrWorkDir:
         self.queued_at = queued_at
         self.uploaded = uploaded
         self.uploaded_at = uploaded_at
+        # Guards read-modify-write access to _pages and the on-disk save().
+        # An RLock (re-entrant) so callers and internal methods can safely
+        # acquire when nested, and serialize sync FastAPI threads with
+        # the background asyncio tasks.
+        self.save_lock = threading.RLock()
 
     @property
     def root(self) -> Path:
@@ -117,9 +124,39 @@ class OcrWorkDir:
             uploaded_at=book_meta.get("uploaded_at"),
         )
 
-    def save(self) -> None:
-        (self.path / "book.json").write_text(
-            json.dumps(
+    def _ensure_lock(self):
+        rlock_type = type(threading.RLock())
+        if isinstance(self.save_lock, rlock_type):
+            if not self.save_lock._is_owned():
+                return self.save_lock
+
+        class _NoOp:
+            def __enter__(self):
+                pass
+
+            def __exit__(self, *args):
+                pass
+
+        return _NoOp()
+
+    def _write_atomic(self, filename: str, content: str) -> None:
+        target = self.path / filename
+        tmp = self.path / f".{filename}.tmp.{os.getpid()}.{threading.get_ident()}"
+        try:
+            tmp.write_text(content, encoding="utf-8")
+            tmp.replace(target)
+        except Exception:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except Exception:
+                    pass
+            raise
+
+    def save_metadata(self) -> None:
+        """Saves only book.json without touching pages.json."""
+        with self._ensure_lock():
+            meta_json = json.dumps(
                 {
                     "source_pdf": str(self.source_pdf),
                     "book_id": self.book_id,
@@ -132,14 +169,17 @@ class OcrWorkDir:
                 },
                 indent=2,
             )
-        )
-        (self.path / "pages.json").write_text(
-            json.dumps(
+            self._write_atomic("book.json", meta_json)
+
+    def save(self) -> None:
+        with self._ensure_lock():
+            self.save_metadata()
+            pages_json = json.dumps(
                 [asdict(p) for p in self.all_pages()],
                 ensure_ascii=False,
                 indent=2,
             )
-        )
+            self._write_atomic("pages.json", pages_json)
 
     def image_path(self, page_number: int) -> Path:
         return self.path / "pages" / f"{page_number:04d}.png"
@@ -167,4 +207,5 @@ class OcrWorkDir:
         )
 
     def all_pages(self) -> list[PageState]:
-        return [self._pages[n] for n in sorted(self._pages)]
+        with self._ensure_lock():
+            return [self._pages[n] for n in sorted(self._pages)]

@@ -199,3 +199,57 @@ def test_headers_reads_app_id_from_env(tmp_path: Path, monkeypatch):
 
     assert headers["Authorization"] == "Bearer tok123"
     assert headers["X-Kitabim-App-Id"] == "env-app-id-456"
+
+
+def test_get_book_returns_dict_when_found(tmp_path: Path):
+    client = _client(tmp_path)
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.json.return_value = {"id": "book123", "title": "Bustan"}
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.get", return_value=mock_res) as mock_get,
+    ):
+        result = client.get_book("book123")
+
+    assert result == {"id": "book123", "title": "Bustan"}
+    assert mock_get.call_args.args[0] == "http://localhost:8000/books/book123"
+
+
+def test_get_book_returns_none_when_404(tmp_path: Path):
+    client = _client(tmp_path)
+    mock_res = MagicMock()
+    mock_res.status_code = 404
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.get", return_value=mock_res),
+    ):
+        result = client.get_book("missing_book")
+
+    assert result is None
+
+
+def test_book_exists_returns_true_when_200(tmp_path: Path):
+    client = _client(tmp_path)
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.get", return_value=mock_res),
+    ):
+        assert client.book_exists("book123") is True
+
+
+def test_book_exists_returns_false_when_404(tmp_path: Path):
+    client = _client(tmp_path)
+    mock_res = MagicMock()
+    mock_res.status_code = 404
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.get", return_value=mock_res),
+    ):
+        assert client.book_exists("deleted_book") is False

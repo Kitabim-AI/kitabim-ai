@@ -152,3 +152,43 @@ def test_workdir_backward_compatibility(tmp_path: Path):
     loaded = OcrWorkDir.load(session_dir)
     assert loaded.uploaded is True  # Inferred from book_id
     assert loaded.queue_status == "idle"
+
+
+def test_workdir_save_atomic_and_save_metadata(tmp_path: Path):
+    pdf = tmp_path / "book.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    session_dir = tmp_path / "work"
+    wd = OcrWorkDir.create(session_dir, source_pdf=pdf, total_pages=2)
+    wd.set_page(1, text="initial page 1", is_toc=False, confidence=1.0, status="ocrd")
+    wd.save()
+
+    # Modify queue_status using save_metadata()
+    wd.queue_status = "completed"
+    wd.save_metadata()
+
+    # pages.json should remain unchanged, book.json should be updated
+    import json
+
+    meta = json.loads((session_dir / "book.json").read_text())
+    assert meta["queue_status"] == "completed"
+
+    pages_data = json.loads((session_dir / "pages.json").read_text())
+    assert pages_data[0]["text"] == "initial page 1"
+
+
+def test_workdir_reentrant_lock(tmp_path: Path):
+    pdf = tmp_path / "book.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    session_dir = tmp_path / "work"
+    wd = OcrWorkDir.create(session_dir, source_pdf=pdf, total_pages=1)
+
+    # Calling save() inside an existing with wd.save_lock should not deadlock
+    with wd.save_lock:
+        wd.set_page(
+            1, text="nested lock", is_toc=True, confidence=1.0, status="reviewed"
+        )
+        wd.save()
+
+    loaded = OcrWorkDir.load(session_dir)
+    assert loaded.get_page(1).text == "nested lock"
+    assert loaded.get_page(1).is_toc is True

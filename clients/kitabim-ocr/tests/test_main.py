@@ -73,6 +73,54 @@ def test_build_parser_engine_option():
     assert args.engine == "savitr"
 
 
+def test_build_parser_concurrency_option():
+    parser = main.build_parser()
+    args = parser.parse_args(["app", "--concurrency", "2"])
+    assert args.command == "app"
+    assert args.concurrency == 2
+
+
+def test_cmd_app_passes_concurrency(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "DOTENV_PATH", tmp_path / ".env")
+    monkeypatch.setenv("KITABIM_BASE_URL", "http://localhost:8000")
+    monkeypatch.setenv("KITABIM_WORK_DIR", "/tmp/work")
+
+    with patch("main.serve_app") as mock_serve_app:
+        main.cmd_app(concurrency=1)
+
+    mock_serve_app.assert_called_once()
+    assert mock_serve_app.call_args.kwargs.get("concurrency") == 1
+
+
+def test_build_parser_concurrency_and_engine_before_subcommand():
+    # A value passed before the subcommand must not be discarded by the
+    # app subparser's own (unset) default for the same option.
+    parser = main.build_parser()
+    args = parser.parse_args(["--concurrency", "2", "--engine", "savitr", "app"])
+    assert args.command == "app"
+    assert args.concurrency == 2
+    assert args.engine == "savitr"
+
+
+def test_build_parser_concurrency_and_engine_after_subcommand_still_win():
+    parser = main.build_parser()
+    args = parser.parse_args(
+        [
+            "--concurrency",
+            "1",
+            "--engine",
+            "surya",
+            "app",
+            "--concurrency",
+            "3",
+            "--engine",
+            "savitr",
+        ]
+    )
+    assert args.concurrency == 3
+    assert args.engine == "savitr"
+
+
 def test_cmd_app_loads_config_from_dotenv_file(monkeypatch, tmp_path):
     monkeypatch.delenv("KITABIM_BASE_URL", raising=False)
     monkeypatch.delenv("KITABIM_WORK_DIR", raising=False)
@@ -122,6 +170,36 @@ def test_cmd_push_passes_original_filename(tmp_path: Path):
 
     mock_push.assert_called_once()
     assert mock_push.call_args.kwargs["filename"] == "ئۇيغۇر_تارىخى.pdf"
+
+
+def test_cmd_push_resubmits_as_new_book_when_book_deleted_on_cloud(tmp_path: Path):
+    workdir_path = tmp_path / "work"
+    wd = main.OcrWorkDir.create(
+        workdir_path,
+        source_pdf=workdir_path / "book.pdf",
+        total_pages=1,
+        book_id="deleted_cloud_book",
+        original_filename="book.pdf",
+    )
+    (workdir_path / "book.pdf").write_bytes(b"%PDF-1.4")
+    wd.set_page(1, text="text", is_toc=False, confidence=1.0, status="ocrd")
+    wd.save()
+
+    with (
+        patch.object(
+            main.KitabimClient, "book_exists", return_value=False
+        ) as mock_exists,
+        patch.object(
+            main.KitabimClient, "push_new_book", return_value={"bookId": "new_cloud_id"}
+        ) as mock_push_new,
+    ):
+        main.cmd_push(workdir_path, "http://localhost:8000")
+
+    mock_exists.assert_called_once_with("deleted_cloud_book")
+    mock_push_new.assert_called_once()
+    reloaded = main.OcrWorkDir.load(workdir_path)
+    assert reloaded.book_id == "new_cloud_id"
+    assert reloaded.uploaded is True
 
 
 def test_build_parser_setup_savitr_command():

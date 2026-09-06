@@ -436,12 +436,15 @@ export const useBookActions = (
       volume?: number | null;
       contentPageOffset?: number;
       categories?: string[];
-    }
+    },
+    options?: { silent?: boolean }
   ) => {
     try {
       await PersistenceService.updateBookMetadata(bookId, data);
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, ...data } : b));
-      addNotification(t('common.saveSuccess'), "success");
+      if (!options?.silent) {
+        addNotification(t('common.saveSuccess'), "success");
+      }
       return true;
     } catch (err) {
       console.error("Failed to save book metadata", err);

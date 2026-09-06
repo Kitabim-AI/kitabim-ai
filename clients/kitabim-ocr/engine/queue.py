@@ -30,12 +30,24 @@ class BookQueueManager:
         self.task_launcher = task_launcher or asyncio.create_task
         self._queue: list[str] = []
         self._active_session_id: Optional[str] = None
+        self._active_workdir: Optional[OcrWorkDir] = None
         self._worker_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
 
     @property
     def active_session_id(self) -> Optional[str]:
         return self._active_session_id
+
+    @property
+    def active_workdir(self) -> Optional[OcrWorkDir]:
+        """The exact OcrWorkDir instance the running background job is mutating.
+
+        Callers needing to read/write the active session's state should reuse
+        this instance rather than loading a second, independent copy from
+        disk, which would silently diverge from (and could overwrite) the
+        job's own in-memory changes.
+        """
+        return self._active_workdir
 
     @property
     def queued_session_ids(self) -> list[str]:
@@ -69,7 +81,7 @@ class BookQueueManager:
                     workdir.queue_status = "queued"
                     if not workdir.queued_at:
                         workdir.queued_at = time.time()
-                    workdir.save()
+                    workdir.save_metadata()
                 except Exception as exc:
                     logger.warning(
                         "Failed to update queue_status for %s: %s", session_id, exc
@@ -96,7 +108,7 @@ class BookQueueManager:
                 try:
                     workdir = OcrWorkDir.load(session_dir)
                     workdir.queue_status = "idle"
-                    workdir.save()
+                    workdir.save_metadata()
                 except Exception:
                     pass
             return True
@@ -130,26 +142,28 @@ class BookQueueManager:
             try:
                 workdir = OcrWorkDir.load(session_dir)
                 workdir.queue_status = "processing"
-                workdir.save()
+                workdir.save_metadata()
+                self._active_workdir = workdir
 
                 await self.runner(workdir)
 
-                workdir = OcrWorkDir.load(session_dir)
-                workdir.queue_status = "completed"
-                workdir.save()
+                with workdir.save_lock:
+                    workdir.queue_status = "completed"
+                    workdir.save_metadata()
             except Exception as exc:
                 logger.error("Error processing OCR for %s: %s", session_id, exc)
                 if workdir is not None:
                     try:
-                        workdir = OcrWorkDir.load(session_dir)
-                        workdir.queue_status = "failed"
-                        workdir.save()
+                        with workdir.save_lock:
+                            workdir.queue_status = "failed"
+                            workdir.save_metadata()
                     except Exception:
                         pass
             finally:
                 async with self._lock:
                     if self._active_session_id == session_id:
                         self._active_session_id = None
+                        self._active_workdir = None
 
     async def wait_all(self) -> None:
         """Waits until all currently queued and active items have finished processing."""

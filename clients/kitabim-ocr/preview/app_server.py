@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 import socket
 import threading
@@ -16,7 +17,12 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
-from engine.config import get_configured_engine
+from engine.config import (
+    get_configured_concurrency,
+    get_configured_engine,
+    get_configured_page_timeout,
+    resolve_concurrency,
+)
 from engine.queue import BookQueueManager
 from engine.recognize import (
     LowConfidenceOcrError,
@@ -35,6 +41,8 @@ from preview.server import (
     redo_pages_response,
     update_page_response,
 )
+
+logger = logging.getLogger(__name__)
 
 FONTS_DIR = Path(__file__).parent / "static" / "fonts"
 
@@ -1244,7 +1252,18 @@ _APP_HTML = """<!doctype html>
       review: document.getElementById('review'),
     };
 
+    let progressPollTimer = null;
+    function clearProgressPoll() {
+      if (progressPollTimer) {
+        clearTimeout(progressPollTimer);
+        progressPollTimer = null;
+      }
+    }
+
     function showSection(name) {
+      if (name !== 'processing') {
+        clearProgressPoll();
+      }
       for (const key in sections) {
         sections[key].classList.toggle('active', key === name);
       }
@@ -1606,10 +1625,12 @@ _APP_HTML = """<!doctype html>
     }
 
     async function pollProgress() {
+      clearProgressPoll();
       if (!sections.processing.classList.contains('active')) {
         return;
       }
       try {
+        let isDone = false;
         const res = await fetch('/api/pages');
         if (res.ok) {
           const pages = await res.json();
@@ -1618,6 +1639,9 @@ _APP_HTML = """<!doctype html>
           document.getElementById('progressLabel').textContent = t('sessions.pages_completed_stat', {done: done, total: total});
           document.getElementById('progressFill').style.width = total ? ((done / total) * 100) + '%' : '0%';
           renderPageMatrix(pages);
+          if (total > 0 && done === total) {
+            isDone = true;
+          }
         }
 
         const stateRes = await fetch('/api/state');
@@ -1625,9 +1649,14 @@ _APP_HTML = """<!doctype html>
         if (!sections.processing.classList.contains('active')) {
           return;
         }
-        if (state.stage === 'review') {
+        if (state.stage === 'review' || isDone) {
           showSection('review');
           loadPages();
+          return;
+        }
+        if (state.stage === 'landing') {
+          showSection('landing');
+          loadLocalSessions();
           return;
         }
         if (state.stage === 'error') {
@@ -1635,10 +1664,10 @@ _APP_HTML = """<!doctype html>
           showLandingError(state.error || t('errors.processing_failed'));
           return;
         }
-        setTimeout(pollProgress, 2000);
+        progressPollTimer = setTimeout(pollProgress, 2000);
       } catch (err) {
         if (sections.processing.classList.contains('active')) {
-          setTimeout(pollProgress, 4000);
+          progressPollTimer = setTimeout(pollProgress, 4000);
         }
       }
     }
@@ -1710,7 +1739,11 @@ _APP_HTML = """<!doctype html>
         badge.className = 'milestone-badge milestone-ready';
         badge.textContent = page.status === 'from_kitabim' ? t('review.status_from_kitabim_badge') : t('review.status_ocrd_badge');
       }
-      document.getElementById('previewModalImage').src = `/api/pages/${page.pageNumber}/image?v=${currentSessionVersion}`;
+      const imgEl = document.getElementById('previewModalImage');
+      const targetSrc = `/api/pages/${page.pageNumber}/image?v=${currentSessionVersion}`;
+      if (imgEl && imgEl.getAttribute('src') !== targetSrc) {
+        imgEl.src = targetSrc;
+      }
       
       const textArea = document.getElementById('previewModalText');
       if (document.activeElement !== textArea) {
@@ -1901,42 +1934,79 @@ _APP_HTML = """<!doctype html>
 
     function renderPagesList(pages) {
       const container = document.getElementById('pages');
-      container.innerHTML = '';
+      if (!container) return;
+
+      // Full rebuild on first load or if page count changed
+      if (container.children.length !== pages.length) {
+        container.innerHTML = '';
+        for (const p of pages) {
+          const div = document.createElement('div');
+          div.className = 'glass-card page-card';
+          div.id = `page-card-${p.pageNumber}`;
+          const statusBadgeText = p.status === 'from_kitabim' ? t('review.status_from_kitabim_badge') : p.status === 'ocrd' ? t('review.status_ocrd_badge') : p.status === 'failed' ? t('processing.status_failed') : p.status;
+          div.innerHTML = `
+            <div class="page-card-header">
+              <div style="display: flex; align-items: center; gap: 0.8rem;">
+                <input type="checkbox" class="select" value="${p.pageNumber}" onchange="updateSelectedCount()" style="width: 18px; height: 18px; cursor: pointer;">
+                <span style="font-weight: 700; font-size: 1.1rem; color: var(--slate-900);">${t('review.page_title_format', {pageNumber: p.pageNumber})}</span>
+                <span class="milestone-badge ${p.status === 'failed' ? 'milestone-failed' : 'milestone-ready'}">
+                  ${statusBadgeText}
+                </span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 1rem;">
+                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; color: var(--slate-700);">
+                  <input type="checkbox" class="toc-toggle" data-page="${p.pageNumber}" ${p.isToc ? 'checked' : ''} onchange="toggleToc(${p.pageNumber}, this.checked)">
+                  ${t('review.chk_toc_label')}
+                </label>
+                <button class="btn btn-secondary btn-sm" id="redoBtn-${p.pageNumber}" onclick="redoSinglePage(${p.pageNumber})">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                  ${t('review.btn_re_ocr')}
+                </button>
+              </div>
+            </div>
+            <div class="page-card-body">
+              <div class="page-image-wrap">
+                <img src="/api/pages/${p.pageNumber}/image?v=${currentSessionVersion}" alt="${t('review.page_title_format', {pageNumber: p.pageNumber})}" loading="lazy">
+              </div>
+              <div class="page-editor-wrap">
+                <textarea class="ocr-textarea uyghur-text" data-page="${p.pageNumber}" oninput="autoSavePageText(${p.pageNumber}, this.value)" placeholder="${t('review.textarea_placeholder')}">${escapeHtml(p.text || '')}</textarea>
+              </div>
+            </div>
+          `;
+          container.appendChild(div);
+        }
+        return;
+      }
+
+      // Targeted reconciliation for existing cards to preserve active typing & cursor position
       for (const p of pages) {
-        const div = document.createElement('div');
-        div.className = 'glass-card page-card';
-        div.id = `page-card-${p.pageNumber}`;
-        const statusBadgeText = p.status === 'from_kitabim' ? t('review.status_from_kitabim_badge') : p.status === 'ocrd' ? t('review.status_ocrd_badge') : p.status === 'failed' ? t('processing.status_failed') : p.status;
-        div.innerHTML = `
-          <div class="page-card-header">
-            <div style="display: flex; align-items: center; gap: 0.8rem;">
-              <input type="checkbox" class="select" value="${p.pageNumber}" onchange="updateSelectedCount()" style="width: 18px; height: 18px; cursor: pointer;">
-              <span style="font-weight: 700; font-size: 1.1rem; color: var(--slate-900);">${t('review.page_title_format', {pageNumber: p.pageNumber})}</span>
-              <span class="milestone-badge ${p.status === 'failed' ? 'milestone-failed' : 'milestone-ready'}">
-                ${statusBadgeText}
-              </span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 1rem;">
-              <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; color: var(--slate-700);">
-                <input type="checkbox" class="toc-toggle" data-page="${p.pageNumber}" ${p.isToc ? 'checked' : ''} onchange="toggleToc(${p.pageNumber}, this.checked)">
-                ${t('review.chk_toc_label')}
-              </label>
-              <button class="btn btn-secondary btn-sm" id="redoBtn-${p.pageNumber}" onclick="redoSinglePage(${p.pageNumber})">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-                ${t('review.btn_re_ocr')}
-              </button>
-            </div>
-          </div>
-          <div class="page-card-body">
-            <div class="page-image-wrap">
-              <img src="/api/pages/${p.pageNumber}/image?v=${currentSessionVersion}" alt="${t('review.page_title_format', {pageNumber: p.pageNumber})}" loading="lazy">
-            </div>
-            <div class="page-editor-wrap">
-              <textarea class="ocr-textarea uyghur-text" data-page="${p.pageNumber}" oninput="autoSavePageText(${p.pageNumber}, this.value)" placeholder="${t('review.textarea_placeholder')}">${escapeHtml(p.text || '')}</textarea>
-            </div>
-          </div>
-        `;
-        container.appendChild(div);
+        const card = document.getElementById(`page-card-${p.pageNumber}`);
+        if (!card) continue;
+
+        const badge = card.querySelector('.milestone-badge');
+        if (badge) {
+          const statusBadgeText = p.status === 'from_kitabim' ? t('review.status_from_kitabim_badge') : p.status === 'ocrd' ? t('review.status_ocrd_badge') : p.status === 'failed' ? t('processing.status_failed') : p.status;
+          badge.textContent = statusBadgeText;
+          badge.className = `milestone-badge ${p.status === 'failed' ? 'milestone-failed' : 'milestone-ready'}`;
+        }
+
+        const img = card.querySelector('img');
+        if (img) {
+          const newSrc = `/api/pages/${p.pageNumber}/image?v=${currentSessionVersion}`;
+          if (img.getAttribute('src') !== newSrc) {
+            img.src = newSrc;
+          }
+        }
+
+        const textarea = card.querySelector('.ocr-textarea');
+        if (textarea) {
+          const isFocused = document.activeElement === textarea;
+          const hasPendingSave = Boolean(saveTimeouts[p.pageNumber]);
+          // Only update textarea content if user is NOT actively typing in it
+          if (!isFocused && !hasPendingSave && textarea.value !== (p.text || '')) {
+            textarea.value = p.text || '';
+          }
+        }
       }
     }
 
@@ -2450,17 +2520,32 @@ def _create_upload_workdir(
     return workdir
 
 
-DEFAULT_OCR_CONCURRENCY = 4
+def _was_abandoned(state: "AppState", workdir: OcrWorkDir) -> bool:
+    """Whether the user explicitly navigated away from this session (reset)
+    while it kept processing in the background.
+
+    Consumes the marker: once checked, the session is no longer considered
+    abandoned, so a later restart of the same session_id is unaffected.
+    """
+    session_id = workdir.root.name
+    if session_id in state.abandoned_session_ids:
+        state.abandoned_session_ids.discard(session_id)
+        return True
+    return False
 
 
 async def _run_ocr_background(
-    workdir: OcrWorkDir, state: "AppState", concurrency: int = DEFAULT_OCR_CONCURRENCY
+    workdir: OcrWorkDir,
+    state: "AppState",
+    concurrency: Optional[int] = None,
 ) -> None:
+    target_concurrency = resolve_concurrency(
+        state.engine, concurrency if concurrency is not None else state.concurrency
+    )
     try:
         doc = fitz.open(workdir.source_pdf)
         predictor = await get_recognition_predictor(state.engine)
-        sem = asyncio.Semaphore(max(1, concurrency))
-        save_lock = asyncio.Lock()
+        sem = asyncio.Semaphore(max(1, target_concurrency))
 
         async def process_one(page_number: int):
             current_page = workdir._pages.get(page_number)
@@ -2472,7 +2557,7 @@ async def _run_ocr_background(
                 return
 
             async with sem:
-                async with save_lock:
+                with workdir.save_lock:
                     workdir.set_page(
                         page_number,
                         text="",
@@ -2492,58 +2577,98 @@ async def _run_ocr_background(
                         pass
                 try:
                     text = await ocr_page(
-                        fitz_page, predictor, max_parallel_pages=concurrency
+                        fitz_page,
+                        predictor,
+                        max_parallel_pages=target_concurrency,
+                        timeout=get_configured_page_timeout(),
                     )
-                    async with save_lock:
-                        workdir.set_page(
-                            page_number,
-                            text=text,
-                            is_toc=False,
-                            confidence=1.0,
-                            status="ocrd",
-                        )
+                    with workdir.save_lock:
+                        existing = workdir._pages.get(page_number)
+                        if existing and existing.status == "reviewed":
+                            workdir.set_page(
+                                page_number,
+                                text=existing.text,
+                                is_toc=existing.is_toc,
+                                confidence=1.0,
+                                status="reviewed",
+                            )
+                        else:
+                            is_toc = existing.is_toc if existing else False
+                            workdir.set_page(
+                                page_number,
+                                text=text,
+                                is_toc=is_toc,
+                                confidence=1.0,
+                                status="ocrd",
+                            )
                         workdir.save()
+                except (TimeoutError, asyncio.TimeoutError) as exc:
+                    logger.warning("Page %s timed out during OCR: %s", page_number, exc)
+                    with workdir.save_lock:
+                        existing = workdir._pages.get(page_number)
+                        if existing and existing.status == "reviewed":
+                            pass
+                        else:
+                            workdir.set_page(
+                                page_number,
+                                text=existing.text if existing else "",
+                                is_toc=existing.is_toc if existing else False,
+                                confidence=0.0,
+                                status="failed",
+                                error=str(exc) or "OCR timed out",
+                            )
+                            workdir.save()
                 except LowConfidenceOcrError as exc:
-                    async with save_lock:
-                        workdir.set_page(
-                            page_number,
-                            text="",
-                            is_toc=False,
-                            confidence=0.0,
-                            status="failed",
-                            error=str(exc),
-                        )
-                        workdir.save()
+                    with workdir.save_lock:
+                        existing = workdir._pages.get(page_number)
+                        if existing and existing.status == "reviewed":
+                            pass
+                        else:
+                            workdir.set_page(
+                                page_number,
+                                text=existing.text if existing else "",
+                                is_toc=existing.is_toc if existing else False,
+                                confidence=0.0,
+                                status="failed",
+                                error=str(exc),
+                            )
+                            workdir.save()
                 except Exception as exc:
-                    async with save_lock:
-                        workdir.set_page(
-                            page_number,
-                            text="",
-                            is_toc=False,
-                            confidence=0.0,
-                            status="failed",
-                            error=f"Unexpected OCR error: {exc}",
-                        )
-                        workdir.save()
+                    with workdir.save_lock:
+                        existing = workdir._pages.get(page_number)
+                        if existing and existing.status == "reviewed":
+                            pass
+                        else:
+                            workdir.set_page(
+                                page_number,
+                                text=existing.text if existing else "",
+                                is_toc=existing.is_toc if existing else False,
+                                confidence=0.0,
+                                status="failed",
+                                error=f"Unexpected OCR error: {exc}",
+                            )
+                            workdir.save()
 
         tasks = [process_one(p) for p in range(1, workdir.total_pages + 1)]
         await asyncio.gather(*tasks)
-        is_reviewing_other = (
-            state.stage == "review"
-            and state.workdir is not None
-            and state.workdir.root.name != workdir.root.name
-        )
-        if not is_reviewing_other:
-            state.stage = "review"
+        if not _was_abandoned(state, workdir):
+            is_reviewing_other = (
+                state.stage == "review"
+                and state.workdir is not None
+                and state.workdir.root.name != workdir.root.name
+            )
+            if not is_reviewing_other:
+                state.stage = "review"
     except Exception as exc:
-        is_reviewing_other = (
-            state.stage == "review"
-            and state.workdir is not None
-            and state.workdir.root.name != workdir.root.name
-        )
-        if not is_reviewing_other:
-            state.stage = "error"
-            state.error = str(exc)
+        if not _was_abandoned(state, workdir):
+            is_reviewing_other = (
+                state.stage == "review"
+                and state.workdir is not None
+                and state.workdir.root.name != workdir.root.name
+            )
+            if not is_reviewing_other:
+                state.stage = "error"
+                state.error = str(exc)
 
 
 def list_local_sessions(
@@ -2630,7 +2755,9 @@ class AppState:
     workdir: Optional[OcrWorkDir] = None
     error: Optional[str] = None
     engine: str = field(default_factory=get_configured_engine)
+    concurrency: int = field(default_factory=get_configured_concurrency)
     queue_manager: Optional[BookQueueManager] = None
+    abandoned_session_ids: set[str] = field(default_factory=set)
 
 
 def _require_landing_stage(state: AppState) -> None:
@@ -2642,16 +2769,42 @@ def _require_landing_stage(state: AppState) -> None:
 
 def _require_active_workdir(state: AppState) -> None:
     if state.workdir is None:
+        if state.queue_manager and state.queue_manager.active_session_id:
+            # Reuse the queue's own live OcrWorkDir instance when there is one,
+            # rather than loading a second, independent copy from disk that
+            # would silently diverge from (and could overwrite) the
+            # in-progress job's own in-memory changes.
+            live = state.queue_manager.active_workdir
+            if live is not None:
+                state.workdir = live
+                return
+            target_dir = state.work_root / state.queue_manager.active_session_id
+            if target_dir.exists():
+                try:
+                    state.workdir = OcrWorkDir.load(target_dir)
+                    return
+                except Exception:
+                    logger.warning(
+                        "Failed to hydrate active workdir for session %s",
+                        state.queue_manager.active_session_id,
+                        exc_info=True,
+                    )
         raise HTTPException(status_code=409, detail="No active book")
 
 
 def create_landing_app(
-    client: KitabimClient, work_root: Path, engine: Optional[str] = None
+    client: KitabimClient,
+    work_root: Path,
+    engine: Optional[str] = None,
+    concurrency: Optional[int] = None,
 ) -> FastAPI:
+    target_engine = (engine or get_configured_engine()).strip().lower()
+    target_concurrency = resolve_concurrency(target_engine, concurrency)
     state = AppState(
         client=client,
         work_root=work_root,
-        engine=(engine or get_configured_engine()).strip().lower(),
+        engine=target_engine,
+        concurrency=target_concurrency,
     )
 
     async def ocr_runner(workdir: OcrWorkDir):
@@ -2675,6 +2828,7 @@ def create_landing_app(
     queue_manager.reset_interrupted_sessions()
 
     app = FastAPI()
+    app.state.app_state = state
 
     @app.on_event("startup")
     async def on_startup():
@@ -2713,7 +2867,21 @@ def create_landing_app(
                 state.queue_manager.queued_session_ids if state.queue_manager else []
             ),
             "engine": state.engine,
+            "concurrency": state.concurrency,
         }
+
+    @app.post("/api/concurrency")
+    def set_concurrency(payload: dict):
+        # Only affects jobs started after this call — a running job already
+        # captured its own concurrency into a fixed asyncio.Semaphore.
+        new_val = payload.get("concurrency")
+        if new_val is not None:
+            try:
+                val = int(new_val)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="Invalid concurrency value")
+            state.concurrency = resolve_concurrency(state.engine, val)
+        return {"status": "ok", "concurrency": state.concurrency}
 
     @app.get("/api/sessions")
     def get_sessions():
@@ -2724,12 +2892,22 @@ def create_landing_app(
         session_dir = state.work_root / session_id
         if not session_dir.is_dir() or not (session_dir / "book.json").exists():
             raise HTTPException(status_code=404, detail="Session not found")
-        try:
-            workdir = OcrWorkDir.load(session_dir)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to load session: {exc}"
-            )
+
+        if (
+            state.queue_manager
+            and state.queue_manager.active_session_id == session_id
+            and state.queue_manager.active_workdir is not None
+        ):
+            workdir = state.queue_manager.active_workdir
+        elif state.workdir is not None and state.workdir.root.name == session_id:
+            workdir = state.workdir
+        else:
+            try:
+                workdir = OcrWorkDir.load(session_dir)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to load session: {exc}"
+                )
 
         state.workdir = workdir
         state.stage = "review"
@@ -2752,12 +2930,20 @@ def create_landing_app(
         session_dir = state.work_root / session_id
         if not session_dir.is_dir() or not (session_dir / "book.json").exists():
             raise HTTPException(status_code=404, detail="Session not found")
-        try:
-            workdir = OcrWorkDir.load(session_dir)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to load session: {exc}"
-            )
+
+        if (
+            state.queue_manager
+            and state.queue_manager.active_session_id == session_id
+            and state.queue_manager.active_workdir is not None
+        ):
+            workdir = state.queue_manager.active_workdir
+        else:
+            try:
+                workdir = OcrWorkDir.load(session_dir)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to load session: {exc}"
+                )
 
         pages = workdir.all_pages()
         pending = [
@@ -2815,10 +3001,25 @@ def create_landing_app(
         session_dir = state.work_root / session_id
         if not (session_dir / "book.json").exists():
             raise HTTPException(status_code=404, detail="Session not found")
-        workdir = OcrWorkDir.load(session_dir)
-        workdir.uploaded = not workdir.uploaded
-        workdir.uploaded_at = time.time() if workdir.uploaded else None
-        workdir.save()
+
+        if (
+            state.queue_manager
+            and state.queue_manager.active_session_id == session_id
+            and state.queue_manager.active_workdir is not None
+        ):
+            workdir = state.queue_manager.active_workdir
+        elif state.workdir is not None and state.workdir.root.name == session_id:
+            workdir = state.workdir
+        else:
+            workdir = OcrWorkDir.load(session_dir)
+
+        with workdir.save_lock:
+            workdir.uploaded = not workdir.uploaded
+            workdir.uploaded_at = time.time() if workdir.uploaded else None
+            if not workdir.uploaded:
+                workdir.book_id = None
+            workdir.save_metadata()
+
         return {
             "id": session_id,
             "uploaded": workdir.uploaded,
@@ -2827,6 +3028,16 @@ def create_landing_app(
 
     @app.post("/api/reset")
     def reset():
+        if (
+            state.workdir is not None
+            and state.queue_manager
+            and state.queue_manager.active_session_id == state.workdir.root.name
+        ):
+            # Still processing in the background — don't let it resurrect the
+            # global stage once it finishes; the session's own on-disk status
+            # (and the sessions list) reflects its real outcome regardless.
+            state.abandoned_session_ids.add(state.workdir.root.name)
+            state.queue_manager.cancel(state.workdir.root.name)
         state.workdir = None
         state.stage = "landing"
         state.error = None
@@ -2923,7 +3134,10 @@ def create_landing_app(
     async def redo_pages(body: RedoRequest):
         _require_active_workdir(state)
         return await redo_pages_response(
-            state.workdir, body.pageNumbers, engine=state.engine
+            state.workdir,
+            body.pageNumbers,
+            concurrency=state.concurrency,
+            engine=state.engine,
         )
 
     @app.post("/api/pages/{page_number}/update")
@@ -2934,6 +3148,14 @@ def create_landing_app(
     @app.post("/api/push")
     def push():
         _require_active_workdir(state)
+        if (
+            state.queue_manager
+            and state.queue_manager.active_session_id == state.workdir.root.name
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot push while book is actively processing in the queue",
+            )
         return push_response(state.workdir, state.client)
 
     return app
@@ -2965,8 +3187,9 @@ def serve_app(
     port: int = 8765,
     open_browser: bool = True,
     engine: Optional[str] = None,
+    concurrency: Optional[int] = None,
 ) -> None:
-    app = create_landing_app(client, work_root, engine=engine)
+    app = create_landing_app(client, work_root, engine=engine, concurrency=concurrency)
     if open_browser:
         _open_browser_when_ready(
             f"http://127.0.0.1:{port}", host="127.0.0.1", port=port

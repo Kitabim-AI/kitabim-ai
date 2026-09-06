@@ -153,3 +153,28 @@ class KitabimClient:
                 break
             skip += limit
         return all_pages
+
+    def get_book(self, book_id: str) -> dict | None:
+        response = httpx.get(
+            f"{self.base_url}/books/{book_id}",
+            headers=self._headers(),
+            timeout=15.0,
+        )
+        if response.status_code == 404:
+            return None
+        return self._check(response)
+
+    def book_exists(self, book_id: str) -> bool:
+        try:
+            response = httpx.get(
+                f"{self.base_url}/books/{book_id}",
+                headers=self._headers(),
+                timeout=15.0,
+            )
+            if response.status_code == 404:
+                return False
+            if response.status_code < 400:
+                return True
+            return False
+        except Exception:
+            return True

@@ -260,19 +260,65 @@ async def test_ocr_page_retries_on_degenerate_repetition_loop():
     assert mock_page.get_pixmap.call_count == 2
 
 
+@pytest.mark.asyncio
+async def test_ocr_page_timeout_aborts_immediately_without_further_retries():
+    mock_page = MagicMock()
+    mock_pix = MagicMock()
+    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.tobytes.return_value = _fake_png_bytes()
+    mock_page.get_pixmap.return_value = mock_pix
+
+    with (
+        patch("asyncio.wait_for", side_effect=TimeoutError("timed out")),
+        patch("engine.recognize.OCR_MAX_RETRIES", 4),
+    ):
+        with pytest.raises(TimeoutError, match="OCR timed out after"):
+            await svc.ocr_page(mock_page, MagicMock(), timeout=5.0)
+
+    # Must abort immediately on timeout without trying zoom attempts 2, 3, 4
+    assert mock_page.get_pixmap.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_respects_custom_max_retries():
+    mock_page = MagicMock()
+    mock_pix = MagicMock()
+    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.tobytes.return_value = _fake_png_bytes()
+    mock_page.get_pixmap.return_value = mock_pix
+
+    with (
+        patch("engine.recognize._process_page_sync", return_value=("low conf", 0.1)),
+        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
+        patch("engine.recognize.OCR_MAX_RETRIES", 4),
+    ):
+        with pytest.raises(svc.LowConfidenceOcrError):
+            await svc.ocr_page(
+                mock_page, MagicMock(), min_confidence=0.5, max_retries=1
+            )
+
+    # Explicit max_retries=1 means single attempt with zero retries
+    assert mock_page.get_pixmap.call_count == 1
+
+
 def test_get_executor_scales_and_reuses():
     svc._executor = None
     exec1 = svc._get_executor(2)
     assert exec1._max_workers == 2
 
-    # Calling with same or smaller worker count reuses existing executor
+    # Calling with the same worker count reuses the existing executor
     exec2 = svc._get_executor(2)
     assert exec2 is exec1
 
-    # Calling with larger worker count expands executor
+    # Calling with a larger worker count expands the executor
     exec3 = svc._get_executor(4)
     assert exec3._max_workers == 4
     assert exec3 is not exec1
+
+    # Calling with a smaller worker count shrinks the executor back down
+    exec4 = svc._get_executor(1)
+    assert exec4._max_workers == 1
+    assert exec4 is not exec3
     svc._executor = None
 
 
@@ -288,11 +334,31 @@ async def test_ocr_page_passes_max_parallel_to_executor():
         patch("engine.recognize._process_page_sync", return_value=("متن", 0.9)),
         patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
     ):
+        result = await svc.ocr_page(mock_page, MagicMock(), max_parallel_pages=4)
+
+    assert result == "متن"
+    assert svc._executor is not None
+    assert svc._executor._max_workers == 4
+    svc._executor = None
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_caps_surya_concurrency_to_max_four():
+    mock_page = MagicMock()
+    mock_pix = MagicMock()
+    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.tobytes.return_value = _fake_png_bytes()
+    mock_page.get_pixmap.return_value = mock_pix
+
+    with (
+        patch("engine.recognize._process_page_sync", return_value=("متن", 0.9)),
+        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
+    ):
         result = await svc.ocr_page(mock_page, MagicMock(), max_parallel_pages=8)
 
     assert result == "متن"
     assert svc._executor is not None
-    assert svc._executor._max_workers >= 8
+    assert svc._executor._max_workers == 4
     svc._executor = None
 
 

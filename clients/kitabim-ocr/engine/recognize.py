@@ -25,7 +25,14 @@ from bs4 import BeautifulSoup
 from PIL import Image
 
 from engine.config import (
+    DEFAULT_OCR_CONCURRENCY,
+    DEFAULT_OCR_MAX_RETRIES,
+    MAX_SURYA_CONCURRENCY,
+    apply_surya_token_limits,
+    get_configured_concurrency,
     get_configured_engine,
+    get_configured_max_retries,
+    get_configured_page_timeout,
     get_savitr_model_path,
     is_apple_silicon,
 )
@@ -37,13 +44,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("kitabim_ocr_client.engine.recognize")
 
+# Apply sane ceiling for Surya token generation if not overridden in env
+apply_surya_token_limits()
+
 # Local equivalents of packages/backend-core's OCR_MAX_RETRIES /
 # OCR_PAGE_ZOOM_FACTOR env-configured settings (poc/easy-ocr-v2 only -
 # these don't exist on main). 2.5 matches the zoom bump that shipped
 # alongside the EasyOCR->Surya recognition swap there (mean confidence
 # ~0.75-0.78 -> ~0.97-0.98 on the same real pages, model+zoom verified
 # together).
-OCR_MAX_RETRIES = 4
+OCR_MAX_RETRIES = get_configured_max_retries(DEFAULT_OCR_MAX_RETRIES)
 OCR_PAGE_ZOOM_FACTOR = 2.5
 
 FOOTNOTE_LABELS = frozenset({"Footnote"})
@@ -125,13 +135,19 @@ def recognize_page(predictor: Any, image: "Image.Image") -> Any:
     return predictor([image], full_page=True)[0]
 
 
-DEFAULT_MAX_PARALLEL_PAGES = 4
+DEFAULT_MAX_PARALLEL_PAGES = DEFAULT_OCR_CONCURRENCY
+MAX_SURYA_PARALLEL_PAGES = MAX_SURYA_CONCURRENCY
 
 
-def _get_executor(max_workers: int = DEFAULT_MAX_PARALLEL_PAGES) -> ThreadPoolExecutor:
+def _get_executor(max_workers: int | None = None) -> ThreadPoolExecutor:
     global _executor
-    target_workers = max(1, max_workers)
-    if _executor is None or getattr(_executor, "_max_workers", 0) < target_workers:
+    workers = (
+        max_workers
+        if max_workers is not None
+        else get_configured_concurrency(max_limit=MAX_SURYA_PARALLEL_PAGES)
+    )
+    target_workers = min(max(1, workers), MAX_SURYA_PARALLEL_PAGES)
+    if _executor is None or getattr(_executor, "_max_workers", 0) != target_workers:
         if _executor is not None:
             _executor.shutdown(wait=False)
         _executor = ThreadPoolExecutor(
@@ -320,15 +336,22 @@ async def ocr_page(
     *,
     max_parallel_pages: int = DEFAULT_MAX_PARALLEL_PAGES,
     min_confidence: float = 0.3,
+    max_retries: int | None = None,
 ) -> str:
     if isinstance(recognition_predictor, SavitrPredictor):
         executor = _get_savitr_executor()
     else:
-        executor = _get_executor(max_parallel_pages)
+        workers = min(max(1, max_parallel_pages), MAX_SURYA_PARALLEL_PAGES)
+        executor = _get_executor(workers)
     loop = asyncio.get_running_loop()
 
+    effective_timeout = (
+        timeout if timeout is not None else get_configured_page_timeout()
+    )
+    total_attempts = max(1, max_retries) if max_retries is not None else OCR_MAX_RETRIES
+
     last_exc: Exception | None = None
-    for attempt in range(OCR_MAX_RETRIES):
+    for attempt in range(total_attempts):
         zoom = OCR_PAGE_ZOOM_FACTOR + (attempt * 0.5)
         try:
             pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
@@ -339,9 +362,22 @@ async def ocr_page(
 
             process_fn = partial(_process_page_sync, image, recognition_predictor)
             coro = loop.run_in_executor(executor, process_fn)
-            markdown, mean_confidence = await (
-                asyncio.wait_for(coro, timeout=timeout) if timeout else coro
-            )
+            try:
+                markdown, mean_confidence = await (
+                    asyncio.wait_for(coro, timeout=effective_timeout)
+                    if effective_timeout
+                    else coro
+                )
+            except (TimeoutError, asyncio.TimeoutError) as err:
+                logger.warning(
+                    "OCR attempt timed out after %ss (attempt %s/%s)",
+                    effective_timeout,
+                    attempt + 1,
+                    total_attempts,
+                )
+                raise TimeoutError(
+                    f"OCR timed out after {effective_timeout:.0f}s (attempt {attempt + 1})"
+                ) from err
 
             if not markdown.strip():
                 raise LowConfidenceOcrError(
@@ -364,10 +400,13 @@ async def ocr_page(
 
         except Exception as exc:
             last_exc = exc
-            if attempt < OCR_MAX_RETRIES - 1:
+            if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+                raise
+            if attempt < total_attempts - 1:
                 logger.warning(
-                    "OCR attempt failed, retrying with adjusted render: attempt=%s error=%s",
+                    "OCR attempt failed, retrying with adjusted render: attempt=%s/%s error=%s",
                     attempt + 1,
+                    total_attempts,
                     exc,
                 )
                 continue

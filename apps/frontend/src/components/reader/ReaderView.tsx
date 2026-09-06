@@ -388,7 +388,7 @@ export const ReaderView: React.FC = () => {
         try {
           const success = await bookActions.handleSaveBookRow(selectedBook.id, {
             contentPageOffset: newOffset
-          });
+          }, { silent: true });
           if (success) {
             addNotification(
               t('reader.setStartPageSuccess', { page: pageNumber, offset: newOffset }) ||

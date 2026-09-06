@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 from pathlib import Path
+
 
 from dotenv import load_dotenv
 
@@ -15,7 +17,7 @@ DEFAULT_CONFIG_PATH = Path.home() / ".config" / "kitabim-ocr-client" / "token.js
 DOTENV_PATH = Path(__file__).resolve().parent / ".env"
 
 
-def cmd_app(engine: str | None = None) -> None:
+def cmd_app(engine: str | None = None, concurrency: int | None = None) -> None:
     load_dotenv(DOTENV_PATH)
     base_url = os.environ.get("KITABIM_BASE_URL")
     if not base_url:
@@ -25,7 +27,12 @@ def cmd_app(engine: str | None = None) -> None:
         raise SystemExit("KITABIM_WORK_DIR environment variable is required")
 
     client = KitabimClient(base_url=base_url, config_path=DEFAULT_CONFIG_PATH)
-    serve_app(client, Path(work_dir).expanduser(), engine=engine)
+    serve_app(
+        client,
+        Path(work_dir).expanduser(),
+        engine=engine,
+        concurrency=concurrency,
+    )
 
 
 def cmd_preview(workdir_path: Path, base_url: str | None) -> None:
@@ -41,15 +48,32 @@ def cmd_preview(workdir_path: Path, base_url: str | None) -> None:
 def cmd_push(workdir_path: Path, base_url: str) -> None:
     workdir = OcrWorkDir.load(workdir_path)
     client = KitabimClient(base_url=base_url, config_path=DEFAULT_CONFIG_PATH)
+    if (
+        workdir.book_id is not None
+        and hasattr(client, "book_exists")
+        and not client.book_exists(workdir.book_id)
+    ):
+        workdir.book_id = None
+        workdir.uploaded = False
+        workdir.save_metadata()
+
     if workdir.book_id is None:
         result = client.push_new_book(
             workdir.source_pdf,
             workdir.all_pages(),
             filename=workdir.original_filename,
         )
+        if isinstance(result, dict) and result.get("bookId"):
+            workdir.book_id = str(result["bookId"])
+            workdir.uploaded = True
+            workdir.uploaded_at = time.time()
+            workdir.save_metadata()
     else:
         for page in workdir.all_pages():
             client.push_page_correction(workdir.book_id, page)
+        workdir.uploaded = True
+        workdir.uploaded_at = time.time()
+        workdir.save_metadata()
         result = {"status": "corrections_pushed", "count": len(workdir.all_pages())}
     print(result)
 
@@ -70,6 +94,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="OCR engine to use (default: configured in .env or 'surya')",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya)",
+    )
     sub = parser.add_subparsers(dest="command", required=False)
 
     app_parser = sub.add_parser(
@@ -83,8 +113,14 @@ def build_parser() -> argparse.ArgumentParser:
     app_parser.add_argument(
         "--engine",
         choices=["surya", "savitr"],
-        default=None,
+        default=argparse.SUPPRESS,
         help="OCR engine to use (default: configured in .env or 'surya')",
+    )
+    app_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya)",
     )
 
     preview_parser = sub.add_parser(
@@ -119,9 +155,10 @@ def main() -> None:
 
     command = args.command or "app"
     engine = getattr(args, "engine", None)
+    concurrency = getattr(args, "concurrency", None)
 
     if command == "app":
-        cmd_app(engine=engine)
+        cmd_app(engine=engine, concurrency=concurrency)
     elif command == "preview":
         cmd_preview(Path(args.workdir), args.base_url)
     elif command == "push":

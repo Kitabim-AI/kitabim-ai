@@ -48,6 +48,18 @@ Optional custom Savitr model weights path:
 
     SAVITR_MODEL_PATH=models/surya-mlx-4bit
 
+## Concurrency Configuration
+
+Parallel page processing is enabled for Surya OCR by default with a concurrency of 4 (`KITABIM_OCR_CONCURRENCY=4`), capped at a maximum of 4 parallel pages for stability on CPU/MPS/GPU hardware.
+
+Set concurrency in `.env`:
+
+    KITABIM_OCR_CONCURRENCY=4   # Default: 4 (max: 4 for Surya; 1 disables concurrency)
+
+Or pass it via the CLI:
+
+    python main.py app --concurrency 4
+
 ## Starting the app
 
 Set the required variables, either in your shell:

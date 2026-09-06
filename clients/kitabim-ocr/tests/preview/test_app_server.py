@@ -54,6 +54,7 @@ def test_state_defaults_to_landing(tmp_path: Path):
     assert data["error"] is None
     assert data["sessionId"] is None
     assert data["engine"] == "surya"
+    assert data["concurrency"] == 4
     assert data["activeSessionId"] is None
     assert data["queuedSessions"] == []
 
@@ -239,6 +240,45 @@ async def test_run_ocr_background_ocrs_every_page_then_marks_review(tmp_path: Pa
     assert workdir.get_page(1).status == "ocrd"
     assert workdir.get_page(2).text == "text two"
     assert state.stage == "review"
+
+
+async def test_run_ocr_background_uses_the_workdirs_shared_save_lock(tmp_path: Path):
+    # process_one's set_page()+save() must go through workdir.save_lock (a
+    # plain threading.Lock shared with the sync update_page/redo routes),
+    # not a private asyncio.Lock local to this function — otherwise a
+    # concurrent manual edit on FastAPI's threadpool thread could race it.
+    workdir = _create_upload_workdir(_minimal_pdf_bytes(2), tmp_path / "work")
+    state = AppState(client=MagicMock(), work_root=tmp_path / "work")
+    state.workdir = workdir
+
+    real_lock = workdir.save_lock
+    enter_count = 0
+
+    class CountingLock:
+        def __enter__(self):
+            nonlocal enter_count
+            enter_count += 1
+            real_lock.acquire()
+
+        def __exit__(self, *exc_info):
+            real_lock.release()
+
+    workdir.save_lock = CountingLock()
+
+    with (
+        patch(
+            "preview.app_server.get_recognition_predictor",
+            AsyncMock(return_value="predictor"),
+        ),
+        patch(
+            "preview.app_server.ocr_page",
+            AsyncMock(side_effect=["text one", "text two"]),
+        ),
+    ):
+        await _run_ocr_background(workdir, state)
+
+    # 2 pages x 2 lock sections each ("processing" then "ocrd") = 4.
+    assert enter_count == 4
 
 
 async def test_run_ocr_background_flags_failed_page_and_continues(tmp_path: Path):
@@ -637,6 +677,63 @@ async def test_upload_can_queue_multiple_books_without_409(tmp_path: Path):
         pause_event.set()
 
 
+async def test_reset_while_processing_does_not_resurrect_stage_to_review(
+    tmp_path: Path,
+):
+    import httpx
+
+    mock_client = MagicMock()
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    app = create_landing_app(mock_client, work_root)
+
+    resume_ocr = asyncio.Event()
+
+    async def slow_ocr_page(*args, **kwargs):
+        await resume_ocr.wait()
+        return "recognized text"
+
+    with (
+        patch(
+            "preview.app_server.get_recognition_predictor",
+            AsyncMock(return_value="predictor"),
+        ),
+        patch("preview.app_server.ocr_page", side_effect=slow_ocr_page),
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            start_res = await ac.post(
+                "/api/start/upload",
+                files={"file": ("book.pdf", _minimal_pdf_bytes(1), "application/pdf")},
+            )
+            assert start_res.status_code == 200
+            session_id = start_res.json()["sessionId"]
+            assert (await ac.get("/api/state")).json()["stage"] == "processing"
+
+            # User leaves back to the library while the job keeps running.
+            reset_res = await ac.post("/api/reset")
+            assert reset_res.status_code == 200
+            assert (await ac.get("/api/state")).json()["stage"] == "landing"
+
+            # Let the background job actually finish.
+            resume_ocr.set()
+            for _ in range(200):
+                sessions = (await ac.get("/api/sessions")).json()
+                session = next(s for s in sessions if s["id"] == session_id)
+                if session["queueStatus"] == "completed":
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                pytest.fail("background job never completed")
+
+            # The reset must stick: no resurrection to 'review' just because
+            # the abandoned job happened to finish afterwards.
+            state = (await ac.get("/api/state")).json()
+            assert state["stage"] == "landing"
+            assert state["activeSessionId"] is None
+
+
 def test_push_updates_uploaded_flag_in_workdir(tmp_path: Path):
     from preview.server import push_response
 
@@ -671,25 +768,29 @@ def test_toggle_session_uploaded_route(tmp_path: Path):
     work_root = tmp_path / "work"
     work_root.mkdir()
     s_dir = work_root / "upload-toggle"
-    w = OcrWorkDir.create(s_dir, source_pdf=s_dir / "book.pdf", total_pages=1)
+    w = OcrWorkDir.create(
+        s_dir, source_pdf=s_dir / "book.pdf", total_pages=1, book_id="book-999"
+    )
     (s_dir / "book.pdf").write_bytes(_minimal_pdf_bytes(1))
-    w.uploaded = False
+    w.uploaded = True
     w.save()
 
     app = create_landing_app(MagicMock(), work_root)
     client = TestClient(app)
 
-    # Toggle to true
+    # Toggle to false - should reset uploaded and book_id
     res = client.post("/api/sessions/upload-toggle/toggle-uploaded")
     assert res.status_code == 200
-    assert res.json()["uploaded"] is True
-    assert OcrWorkDir.load(s_dir).uploaded is True
+    assert res.json()["uploaded"] is False
+    reloaded = OcrWorkDir.load(s_dir)
+    assert reloaded.uploaded is False
+    assert reloaded.book_id is None
 
-    # Toggle to false
+    # Toggle to true
     res2 = client.post("/api/sessions/upload-toggle/toggle-uploaded")
     assert res2.status_code == 200
-    assert res2.json()["uploaded"] is False
-    assert OcrWorkDir.load(s_dir).uploaded is False
+    assert res2.json()["uploaded"] is True
+    assert OcrWorkDir.load(s_dir).uploaded is True
 
     # 404 for nonexistent session
     res_404 = client.post("/api/sessions/nonexistent/toggle-uploaded")
@@ -847,3 +948,217 @@ async def test_startup_does_not_auto_start_processing(tmp_path: Path):
         assert sessions[0]["id"] == "interrupted-book"
         assert sessions[0]["queueStatus"] == "idle"
         assert sessions[0]["isComplete"] is False
+
+
+def test_create_landing_app_custom_concurrency(tmp_path: Path):
+    app = create_landing_app(MagicMock(), tmp_path / "work", concurrency=3)
+    client = TestClient(app)
+    res = client.get("/api/state")
+    assert res.status_code == 200
+    assert res.json()["concurrency"] == 3
+
+
+def test_create_landing_app_concurrency_from_env(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("KITABIM_OCR_CONCURRENCY", "2")
+    app = create_landing_app(MagicMock(), tmp_path / "work")
+    client = TestClient(app)
+    res = client.get("/api/state")
+    assert res.status_code == 200
+    assert res.json()["concurrency"] == 2
+
+
+def test_create_landing_app_clamps_surya_concurrency_to_four(tmp_path: Path):
+    app = create_landing_app(
+        MagicMock(), tmp_path / "work", engine="surya", concurrency=8
+    )
+    client = TestClient(app)
+    res = client.get("/api/state")
+    assert res.status_code == 200
+    assert res.json()["concurrency"] == 4
+
+
+def test_api_set_concurrency(tmp_path: Path):
+    app = create_landing_app(MagicMock(), tmp_path / "work")
+    client = TestClient(app)
+
+    res = client.post("/api/concurrency", json={"concurrency": 3})
+    assert res.status_code == 200
+    assert res.json()["concurrency"] == 3
+
+    # Clamped to 4 for Surya
+    res = client.post("/api/concurrency", json={"concurrency": 8})
+    assert res.status_code == 200
+    assert res.json()["concurrency"] == 4
+
+    # Invalid returns 400
+    res = client.post("/api/concurrency", json={"concurrency": "bad"})
+    assert res.status_code == 400
+
+
+def test_require_active_workdir_hydrates_from_queue(tmp_path: Path):
+    from preview.app_server import _require_active_workdir, AppState
+    from engine.queue import BookQueueManager
+    from engine.workdir import OcrWorkDir
+
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    session_dir = work_root / "test-session"
+    session_dir.mkdir()
+    pdf_path = session_dir / "book.pdf"
+    pdf_path.write_bytes(_minimal_pdf_bytes(1))
+    workdir = OcrWorkDir.create(session_dir, source_pdf=pdf_path, total_pages=1)
+    workdir.save()
+
+    qm = BookQueueManager(work_root=work_root, runner=AsyncMock())
+    qm._active_session_id = "test-session"
+
+    state = AppState(
+        client=MagicMock(),
+        work_root=work_root,
+        workdir=None,
+        queue_manager=qm,
+    )
+    assert state.workdir is None
+    _require_active_workdir(state)
+    assert state.workdir is not None
+    assert state.workdir.root.name == "test-session"
+
+
+def test_require_active_workdir_reuses_the_queues_live_instance(tmp_path: Path):
+    from preview.app_server import _require_active_workdir, AppState
+    from engine.queue import BookQueueManager
+    from engine.workdir import OcrWorkDir
+
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    session_dir = work_root / "test-session"
+    session_dir.mkdir()
+    pdf_path = session_dir / "book.pdf"
+    pdf_path.write_bytes(_minimal_pdf_bytes(1))
+    workdir = OcrWorkDir.create(session_dir, source_pdf=pdf_path, total_pages=1)
+    workdir.save()
+
+    qm = BookQueueManager(work_root=work_root, runner=AsyncMock())
+    qm._active_session_id = "test-session"
+    qm._active_workdir = workdir
+
+    state = AppState(
+        client=MagicMock(),
+        work_root=work_root,
+        workdir=None,
+        queue_manager=qm,
+    )
+    _require_active_workdir(state)
+
+    # Must be the exact live instance, not a second copy loaded from disk —
+    # a write through a second instance would silently diverge from (and
+    # could overwrite) the runner's own in-memory changes.
+    assert state.workdir is workdir
+
+
+def test_require_active_workdir_raises_409_when_no_active_session(tmp_path: Path):
+    from preview.app_server import _require_active_workdir, AppState
+    import pytest
+    from fastapi import HTTPException
+
+    state = AppState(
+        client=MagicMock(),
+        work_root=tmp_path / "work",
+        workdir=None,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        _require_active_workdir(state)
+    assert exc_info.value.status_code == 409
+
+
+def test_open_session_reuses_the_queues_live_instance(tmp_path: Path):
+    from preview.app_server import create_landing_app
+    from engine.workdir import OcrWorkDir
+
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    session_dir = work_root / "test-session"
+    session_dir.mkdir()
+    pdf_path = session_dir / "book.pdf"
+    pdf_path.write_bytes(_minimal_pdf_bytes(1))
+    workdir = OcrWorkDir.create(session_dir, source_pdf=pdf_path, total_pages=1)
+
+    app = create_landing_app(client=MagicMock(), work_root=work_root)
+    state = app.state.app_state
+    state.queue_manager._active_session_id = "test-session"
+    state.queue_manager._active_workdir = workdir
+
+    client = TestClient(app)
+    res = client.post("/api/sessions/test-session/open")
+    assert res.status_code == 200
+    assert res.json()["sessionId"] == "test-session"
+    assert state.workdir is workdir
+
+
+async def test_process_one_preserves_reviewed_page_edits(tmp_path: Path):
+    from preview.app_server import _run_ocr_background, AppState
+    from engine.workdir import OcrWorkDir
+
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    session_dir = work_root / "sess"
+    session_dir.mkdir()
+    pdf_path = session_dir / "book.pdf"
+    pdf_path.write_bytes(_minimal_pdf_bytes(1))
+    workdir = OcrWorkDir.create(session_dir, source_pdf=pdf_path, total_pages=1)
+
+    state = AppState(client=MagicMock(), work_root=work_root)
+    state.workdir = workdir
+
+    # When ocr_page is called, simulate user editing the page before OCR finishes!
+    async def slow_ocr_page(fitz_page, predictor, **kwargs):
+        with workdir.save_lock:
+            workdir.set_page(
+                1,
+                text="manual human translation",
+                is_toc=True,
+                confidence=1.0,
+                status="reviewed",
+            )
+            workdir.save()
+        return "raw machine ocr text"
+
+    with (
+        patch(
+            "preview.app_server.get_recognition_predictor",
+            AsyncMock(return_value="pred"),
+        ),
+        patch("preview.app_server.ocr_page", side_effect=slow_ocr_page),
+    ):
+        await _run_ocr_background(workdir, state)
+
+    # The user's manual review text and TOC flag MUST NOT be clobbered by the machine OCR
+    page1 = workdir.get_page(1)
+    assert page1.status == "reviewed"
+    assert page1.text == "manual human translation"
+    assert page1.is_toc is True
+
+
+def test_push_rejected_when_pages_are_pending_or_processing(tmp_path: Path):
+    from preview.server import push_response
+    from engine.workdir import OcrWorkDir
+    import pytest
+    from fastapi import HTTPException
+
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    session_dir = work_root / "sess"
+    session_dir.mkdir()
+    pdf_path = session_dir / "book.pdf"
+    pdf_path.write_bytes(_minimal_pdf_bytes(2))
+    workdir = OcrWorkDir.create(session_dir, source_pdf=pdf_path, total_pages=2)
+    workdir.set_page(1, text="done", is_toc=False, confidence=1.0, status="ocrd")
+    workdir.set_page(2, text="", is_toc=False, confidence=0.0, status="processing")
+    workdir.save()
+
+    mock_client = MagicMock()
+    with pytest.raises(HTTPException) as exc:
+        push_response(workdir, mock_client)
+
+    assert exc.value.status_code == 409
+    assert "incomplete" in exc.value.detail
