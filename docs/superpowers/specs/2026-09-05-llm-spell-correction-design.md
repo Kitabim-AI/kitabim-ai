@@ -151,6 +151,24 @@ Two new endpoints, both `Depends(require_admin)` (matching the other LLM-driven 
 - **Status display**: extend the page schema/serialization wherever `spellCheckMilestone` is already exposed to also expose `llmSpellCheckStatus`/`llmSpellCheckAt`, so `PageItem` can show a spinner while `running` and the corrected text appears once the existing refresh mechanism re-fetches the book after `running` state is observed.
 - **i18n** (`en.json`/`ug.json`): new keys for the button label, confirm-modal copy, and success/error notifications, under the existing `admin.table.reprocess.*` / `reader.*` / `common.*` namespaces used by the sibling actions.
 
+### 9. Book-level status icon (admin book management table)
+The admin book management table (`AdminView.tsx`) already shows one icon per pipeline step (OCR, chunking, embedding, dictionary spell-check, graph) in each book's row, colored by an aggregate computed from page counts — not a single book-level flag. Extend the same mechanism for the LLM pass:
+
+**Backend — `packages/backend-core/app/db/repositories/books_repository.py`**: extend the existing per-step aggregation (`get_with_page_stats` L203-226, `get_batch_stats` L510+) with one more triple, following the exact `func.count(case(...))` shape already used for `spell_check`/`ocr`/`chunking`/`embedding`:
+```python
+func.count(case((Page.llm_spell_check_status == PAGE_MILESTONE_SUCCEEDED, 1))).label("llm_spell_check"),
+func.count(case((Page.llm_spell_check_status.in_(FAILED_PAGE_MILESTONES), 1))).label("llm_spell_check_failed"),
+func.count(case((Page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS, 1))).label("llm_spell_check_active"),
+```
+Exposed under `pipeline_stats.llm_spell_check` as `{done, failed, active}`, same shape as every other step, relative to `total_pages`.
+
+Important divergence from the other steps: the "book is `ready` → assume 100% and skip scanning pages" shortcut (`get_with_page_stats` L184-226) must **not** apply to `llm_spell_check`. `book.status == 'ready'` only reflects the automatic pipeline; it says nothing about whether the on-demand LLM pass has ever been run. `llm_spell_check` counts are always computed by scanning `pages`, for both ready and in-progress books.
+
+**Frontend — `AdminView.tsx`**: add one more icon to the existing per-book icon row (alongside `BookOpenCheck`/`Network`, near L435-436/509-510) — e.g. `Sparkles` — driven by `pipeline_stats.llm_spell_check` against `total_pages`, with three visual states (not the two-state emerald/gray the other icons use, since this step is triggered per-page and a book can legitimately sit half-checked):
+- `done === total_pages && total_pages > 0` → emerald (`text-emerald-500`) — done, hover text `t('common.done')`.
+- `done + active > 0` and not fully done → amber (`text-amber-500`) — partial, hover text a new `t('common.partial', { done, total: total_pages })` key (e.g. "N/total pages corrected").
+- otherwise → gray (`text-slate-300`) — not started, hover text `t('common.pending')`.
+
 ## Error Handling
 - **Gemini call failure** (timeout, rate limit, API error): caught in the job, page's `llm_spell_check_status` set to `failed`, logged via `log_json` (WARNING) with `book_id`/`page`/`error`. No automatic retry — the admin re-triggers manually, same as any other failed on-demand action.
 - **Suspicious output guardrail**: before accepting a correction, `_validate_correction` rejects (treats as a failure, does not write to `pages.text`) if the model returns an empty string, or if the corrected text's length deviates by more than ~30% from the original page's length. This is a cheap sanity check against catastrophic model failures (e.g. truncated or garbled output) — distinct from, and much lighter than, the dictionary-based per-word validation that was explicitly deferred to Future Enhancements.
@@ -173,9 +191,10 @@ Two new endpoints, both `Depends(require_admin)` (matching the other LLM-driven 
 - **Service** (`packages/backend-core/tests/app/services/llm_spell_check_service_test.py`): mocks `genai.Client`; asserts prompt includes prev/next context correctly delimited; asserts `_validate_correction` rejects empty and wildly-different-length outputs; asserts the model id is read from `SystemConfigsRepository`, not hardcoded.
 - **Worker job** (`services/worker/tests/jobs/llm_spell_check_job_test.py`): per-page session isolation; status transitions `running` → `succeeded`/`failed`; a failing page doesn't block other pages in the same batch (`asyncio.gather` isolation); concurrency bounded by `settings.max_parallel_llm_spell_check`.
 - **Endpoints** (`services/backend/tests/api/endpoints/books_router_test.py` or sibling): per-book trigger enqueues with the correct skipped/queued page set; per-page trigger 409s when already running; both 403 for a non-admin user; enqueue failure rolls status back to `idle`.
-- **Frontend**: `ActionMenu` new button hidden for non-admin, disabled while running; `useBookActions` new handlers call the right `PersistenceService` methods and don't blank page text; `PageItem` renders the in-progress indicator when `llmSpellCheckStatus === 'running'`.
+- **Repository stats** (`packages/backend-core/tests/app/db/books_repository_test.py`): `get_with_page_stats`/`get_batch_stats` return correct `llm_spell_check` `{done, failed, active}` counts; a `ready` book with zero/partial `llm_spell_check_status='succeeded'` pages is **not** short-circuited to 100% the way the other steps are.
+- **Frontend**: `ActionMenu` new button hidden for non-admin, disabled while running; `useBookActions` new handlers call the right `PersistenceService` methods and don't blank page text; `PageItem` renders the in-progress indicator when `llmSpellCheckStatus === 'running'`; `AdminView` book-row icon renders emerald/amber/gray for done/partial/not-started `pipeline_stats.llm_spell_check`.
 
 ## Verification Plan
 1. `pytest packages/backend-core/tests/app/services/llm_spell_check_service_test.py services/worker/tests/jobs/llm_spell_check_job_test.py` and the updated `books_router` endpoint tests.
-2. `npm test` inside `apps/frontend/` for the updated `ActionMenu`/`useBookActions`/`PageItem` tests.
-3. Manual: rebuild via `./deploy/local/rebuild-and-restart.sh all`, log in as admin, open a book with a known context-dependent spelling error (a valid word substituted for the wrong one), trigger per-page LLM spell check from the reader, confirm the page text updates and `llm_spell_check_status` shows `succeeded`; trigger per-book from the book management menu on a multi-page book and confirm all pages process and the button re-enables once complete; confirm both buttons are absent for a non-admin user.
+2. `npm test` inside `apps/frontend/` for the updated `ActionMenu`/`useBookActions`/`PageItem`/`AdminView` tests.
+3. Manual: rebuild via `./deploy/local/rebuild-and-restart.sh all`, log in as admin, open a book with a known context-dependent spelling error (a valid word substituted for the wrong one), trigger per-page LLM spell check from the reader, confirm the page text updates and `llm_spell_check_status` shows `succeeded`; confirm the book's row in the admin table now shows the new icon amber (partial) since only one page is done; trigger per-book from the book management menu on the same multi-page book and confirm all pages process, the button re-enables once complete, and the row's icon turns emerald; confirm both trigger buttons are absent for a non-admin user.
