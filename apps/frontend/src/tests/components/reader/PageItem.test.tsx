@@ -8,6 +8,7 @@ import * as AuthModule from '@/src/hooks/useAuth';
 vi.mock('@/src/hooks/useAuth', () => ({
   useAuth: vi.fn(),
   useIsEditor: vi.fn(),
+  useIsAdmin: vi.fn(),
 }));
 
 const mockPage = {
@@ -182,5 +183,32 @@ test('PageItem calls onHighlightApplied once a highlightQuote match is applied',
 
   expect(onHighlightApplied).toHaveBeenCalledTimes(1);
   expect(document.querySelector('mark')).not.toBeNull();
+});
+
+test('PageItem shows LLM spell check button for admin users', () => {
+  vi.mocked(AuthModule.useIsAdmin).mockReturnValue(true);
+  const onLlmSpellCheck = vi.fn();
+  renderPageItem({ page: { ...mockPage }, onLlmSpellCheck });
+
+  const button = screen.getByTitle('reader.llmSpellCheckTitle');
+  fireEvent.click(button);
+  expect(onLlmSpellCheck).toHaveBeenCalledTimes(1);
+});
+
+test('PageItem hides LLM spell check button when onLlmSpellCheck is not provided', () => {
+  renderPageItem({ page: { ...mockPage }, onLlmSpellCheck: undefined });
+
+  expect(screen.queryByTitle('reader.llmSpellCheckTitle')).not.toBeInTheDocument();
+});
+
+test('PageItem disables LLM spell check button while llmSpellCheckStatus is in_progress', () => {
+  const onLlmSpellCheck = vi.fn();
+  renderPageItem({
+    page: { ...mockPage, llmSpellCheckStatus: 'in_progress' },
+    onLlmSpellCheck,
+  });
+
+  const button = screen.getByTitle('reader.llmSpellCheckTitle');
+  expect(button).toBeDisabled();
 });
 

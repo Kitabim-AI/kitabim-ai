@@ -1,4 +1,4 @@
-import { BookmarkCheck, Edit3, ListTree, ListX, Loader2, RotateCcw, Save, Share2 } from 'lucide-react';
+import { BookmarkCheck, Edit3, ListTree, ListX, Loader2, RotateCcw, Save, Share2, Sparkles } from 'lucide-react';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { useIsEditor } from '../../hooks/useAuth';
@@ -23,6 +23,7 @@ interface PageItemProps {
   onReprocess: () => void;
   onSetStartPage?: () => void;
   onToggleToc?: (nextIsToc: boolean) => void;
+  onLlmSpellCheck?: () => void;
 
   tempText: string;
   onTempTextChange: (text: string) => void;
@@ -42,7 +43,7 @@ interface PageItemProps {
 }
 
 export const PageItem: React.FC<PageItemProps> = React.memo(({
-  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc,
+  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc, onLlmSpellCheck,
   tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick,
   bookId, bookTitle, bookAuthor, highlightQuote, onHighlightApplied,
 }) => {
@@ -126,6 +127,19 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
                 >
                   {(page?.isToc ?? page?.is_toc) ? <ListX size={14} /> : <ListTree size={14} />}
                   <span className="hidden sm:inline">{(page?.isToc ?? page?.is_toc) ? t('reader.unmarkAsToc') : t('reader.markAsToc')}</span>
+                </button>
+              )}
+              {onLlmSpellCheck && (
+                <button
+                  onClick={onLlmSpellCheck}
+                  disabled={(page?.llmSpellCheckStatus ?? page?.llm_spell_check_status) === 'in_progress'}
+                  className="flex items-center justify-center sm:justify-start gap-1.5 h-8 w-8 sm:w-auto sm:px-3 bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold uppercase"
+                  title={t('reader.llmSpellCheckTitle')}
+                >
+                  {(page?.llmSpellCheckStatus ?? page?.llm_spell_check_status) === 'in_progress'
+                    ? <Loader2 size={14} className="animate-spin" />
+                    : <Sparkles size={14} />}
+                  <span className="hidden sm:inline">{t('reader.llmSpellCheck')}</span>
                 </button>
               )}
             </div>

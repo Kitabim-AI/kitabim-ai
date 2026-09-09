@@ -16,7 +16,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNotification } from '../../context/NotificationContext';
 import { useAppContext } from '../../context/AppContext';
-import { useAuth, useIsEditor } from '../../hooks/useAuth';
+import { useAuth, useIsEditor, useIsAdmin } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { ChatInterface } from '../chat/ChatInterface';
@@ -54,6 +54,7 @@ export const ReaderView: React.FC = () => {
 
   const { t } = useI18n();
   const isEditor = useIsEditor();
+  const isAdmin = useIsAdmin();
   const { isAuthenticated, user } = useAuth();
   const isGuestOrReader = !isAuthenticated || (user?.role === 'reader');
   const usesArabicReaderFont = (selectedBook.categories || []).some(
@@ -630,6 +631,7 @@ export const ReaderView: React.FC = () => {
                 }}
                 onSetStartPage={isEditor ? (pageNum) => handleSetStartPage(pageNum) : undefined}
                 onToggleToc={isEditor ? (pageNum, nextIsToc) => bookActions.handleToggleToc(selectedBook.id, pageNum, nextIsToc) : undefined}
+                onLlmSpellCheck={isAdmin ? (pageNum) => bookActions.handleLlmSpellCheckPage(selectedBook.id, pageNum) : undefined}
                 onTempTextChange={setTempPageText}
                 onSave={(pageNum, text) => {
                   handleUpdatePage(selectedBook.id, pageNum, text);
@@ -670,6 +672,7 @@ export const ReaderView: React.FC = () => {
                         onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
                         onSetStartPage={isEditor ? () => handleSetStartPage(page.pageNumber) : undefined}
                         onToggleToc={isEditor ? (nextIsToc) => bookActions.handleToggleToc(selectedBook.id, page.pageNumber, nextIsToc) : undefined}
+                        onLlmSpellCheck={isAdmin ? () => bookActions.handleLlmSpellCheckPage(selectedBook.id, page.pageNumber) : undefined}
                         tempText={tempPageText}
                         onTempTextChange={setTempPageText}
                         onSave={() => {

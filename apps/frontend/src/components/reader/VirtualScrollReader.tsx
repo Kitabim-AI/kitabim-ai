@@ -31,6 +31,7 @@ interface VirtualScrollReaderProps {
   onCancel?: () => void;
   onSetStartPage?: (pageNum: number) => void;
   onToggleToc?: (pageNum: number, nextIsToc: boolean) => void;
+  onLlmSpellCheck?: (pageNum: number) => void;
   isSaving?: boolean;
   selectedBookPages?: any[];
   contentPageOffset?: number;
@@ -61,6 +62,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   onCancel,
   onSetStartPage,
   onToggleToc,
+  onLlmSpellCheck,
   isSaving = false,
   selectedBookPages = [],
   contentPageOffset,
@@ -303,6 +305,10 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     onToggleToc?.(pageNum, nextIsToc);
   }, [onToggleToc]);
 
+  const handlePageLlmSpellCheck = useCallback((pageNum: number) => {
+    onLlmSpellCheck?.(pageNum);
+  }, [onLlmSpellCheck]);
+
   const handlePageSave = useCallback((pageNum: number, text: string) => {
     setPages(prev => {
       const existing = prev.get(pageNum);
@@ -356,6 +362,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   onReprocess={() => handlePageReprocess(pageNum)}
                   onSetStartPage={onSetStartPage ? () => handlePageSetStartPage(pageNum) : undefined}
                   onToggleToc={onToggleToc ? (nextIsToc) => handlePageToggleToc(pageNum, nextIsToc) : undefined}
+                  onLlmSpellCheck={onLlmSpellCheck ? () => handlePageLlmSpellCheck(pageNum) : undefined}
                   tempText={isEditingThisPage ? tempPageText : ''}
                   onTempTextChange={onTempTextChange}
                   onSave={() => handlePageSave(pageNum, tempPageText)}
