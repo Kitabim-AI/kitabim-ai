@@ -1,5 +1,5 @@
 import { Book } from '@shared/types';
-import { BookOpen, BookOpenCheck, Cuboid, FileText, Image, Loader2, Network, RotateCcw, ScanText, Scissors, ScrollText, Trash2 } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Cuboid, FileText, Image, Loader2, Network, RotateCcw, ScanText, Scissors, ScrollText, Sparkles, Trash2 } from 'lucide-react';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { REPROCESS_STEP } from '../../constants/milestones';
@@ -130,7 +130,18 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
           {reprocessingStep === REPROCESS_STEP.SPELL_CHECK ? <Loader2 size={16} className="animate-spin" /> : <BookOpenCheck size={16} />}
           <span className="flex-1 text-right">{t('admin.table.reprocess.spell_check') || 'قايتا ئىملا تەكشۈرۈش'}</span>
         </button>
- 
+
+        {isAdmin && (
+          <button
+            onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.LLM_SPELL_CHECK); close(); }}
+            disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.LLM_SPELL_CHECK}
+            className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-950/20 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
+          >
+            {reprocessingStep === REPROCESS_STEP.LLM_SPELL_CHECK ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            <span className="flex-1 text-right">{t('admin.table.reprocess.llm_spell_check') || 'LLM ئارقىلىق ئىملا تەكشۈرۈش'}</span>
+          </button>
+        )}
+
         {isAdmin && (
           <button
             onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.GRAPH); close(); }}
