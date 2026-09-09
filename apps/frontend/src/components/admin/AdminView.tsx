@@ -1,4 +1,4 @@
-import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, MoreVertical, Network, RefreshCw, Save, ScanText, Scissors, ScrollText, Search, Shield, TableOfContents, User, Wand2, X } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, MoreVertical, Network, RefreshCw, Save, ScanText, Scissors, ScrollText, Search, Shield, Sparkles, TableOfContents, User, Wand2, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -120,6 +120,18 @@ const getMilestoneColor = (book: any, stepKey: string) => {
     default:
       return 'text-slate-300';
   }
+};
+
+const getLlmSpellCheckIconClass = (
+  stats: { llm_spell_check?: number; llm_spell_check_active?: number } | undefined | null,
+  totalPages: number | undefined
+): string => {
+  const done = stats?.llm_spell_check ?? 0;
+  const active = stats?.llm_spell_check_active ?? 0;
+  const tp = totalPages ?? 0;
+  if (tp > 0 && done === tp) return 'text-emerald-500';
+  if (done + active > 0) return 'text-amber-500';
+  return 'text-slate-300';
 };
 
 const isBookReadable = (book: any): boolean => {
@@ -442,6 +454,10 @@ export const AdminView: React.FC = () => {
                                   
                                   return <Icon key={key} size={14} className={`${colorClass} transition-colors duration-300`} />;
                                 })}
+                                <Sparkles
+                                  size={14}
+                                  className={`${getLlmSpellCheckIconClass(book.pipelineStats, book.totalPages)} transition-colors duration-300`}
+                                />
                               </div>
                             </button>
                           )}
@@ -563,6 +579,48 @@ export const AdminView: React.FC = () => {
                                 </div>
                               );
                             })}
+                            {(() => {
+                              const key = 'llm_spell_check';
+                              const cacheKey = `${book.id}:${key}`;
+                              const stats = detailedStats[cacheKey];
+                              const isLoadingStat = loadingStats[cacheKey];
+                              const isLoaded = !!stats;
+                              const source = isLoaded ? stats.pipeline_stats : book.pipelineStats;
+                              const totalPages = isLoaded ? stats.total_pages : book.totalPages;
+                              const done = getStat(source, key);
+                              const active = getStat(source, `${key}_active`);
+                              const failed = getStat(source, `${key}_failed`);
+                              const tp = totalPages ?? 0;
+                              const colorClass = getLlmSpellCheckIconClass(
+                                { llm_spell_check: done, llm_spell_check_active: active },
+                                tp
+                              );
+                              return (
+                                <div
+                                  className="group/status relative flex items-center"
+                                  onMouseEnter={() => fetchBookStats(book.id, key)}
+                                >
+                                  <Sparkles size={18} className={`${colorClass} transition-colors duration-300`} />
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5">{t('admin.pipeline.llmSpellCheck')}</span>
+                                      {isLoadingStat ? (
+                                        <span className="text-slate-400 animate-pulse">{t('common.loading')}...</span>
+                                      ) : tp > 0 && done === tp ? (
+                                        <span>{t('common.done')}</span>
+                                      ) : done + active > 0 ? (
+                                        <span>{t('common.partial', { done, total: tp })}</span>
+                                      ) : (
+                                        <span>{t('common.pending')}</span>
+                                      )}
+                                      {failed > 0 && (
+                                        <span className="text-red-400 ml-1">({failed} {t('common.error')})</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       </td>
