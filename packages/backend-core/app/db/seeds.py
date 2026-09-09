@@ -78,6 +78,16 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Gemini model used for OCR page processing.",
         },
         {
+            "key": "llm_spell_check_batch_enabled",
+            "value": "false",
+            "description": "When true, the per-book LLM spell-check trigger submits a Gemini Batch API job instead of live concurrent calls",
+        },
+        {
+            "key": "gemini_llm_spell_check_model",
+            "value": "gemini-3.1-flash-lite",
+            "description": "Gemini model used for LLM-based spell correction, both live and batch paths",
+        },
+        {
             "key": "ocr_batch_enabled",
             "value": "true",
             "description": "Globally enable/disable Gemini Batch API for OCR page processing. Set to 'true' to use Batch API (50% cost discount) or 'false' for online real-time OCR.",
