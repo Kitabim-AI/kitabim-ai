@@ -49,12 +49,15 @@ class Settings:
         os.getenv("MAX_COVER_UPLOAD_BYTES", str(5 * 1024 * 1024))
     )
     max_book_upload_bytes: int = int(
-        os.getenv("MAX_BOOK_UPLOAD_BYTES", str(100 * 1024 * 1024))
+        os.getenv("MAX_BOOK_UPLOAD_BYTES", str(200 * 1024 * 1024))
     )
     max_cover_image_pixels: int = int(os.getenv("MAX_COVER_IMAGE_PIXELS", "25000000"))
 
     # Parallel Processing
     max_parallel_spell_check: int = int(os.getenv("MAX_PARALLEL_SPELL_CHECK", "6"))
+    max_parallel_llm_spell_check: int = int(
+        os.getenv("MAX_PARALLEL_LLM_SPELL_CHECK", "6")
+    )
     max_concurrent_spell_check_books: int = int(
         os.getenv("MAX_CONCURRENT_SPELL_CHECK_BOOKS", "3")
     )
