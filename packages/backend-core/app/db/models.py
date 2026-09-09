@@ -196,6 +196,12 @@ class Page(Base):
     spell_check_milestone: Mapped[Optional[str]] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=True
     )
+    llm_spell_check_status: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
+    llm_spell_check_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -434,6 +440,57 @@ class BatchHistoryExtractionJob(Base):
             "status IN ('submitting', 'submitted', 'running', 'succeeded', 'failed', 'cancelled')",
             name="check_batch_history_jobs_status",
         ),
+    )
+
+
+class BatchLlmSpellCheckJob(Base):
+    """Batch LLM Spell Check Job model tracking Gemini Batch API LLM-based
+    spell-correction requests"""
+
+    __tablename__ = "batch_llm_spell_check_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    gemini_batch_id: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False
+    )
+    book_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    page_ids: Mapped[List[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), default="submitting", server_default="submitting", nullable=False
+    )
+
+    gcs_input_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    gcs_output_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    total_batches: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
+    model_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
 
