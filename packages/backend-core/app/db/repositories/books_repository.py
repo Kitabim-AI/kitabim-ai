@@ -181,6 +181,33 @@ class BooksRepository(BaseRepository[Book]):
         if not book:
             return None
 
+        # llm_spell_check is always scanned from pages, for both ready and
+        # in-progress books — it's an on-demand admin-triggered pass, not
+        # part of the automatic pipeline, so book.status == "ready" says
+        # nothing about whether it has ever been run.
+        llm_stmt = (
+            select(
+                func.count(
+                    case((Page.llm_spell_check_status == PAGE_MILESTONE_SUCCEEDED, 1))
+                ).label("done"),
+                func.count(
+                    case((Page.llm_spell_check_status.in_(FAILED_PAGE_MILESTONES), 1))
+                ).label("failed"),
+                func.count(
+                    case((Page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS, 1))
+                ).label("active"),
+            )
+            .where(Page.book_id == book_id)
+            .group_by(Page.book_id)
+        )
+        llm_res = await self.session.execute(llm_stmt)
+        llm_row = llm_res.fetchone()
+        llm_stats = {
+            "llm_spell_check": llm_row.done if llm_row else 0,
+            "llm_spell_check_failed": llm_row.failed if llm_row else 0,
+            "llm_spell_check_active": llm_row.active if llm_row else 0,
+        }
+
         # Optimization: If book is ready, we can return 100% stats for core steps
         if book.status == "ready":
             tp = book.total_pages or 0
@@ -248,6 +275,7 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check": sc_done,
                     "spell_check_failed": sc_failed,
                     "spell_check_active": sc_active,
+                    **llm_stats,
                 },
                 "has_summary": has_summary,
                 "has_graph": has_graph,
@@ -269,11 +297,13 @@ class BooksRepository(BaseRepository[Book]):
 
             milestone_field = milestone_field_map.get(step)
             if not milestone_field:
-                # Invalid step, return empty stats
+                # Invalid step, or a free-standing step not in
+                # PAGE_MILESTONE_ATTR_BY_STEP (e.g. llm_spell_check) — its
+                # stats are already computed above unconditionally.
                 return {
                     "book": book,
                     "page_stats": {},
-                    "pipeline_stats": {},
+                    "pipeline_stats": {**llm_stats},
                     "has_summary": False,
                     "ocr_done_count": 0,
                     "error_count": 0,
@@ -395,6 +425,7 @@ class BooksRepository(BaseRepository[Book]):
                         step: 0,
                         f"{step}_failed": 0,
                         f"{step}_active": 0,
+                        **llm_stats,
                     },
                     "has_summary": False,
                     "has_graph": has_graph if step == "graph" else False,
@@ -412,6 +443,7 @@ class BooksRepository(BaseRepository[Book]):
                     step: getattr(row, f"{step}_done", 0) or 0,
                     f"{step}_failed": getattr(row, f"{step}_failed", 0) or 0,
                     f"{step}_active": getattr(row, f"{step}_active", 0) or 0,
+                    **llm_stats,
                 },
                 "has_summary": False,
                 "has_graph": has_graph if step == "graph" else False,
@@ -441,6 +473,7 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check": 0,
                     "spell_check_failed": 0,
                     "spell_check_active": 0,
+                    **llm_stats,
                 },
                 "has_summary": has_summary,
                 "has_graph": has_graph,
@@ -467,6 +500,7 @@ class BooksRepository(BaseRepository[Book]):
                 "spell_check": row.spell_check_done or 0,
                 "spell_check_failed": row.spell_check_failed or 0,
                 "spell_check_active": row.spell_check_active or 0,
+                **llm_stats,
             },
             "has_summary": has_summary,
             "has_graph": has_graph,
@@ -549,6 +583,15 @@ class BooksRepository(BaseRepository[Book]):
                 func.count(
                     case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
                 ).label("spell_check_active"),
+                func.count(
+                    case((Page.llm_spell_check_status == PAGE_MILESTONE_SUCCEEDED, 1))
+                ).label("llm_spell_check"),
+                func.count(
+                    case((Page.llm_spell_check_status.in_(FAILED_PAGE_MILESTONES), 1))
+                ).label("llm_spell_check_failed"),
+                func.count(
+                    case((Page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS, 1))
+                ).label("llm_spell_check_active"),
             )
             .where(Page.book_id.in_(book_ids))
             .group_by(Page.book_id)
@@ -571,6 +614,9 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check": row.spell_check,
                     "spell_check_failed": row.spell_check_failed,
                     "spell_check_active": row.spell_check_active,
+                    "llm_spell_check": row.llm_spell_check,
+                    "llm_spell_check_failed": row.llm_spell_check_failed,
+                    "llm_spell_check_active": row.llm_spell_check_active,
                 }
             }
 
@@ -622,6 +668,9 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check": 0,
                     "spell_check_failed": 0,
                     "spell_check_active": 0,
+                    "llm_spell_check": 0,
+                    "llm_spell_check_failed": 0,
+                    "llm_spell_check_active": 0,
                 }
 
             final_results[bid] = {
