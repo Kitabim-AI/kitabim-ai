@@ -2108,6 +2108,107 @@
         }
       }
     },
+    "/api/books/{book_id}/reprocess/llm-spell-check": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Reprocess Llm Spell Check",
+        "description": "Manually trigger the on-demand Gemini-based LLM spell-check pass for\nevery eligible page in a book. Runs independently of the dictionary-based\nspell check pipeline; each trigger costs real Gemini API calls, hence\nrequire_admin. Branches on llm_spell_check_batch_enabled to choose the\nlive vs. Gemini Batch API path.",
+        "operationId": "reprocess_llm_spell_check_api_books__book_id__reprocess_llm_spell_check_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/pages/{page_num}/llm-spell-check": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Trigger Llm Spell Check Page",
+        "description": "Manually trigger the on-demand Gemini-based LLM spell-check pass for a\nsingle page. Always uses the live path regardless of\nllm_spell_check_batch_enabled \u2014 matches how the embedding pipeline's\nreactive per-chunk dispatch always stays interactive\n(docs/main/EMBEDDING_DESIGN.md:13-14).",
+        "operationId": "trigger_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Num"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/{book_id}/retry-failed": {
       "post": {
         "tags": [
@@ -7434,7 +7535,7 @@
     "/api/config": {
       "get": {
         "summary": "Get Public Config",
-        "description": "Public endpoint \u2014 returns config the frontend needs before it can authenticate.",
+        "description": "Public endpoint \u2014 returns public configuration like collectionPageSize.",
         "operationId": "get_public_config_api_config_get",
         "responses": {
           "200": {
@@ -7674,7 +7775,15 @@
             "title": "File"
           },
           "pages": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string",
+                "contentMediaType": "application/octet-stream"
+              },
+              {
+                "type": "string"
+              }
+            ],
             "title": "Pages"
           }
         },
@@ -8707,6 +8816,23 @@
             "type": "boolean",
             "title": "Istoc",
             "default": false
+          },
+          "llmSpellCheckStatus": {
+            "type": "string",
+            "title": "Llmspellcheckstatus",
+            "default": "idle"
+          },
+          "llmSpellCheckAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llmspellcheckat"
           }
         },
         "type": "object",
