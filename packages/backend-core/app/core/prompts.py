@@ -207,6 +207,39 @@ JSON FORMAT REQUIRED:
 }}
 """
 
+# Used by: llm_spell_check_service.correct_page_text (live path) and
+# batch_llm_spell_check_service.submit_batch_llm_spell_check (batch path,
+# one request per page)
+# Model: system_configs["gemini_llm_spell_check_model"], temperature=0.0
+LLM_SPELL_CHECK_PROMPT = """You are an expert Uyghur-language copy editor. The text below is one page from a Uyghur book, written in Uyghur Arabic script and already run through OCR and a dictionary-based spell checker. Your task is to find and fix ONLY context-dependent word substitution errors — a valid Uyghur word that was OCR'd or typed as a different, valid Uyghur word that does not fit the sentence's meaning. A dictionary lookup cannot catch these because both the wrong word and the right word are real words; only reading the sentence reveals the mistake.
+
+CRITICAL LANGUAGE & SCRIPT REQUIREMENTS:
+1. INPUT: The page text is written in modern Uyghur using Uyghur Arabic script.
+2. OUTPUT: Return the corrected page text strictly in Uyghur Arabic script. Do NOT translate, transliterate, or romanize any part of it.
+
+RULES:
+1. Fix ONLY real-word substitution errors — a wrong-but-valid word that breaks the sentence's meaning. Judge this using the surrounding sentence and, when needed, the previous/next page context below.
+2. Do NOT fix spelling of words that are not real Uyghur words — a separate dictionary-based checker already handles those; leave anything you are not sure is a real-word substitution unchanged.
+3. Do NOT rewrite, rephrase, summarize, reorder, or improve the writing style. Change only the specific mistaken word(s).
+4. Preserve the page's exact formatting: paragraph breaks, line breaks, Markdown headings, and any `[Header]`/`[Footer]` markers must remain exactly as given.
+5. Do NOT add, remove, or alter punctuation except where it was clearly part of a fixed word.
+6. Return ONLY the corrected page text. Do NOT add commentary, explanations, a summary of changes, or any wrapper (no JSON, no markdown code fences, no "Corrected text:" prefix).
+7. If you find no context-dependent errors, return the page text completely unchanged.
+
+--- previous page (context only, do not correct) ---
+{prev_context}
+--- end previous page context ---
+
+--- page to correct ---
+{page_text}
+--- end page to correct ---
+
+--- next page (context only, do not correct) ---
+{next_context}
+--- end next page context ---
+
+Return only the corrected version of "page to correct" above, with nothing else."""
+
 # Used by: HistoryExtractionService._classify_facts
 # Model: system_configs["history_gemini_model"], temperature default
 FACT_CLASSIFICATION_PROMPT_TEMPLATE = """You are an expert Uyghur historical editor and scholar.
