@@ -5,6 +5,7 @@
     "loading": "Loading...",
     "done": "Done",
     "pending": "Pending",
+    "partial": "{{done}}/{{total}} pages corrected",
     "processing": "Processing",
     "error": "Error",
     "success": "Success",
@@ -52,6 +53,8 @@
     "noFailedPages": "No failed pages found for this book.",
     "pageResetSuccess": "Page {{pageNum}} reset and queued for re-processing.",
     "pageResetError": "Failed to reset page {{pageNum}}. Please try again.",
+    "llmSpellCheckPageStarted": "LLM spell check started for page {{pageNum}}",
+    "llmSpellCheckPageError": "Failed to start LLM spell check for page {{pageNum}}",
     "pageUpdated": "Page {{pageNum}} updated.",
     "pageTocMarked": "Page {{pageNum}} marked as Table of Contents.",
     "pageTocUnmarked": "Page {{pageNum}} unmarked as Table of Contents.",
@@ -319,6 +322,8 @@
     "unmarkAsToc": "Unmark as ToC",
     "markAsTocTitle": "Mark this page as a Table of Contents page",
     "unmarkAsTocTitle": "Remove Table of Contents flag from this page",
+    "llmSpellCheck": "LLM Check",
+    "llmSpellCheckTitle": "Run LLM-based spell check on this page",
     "reprocess": {
       "title": "Reprocess Page",
       "message": "This page has your edits. Reprocessing will lose them. Are you sure?",
@@ -454,6 +459,7 @@
       "embedding": "Vector Indices",
       "summary": "AI Summary",
       "spellCheck": "Spell check",
+      "llmSpellCheck": "LLM Spell Check",
       "graph": "Knowledge Graph",
       "history": "History Terms"
     },
@@ -480,6 +486,7 @@
         "chunking": "Reprocess Chunking",
         "embedding": "Reprocess Embedding",
         "spell_check": "Reprocess Spell Check",
+        "llm_spell_check": "Reprocess LLM Spell Check",
         "graph": "Reprocess Knowledge Graph",
         "summary": "Rebuild AI Summary"
       },
@@ -839,6 +846,14 @@
     "reprocessSpellCheck": {
       "title": "Reprocess Spell Check"
     },
+    "reprocessLlmSpellCheck": {
+      "title": "Reprocess LLM Spell Check"
+    },
+    "llmSpellCheckPage": {
+      "title": "LLM Spell Check",
+      "message": "Run the LLM-based spell check on page {{pageNum}}?",
+      "confirm": "Check"
+    },
     "reprocessGraph": {
       "title": "Reprocess Knowledge Graph"
     },
@@ -860,6 +875,9 @@
       },
       "spell-check": {
         "message": "Are you sure you want to re-run Spell Check?"
+      },
+      "llm-spell-check": {
+        "message": "Are you sure you want to run the LLM-based spell check pass on this book? This uses the Gemini API and may take a while."
       },
       "graph": {
         "message": "Are you sure you want to regenerate the Knowledge Graph?"
