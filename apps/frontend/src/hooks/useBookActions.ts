@@ -118,6 +118,33 @@ export const useBookActions = (
     });
   };
 
+  const handleLlmSpellCheckPage = (bookId: string, pageNum: number) => {
+    setModal({
+      isOpen: true,
+      title: t('modal.llmSpellCheckPage.title') || 'LLM ئارقىلىق ئىملا تەكشۈرۈش',
+      message: t('modal.llmSpellCheckPage.message', { pageNum }) || `بۇ بەتنى LLM ئارقىلىق ئىملا تەكشۈرەمسىز؟`,
+      type: 'confirm',
+      confirmText: t('modal.llmSpellCheckPage.confirm') || 'تەكشۈرۈش',
+      onConfirm: async () => {
+        setModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await PersistenceService.triggerLlmSpellCheckPage(bookId, pageNum);
+          refreshLibrary();
+          addNotification(
+            t('common.llmSpellCheckPageStarted', { pageNum }) || `بەت ${pageNum} تەكشۈرۈلۈۋاتىدۇ`,
+            'success'
+          );
+        } catch (err) {
+          console.error("Failed to trigger LLM spell check", err);
+          addNotification(
+            t('common.llmSpellCheckPageError', { pageNum }) || `بەت ${pageNum} نى تەكشۈرەلمىدى`,
+            'error'
+          );
+        }
+      }
+    });
+  };
+
 
   const handleToggleToc = (bookId: string, pageNum: number, nextIsToc: boolean) => {
     const copy = nextIsToc ? 'markAsToc' : 'unmarkAsToc';
@@ -516,6 +543,7 @@ export const useBookActions = (
       [REPROCESS_STEP.CHUNKING]: t('modal.reprocessChunking.title') || 'پارچىلاشنى قايتا ئىشلەش',
       [REPROCESS_STEP.EMBEDDING]: t('modal.reprocessEmbedding.title') || 'ۋېكتورلاشتۇرۇشنى قايتا ئىشلەش',
       [REPROCESS_STEP.SPELL_CHECK]: t('modal.reprocessSpellCheck.title') || 'ئىملا تەكشۈرۈشنى قايتا ئىشلەش',
+      [REPROCESS_STEP.LLM_SPELL_CHECK]: t('modal.reprocessLlmSpellCheck.title') || 'LLM ئارقىلىق ئىملا تەكشۈرۈشنى قايتا ئىشلەش',
       [REPROCESS_STEP.GRAPH]: t('modal.reprocessGraph.title') || 'بىلىم گىرافىنى قايتا ئىشلەش',
       [REPROCESS_STEP.SUMMARY]: t('modal.reprocessSummary.title') || 'قىسقىچە مەزمۇننى قايتا ھاسىللاش',
       [REPROCESS_STEP.HISTORY]: t('admin.table.extractHistory') || 'تارىخىي ئاتالغۇلارنى بايقاش',
@@ -539,6 +567,7 @@ export const useBookActions = (
             case REPROCESS_STEP.CHUNKING: await PersistenceService.reprocessChunking(bookId); break;
             case REPROCESS_STEP.EMBEDDING: await PersistenceService.reprocessEmbedding(bookId); break;
             case REPROCESS_STEP.SPELL_CHECK: await PersistenceService.reprocessSpellCheck(bookId); break;
+            case REPROCESS_STEP.LLM_SPELL_CHECK: await PersistenceService.reprocessLlmSpellCheck(bookId); break;
             case REPROCESS_STEP.GRAPH: await PersistenceService.reprocessGraph(bookId, graphScope ?? 'nonfiction'); break;
             case REPROCESS_STEP.SUMMARY: await PersistenceService.reprocessSummary(bookId); break;
             case REPROCESS_STEP.HISTORY: await PersistenceService.reprocessHistory(bookId); break;
@@ -571,6 +600,7 @@ export const useBookActions = (
     handleRetryFailedPages,
     handleReprocessStep,
     handleReProcessPage,
+    handleLlmSpellCheckPage,
     handleToggleToc,
     handleTriggerSpellCheck,
     handleUpdatePage,
