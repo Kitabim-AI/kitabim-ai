@@ -786,3 +786,199 @@ async def test_upload_ocrd_with_uploadfile_pages_on_success():
 
     assert result["status"] == "uploaded"
     assert "bookId" in result
+
+
+@pytest.mark.asyncio
+async def test_reprocess_llm_spell_check_live_path_enqueues_job():
+    setup_paths()
+    from api.endpoints.books_router import reprocess_llm_spell_check  # type: ignore[import]
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "admin@example.com"
+
+    mock_repo = MagicMock()
+    mock_repo.get = AsyncMock(return_value=MagicMock())
+
+    mock_configs_repo = MagicMock()
+    mock_configs_repo.get_value = AsyncMock(return_value="false")
+
+    mock_pages_result = MagicMock()
+    mock_pages_result.fetchall.return_value = [(1,), (2,)]
+    mock_session.execute = AsyncMock(return_value=mock_pages_result)
+
+    mock_pool = AsyncMock()
+
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch(
+            "api.endpoints.books_router.SystemConfigsRepository",
+            return_value=mock_configs_repo,
+        ),
+        patch("arq.create_pool", new_callable=AsyncMock, return_value=mock_pool),
+    ):
+        result = await reprocess_llm_spell_check(
+            book_id="some-book-id",
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert result["status"] == "llm_spell_check_started"
+    assert result["queued"] == 2
+    mock_pool.enqueue_job.assert_called_once()
+    call_kwargs = mock_pool.enqueue_job.call_args
+    assert call_kwargs.args[0] == "llm_spell_check_job"
+    assert call_kwargs.kwargs["page_ids"] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_reprocess_llm_spell_check_batch_path_submits_batch():
+    setup_paths()
+    from api.endpoints.books_router import reprocess_llm_spell_check  # type: ignore[import]
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "admin@example.com"
+
+    mock_repo = MagicMock()
+    mock_repo.get = AsyncMock(return_value=MagicMock())
+
+    mock_configs_repo = MagicMock()
+    mock_configs_repo.get_value = AsyncMock(return_value="true")
+
+    mock_pages_result = MagicMock()
+    mock_pages_result.fetchall.return_value = [(1,), (2,)]
+    mock_session.execute = AsyncMock(return_value=mock_pages_result)
+
+    mock_batch_job = MagicMock()
+
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch(
+            "api.endpoints.books_router.SystemConfigsRepository",
+            return_value=mock_configs_repo,
+        ),
+        patch(
+            "api.endpoints.books_router.submit_batch_llm_spell_check",
+            new_callable=AsyncMock,
+            return_value=mock_batch_job,
+        ) as mock_submit,
+    ):
+        result = await reprocess_llm_spell_check(
+            book_id="some-book-id",
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert result["status"] == "llm_spell_check_batch_submitted"
+    assert result["queued"] == 2
+    mock_submit.assert_called_once_with("some-book-id", [1, 2], mock_session)
+
+
+@pytest.mark.asyncio
+async def test_reprocess_llm_spell_check_book_not_found():
+    setup_paths()
+    from api.endpoints.books_router import reprocess_llm_spell_check  # type: ignore[import]
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "admin@example.com"
+
+    mock_repo = MagicMock()
+    mock_repo.get = AsyncMock(return_value=None)
+
+    with patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo):
+        with pytest.raises(HTTPException) as excinfo:
+            await reprocess_llm_spell_check(
+                book_id="missing-book",
+                current_user=mock_user,
+                session=mock_session,
+            )
+
+    assert excinfo.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_trigger_llm_spell_check_page_enqueues_and_returns_started():
+    setup_paths()
+    from api.endpoints.books_router import trigger_llm_spell_check_page  # type: ignore[import]
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "admin@example.com"
+
+    mock_page = MagicMock()
+    mock_page.id = 42
+    mock_page.llm_spell_check_status = "idle"
+
+    mock_repo = MagicMock()
+    mock_repo.find_one = AsyncMock(return_value=mock_page)
+    mock_repo.set_llm_spell_check_status = AsyncMock(return_value=True)
+
+    mock_pool = AsyncMock()
+
+    with (
+        patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo),
+        patch("arq.create_pool", new_callable=AsyncMock, return_value=mock_pool),
+    ):
+        result = await trigger_llm_spell_check_page(
+            book_id="some-book-id",
+            page_num=5,
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert result["status"] == "llm_spell_check_started"
+    mock_pool.enqueue_job.assert_called_once()
+    call_kwargs = mock_pool.enqueue_job.call_args
+    assert call_kwargs.kwargs["page_ids"] == [42]
+
+
+@pytest.mark.asyncio
+async def test_trigger_llm_spell_check_page_409_when_already_running():
+    setup_paths()
+    from api.endpoints.books_router import trigger_llm_spell_check_page  # type: ignore[import]
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "admin@example.com"
+
+    mock_page = MagicMock()
+    mock_page.llm_spell_check_status = "in_progress"
+
+    mock_repo = MagicMock()
+    mock_repo.find_one = AsyncMock(return_value=mock_page)
+
+    with patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo):
+        with pytest.raises(HTTPException) as excinfo:
+            await trigger_llm_spell_check_page(
+                book_id="some-book-id",
+                page_num=5,
+                current_user=mock_user,
+                session=mock_session,
+            )
+
+    assert excinfo.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_trigger_llm_spell_check_page_404_when_not_found():
+    setup_paths()
+    from api.endpoints.books_router import trigger_llm_spell_check_page  # type: ignore[import]
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+
+    mock_repo = MagicMock()
+    mock_repo.find_one = AsyncMock(return_value=None)
+
+    with patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo):
+        with pytest.raises(HTTPException) as excinfo:
+            await trigger_llm_spell_check_page(
+                book_id="some-book-id",
+                page_num=999,
+                current_user=mock_user,
+                session=mock_session,
+            )
+
+    assert excinfo.value.status_code == 404

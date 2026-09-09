@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.pipeline import (
     FAILED_PAGE_MILESTONES,
     PAGE_MILESTONE_IDLE,
+    PAGE_MILESTONE_IN_PROGRESS,
     PAGE_MILESTONE_SUCCEEDED,
     PIPELINE_STEP_CHUNKING,
     PIPELINE_STEP_EMBEDDING,
@@ -58,6 +59,7 @@ from app.models.schemas import (
 from app.models.user import User
 from app.services.storage_service import storage
 from app.services.chunking_service import chunking_service
+from app.services.batch_llm_spell_check_service import submit_batch_llm_spell_check
 from app.utils.markdown import normalize_markdown, strip_markdown
 from app.llm.models import GeminiEmbeddings
 from auth.dependencies import (
@@ -2235,6 +2237,178 @@ async def reprocess_summary(
         "status": "summary_reprocess_started",
         "message": "Summary generation queued.",
     }
+
+
+@router.post("/{book_id}/reprocess/llm-spell-check")
+async def reprocess_llm_spell_check(
+    book_id: str,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually trigger the on-demand Gemini-based LLM spell-check pass for
+    every eligible page in a book. Runs independently of the dictionary-based
+    spell check pipeline; each trigger costs real Gemini API calls, hence
+    require_admin. Branches on llm_spell_check_batch_enabled to choose the
+    live vs. Gemini Batch API path."""
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    pages_res = await session.execute(
+        select(Page.id).where(
+            Page.book_id == book_id,
+            Page.llm_spell_check_status != PAGE_MILESTONE_IN_PROGRESS,
+        )
+    )
+    page_ids = [row[0] for row in pages_res.fetchall()]
+    if not page_ids:
+        return {"status": "llm_spell_check_started", "queued": 0}
+
+    configs_repo = SystemConfigsRepository(session)
+    batch_enabled = await configs_repo.get_value(
+        "llm_spell_check_batch_enabled", "false"
+    )
+
+    if batch_enabled == "true":
+        try:
+            await submit_batch_llm_spell_check(book_id, page_ids, session)
+        except Exception as exc:
+            log_json(
+                logger,
+                logging.ERROR,
+                "failed to submit batch_llm_spell_check job",
+                book_id=book_id,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
+            )
+        return {"status": "llm_spell_check_batch_submitted", "queued": len(page_ids)}
+
+    await session.execute(
+        update(Page)
+        .where(Page.id.in_(page_ids))
+        .values(
+            llm_spell_check_status=PAGE_MILESTONE_IN_PROGRESS,
+            last_updated=datetime.now(timezone.utc),
+        )
+    )
+    await session.commit()
+
+    try:
+        import arq
+
+        redis_pool = await arq.create_pool(
+            arq.connections.RedisSettings.from_dsn(settings.redis_url)
+        )
+        try:
+            await redis_pool.enqueue_job(
+                "llm_spell_check_job",
+                page_ids=page_ids,
+                _job_id=f"llm_spell_check:book:{book_id}",
+            )
+        finally:
+            await redis_pool.aclose()
+        log_json(
+            logger,
+            logging.INFO,
+            "manually enqueued llm_spell_check_job",
+            book_id=book_id,
+            page_count=len(page_ids),
+            user=current_user.email,
+        )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.ERROR,
+            "failed to enqueue llm_spell_check_job",
+            book_id=book_id,
+            error=str(exc),
+        )
+        await session.execute(
+            update(Page)
+            .where(Page.id.in_(page_ids))
+            .values(
+                llm_spell_check_status=PAGE_MILESTONE_IDLE,
+                last_updated=datetime.now(timezone.utc),
+            )
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
+        )
+
+    return {"status": "llm_spell_check_started", "queued": len(page_ids)}
+
+
+@router.post("/{book_id}/pages/{page_num}/llm-spell-check")
+async def trigger_llm_spell_check_page(
+    book_id: str,
+    page_num: int,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually trigger the on-demand Gemini-based LLM spell-check pass for a
+    single page. Always uses the live path regardless of
+    llm_spell_check_batch_enabled — matches how the embedding pipeline's
+    reactive per-chunk dispatch always stays interactive
+    (docs/main/EMBEDDING_DESIGN.md:13-14)."""
+    pages_repo = PagesRepository(session)
+    page = await pages_repo.find_one(book_id, page_num)
+    if not page:
+        raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
+
+    if page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS:
+        raise HTTPException(
+            status_code=409, detail=t("errors.llm_spell_check_already_running")
+        )
+
+    await pages_repo.set_llm_spell_check_status(
+        book_id, page_num, PAGE_MILESTONE_IN_PROGRESS
+    )
+    await session.commit()
+
+    try:
+        import arq
+
+        redis_pool = await arq.create_pool(
+            arq.connections.RedisSettings.from_dsn(settings.redis_url)
+        )
+        try:
+            await redis_pool.enqueue_job(
+                "llm_spell_check_job",
+                page_ids=[page.id],
+                _job_id=f"llm_spell_check:page:{page.id}",
+            )
+        finally:
+            await redis_pool.aclose()
+        log_json(
+            logger,
+            logging.INFO,
+            "manually enqueued llm_spell_check_job for single page",
+            book_id=book_id,
+            page=page_num,
+            user=current_user.email,
+        )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.ERROR,
+            "failed to enqueue llm_spell_check_job for single page",
+            book_id=book_id,
+            page=page_num,
+            error=str(exc),
+        )
+        await pages_repo.set_llm_spell_check_status(
+            book_id, page_num, PAGE_MILESTONE_IDLE
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
+        )
+
+    return {"status": "llm_spell_check_started"}
 
 
 @router.post("/{book_id}/retry-failed")

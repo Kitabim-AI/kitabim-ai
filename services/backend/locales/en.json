@@ -49,6 +49,8 @@
     "queue_unavailable": "Processing queue is temporarily unavailable. Please try again in a moment.",
     "graph_enqueue_failed": "Failed to enqueue Knowledge Graph job. Please try again.",
     "summary_enqueue_failed": "Failed to enqueue Summary job. Please try again.",
+    "llm_spell_check_enqueue_failed": "Failed to start LLM spell check. Please try again.",
+    "llm_spell_check_already_running": "LLM spell check is already running for this page.",
     "staging_candidate_not_found": "Staging candidate not found or already processed",
     "staging_fact_not_found": "Fact not found on this staging candidate",
     "staging_conflicts_unresolved": "This term has unresolved fact conflicts. Resolve them before approving.",
