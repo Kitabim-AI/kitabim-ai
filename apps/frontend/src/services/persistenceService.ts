@@ -259,6 +259,33 @@ export const PersistenceService = {
     }
   },
 
+  async reprocessLlmSpellCheck(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/llm-spell-check`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Admin access required");
+      }
+      throw new Error("Failed to start LLM spell check");
+    }
+  },
+
+  async triggerLlmSpellCheckPage(bookId: string, pageNum: number): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/llm-spell-check`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Admin access required");
+      }
+      if (response.status === 409) {
+        throw new Error("LLM spell check is already running for this page");
+      }
+      throw new Error("Failed to start LLM spell check for page");
+    }
+  },
+
   async reprocessGraph(bookId: string, scope: 'fiction' | 'nonfiction'): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/graph`, {
       method: 'POST',
