@@ -264,6 +264,34 @@ class PagesRepository(BaseRepository[Page]):
         await self.session.flush()
         return result.rowcount > 0
 
+    async def set_llm_spell_check_status(
+        self,
+        book_id: str,
+        page_number: int,
+        status: str,
+        updated_by: Optional[str] = None,
+    ) -> bool:
+        """Set the on-demand LLM spell-check status for one page. Records
+        llm_spell_check_at when the run reaches a terminal state (success or
+        failure) — not on transition to in_progress."""
+        from sqlalchemy import update
+        from app.core.pipeline import PAGE_MILESTONE_SUCCEEDED, PAGE_MILESTONE_FAILED
+
+        values = {"llm_spell_check_status": status, "last_updated": func.now()}
+        if status in (PAGE_MILESTONE_SUCCEEDED, PAGE_MILESTONE_FAILED):
+            values["llm_spell_check_at"] = func.now()
+        if updated_by:
+            values["updated_by"] = updated_by
+
+        stmt = (
+            update(Page)
+            .where(Page.book_id == book_id, Page.page_number == page_number)
+            .values(**values)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return result.rowcount > 0
+
     async def sync_content_page_offset(self, book_id: str) -> int:
         """Calculate and update book.content_page_offset based on MAX(page_number) where is_toc IS TRUE."""
         from sqlalchemy import update

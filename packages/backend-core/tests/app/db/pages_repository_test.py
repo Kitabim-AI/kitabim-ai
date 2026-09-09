@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.models import Page
+from app.core.pipeline import PAGE_MILESTONE_SUCCEEDED, PAGE_MILESTONE_FAILED
 
 
 @pytest.mark.asyncio
@@ -202,3 +203,45 @@ async def test_sync_content_page_offset():
     offset = await repo.sync_content_page_offset("b1")
     assert offset == 6
     assert session.flush.called
+
+
+@pytest.mark.asyncio
+async def test_set_llm_spell_check_status_success():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+    mock_res = MagicMock()
+    mock_res.rowcount = 1
+    session.execute.return_value = mock_res
+
+    result = await repo.set_llm_spell_check_status("b1", 5, PAGE_MILESTONE_SUCCEEDED)
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_set_llm_spell_check_status_sets_at_timestamp_on_terminal_status():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+    mock_res = MagicMock()
+    mock_res.rowcount = 1
+    session.execute.return_value = mock_res
+
+    await repo.set_llm_spell_check_status("b1", 5, PAGE_MILESTONE_FAILED)
+
+    call_args = session.execute.call_args[0][0]
+    compiled = call_args.compile()
+    # func.now() compiles to a SQL function call, not a bound parameter, so
+    # assert on the compiled SQL text rather than compiled.params for this column.
+    assert "llm_spell_check_at=now()" in str(compiled)
+    assert compiled.params["llm_spell_check_status"] == PAGE_MILESTONE_FAILED
+
+
+@pytest.mark.asyncio
+async def test_set_llm_spell_check_status_returns_false_for_unknown_page():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+    mock_res = MagicMock()
+    mock_res.rowcount = 0
+    session.execute.return_value = mock_res
+
+    result = await repo.set_llm_spell_check_status("b1", 999, PAGE_MILESTONE_SUCCEEDED)
+    assert result is False
