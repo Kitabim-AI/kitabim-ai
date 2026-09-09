@@ -7,7 +7,7 @@ export interface ErrorEvent extends Omit<ErrorEventSchema, 'ts' | 'context'> {
 }
 
 export type ExtractionResultSchema = components['schemas']['ExtractionResult'];
-export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' | 'pipelineStep' | 'milestone'> {
+export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' | 'pipelineStep' | 'milestone' | 'llmSpellCheckStatus'> {
   status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'indexed' | 'error';
   pipelineStep?: 'ocr' | 'chunking' | 'embedding' | null;
   milestone?: 'idle' | 'running' | 'succeeded' | 'failed' | null;
@@ -15,6 +15,8 @@ export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' 
   content_page_number?: string | null;
   displayPageNumber?: string | null;
   display_page_number?: string | null;
+  llmSpellCheckStatus?: 'idle' | 'in_progress' | 'succeeded' | 'failed';
+  llmSpellCheckAt?: string | null;
 }
 
 export type BookSchema = components['schemas']['Book'];
