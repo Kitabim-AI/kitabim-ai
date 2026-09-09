@@ -46,6 +46,12 @@ class ExtractionResult(BaseModel):
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     milestone: Optional[str] = None  # DB: milestone, API: milestone
     is_toc: bool = False  # API: isToc
+    llm_spell_check_status: str = (
+        "idle"  # DB: llm_spell_check_status, API: llmSpellCheckStatus
+    )
+    llm_spell_check_at: Optional[datetime] = (
+        None  # DB: llm_spell_check_at, API: llmSpellCheckAt
+    )
 
 
 class PageTocUpdate(BaseModel):
