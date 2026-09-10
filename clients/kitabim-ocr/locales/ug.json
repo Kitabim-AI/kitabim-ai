@@ -95,7 +95,13 @@
     "status_processing": "تونۇۋاتىدۇ...",
     "status_completed": "تاماملاندى",
     "status_failed": "خاتالىق",
-    "badge_toc": "TOC"
+    "badge_toc": "TOC",
+    "toast_book_completed_next_started": "«{finished}» تاماملىنىپ، «{next}» باشلاندى",
+    "previous_book": "ئالدىنقى كىتاب",
+    "btn_view_results": "نەتىجىنى كۆرۈش",
+    "all_completed_title": "بارلىق ھۆججەتلەر بىر تەرەپ قىلىنىپ بولدى",
+    "all_completed_subtitle": "نۆۋەتتىكى بارلىق OCR خىزمەتلىرى تولۇق تاماملاندى. نەتىجىنى كۆرەلەيسىز ياكى كىتابخانىغا قايتالايسىز.",
+    "toast_all_completed": "بارلىق OCR خىزمەتلىرى تاماملاندى"
   },
   "review": {
     "btn_back_library": "كىتابخانىغا قايتىش",

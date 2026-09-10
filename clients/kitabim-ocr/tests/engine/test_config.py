@@ -1,6 +1,7 @@
 import pytest
 
 from engine.config import (
+    DEFAULT_OCR_BLEED_THROUGH_SUPPRESSION,
     DEFAULT_OCR_CONCURRENCY,
     DEFAULT_OCR_ENGINE,
     DEFAULT_OCR_MAX_RETRIES,
@@ -14,6 +15,7 @@ from engine.config import (
     get_configured_page_timeout,
     get_savitr_model_path,
     is_apple_silicon,
+    is_bleed_through_suppression_enabled,
     is_savitr_available,
     resolve_concurrency,
 )
@@ -225,3 +227,25 @@ def test_apply_surya_token_limits(monkeypatch):
     monkeypatch.setenv("SURYA_MAX_TOKENS_FULL_PAGE", "4096")
     apply_surya_token_limits()
     assert os.environ["SURYA_MAX_TOKENS_FULL_PAGE"] == "4096"
+
+
+def test_is_bleed_through_suppression_enabled_defaults_to_true(monkeypatch):
+    monkeypatch.delenv("KITABIM_OCR_BLEED_THROUGH_SUPPRESSION", raising=False)
+    monkeypatch.delenv("OCR_BLEED_THROUGH_SUPPRESSION", raising=False)
+    assert DEFAULT_OCR_BLEED_THROUGH_SUPPRESSION is True
+    assert is_bleed_through_suppression_enabled() is True
+
+
+def test_is_bleed_through_suppression_enabled_env_override(monkeypatch):
+    for disabled_val in ("false", "0", "no", "off", "disable", "disabled", "FALSE"):
+        monkeypatch.setenv("KITABIM_OCR_BLEED_THROUGH_SUPPRESSION", disabled_val)
+        assert is_bleed_through_suppression_enabled() is False
+
+    for enabled_val in ("true", "1", "yes", "on", "enable", "TRUE"):
+        monkeypatch.setenv("KITABIM_OCR_BLEED_THROUGH_SUPPRESSION", enabled_val)
+        assert is_bleed_through_suppression_enabled() is True
+
+    # Fallback to OCR_BLEED_THROUGH_SUPPRESSION
+    monkeypatch.delenv("KITABIM_OCR_BLEED_THROUGH_SUPPRESSION", raising=False)
+    monkeypatch.setenv("OCR_BLEED_THROUGH_SUPPRESSION", "false")
+    assert is_bleed_through_suppression_enabled() is False

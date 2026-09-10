@@ -1162,3 +1162,179 @@ def test_push_rejected_when_pages_are_pending_or_processing(tmp_path: Path):
 
     assert exc.value.status_code == 409
     assert "incomplete" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_queue_auto_starts_next_book_in_state(tmp_path: Path):
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+
+    # Create two books with pending pages
+    d1 = work_root / "book-1"
+    d1.mkdir()
+    (d1 / "book.pdf").write_bytes(_minimal_pdf_bytes(2))
+    w1 = OcrWorkDir.create(d1, d1 / "book.pdf", total_pages=2)
+    w1.set_page(1, text="", is_toc=False, confidence=0.0, status="pending")
+    w1.set_page(2, text="", is_toc=False, confidence=0.0, status="pending")
+    w1.save()
+
+    d2 = work_root / "book-2"
+    d2.mkdir()
+    (d2 / "book.pdf").write_bytes(_minimal_pdf_bytes(2))
+    w2 = OcrWorkDir.create(d2, d2 / "book.pdf", total_pages=2)
+    w2.set_page(1, text="", is_toc=False, confidence=0.0, status="pending")
+    w2.set_page(2, text="", is_toc=False, confidence=0.0, status="pending")
+    w2.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+    state = app.state.app_state
+
+    b1_block = asyncio.Event()
+    b2_started = asyncio.Event()
+    b2_stage_during_run = None
+    b2_workdir_during_run = None
+
+    async def fake_ocr(workdir, st, concurrency=None):
+        if workdir.root.name == "book-1":
+            await b1_block.wait()
+        elif workdir.root.name == "book-2":
+            nonlocal b2_stage_during_run, b2_workdir_during_run
+            b2_stage_during_run = st.stage
+            b2_workdir_during_run = st.workdir.root.name if st.workdir else None
+            b2_started.set()
+
+        for p in range(1, workdir.total_pages + 1):
+            workdir.set_page(
+                p, text=f"text {p}", is_toc=False, confidence=1.0, status="ocrd"
+            )
+        workdir.save()
+
+        # Replicate completion logic in _run_ocr_background
+        has_next = bool(st.queue_manager and st.queue_manager.queued_session_ids)
+        is_reviewing_other = (
+            st.stage == "review"
+            and getattr(st, "manual_review_session_id", None) is not None
+            and st.manual_review_session_id != workdir.root.name
+        )
+        if not has_next and not is_reviewing_other and st.stage == "processing":
+            st.stage = "review"
+
+    with patch("preview.app_server._run_ocr_background", side_effect=fake_ocr):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            # Resume book-1
+            r1 = await ac.post("/api/sessions/book-1/resume")
+            assert r1.json()["stage"] == "processing"
+            assert r1.json()["isProcessing"] is True
+
+            # Resume book-2 while book-1 is processing
+            r2 = await ac.post("/api/sessions/book-2/resume")
+            assert r2.json()["stage"] == "queued"
+            assert r2.json()["queuePosition"] == 1
+
+            # Unblock book-1 so it finishes
+            b1_block.set()
+            await asyncio.wait_for(b2_started.wait(), timeout=2.0)
+
+            # WHILE book-2 is running, state MUST be processing and workdir MUST be book-2!
+            assert b2_stage_during_run == "processing"
+            assert b2_workdir_during_run == "book-2"
+
+            await state.queue_manager.wait_all()
+
+            # When entire queue is done, final book transitions to review
+            assert state.stage == "review"
+            assert state.workdir.root.name == "book-2"
+
+
+@pytest.mark.asyncio
+async def test_explicit_manual_review_protects_review_screen_from_queue_advance(
+    tmp_path: Path,
+):
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+
+    d1 = work_root / "book-a"
+    d1.mkdir()
+    (d1 / "book.pdf").write_bytes(_minimal_pdf_bytes(1))
+    w1 = OcrWorkDir.create(d1, d1 / "book.pdf", total_pages=1)
+    w1.set_page(1, text="Book A Text", is_toc=False, confidence=1.0, status="ocrd")
+    w1.save()
+
+    d2 = work_root / "book-b"
+    d2.mkdir()
+    (d2 / "book.pdf").write_bytes(_minimal_pdf_bytes(1))
+    w2 = OcrWorkDir.create(d2, d2 / "book.pdf", total_pages=1)
+    w2.set_page(1, text="", is_toc=False, confidence=0.0, status="pending")
+    w2.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+    state = app.state.app_state
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # Open Book A for review
+        res_open = await ac.post("/api/sessions/book-a/open")
+        assert res_open.status_code == 200
+        assert res_open.json()["stage"] == "review"
+        assert state.manual_review_session_id == "book-a"
+
+        # Resume Book B in the background
+        res_b = await ac.post("/api/sessions/book-b/resume")
+        assert res_b.status_code == 200
+
+        # Run OCR for Book B
+        with (
+            patch(
+                "preview.app_server.get_recognition_predictor",
+                AsyncMock(return_value="pred"),
+            ),
+            patch("preview.app_server.ocr_page", AsyncMock(return_value="Book B Text")),
+        ):
+            await state.queue_manager.wait_all()
+
+        # State MUST remain in review on Book A!
+        assert state.stage == "review"
+        assert state.workdir.root.name == "book-a"
+        assert state.manual_review_session_id == "book-a"
+
+
+@pytest.mark.asyncio
+async def test_background_completion_preserves_landing_stage(tmp_path: Path):
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+
+    d1 = work_root / "bg-book"
+    d1.mkdir()
+    (d1 / "book.pdf").write_bytes(_minimal_pdf_bytes(1))
+    w1 = OcrWorkDir.create(d1, d1 / "book.pdf", total_pages=1)
+    w1.set_page(1, text="", is_toc=False, confidence=0.0, status="pending")
+    w1.save()
+
+    app = create_landing_app(MagicMock(), work_root)
+    state = app.state.app_state
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # User clicks resume
+        await ac.post("/api/sessions/bg-book/resume")
+        # Then user navigates back to landing
+        await ac.post("/api/reset")
+        assert state.stage == "landing"
+        assert state.workdir is None
+
+        with (
+            patch(
+                "preview.app_server.get_recognition_predictor",
+                AsyncMock(return_value="pred"),
+            ),
+            patch("preview.app_server.ocr_page", AsyncMock(return_value="OCR Text")),
+        ):
+            await state.queue_manager.wait_all()
+
+        # Completing in background while user is on landing MUST NOT kick stage to review
+        assert state.stage == "landing"
+        assert state.workdir is None

@@ -56,6 +56,7 @@ export const ReaderView: React.FC = () => {
   const isEditor = useIsEditor();
   const isAdmin = useIsAdmin();
   const { isAuthenticated, user } = useAuth();
+  const isGuest = !isAuthenticated;
   const isGuestOrReader = !isAuthenticated || (user?.role === 'reader');
   const usesArabicReaderFont = (selectedBook.categories || []).some(
     (category) => normalizeReaderCategory(category) === 'ئەرەبچە'
@@ -173,9 +174,14 @@ export const ReaderView: React.FC = () => {
 
   useEffect(() => {
     if (currentPage !== null) {
-      setPageInput(currentPage.toString());
+      if (isGuest && currentPage > 20) {
+        setCurrentPage(20);
+        setPageInput('20');
+      } else {
+        setPageInput(currentPage.toString());
+      }
     }
-  }, [currentPage]);
+  }, [currentPage, isGuest, setCurrentPage]);
 
   // When editing ends, scroll back to the page that was being edited.
   useEffect(() => {
@@ -407,6 +413,23 @@ export const ReaderView: React.FC = () => {
   const contentPageOffset = selectedBook.contentPageOffset ?? (selectedBook as any).content_page_offset ?? 0;
 
   const handleTocPageClick = useCallback((targetPage: number) => {
+    if (isGuest && targetPage > 20) {
+      addNotification(t('reader.guestLimitNotification'), 'info');
+      const safeTarget = 20;
+      setCurrentPage(safeTarget);
+      setPageInput(safeTarget.toString());
+      const el = pageRefs.current.get(safeTarget);
+      const container = mainScrollRef.current;
+      if (el && container) {
+        const containerTop = container.getBoundingClientRect().top;
+        const elTop = el.getBoundingClientRect().top;
+        container.scrollTo({
+          top: container.scrollTop + (elTop - containerTop) - 24,
+          behavior: 'smooth'
+        });
+      }
+      return;
+    }
     setCurrentPage(targetPage);
     setPageInput(targetPage.toString());
     const el = pageRefs.current.get(targetPage);
@@ -419,7 +442,7 @@ export const ReaderView: React.FC = () => {
         behavior: 'smooth'
       });
     }
-  }, [setCurrentPage]);
+  }, [setCurrentPage, isGuest, addNotification, t]);
 
   const [isDownloading, setIsDownloading] = useState(false);
   const handleDownload = async () => {

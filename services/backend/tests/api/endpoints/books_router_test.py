@@ -126,12 +126,17 @@ async def test_get_books():
     mock_graph_res = MagicMock()
     mock_graph_res.fetchall.return_value = [("book-1",)]
 
+    # Mock history extraction check results
+    mock_history_res = MagicMock()
+    mock_history_res.fetchall.return_value = [("book-1",)]
+
     # Setup session.execute side effects for the sequential queries
     mock_session.execute.side_effect = [
         mock_count_res,
         mock_books_res,
         mock_summary_res,
         mock_graph_res,
+        mock_history_res,
     ]
 
     with patch("api.endpoints.books_router.cache_service") as mock_cache:

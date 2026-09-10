@@ -49,9 +49,11 @@ CREATE INDEX idx_batch_llm_spell_check_jobs_book_id ON batch_llm_spell_check_job
 
 INSERT INTO system_configs (key, value, description) VALUES
     ('llm_spell_check_batch_enabled', 'false',
-     'When true, the per-book LLM spell-check trigger submits a Gemini Batch API job instead of live concurrent calls');
+     'When true, the per-book LLM spell-check trigger submits a Gemini Batch API job instead of live concurrent calls'),
+    ('gemini_llm_spell_check_model', 'gemini-3.1-flash-lite',
+     'Gemini model used for LLM-based spell correction, both live and batch paths');
 ```
-`page_ids` scopes exactly which pages this batch job covers, following the same convention as `batch_ocr_jobs`/`batch_embedding_jobs` (`docs/main/OCR_DESIGN.md:47-55`). `llm_spell_check_batch_enabled` defaults to `false` (opt-in), matching `ocr_batch_enabled`/`embed_batch_enabled`.
+`page_ids` scopes exactly which pages this batch job covers, following the same convention as `batch_ocr_jobs`/`batch_embedding_jobs` (`docs/main/OCR_DESIGN.md:47-55`). `llm_spell_check_batch_enabled` defaults to `false` (opt-in), matching `ocr_batch_enabled`/`embed_batch_enabled`. `gemini_llm_spell_check_model` seeds the model id used by `correct_page_text` (§5) and the batch submission service (§7) — a single source of truth for both paths, runtime-overridable from the system-configs admin panel without a redeploy, matching `gemini_ocr_model`/`gemini_embedding_model`'s existing pattern.
 
 ### 3. ORM models — `packages/backend-core/app/db/models.py`
 Add to `Page`, next to `spell_check_milestone` (L196-198):
@@ -110,7 +112,7 @@ async def correct_page_text(
     _validate_correction(page_text, corrected)  # raises on suspicious output — see Error Handling
     return corrected
 ```
-- Model id is fetched via `SystemConfigsRepository.get_value` (DB-backed, runtime-overridable), not hardcoded — matching `entity_resolution_service.py:348-350`. The same `gemini_llm_spell_check_model` config key is reused by the batch path (single source of truth for which model runs this feature).
+- Model id is fetched via `SystemConfigsRepository.get_value` (DB-backed, runtime-overridable), not hardcoded — matching `entity_resolution_service.py:348-350`. The `"gemini-3.1-flash-lite"` argument is only the in-code fallback if the row is somehow missing; the row itself is seeded by migration 091 (§2) so the admin panel always shows a real, editable value from day one. The same `gemini_llm_spell_check_model` config key is reused by the batch path (single source of truth for which model runs this feature).
 - `prev_page_text`/`next_page_text` are passed as read-only context in the prompt (clearly delimited, e.g. `--- previous page (context only, do not correct) ---`); only `page_text`'s corrected form is returned/used.
 - `LLM_SPELL_CHECK_PROMPT` instructs the model to preserve all formatting/line breaks and return the full corrected page text only — no commentary, no JSON wrapper. Written per project prompt conventions (`/prompt-engineer` skill) since this is a new LLM prompt for Uyghur text — must be reviewed against that skill's checklist when implemented.
 - `_validate_correction` (empty-output / length-deviation guardrail) is also shared — the batch poller (§8) calls it on each parsed result, same as the live path.

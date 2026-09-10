@@ -393,3 +393,113 @@ async def test_ocr_page_executes_concurrently_in_parallel():
     assert len(results) == 4
     assert elapsed < 0.28, f"Expected parallel execution (<0.28s), got {elapsed:.3f}s"
     svc._executor = None
+
+
+def test_suppress_bleed_through_cleans_faint_pixels():
+    import numpy as np
+
+    # Create an image with:
+    # - Paper background: 240
+    # - Real text strokes: 30
+    # - Faint bleed-through text: 215
+    arr = np.full((100, 100), 240, dtype=np.uint8)
+    arr[10:20, 10:20] = 30  # Real text
+    arr[50:60, 50:60] = 215  # Faint bleed-through
+    img = Image.fromarray(arr, mode="L")
+
+    cleaned = svc.suppress_bleed_through(img)
+    clean_arr = np.array(cleaned)
+
+    # Real text remains dark
+    assert np.mean(clean_arr[10:20, 10:20]) < 50
+    # Bleed-through is washed out to 255
+    assert np.all(clean_arr[50:60, 50:60] == 255)
+
+
+def test_suppress_bleed_through_bypasses_dark_pages():
+    import numpy as np
+
+    # Dark background (e.g. 50)
+    arr = np.full((100, 100), 50, dtype=np.uint8)
+    img = Image.fromarray(arr, mode="L")
+    cleaned = svc.suppress_bleed_through(img)
+    assert np.array_equal(np.array(cleaned), arr)
+
+
+def test_is_phantom_bleed_through_block():
+    import numpy as np
+
+    gray_arr = np.full((100, 100), 240, dtype=np.uint8)
+    gray_arr[10:20, 10:20] = 30  # Real text area
+    # Bleed-through area has only faint pixels
+    gray_arr[50:60, 50:60] = 210
+
+    real_block = MagicMock()
+    real_block.polygon = [[10, 10], [20, 10], [20, 20], [10, 20]]
+
+    phantom_block = MagicMock()
+    phantom_block.polygon = [[50, 50], [60, 50], [60, 60], [50, 60]]
+
+    assert svc._is_phantom_bleed_through_block(real_block, gray_arr) is False
+    assert svc._is_phantom_bleed_through_block(phantom_block, gray_arr) is True
+
+
+def test_process_page_sync_discards_phantom_and_hallucinated_blocks():
+    import numpy as np
+
+    img_arr = np.full((200, 200), 240, dtype=np.uint8)
+    img_arr[10:30, 10:30] = 20  # Real text area
+    img = Image.fromarray(img_arr, mode="L")
+
+    # Real block
+    b0 = MagicMock()
+    b0.reading_order = 0
+    b0.label = "Text"
+    b0.confidence = 0.95
+    b0.skipped = False
+    b0.error = False
+    b0.polygon = [[10, 10], [30, 10], [30, 30], [10, 30]]
+    b0.html = "<p>بۇ ھەقىقىي ئۇيغۇرچە تېكىست ماقالىسىدۇر.</p>"
+
+    # Phantom block (no dark ink)
+    b1 = MagicMock()
+    b1.reading_order = 1
+    b1.label = "Text"
+    b1.confidence = 0.80
+    b1.skipped = False
+    b1.error = False
+    b1.polygon = [[100, 100], [150, 100], [150, 150], [100, 150]]
+    b1.html = "<p>ھەممە نەرسە قۇرۇق ئورۇن.</p>"
+
+    # Repetition loop block
+    b2 = MagicMock()
+    b2.reading_order = 2
+    b2.label = "Text"
+    b2.confidence = 0.80
+    b2.skipped = False
+    b2.error = False
+    b2.polygon = [[10, 10], [30, 10], [30, 30], [10, 30]]
+    b2.html = "<p>" + ("تەكرار تەكرار تەكرار سۆز ") * 8 + "</p>"
+
+    # Hallucinated Arabic block
+    b3 = MagicMock()
+    b3.reading_order = 3
+    b3.label = "Text"
+    b3.confidence = 0.80
+    b3.skipped = False
+    b3.error = False
+    b3.polygon = [[10, 10], [30, 10], [30, 30], [10, 30]]
+    b3.html = "<p>في المثال رفاعه وعنايه ولسسنه ؟ فمستولهم من القنبله ولا وعلا عليه للـهلمه ولقلا بـوا فرعه</p>"
+
+    mock_result = MagicMock()
+    mock_result.blocks = [b0, b1, b2, b3]
+
+    mock_predictor = MagicMock()
+    mock_predictor.return_value = [mock_result]
+
+    markdown, confidence = svc._process_page_sync(img, mock_predictor)
+
+    assert "بۇ ھەقىقىي ئۇيغۇرچە تېكىست ماقالىسىدۇر." in markdown
+    assert "ھەممە نەرسە قۇرۇق ئورۇن." not in markdown
+    assert "تەكرار تەكرار" not in markdown
+    assert "في المثال" not in markdown

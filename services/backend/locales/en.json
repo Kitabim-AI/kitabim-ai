@@ -21,6 +21,7 @@
     "cover_not_found": "Cover image not found",
     "unauthorized_access": "Unauthorized access",
     "feature_restricted": "This feature is restricted to registered users only",
+    "guest_page_limit_reached": "Guest users can only read the first 20 pages. Please sign in or register to read the full book.",
     "daily_limit_reached": "Sorry, you have reached your daily chat limit. Please try again tomorrow.",
     "system_busy": "Sorry, the system is currently busy. Please try again in a moment.",
     "system_busy_generic": "The system is currently busy, please try again in a moment.",

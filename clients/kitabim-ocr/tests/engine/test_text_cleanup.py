@@ -3,6 +3,8 @@ from engine.text_cleanup import (
     clean_uyghur_text,
     is_toc_page,
     is_degenerate_ocr_output,
+    is_block_repetition_loop,
+    is_hallucinated_arabic_block,
 )
 
 
@@ -90,3 +92,54 @@ def test_clean_uyghur_text_preserves_numbered_lists_and_tables():
     cleaned = clean_uyghur_text(text)
     assert "1. بىرىنچى تۈر" in cleaned
     assert "2. ئىككىنچى تۈر" in cleaned
+
+
+def test_is_block_repetition_loop_detects_repeated_phrase():
+    loop_text = (
+        "والشقي بالشقي لاف فماليه . وهو . والشقي بالشقي لاف فماليه . وهو . "
+        "والشقي بالشقي لاف فماليه . وهو . والشقي بالشقي لاف فماليه . وهو . "
+        "والشقي بالشقي لاف فماليه"
+    )
+    assert is_block_repetition_loop(loop_text) is True
+
+
+def test_is_block_repetition_loop_detects_consecutive_words():
+    repeated_words = "في ولك في ولك في ولك في ولك في ولك في ولك في ولك في ولك"
+    assert is_block_repetition_loop(repeated_words) is True
+
+
+def test_is_block_repetition_loop_false_for_normal_text():
+    normal = (
+        "قىلالىدىم. ناھايىتى بىراقتا ... ۋاھ، مەن يۇلتۇزنى كۆرمىگىلى قانچە ۋاقىتلار بولغاندۇ. "
+        "يىراقتىن، يىراق كۆكتىن بىر جۈپ يۇلتۇزنى كۆردۈم. يۇلتۇز شۇنچە روشەن كۆرۈندى."
+    )
+    assert is_block_repetition_loop(normal) is False
+
+
+def test_is_hallucinated_arabic_block_flags_hallucinated_bleed_through():
+    hallucinated = (
+        "في المثال رفاعه وعنايه ولسسنه ؟ فمستولهم من القنبله ولا وعلا عليه للـهلمه "
+        "ولقلا بـوا فرعه وفحيب وهو عبر بالشقي لالـه بـم وفق الولا وعلا علينا معنا ؟"
+    )
+    assert is_hallucinated_arabic_block(hallucinated) is True
+
+
+def test_is_hallucinated_arabic_block_flags_runaway_arabic_words():
+    hallucinated = (
+        "في زمن السبحان والمستحقين والأبيات والأمريكيين في الشرق الشرقي حول الشرق الشرقي السامح "
+        "والأمريكيين في الشرق الشرقي والأمريكيين في الشرق الشرقي"
+    )
+    assert is_hallucinated_arabic_block(hallucinated) is True
+
+
+def test_is_hallucinated_arabic_block_false_for_genuine_uyghur():
+    uyghur = (
+        "قىلالىدىم. ناھايىتى بىراقتا ... ۋاھ، مەن يۇلتۇزنى كۆرمىگىلى قانچە ۋاقىتلار بولغاندۇ. "
+        "يىراقتىن، يىراق كۆكتىن بىر جۈپ يۇلتۇزنى كۆردۈم. يۇلتۇز شۇنچە روشەن كۆرۈندى."
+    )
+    assert is_hallucinated_arabic_block(uyghur) is False
+
+
+def test_is_degenerate_ocr_output_flags_multiword_loops():
+    loop_text = "بۇ نورمال كىرىش سۆز. " + ("والشقي بالشقي لاف فماليه وهو ") * 6
+    assert is_degenerate_ocr_output(loop_text) is True

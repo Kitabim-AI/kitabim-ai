@@ -13,6 +13,7 @@ MAX_SURYA_CONCURRENCY = 4
 DEFAULT_OCR_PAGE_TIMEOUT: float = 120.0
 DEFAULT_OCR_MAX_RETRIES: int = 2
 DEFAULT_SURYA_MAX_TOKENS_FULL_PAGE: int = 2500
+DEFAULT_OCR_BLEED_THROUGH_SUPPRESSION: bool = True
 
 
 def is_apple_silicon() -> bool:
@@ -167,3 +168,16 @@ def apply_surya_token_limits(
             os.environ["SURYA_MAX_TOKENS_FULL_PAGE"] = custom_limit.strip()
         else:
             os.environ["SURYA_MAX_TOKENS_FULL_PAGE"] = str(default_max_tokens)
+
+
+def is_bleed_through_suppression_enabled(
+    default: bool = DEFAULT_OCR_BLEED_THROUGH_SUPPRESSION,
+) -> bool:
+    """Read whether bleed-through suppression preprocessing is enabled from environment."""
+    raw = os.environ.get("KITABIM_OCR_BLEED_THROUGH_SUPPRESSION") or os.environ.get(
+        "OCR_BLEED_THROUGH_SUPPRESSION"
+    )
+    if raw is None or not str(raw).strip():
+        return default
+    val = str(raw).strip().lower()
+    return val not in ("false", "0", "no", "off", "disable", "disabled")

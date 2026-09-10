@@ -328,7 +328,10 @@
       "title": "Reprocess Page",
       "message": "This page has your edits. Reprocessing will lose them. Are you sure?",
       "confirm": "Reprocess"
-    }
+    },
+    "guestLimitTitle": "Sign in or register to keep reading",
+    "guestLimitDesc": "Guest users can only read the first 20 pages. Sign in or create a free account to read all pages and enjoy full features.",
+    "guestLimitNotification": "Guest users can only read the first 20 pages. Please sign in or register."
   },
   "admin": {
     "title": "Administration",

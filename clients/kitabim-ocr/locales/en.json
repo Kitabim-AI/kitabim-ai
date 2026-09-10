@@ -95,7 +95,13 @@
     "status_processing": "Processing...",
     "status_completed": "Completed",
     "status_failed": "Failed",
-    "badge_toc": "TOC"
+    "badge_toc": "TOC",
+    "toast_book_completed_next_started": "\"{finished}\" completed, started \"{next}\"",
+    "previous_book": "Previous book",
+    "btn_view_results": "View Results",
+    "all_completed_title": "All documents completed",
+    "all_completed_subtitle": "All OCR jobs in the queue have completed. You can view results or return to the library.",
+    "toast_all_completed": "All OCR jobs completed"
   },
   "review": {
     "btn_back_library": "Back to Library",

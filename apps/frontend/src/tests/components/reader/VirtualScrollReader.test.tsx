@@ -197,3 +197,87 @@ test('passes bookId/bookTitle to PageItem and only gates highlightQuote to the c
   expect(shareProps).toContain('book-1|My Book|'); // page 2 is not
 });
 
+test('restricts guest users to first 20 pages and displays GuestAuthWall when totalPages > 20', () => {
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: false,
+    user: null,
+    loginWithGoogle: vi.fn(),
+    loginWithFacebook: vi.fn(),
+    isLoading: false,
+  } as any);
+
+  const { container } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-long"
+        totalPages={35}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+      />
+    </I18nContext.Provider>
+  );
+
+  // Pages rendered should only be up to 20
+  const renderedPageElements = container.querySelectorAll('[data-page-number]');
+  expect(renderedPageElements.length).toBe(20);
+  expect(container.querySelector('[data-page-number="20"]')).not.toBeNull();
+  expect(container.querySelector('[data-page-number="21"]')).toBeNull();
+
+  // GuestAuthWall should be rendered
+  const authWall = screen.getByTestId('guest-auth-wall');
+  expect(authWall).toBeInTheDocument();
+  expect(screen.getByTestId('guest-auth-google-btn')).toBeInTheDocument();
+  expect(screen.getByTestId('guest-auth-facebook-btn')).toBeInTheDocument();
+});
+
+test('does not display GuestAuthWall for guest users when totalPages <= 20', () => {
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: false,
+    user: null,
+    loginWithGoogle: vi.fn(),
+    loginWithFacebook: vi.fn(),
+    isLoading: false,
+  } as any);
+
+  const { container } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-short"
+        totalPages={15}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+      />
+    </I18nContext.Provider>
+  );
+
+  const renderedPageElements = container.querySelectorAll('[data-page-number]');
+  expect(renderedPageElements.length).toBe(15);
+  expect(screen.queryByTestId('guest-auth-wall')).toBeNull();
+});
+
+test('renders all pages and does not show GuestAuthWall for authenticated users even if totalPages > 20', () => {
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { id: 'user-1', role: 'reader' },
+    loginWithGoogle: vi.fn(),
+    loginWithFacebook: vi.fn(),
+    isLoading: false,
+  } as any);
+
+  const { container } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-long-auth"
+        totalPages={25}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+      />
+    </I18nContext.Provider>
+  );
+
+  const renderedPageElements = container.querySelectorAll('[data-page-number]');
+  expect(renderedPageElements.length).toBe(25);
+  expect(container.querySelector('[data-page-number="25"]')).not.toBeNull();
+  expect(screen.queryByTestId('guest-auth-wall')).toBeNull();
+});
+

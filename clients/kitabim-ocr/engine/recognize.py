@@ -35,9 +35,15 @@ from engine.config import (
     get_configured_page_timeout,
     get_savitr_model_path,
     is_apple_silicon,
+    is_bleed_through_suppression_enabled,
 )
 from engine.savitr_engine import SavitrPredictor
-from engine.text_cleanup import clean_uyghur_text, is_degenerate_ocr_output
+from engine.text_cleanup import (
+    clean_uyghur_text,
+    is_block_repetition_loop,
+    is_degenerate_ocr_output,
+    is_hallucinated_arabic_block,
+)
 
 if TYPE_CHECKING:
     pass
@@ -288,6 +294,81 @@ def _process_savitr_html(html: str) -> str:
     return "\n\n".join(blocks)
 
 
+def suppress_bleed_through(img: "Image.Image") -> "Image.Image":
+    """Normalize paper background and suppress faint reverse-side bleed-through/show-through.
+
+    In scanned physical book pages, printed text on the verso side shines through as
+    faint, low-contrast markings near the paper background level. Real printed ink
+    strokes are significantly darker (< 120-140 luminance).
+    By mapping intensities in the faint bleed-through range to clean white (255)
+    and stretching ink contrast, ghost text is eliminated before OCR recognition.
+    """
+    if img.mode not in ("L", "RGB", "RGBA"):
+        img = img.convert("RGB")
+
+    arr = np.array(img)
+    if arr.size == 0:
+        return img
+
+    if arr.ndim == 3:
+        gray = 0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]
+    else:
+        gray = arr.astype(np.float32)
+
+    bg_val = float(np.percentile(gray, 90))
+    if bg_val < 140.0:
+        return img
+
+    white_point = max(175.0, min(235.0, bg_val - 38.0))
+    black_point = 40.0
+
+    scale = 255.0 / (white_point - black_point)
+    if arr.ndim == 3 and arr.shape[2] == 4:
+        rgb = arr[:, :, :3].astype(np.float32)
+        adjusted_rgb = np.clip((rgb - black_point) * scale, 0, 255).astype(np.uint8)
+        adjusted = np.dstack((adjusted_rgb, arr[:, :, 3]))
+    else:
+        adjusted = np.clip(
+            (arr.astype(np.float32) - black_point) * scale, 0, 255
+        ).astype(np.uint8)
+
+    return Image.fromarray(adjusted)
+
+
+def _is_phantom_bleed_through_block(
+    block: Any,
+    image_gray: np.ndarray,
+) -> bool:
+    """Return True if the block contains no real dark ink strokes (faint ghost/paper)."""
+    polygon = getattr(block, "polygon", None)
+    if not polygon or len(polygon) < 3:
+        return False
+    try:
+        xs = [p[0] for p in polygon]
+        ys = [p[1] for p in polygon]
+        h, w = image_gray.shape[:2]
+        x0 = max(0, min(w - 1, int(min(xs))))
+        x1 = max(0, min(w, int(max(xs))))
+        y0 = max(0, min(h - 1, int(min(ys))))
+        y1 = max(0, min(h, int(max(ys))))
+
+        if x1 <= x0 or y1 <= y0:
+            return False
+
+        crop = image_gray[y0:y1, x0:x1]
+        if crop.size < 50:
+            return False
+
+        p5 = float(np.percentile(crop, 5))
+        # Real ink has dark pixels (typically < 120, well below 155).
+        # Bleed-through or blank regions without real ink have p5 > 155.
+        if p5 > 155.0:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _process_page_sync(
     image: "Image.Image",
     recognition_predictor: Any,
@@ -302,6 +383,7 @@ def _process_page_sync(
     blocks: List[str] = []
     footnotes: List[str] = []
     confidences: List[float] = []
+    gray_arr = np.array(image.convert("L"))
 
     for block in sorted(result.blocks, key=lambda b: b.reading_order):
         if block.confidence is not None:
@@ -316,6 +398,30 @@ def _process_page_sync(
 
         text = _block_html_to_markdown(html)
         if not text.strip():
+            continue
+
+        # Filter phantom bleed-through text blocks with no dark ink
+        if block.label not in FOOTNOTE_LABELS and getattr(block, "label", "") == "Text":
+            if _is_phantom_bleed_through_block(block, gray_arr):
+                logger.info(
+                    "Discarding phantom bleed-through block %s (no dark ink)",
+                    getattr(block, "reading_order", 0),
+                )
+                continue
+
+        # Filter runaway repetition loops or hallucinated Arabic in block text
+        if is_block_repetition_loop(text):
+            logger.info(
+                "Discarding degenerate repetition loop block %s",
+                getattr(block, "reading_order", 0),
+            )
+            continue
+
+        if is_hallucinated_arabic_block(text):
+            logger.info(
+                "Discarding hallucinated Arabic block %s",
+                getattr(block, "reading_order", 0),
+            )
             continue
 
         if block.label in FOOTNOTE_LABELS:
@@ -359,6 +465,8 @@ async def ocr_page(
                 return ""
 
             image = Image.open(io.BytesIO(pix.tobytes("png")))
+            if is_bleed_through_suppression_enabled():
+                image = suppress_bleed_through(image)
 
             process_fn = partial(_process_page_sync, image, recognition_predictor)
             coro = loop.run_in_executor(executor, process_fn)

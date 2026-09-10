@@ -221,6 +221,70 @@ def is_toc_page(text: str) -> bool:
     return False
 
 
+_UYGHUR_VOWELS = frozenset("ەۇۆۈېىئ")
+_COMMON_ARABIC_WORDS = re.compile(
+    r"\b(في|من|على|إلى|عن|هذا|هذه|الذي|التي|ذلك|تلك|الله|كان|كانت|مع|قد|ما|لم|لن|بل|إن|أن)\b"
+)
+
+
+def is_block_repetition_loop(text: str) -> bool:
+    """Detect if a block contains a runaway repetitive decoding loop (n-grams or words)."""
+    if not text:
+        return False
+    words = [w for w in text.split() if w.strip()]
+    if len(words) < 8:
+        return False
+
+    # Check consecutive identical words
+    consecutive_repeats = 1
+    for i in range(1, len(words)):
+        if words[i] == words[i - 1]:
+            consecutive_repeats += 1
+            if consecutive_repeats >= 4:
+                return True
+        else:
+            consecutive_repeats = 1
+
+    # Check n-gram phrase loops (n = 2..6)
+    for n in range(2, 7):
+        if len(words) < n * 3:
+            continue
+        ngrams = [" ".join(words[i : i + n]) for i in range(len(words) - n + 1)]
+        counts = Counter(ngrams)
+        if counts:
+            _, count = counts.most_common(1)[0]
+            if count >= 3 and (count * n) >= len(words) * 0.35:
+                return True
+    return False
+
+
+def is_hallucinated_arabic_block(text: str) -> bool:
+    """Detect if a text block is hallucinated Arabic text from bleed-through/noise.
+
+    Uyghur written in Arabic script has mandatory vowel letters (ە, ى, ۇ, ۆ, ۈ, ې, ئ)
+    present in virtually every word (comprising 25%-45% of all letters).
+    When OCR tries to read faint bleed-through or noise, it frequently hallucinates
+    Standard Arabic vocabulary with near-zero Uyghur vowel characters.
+    """
+    if not text:
+        return False
+    words = text.split()
+    if len(words) < 10:
+        return False
+
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return False
+
+    uyghur_vowels = sum(1 for ch in letters if ch in _UYGHUR_VOWELS)
+    vowel_ratio = uyghur_vowels / len(letters)
+
+    arabic_particles = len(_COMMON_ARABIC_WORDS.findall(text))
+    if vowel_ratio < 0.08 and (arabic_particles >= 2 or "ة" in text or "ه" in text):
+        return True
+    return False
+
+
 _MAX_SANE_OCR_CHARS = 10000
 
 
@@ -233,5 +297,9 @@ def is_degenerate_ocr_output(text: str) -> bool:
     words = [w for w in text.split() if any(ch.isalnum() for ch in w)]
     if len(words) < 30:
         return False
+
+    if is_block_repetition_loop(text):
+        return True
+
     _, most_common_count = Counter(words).most_common(1)[0]
     return most_common_count >= 20 and (most_common_count / len(words)) >= 0.2

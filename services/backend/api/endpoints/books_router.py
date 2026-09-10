@@ -1483,6 +1483,12 @@ async def get_book_page(
 
     await ensure_book_access(book_dict, current_user)
 
+    # Guest user restriction: guests can only read the first 20 pages
+    if current_user is None and page_num > 20:
+        raise HTTPException(
+            status_code=403, detail=t("errors.guest_page_limit_reached")
+        )
+
     # Get page by number
     page = await pages_repo.find_one(book_id, page_num)
     if not page:
@@ -1517,6 +1523,14 @@ async def get_book_pages(
     }
 
     await ensure_book_access(book_dict, current_user)
+
+    # Guest user restriction: guests can only read the first 20 pages
+    if current_user is None:
+        if skip >= 20:
+            raise HTTPException(
+                status_code=403, detail=t("errors.guest_page_limit_reached")
+            )
+        limit = min(limit, max(0, 20 - skip))
 
     # Get pages with pagination
     pages = await pages_repo.find_by_book(book_id, skip=skip, limit=limit)

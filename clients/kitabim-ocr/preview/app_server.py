@@ -1090,9 +1090,13 @@ _APP_HTML = """<!doctype html>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
             <span id="processingBackLabel">باش بەتكە قايتىش</span>
           </button>
+          <button class="btn btn-primary" onclick="openCompletedReview()" id="processingReviewBtn" style="display: none; align-items: center; gap: 0.4rem;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span id="processingReviewLabel">نەتىجىنى كۆرۈش</span>
+          </button>
         </div>
         <div class="toolbar-group" style="font-size: 0.88rem; color: var(--slate-600); font-weight: 500;">
-          <span class="status-dot active"></span>
+          <span class="status-dot active" id="processingStatusDot"></span>
           <span id="processingBackgroundBadge">ئارقا سەھنىدە ئىشلەۋاتىدۇ</span>
         </div>
       </div>
@@ -1100,9 +1104,10 @@ _APP_HTML = """<!doctype html>
       <div class="glass-panel monitor-card">
         <div class="progress-header">
           <div>
-            <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--slate-900); margin-bottom: 0.25rem;">
+            <h2 style="font-size: 1.4rem; font-weight: 800; color: var(--slate-900); margin-bottom: 0.25rem;" id="processingHeaderTitle">
               ھۆججەت بىر تەرەپ قىلىنىۋاتىدۇ...
             </h2>
+            <p style="color: var(--primary); font-weight: 700; font-size: 1.05rem; margin-bottom: 0.25rem;" id="processingBookTitle"></p>
             <p style="color: var(--slate-500); font-size: 0.95rem;" id="progressSubLabel">
               Surya OCR موتورى بەتلەرنى تەرتىپ بويىچە ئوقۇۋاتىدۇ
             </p>
@@ -1260,9 +1265,28 @@ _APP_HTML = """<!doctype html>
       }
     }
 
+    function resetProcessingSectionUI() {
+      const reviewBtn = document.getElementById('processingReviewBtn');
+      if (reviewBtn) reviewBtn.style.display = 'none';
+      const headerTitle = document.getElementById('processingHeaderTitle');
+      if (headerTitle) headerTitle.textContent = t('processing.title');
+      const subLabel = document.getElementById('progressSubLabel');
+      if (subLabel) subLabel.textContent = t('processing.subtitle');
+      const bgBadge = document.getElementById('processingBackgroundBadge');
+      if (bgBadge) bgBadge.textContent = t('processing.running_in_background');
+      const dot = document.getElementById('processingStatusDot');
+      if (dot) {
+        dot.className = 'status-dot active';
+        dot.style.background = '';
+      }
+      queueCompletionToastShown = false;
+    }
+
     function showSection(name) {
       if (name !== 'processing') {
         clearProgressPoll();
+      } else {
+        resetProcessingSectionUI();
       }
       for (const key in sections) {
         sections[key].classList.toggle('active', key === name);
@@ -1624,12 +1648,85 @@ _APP_HTML = """<!doctype html>
       }
     }
 
+    let currentProcessingSessionId = null;
+    let currentProcessingBookTitle = '';
+    let lastCompletedSessionId = null;
+    let queueCompletionToastShown = false;
+
+    async function openCompletedReview() {
+      const sId = lastCompletedSessionId || currentProcessingSessionId;
+      if (sId) {
+        viewResults(sId);
+      }
+    }
+
     async function pollProgress() {
       clearProgressPoll();
       if (!sections.processing.classList.contains('active')) {
         return;
       }
       try {
+        const stateRes = await fetch('/api/state');
+        const state = await stateRes.json();
+        if (!sections.processing.classList.contains('active')) {
+          return;
+        }
+
+        if (state.stage === 'landing') {
+          currentProcessingSessionId = null;
+          currentProcessingBookTitle = '';
+          lastCompletedSessionId = null;
+          queueCompletionToastShown = false;
+          showSection('landing');
+          loadLocalSessions();
+          return;
+        }
+        if (state.stage === 'error') {
+          currentProcessingSessionId = null;
+          currentProcessingBookTitle = '';
+          lastCompletedSessionId = null;
+          queueCompletionToastShown = false;
+          showSection('landing');
+          showLandingError(state.error || t('errors.processing_failed'));
+          return;
+        }
+
+        const activeId = state.activeSessionId;
+        const queuedCount = Array.isArray(state.queuedSessions) ? state.queuedSessions.length : 0;
+        const isQueueActive = Boolean(activeId || queuedCount > 0);
+
+        // Transition from finished book to next active book in queue
+        if (activeId && currentProcessingSessionId && activeId !== currentProcessingSessionId) {
+          lastCompletedSessionId = currentProcessingSessionId;
+          const finishedTitle = currentProcessingBookTitle || t('processing.previous_book');
+          showToast(t('processing.toast_book_completed_next_started', {
+            finished: finishedTitle,
+            next: state.title || activeId
+          }));
+          currentProcessingSessionId = activeId;
+          currentProcessingBookTitle = state.title || '';
+          currentProcessingPages = [];
+          const grid = document.getElementById('pageMatrixGrid');
+          if (grid) grid.innerHTML = '';
+          const fill = document.getElementById('progressFill');
+          if (fill) fill.style.width = '0%';
+          resetProcessingSectionUI();
+          if (state.title) {
+            const pTitle = document.getElementById('processingBookTitle');
+            if (pTitle) pTitle.textContent = state.title;
+          }
+          progressPollTimer = setTimeout(pollProgress, 800);
+          return;
+        } else if (activeId && !currentProcessingSessionId) {
+          currentProcessingSessionId = activeId;
+          currentProcessingBookTitle = state.title || '';
+        }
+
+        if (state.title) {
+          const pTitle = document.getElementById('processingBookTitle');
+          if (pTitle) pTitle.textContent = state.title;
+        }
+
         let isDone = false;
         const res = await fetch('/api/pages');
         if (res.ok) {
@@ -1644,26 +1741,43 @@ _APP_HTML = """<!doctype html>
           }
         }
 
-        const stateRes = await fetch('/api/state');
-        const state = await stateRes.json();
         if (!sections.processing.classList.contains('active')) {
           return;
         }
-        if (state.stage === 'review' || isDone) {
-          showSection('review');
-          loadPages();
+
+        // If current book is done but queue is still processing or has queued items:
+        // Continue polling to advance to next book smoothly without opening review page.
+        if (isDone && isQueueActive) {
+          progressPollTimer = setTimeout(pollProgress, 800);
           return;
         }
-        if (state.stage === 'landing') {
-          showSection('landing');
-          loadLocalSessions();
+
+        // If current book is done and the queue has no more active or queued items:
+        // Do NOT auto open the review page. Show completion status and provide action buttons.
+        if (isDone && !isQueueActive) {
+          if (currentProcessingSessionId) {
+            lastCompletedSessionId = currentProcessingSessionId;
+          }
+          const reviewBtn = document.getElementById('processingReviewBtn');
+          if (reviewBtn) reviewBtn.style.display = 'inline-flex';
+          const dot = document.getElementById('processingStatusDot');
+          if (dot) {
+            dot.className = 'status-dot';
+            dot.style.background = '#10b981';
+          }
+          const bgBadge = document.getElementById('processingBackgroundBadge');
+          if (bgBadge) bgBadge.textContent = t('processing.status_completed');
+          const headerTitle = document.getElementById('processingHeaderTitle');
+          if (headerTitle) headerTitle.textContent = t('processing.all_completed_title');
+          const subLabel = document.getElementById('progressSubLabel');
+          if (subLabel) subLabel.textContent = t('processing.all_completed_subtitle');
+          if (!queueCompletionToastShown) {
+            queueCompletionToastShown = true;
+            showToast(t('processing.toast_all_completed'));
+          }
           return;
         }
-        if (state.stage === 'error') {
-          showSection('landing');
-          showLandingError(state.error || t('errors.processing_failed'));
-          return;
-        }
+
         progressPollTimer = setTimeout(pollProgress, 2000);
       } catch (err) {
         if (sections.processing.classList.contains('active')) {
@@ -2366,6 +2480,10 @@ _APP_HTML = """<!doctype html>
     }
 
     async function backToLibrary() {
+      currentProcessingSessionId = null;
+      currentProcessingBookTitle = '';
+      lastCompletedSessionId = null;
+      queueCompletionToastShown = false;
       try {
         await fetch('/api/reset', {method: 'POST'});
       } catch (_) {}
@@ -2400,6 +2518,8 @@ _APP_HTML = """<!doctype html>
       if (tabUploadLabel) tabUploadLabel.textContent = t('tabs.upload');
       const processingBackLabel = document.getElementById('processingBackLabel');
       if (processingBackLabel) processingBackLabel.textContent = t('processing.btn_back_home');
+      const processingReviewLabel = document.getElementById('processingReviewLabel');
+      if (processingReviewLabel) processingReviewLabel.textContent = t('processing.btn_view_results');
       const processingBackgroundBadge = document.getElementById('processingBackgroundBadge');
       if (processingBackgroundBadge) processingBackgroundBadge.textContent = t('processing.running_in_background');
 
@@ -2417,7 +2537,7 @@ _APP_HTML = """<!doctype html>
       if (state.stage === 'processing') {
         showSection('processing');
         pollProgress();
-      } else if (state.stage === 'review') {
+      } else if (state.stage === 'review' && state.manualReviewSessionId) {
         showSection('review');
         loadPages();
       } else {
@@ -2652,19 +2772,25 @@ async def _run_ocr_background(
         tasks = [process_one(p) for p in range(1, workdir.total_pages + 1)]
         await asyncio.gather(*tasks)
         if not _was_abandoned(state, workdir):
+            has_next = bool(
+                state.queue_manager and state.queue_manager.queued_session_ids
+            )
             is_reviewing_other = (
                 state.stage == "review"
-                and state.workdir is not None
-                and state.workdir.root.name != workdir.root.name
+                and getattr(state, "manual_review_session_id", None) is not None
+                and state.manual_review_session_id != workdir.root.name
             )
             if not is_reviewing_other:
-                state.stage = "review"
+                # If more books are queued, keep stage as processing so the queue
+                # advances directly to the next book without flashing review stage.
+                if not has_next:
+                    state.stage = "review"
     except Exception as exc:
         if not _was_abandoned(state, workdir):
             is_reviewing_other = (
                 state.stage == "review"
-                and state.workdir is not None
-                and state.workdir.root.name != workdir.root.name
+                and getattr(state, "manual_review_session_id", None) is not None
+                and state.manual_review_session_id != workdir.root.name
             )
             if not is_reviewing_other:
                 state.stage = "error"
@@ -2758,6 +2884,7 @@ class AppState:
     concurrency: int = field(default_factory=get_configured_concurrency)
     queue_manager: Optional[BookQueueManager] = None
     abandoned_session_ids: set[str] = field(default_factory=set)
+    manual_review_session_id: Optional[str] = None
 
 
 def _require_landing_stage(state: AppState) -> None:
@@ -2810,12 +2937,13 @@ def create_landing_app(
     async def ocr_runner(workdir: OcrWorkDir):
         is_reviewing_other = (
             state.stage == "review"
-            and state.workdir is not None
-            and state.workdir.root.name != workdir.root.name
+            and getattr(state, "manual_review_session_id", None) is not None
+            and state.manual_review_session_id != workdir.root.name
         )
         if not is_reviewing_other:
             state.workdir = workdir
             state.stage = "processing"
+            state.error = None
         await _run_ocr_background(workdir, state)
 
     def launch_bg(coro):
@@ -2858,14 +2986,24 @@ def create_landing_app(
         active_id = (
             state.queue_manager.active_session_id if state.queue_manager else None
         )
+        active_title = None
+        if state.workdir:
+            active_title = state.workdir.original_filename or state.workdir.root.name
+        elif state.queue_manager and state.queue_manager.active_workdir:
+            active_title = (
+                state.queue_manager.active_workdir.original_filename
+                or state.queue_manager.active_workdir.root.name
+            )
         return {
             "stage": state.stage,
             "error": state.error,
             "sessionId": state.workdir.root.name if state.workdir else active_id,
             "activeSessionId": active_id,
+            "title": active_title,
             "queuedSessions": (
                 state.queue_manager.queued_session_ids if state.queue_manager else []
             ),
+            "manualReviewSessionId": getattr(state, "manual_review_session_id", None),
             "engine": state.engine,
             "concurrency": state.concurrency,
         }
@@ -2910,6 +3048,7 @@ def create_landing_app(
                 )
 
         state.workdir = workdir
+        state.manual_review_session_id = session_id
         state.stage = "review"
         state.error = None
         return {
@@ -2953,10 +3092,16 @@ def create_landing_app(
         ]
         if pending:
             pos, is_active = await state.queue_manager.enqueue(workdir.root.name)
-            if is_active:
+            is_reviewing_other = (
+                state.stage == "review"
+                and getattr(state, "manual_review_session_id", None) is not None
+                and state.manual_review_session_id != session_id
+            )
+            if is_active and not is_reviewing_other:
                 state.workdir = workdir
                 state.stage = "processing"
                 state.error = None
+                state.manual_review_session_id = None
             return {
                 "stage": "processing" if is_active else "queued",
                 "sessionId": workdir.root.name,
@@ -2964,9 +3109,16 @@ def create_landing_app(
                 "isProcessing": is_active,
             }
         else:
-            state.workdir = workdir
-            state.stage = "review"
-            state.error = None
+            is_reviewing_other = (
+                state.stage == "review"
+                and getattr(state, "manual_review_session_id", None) is not None
+                and state.manual_review_session_id != session_id
+            )
+            if not is_reviewing_other:
+                state.workdir = workdir
+                state.stage = "review"
+                state.error = None
+                state.manual_review_session_id = None
             return {
                 "stage": "review",
                 "sessionId": workdir.root.name,
@@ -3038,6 +3190,7 @@ def create_landing_app(
             # (and the sessions list) reflects its real outcome regardless.
             state.abandoned_session_ids.add(state.workdir.root.name)
             state.queue_manager.cancel(state.workdir.root.name)
+        state.manual_review_session_id = None
         state.workdir = None
         state.stage = "landing"
         state.error = None
@@ -3061,6 +3214,7 @@ def create_landing_app(
 
     @app.post("/api/start/existing")
     async def start_existing(body: StartExistingRequest):
+        state.manual_review_session_id = None
         try:
             workdir = _start_existing_book(body.bookId, state.client, state.work_root)
         except Exception as exc:
@@ -3092,6 +3246,7 @@ def create_landing_app(
 
     @app.post("/api/start/upload")
     async def start_upload(file: UploadFile = File(...)):
+        state.manual_review_session_id = None
         pdf_bytes = await file.read()
         try:
             workdir = await asyncio.to_thread(
