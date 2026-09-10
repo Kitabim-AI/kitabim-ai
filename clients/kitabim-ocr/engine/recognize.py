@@ -22,20 +22,23 @@ from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 import fitz
 import numpy as np
 from bs4 import BeautifulSoup
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from engine.config import (
     DEFAULT_OCR_CONCURRENCY,
     DEFAULT_OCR_MAX_RETRIES,
+    DEFAULT_OCR_PAGE_ZOOM_FACTOR,
     MAX_SURYA_CONCURRENCY,
     apply_surya_token_limits,
     get_configured_concurrency,
     get_configured_engine,
     get_configured_max_retries,
     get_configured_page_timeout,
+    get_configured_zoom_factor,
     get_savitr_model_path,
     is_apple_silicon,
     is_bleed_through_suppression_enabled,
+    is_dot_enhancement_enabled,
 )
 from engine.savitr_engine import SavitrPredictor
 from engine.text_cleanup import (
@@ -43,6 +46,7 @@ from engine.text_cleanup import (
     is_block_repetition_loop,
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
+    is_poem_block,
 )
 
 if TYPE_CHECKING:
@@ -60,7 +64,7 @@ apply_surya_token_limits()
 # ~0.75-0.78 -> ~0.97-0.98 on the same real pages, model+zoom verified
 # together).
 OCR_MAX_RETRIES = get_configured_max_retries(DEFAULT_OCR_MAX_RETRIES)
-OCR_PAGE_ZOOM_FACTOR = 2.5
+OCR_PAGE_ZOOM_FACTOR = get_configured_zoom_factor(DEFAULT_OCR_PAGE_ZOOM_FACTOR)
 
 FOOTNOTE_LABELS = frozenset({"Footnote"})
 DISCARD_LABELS = frozenset({"PageHeader", "PageFooter"})
@@ -70,6 +74,40 @@ class LowConfidenceOcrError(Exception):
     """Raised when the recognizer's mean confidence falls below the
     configured threshold on a non-blank page - triggers the varied-input
     retry, same handling path as an exception from the recognizer itself."""
+
+
+def enhance_dots_and_contrast(image: Image.Image) -> Image.Image:
+    """Enhance fine dot clarity and text contrast for Arabic/Uyghur script.
+
+    Uses an unsharp mask filter to sharpen small diacritical dots (e.g. peh/beh,
+    feh/qaf) without introducing heavy thresholding artifacts or noise amplification.
+    """
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    return image.filter(ImageFilter.UnsharpMask(radius=1.5, percent=150, threshold=3))
+
+
+def get_adaptive_page_zoom(
+    page: "fitz.Page",
+    base_zoom: float = DEFAULT_OCR_PAGE_ZOOM_FACTOR,
+    min_target_width_px: float = 1500.0,
+) -> float:
+    """Calculate adaptive rendering zoom based on PDF page dimensions.
+
+    Smaller books (e.g. pocketbooks < 500pt / ~147mm wide) suffer from blurry
+    dots at standard 2.0-2.5x zooms because pixel density is too low for Surya
+    to reliably distinguish 1 dot from 3 dots. This adapts the zoom so the page
+    width reaches at least `min_target_width_px`, clamped to [2.0, 4.0].
+    """
+    try:
+        rect = page.rect
+        width = float(rect.width)
+        if width > 0 and width < 500.0:
+            target_zoom = min_target_width_px / width
+            return max(base_zoom, min(4.0, target_zoom))
+    except Exception:
+        pass
+    return base_zoom
 
 
 _surya_predictor: Any = None
@@ -208,14 +246,27 @@ def _html_rows_to_markdown(html: str) -> str:
     return "\n".join(rows)
 
 
-def _block_html_to_markdown(html: str) -> str:
+def _block_html_to_markdown(html: str, width_ratio: float | None = None) -> str:
     heading_match = _HEADING_TAG_RE.match(html.strip())
     if heading_match:
         level = min(int(heading_match.group(1)), 6)
         return f"{'#' * level} {_html_to_text(html)}"
     if "<li" in html or "<tr" in html:
         return _html_rows_to_markdown(html)
-    return _html_to_text(html)
+
+    soup = BeautifulSoup(html, "html.parser")
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    raw_text = soup.get_text()
+    lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+    if not lines:
+        return ""
+    if len(lines) == 1:
+        return lines[0]
+
+    if is_poem_block(lines, width_ratio=width_ratio):
+        return "\n".join(lines)
+    return " ".join(lines)
 
 
 _BLOCK_TAGS = frozenset(
@@ -281,9 +332,18 @@ def _process_savitr_html(html: str) -> str:
             for child in node.children:
                 _extract_blocks(child)
         else:
-            text = node.get_text(separator=" ", strip=True)
-            if text:
-                blocks.append(text)
+            if hasattr(node, "find_all"):
+                for br in node.find_all("br"):
+                    br.replace_with("\n")
+                raw_text = node.get_text()
+            else:
+                raw_text = str(node).strip()
+            lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+            if lines:
+                if len(lines) > 1 and is_poem_block(lines):
+                    blocks.append("\n".join(lines))
+                else:
+                    blocks.append(" ".join(lines))
 
     root = soup.body if soup.body else soup
     for child in root.children:
@@ -369,6 +429,25 @@ def _is_phantom_bleed_through_block(
     return False
 
 
+def _get_block_bbox(block: Any) -> tuple[float, float, float, float] | None:
+    """Return (x0, x1, y0, y1) bounding box for block polygon or bbox attribute."""
+    polygon = getattr(block, "polygon", None)
+    if polygon and len(polygon) >= 2:
+        try:
+            xs = [p[0] for p in polygon]
+            ys = [p[1] for p in polygon]
+            return float(min(xs)), float(max(xs)), float(min(ys)), float(max(ys))
+        except Exception:
+            pass
+    bbox = getattr(block, "bbox", None)
+    if bbox and len(bbox) >= 4:
+        try:
+            return float(bbox[0]), float(bbox[2]), float(bbox[1]), float(bbox[3])
+        except Exception:
+            pass
+    return None
+
+
 def _process_page_sync(
     image: "Image.Image",
     recognition_predictor: Any,
@@ -380,10 +459,12 @@ def _process_page_sync(
 
     result = recognize_page(recognition_predictor, image)
 
-    blocks: List[str] = []
     footnotes: List[str] = []
     confidences: List[float] = []
     gray_arr = np.array(image.convert("L"))
+    img_w, _ = image.size
+
+    valid_blocks: List[Any] = []
 
     for block in sorted(result.blocks, key=lambda b: b.reading_order):
         if block.confidence is not None:
@@ -396,10 +477,6 @@ def _process_page_sync(
         if not html:
             continue
 
-        text = _block_html_to_markdown(html)
-        if not text.strip():
-            continue
-
         # Filter phantom bleed-through text blocks with no dark ink
         if block.label not in FOOTNOTE_LABELS and getattr(block, "label", "") == "Text":
             if _is_phantom_bleed_through_block(block, gray_arr):
@@ -409,26 +486,133 @@ def _process_page_sync(
                 )
                 continue
 
-        # Filter runaway repetition loops or hallucinated Arabic in block text
-        if is_block_repetition_loop(text):
-            logger.info(
-                "Discarding degenerate repetition loop block %s",
-                getattr(block, "reading_order", 0),
-            )
-            continue
+        valid_blocks.append(block)
 
-        if is_hallucinated_arabic_block(text):
-            logger.info(
-                "Discarding hallucinated Arabic block %s",
-                getattr(block, "reading_order", 0),
-            )
-            continue
+    # Group vertically adjacent Text blocks that belong to the same stanza or paragraph.
+    # Surya frequently segments each verse line of a poem as an independent Text block.
+    # Lines within the same stanza have tight line spacing (gap <= 0.45 * line_height),
+    # while stanza breaks (couplet separators) have larger vertical gaps (> 0.45 * line_height).
+    blocks: List[str] = []
+    current_group: List[Any] = []
 
-        if block.label in FOOTNOTE_LABELS:
-            footnotes.append(text)
+    def flush_group() -> None:
+        nonlocal current_group
+        if not current_group:
+            return
+
+        if len(current_group) == 1:
+            b = current_group[0]
+            box = _get_block_bbox(b)
+            w_ratio = (box[1] - box[0]) / img_w if (box and img_w > 0) else None
+            txt = _block_html_to_markdown(b.html, width_ratio=w_ratio)
+            if (
+                txt.strip()
+                and not is_block_repetition_loop(txt)
+                and not is_hallucinated_arabic_block(txt)
+            ):
+                blocks.append(txt)
         else:
-            blocks.append(text)
+            lines: List[str] = []
+            group_boxes: List[tuple[float, float, float, float]] = []
+            for b in current_group:
+                soup = BeautifulSoup(b.html, "html.parser")
+                for br in soup.find_all("br"):
+                    br.replace_with("\n")
+                raw = soup.get_text()
+                for line in raw.split("\n"):
+                    line_str = line.strip()
+                    if line_str:
+                        lines.append(line_str)
+                box = _get_block_bbox(b)
+                if box:
+                    group_boxes.append(box)
 
+            if lines:
+                w_ratio = None
+                if group_boxes and img_w > 0:
+                    min_x = min(bx[0] for bx in group_boxes)
+                    max_x = max(bx[1] for bx in group_boxes)
+                    w_ratio = (max_x - min_x) / img_w
+
+                if len(lines) > 1 and is_poem_block(lines, width_ratio=w_ratio):
+                    txt = "\n".join(lines)
+                else:
+                    txt = " ".join(lines)
+
+                if (
+                    txt.strip()
+                    and not is_block_repetition_loop(txt)
+                    and not is_hallucinated_arabic_block(txt)
+                ):
+                    blocks.append(txt)
+
+        current_group = []
+
+    for block in valid_blocks:
+        if block.label in FOOTNOTE_LABELS:
+            flush_group()
+            box = _get_block_bbox(block)
+            w_ratio = (box[1] - box[0]) / img_w if (box and img_w > 0) else None
+            txt = _block_html_to_markdown(block.html, width_ratio=w_ratio)
+            if txt.strip():
+                footnotes.append(txt)
+            continue
+
+        if getattr(block, "label", "") != "Text":
+            flush_group()
+            box = _get_block_bbox(block)
+            w_ratio = (box[1] - box[0]) / img_w if (box and img_w > 0) else None
+            txt = _block_html_to_markdown(block.html, width_ratio=w_ratio)
+            if (
+                txt.strip()
+                and not is_block_repetition_loop(txt)
+                and not is_hallucinated_arabic_block(txt)
+            ):
+                blocks.append(txt)
+            continue
+
+        box = _get_block_bbox(block)
+        if not box or not current_group:
+            flush_group()
+            current_group.append(block)
+            continue
+
+        prev_block = current_group[-1]
+        prev_box = _get_block_bbox(prev_block)
+        if not prev_box:
+            flush_group()
+            current_group.append(block)
+            continue
+
+        prev_x0, prev_x1, prev_y0, prev_y1 = prev_box
+        curr_x0, curr_x1, curr_y0, curr_y1 = box
+
+        overlap_x0 = max(prev_x0, curr_x0)
+        overlap_x1 = min(prev_x1, curr_x1)
+        overlap_w = max(0.0, overlap_x1 - overlap_x0)
+        min_w = min(prev_x1 - prev_x0, curr_x1 - curr_x0)
+        has_h_overlap = min_w > 0 and (overlap_w / min_w) >= 0.5
+
+        prev_br_count = prev_block.html.count("<br") + 1
+        curr_br_count = block.html.count("<br") + 1
+        prev_line_h = (prev_y1 - prev_y0) / max(1, prev_br_count)
+        curr_line_h = (curr_y1 - curr_y0) / max(1, curr_br_count)
+        est_line_h = (prev_line_h + curr_line_h) / 2.0
+
+        gap = curr_y0 - prev_y1
+
+        # A vertical gap within [-0.5 * h, 0.45 * h] indicates lines in the same stanza/paragraph
+        if (
+            has_h_overlap
+            and curr_y0 >= prev_y0
+            and (-0.5 * est_line_h <= gap <= 0.45 * est_line_h)
+        ):
+            current_group.append(block)
+        else:
+            flush_group()
+            current_group.append(block)
+
+    flush_group()
     blocks.extend(footnotes)
     markdown = "\n\n".join(blocks)
     mean_confidence = sum(confidences) / len(confidences) if confidences else 0.0
@@ -455,10 +639,12 @@ async def ocr_page(
         timeout if timeout is not None else get_configured_page_timeout()
     )
     total_attempts = max(1, max_retries) if max_retries is not None else OCR_MAX_RETRIES
+    base_zoom = OCR_PAGE_ZOOM_FACTOR
+    adaptive_zoom = get_adaptive_page_zoom(page, base_zoom)
 
     last_exc: Exception | None = None
     for attempt in range(total_attempts):
-        zoom = OCR_PAGE_ZOOM_FACTOR + (attempt * 0.5)
+        zoom = adaptive_zoom + (attempt * 0.5)
         try:
             pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
             if is_page_blank(pix):
@@ -467,6 +653,8 @@ async def ocr_page(
             image = Image.open(io.BytesIO(pix.tobytes("png")))
             if is_bleed_through_suppression_enabled():
                 image = suppress_bleed_through(image)
+            if is_dot_enhancement_enabled():
+                image = enhance_dots_and_contrast(image)
 
             process_fn = partial(_process_page_sync, image, recognition_predictor)
             coro = loop.run_in_executor(executor, process_fn)

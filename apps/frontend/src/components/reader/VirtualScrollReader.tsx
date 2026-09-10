@@ -133,12 +133,15 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     resubscribeKey: `${effectiveTotalPages}:${isEditingAny}`,
   });
 
+  const isGuestRef = useRef(isGuest);
+  isGuestRef.current = isGuest;
+
   const RATE_LIMIT_MS = 300;
 
-  // fetchPage only depends on bookId — stable across page/loading state changes,
-  // so the loading observer is never torn down just because a page finished loading.
+  // fetchPage depends on bookId and isGuest — stable across page/loading state changes,
+  // but updates properly when user logs in from guest mode.
   const fetchPage = useCallback(async (pageNumber: number) => {
-    if (isGuest && pageNumber > GUEST_PAGE_LIMIT) return;
+    if (isGuestRef.current && pageNumber > GUEST_PAGE_LIMIT) return;
     const now = Date.now();
     const lastFetch = lastFetchTimeRef.current.get(pageNumber) || 0;
 
@@ -159,7 +162,22 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     } finally {
       loadingPagesRef.current.delete(pageNumber);
     }
-  }, [bookId]);
+  }, [bookId, isGuest]);
+
+  // When a guest logs in, proactively fetch current center page and next pages
+  const prevIsGuestRef = useRef(isGuest);
+  useEffect(() => {
+    const wasGuest = prevIsGuestRef.current;
+    prevIsGuestRef.current = isGuest;
+    if (wasGuest && !isGuest) {
+      const center = currentCenterPageRef.current || 1;
+      [center, center + 1, center + 2].forEach(p => {
+        if (p <= totalPages) {
+          fetchPage(p);
+        }
+      });
+    }
+  }, [isGuest, totalPages, fetchPage]);
 
   // Loading observer — rebuilt when scroll root, page count, or edit mode state changes
   useEffect(() => {

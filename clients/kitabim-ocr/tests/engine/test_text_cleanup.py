@@ -1,10 +1,12 @@
 from engine.text_cleanup import (
     normalize_uyghur_chars,
+    correct_uyghur_ocr_orthography,
     clean_uyghur_text,
     is_toc_page,
     is_degenerate_ocr_output,
     is_block_repetition_loop,
     is_hallucinated_arabic_block,
+    is_poem_block,
 )
 
 
@@ -143,3 +145,104 @@ def test_is_hallucinated_arabic_block_false_for_genuine_uyghur():
 def test_is_degenerate_ocr_output_flags_multiword_loops():
     loop_text = "بۇ نورمال كىرىش سۆز. " + ("والشقي بالشقي لاف فماليه وهو ") * 6
     assert is_degenerate_ocr_output(loop_text) is True
+
+
+def test_is_poem_block_detects_uyghur_poem_stanzas():
+    poem_lines = [
+        "غېبى جانان، دېفى ھىجران تۇگەتتى ياش باھارمىنى،",
+        "مېنى كىم كۆرسە پەرق ئەتمەس خازاندىن لالىزارمىنى .",
+        "ئاقار سەل ئورنىدا ياشىم، غېرىب بولدى ئەزىز باشىم،",
+        "ماڭا تار ئەيلىدى چۈنكى بۇ دەۋران ئۆز دىيارمىنى .",
+        "يۈرەك يارە، جىگەر پارە، ئەجەب بىچاردۇر ھالىم،",
+        "ۋاپادار غەمگۈزارىم يوق ئىشتىمەككە بۇ زارمىنى .",
+    ]
+    assert is_poem_block(poem_lines) is True
+    assert is_poem_block(poem_lines, width_ratio=0.62) is True
+
+
+def test_is_poem_block_detects_couplets():
+    couplet = [
+        "ئەي ئەزىزىم، قەدرىمگە يەتسەڭچۇ سەن،",
+        "بۇ جاھاندا مەندەك ۋاپادار كەم سەن.",
+    ]
+    assert is_poem_block(couplet) is True
+
+
+def test_is_poem_block_rejects_prose_and_dialogue():
+    # Dialogue with dashes
+    dialogue = [
+        "- دېدى شېرىكى كۈلۈمسىرەپ ئۇنىڭغا پىسەنت قىلماي.",
+        "- ماقۇل، ئۇنداقتا مەن كۈتەي.",
+    ]
+    assert is_poem_block(dialogue) is False
+
+    # Wrapped prose with mid-line terminal periods
+    prose = [
+        "خەيرىيەت، ئەمدى تاھارىتىڭنى ئال. مەن نامىزىمنى ئۆتۈۋېرەي، -",
+        "دېدى شېرىكى كۈلۈمسىرەپ ئۇنىڭغا پىسەنت قىلماي.",
+    ]
+    assert is_poem_block(prose) is False
+
+    # Irregular line lengths (typical prose paragraph with short last line)
+    prose_ragged = [
+        "ياساۋۇل بېلىگە چىڭ تارتىلغان كۆندىن ئىشلەنگەن كەمىرىنى",
+        "يېشىپ، قىلىچى بىلەن سۆيىغا قويدى. ئانچە چوڭ ئەمەس مەزكۇر",
+        "سۆيىدا ياساۋۇللار نۆۋەت بىلەن ئارام ئالاتتى، قورال - ياراغنى",
+        "قويۇشاتتى.",
+    ]
+    assert is_poem_block(prose_ragged) is False
+
+
+def test_clean_uyghur_text_preserves_poem_lines_while_reflowing_prose():
+    poem = (
+        "غېبى جانان، دېفى ھىجران تۇگەتتى ياش باھارمىنى،\n"
+        "مېنى كىم كۆرسە پەرق ئەتمەس خازاندىن لالىزارمىنى .\n"
+        "ئاقار سەل ئورنىدا ياشىم، غېرىب بولدى ئەزىز باشىم،\n"
+        "ماڭا تار ئەيلىدى چۈنكى بۇ دەۋران ئۆز دىيارمىنى ."
+    )
+    cleaned_poem = clean_uyghur_text(poem)
+    # Each verse must stay on its own line
+    poem_lines = cleaned_poem.split("\n")
+    assert len(poem_lines) == 4
+    assert "غېبى جانان" in poem_lines[0]
+    assert "مېنى كىم كۆرسە" in poem_lines[1]
+    assert "غېرىپ بولدى ئەزىز باشىم" in poem_lines[2]
+
+    # Prose paragraph should still be merged
+    prose = (
+        "بۇ بىر ئادەتتىكى تېكىست قۇرى بولۇپ كېيىنكى قۇرغا تۇتىشىدۇ\n"
+        "ۋە ئاخىرقى قۇرمۇ مۇشۇ ئابزاسقا تەۋە بولىدۇ."
+    )
+    cleaned_prose = clean_uyghur_text(prose)
+    assert "\n" not in cleaned_prose
+
+
+def test_correct_uyghur_ocr_orthography():
+    assert (
+        correct_uyghur_ocr_orthography("مەكتەب ۋە مەكتەبلەر") == "مەكتەپ ۋە مەكتەپلەر"
+    )
+    assert (
+        correct_uyghur_ocr_orthography("مەنسەب ۋە مەنسەبدار") == "مەنسەپ ۋە مەنسەپدار"
+    )
+    assert correct_uyghur_ocr_orthography("تەلەب قىلدى") == "تەلەپ قىلدى"
+    assert correct_uyghur_ocr_orthography("كەسىبداشلار كەسىبى") == "كەسىپداشلار كەسىبى"
+    assert (
+        correct_uyghur_ocr_orthography("ئەدەبسىز ئەدەبىيات ئەدەبىي")
+        == "ئەدەپسىز ئەدەبىيات ئەدەبىي"
+    )
+    assert (
+        correct_uyghur_ocr_orthography("غېرىب غېرىبلىق غېرىبى")
+        == "غېرىپ غېرىپلىق غېرىبى"
+    )
+    assert (
+        correct_uyghur_ocr_orthography("ئەجەب ئىش ۋە ئەجەبلەنمەك")
+        == "ئەجەپ ئىش ۋە ئەجەبلەنمەك"
+    )
+    assert (
+        correct_uyghur_ocr_orthography("خازاندىن لالىزارىمنى") == "خازاندىن لالىزارىمنى"
+    )
+    assert (
+        correct_uyghur_ocr_orthography("خازاندىن لالىزار ئەيلىدى")
+        == "خازاندىن لالەزار ئەيلىدى"
+    )
+    assert correct_uyghur_ocr_orthography("") == ""

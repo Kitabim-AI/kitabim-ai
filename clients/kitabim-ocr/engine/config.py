@@ -13,7 +13,9 @@ MAX_SURYA_CONCURRENCY = 4
 DEFAULT_OCR_PAGE_TIMEOUT: float = 120.0
 DEFAULT_OCR_MAX_RETRIES: int = 2
 DEFAULT_SURYA_MAX_TOKENS_FULL_PAGE: int = 2500
+DEFAULT_OCR_PAGE_ZOOM_FACTOR: float = 3.0
 DEFAULT_OCR_BLEED_THROUGH_SUPPRESSION: bool = True
+DEFAULT_OCR_DOT_ENHANCEMENT: bool = True
 
 
 def is_apple_silicon() -> bool:
@@ -176,6 +178,39 @@ def is_bleed_through_suppression_enabled(
     """Read whether bleed-through suppression preprocessing is enabled from environment."""
     raw = os.environ.get("KITABIM_OCR_BLEED_THROUGH_SUPPRESSION") or os.environ.get(
         "OCR_BLEED_THROUGH_SUPPRESSION"
+    )
+    if raw is None or not str(raw).strip():
+        return default
+    val = str(raw).strip().lower()
+    return val not in ("false", "0", "no", "off", "disable", "disabled")
+
+
+def get_configured_zoom_factor(
+    default: float = DEFAULT_OCR_PAGE_ZOOM_FACTOR,
+) -> float:
+    """Read configured base PDF rendering zoom factor from environment variables.
+
+    Checks KITABIM_OCR_ZOOM_FACTOR first, then OCR_PAGE_ZOOM_FACTOR.
+    Clamped to range [1.5, 5.0].
+    """
+    raw = os.environ.get("KITABIM_OCR_ZOOM_FACTOR") or os.environ.get(
+        "OCR_PAGE_ZOOM_FACTOR"
+    )
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        val = float(str(raw).strip())
+        return max(1.5, min(5.0, val))
+    except ValueError:
+        return default
+
+
+def is_dot_enhancement_enabled(
+    default: bool = DEFAULT_OCR_DOT_ENHANCEMENT,
+) -> bool:
+    """Read whether unsharp dot/contrast enhancement is enabled from environment."""
+    raw = os.environ.get("KITABIM_OCR_DOT_ENHANCEMENT") or os.environ.get(
+        "OCR_DOT_ENHANCEMENT"
     )
     if raw is None or not str(raw).strip():
         return default

@@ -503,3 +503,140 @@ def test_process_page_sync_discards_phantom_and_hallucinated_blocks():
     assert "ھەممە نەرسە قۇرۇق ئورۇن." not in markdown
     assert "تەكرار تەكرار" not in markdown
     assert "في المثال" not in markdown
+
+
+def test_block_html_to_markdown_preserves_poem_lines_and_merges_prose():
+    poem_html = (
+        "<p>غېبى جانان، دېفى ھىجران تۇگەتتى ياش باھارمىنى،<br/>"
+        "مېنى كىم كۆرسە پەرق ئەتمەس خازاندىن لالىزارمىنى .<br/>"
+        "ئاقار سەل ئورنىدا ياشىم، غېرىب بولدى ئەزىز باشىم،<br/>"
+        "ماڭا تار ئەيلىدى چۈنكى بۇ دەۋران ئۆز دىيارمىنى .</p>"
+    )
+    # Poem should keep newlines
+    poem_md = svc._block_html_to_markdown(poem_html, width_ratio=0.62)
+    assert poem_md.count("\n") == 3
+    assert poem_md.split("\n")[0] == "غېبى جانان، دېفى ھىجران تۇگەتتى ياش باھارمىنى،"
+
+    prose_html = (
+        "<p>خەيرىيەت، ئەمدى تاھارىتىڭنى ئال. مەن نامىزىمنى ئۆتۈۋېرەي، -<br/>"
+        "دېدى شېرىكى كۈلۈمسىرەپ ئۇنىڭغا پىسەنت قىلماي.</p>"
+    )
+    # Prose should merge lines with space
+    prose_md = svc._block_html_to_markdown(prose_html, width_ratio=0.78)
+    assert "\n" not in prose_md
+    assert "خەيرىيەت" in prose_md
+    assert "شېرىكى" in prose_md
+
+
+def test_enhance_dots_and_contrast():
+    img = Image.new("RGB", (50, 50), color=(200, 200, 200))
+    enhanced = svc.enhance_dots_and_contrast(img)
+    assert enhanced.size == (50, 50)
+    assert enhanced.mode == "RGB"
+
+    # Also converts non-RGB mode
+    gray_img = Image.new("L", (30, 30), color=128)
+    enhanced_gray = svc.enhance_dots_and_contrast(gray_img)
+    assert enhanced_gray.mode == "RGB"
+
+
+def test_get_adaptive_page_zoom():
+    mock_page = MagicMock()
+
+    # Small pocketbook page (415 pt width) -> scales up to reach >= 1500 px
+    mock_page.rect.width = 415.0
+    zoom = svc.get_adaptive_page_zoom(
+        mock_page, base_zoom=3.0, min_target_width_px=1500.0
+    )
+    assert zoom > 3.0
+    assert 3.5 <= zoom <= 3.7
+
+    # Large A4 page (595 pt width) -> keeps base_zoom
+    mock_page.rect.width = 595.0
+    assert svc.get_adaptive_page_zoom(mock_page, base_zoom=3.0) == 3.0
+
+    # Exception during rect access safely falls back to base_zoom
+    mock_page_err = MagicMock()
+    mock_page_err.rect = None
+    assert svc.get_adaptive_page_zoom(mock_page_err, base_zoom=3.0) == 3.0
+
+
+def test_get_block_bbox():
+    # Polygon with 4 points
+    b1 = MagicMock()
+    b1.polygon = [[10.0, 20.0], [50.0, 20.0], [50.0, 60.0], [10.0, 60.0]]
+    b1.bbox = None
+    assert svc._get_block_bbox(b1) == (10.0, 50.0, 20.0, 60.0)
+
+    # Bbox fallback [x0, y0, x1, y1] -> (x0, x1, y0, y1)
+    b2 = MagicMock()
+    b2.polygon = None
+    b2.bbox = [5.0, 15.0, 45.0, 55.0]
+    assert svc._get_block_bbox(b2) == (5.0, 45.0, 15.0, 55.0)
+
+    # Missing geometry
+    b3 = MagicMock()
+    b3.polygon = None
+    b3.bbox = None
+    assert svc._get_block_bbox(b3) is None
+
+
+def test_process_page_sync_groups_verse_lines_into_couplets_and_separates_stanzas():
+    """Verify single-line verse blocks with tight line spacing are grouped into stanzas,
+    while wider stanza gaps result in distinct stanzas separated by empty lines."""
+    img = Image.new("RGB", (1000, 1000))
+    mock_predictor = MagicMock()
+    mock_result = MagicMock()
+
+    # Stanza 1: 4 lines, height=50 each, gap=2 px
+    # Stanza 2: 4 lines, starting with gap=50 px from Stanza 1
+    def make_verse_block(order, y0, y1, text):
+        b = MagicMock()
+        b.label = "Text"
+        b.html = f"<p>{text}</p>"
+        b.reading_order = order
+        b.skipped = False
+        b.error = False
+        b.confidence = 0.95
+        b.polygon = [
+            [300.0, float(y0)],
+            [800.0, float(y0)],
+            [800.0, float(y1)],
+            [300.0, float(y1)],
+        ]
+        b.bbox = None
+        return b
+
+    mock_result.blocks = [
+        # Stanza 1
+        make_verse_block(0, 100, 150, "زىنداننىڭ ئىچىدەك قاراڭغۇ كېچە..."),
+        make_verse_block(1, 152, 202, "ھۇۋىلايدۇ ئىزغىرىن قۇترىغان بوران ."),
+        make_verse_block(2, 204, 254, "ئېگىلىپ دەرەخلەر، سۇنىدۇ شاخلار،"),
+        make_verse_block(3, 256, 306, "ئۇچىدۇ سارغايغان ياپراقلار ھەر يان ."),
+        # Stanza 2 (gap = 356 - 306 = 50 px, line_height=50 -> gap/h = 1.0)
+        make_verse_block(4, 356, 406, "گۈركىرەپ ماشىنا، دىرىلدىدى تام،"),
+        make_verse_block(5, 408, 458, "ئاچقۇچە ئۈلگۈرمەي سۇندى دەرۋازا ."),
+        make_verse_block(6, 460, 510, "كىرىشتى باستۇرۇپ بىر توپ «ئىسيانچى»،"),
+        make_verse_block(7, 512, 562, "چىراغتا پارقىرار قالپاق ۋە نەيزە ."),
+    ]
+
+    with patch("engine.recognize.recognize_page", return_value=mock_result), patch(
+        "engine.recognize._is_phantom_bleed_through_block", return_value=False
+    ):
+        markdown, mean_conf = svc._process_page_sync(img, mock_predictor)
+
+    stanzas = markdown.split("\n\n")
+    assert (
+        len(stanzas) == 2
+    ), f"Expected 2 stanzas separated by empty line, got {len(stanzas)}: {stanzas}"
+
+    # Each stanza should contain exactly 4 lines separated by single newlines
+    stanza1_lines = stanzas[0].split("\n")
+    assert len(stanza1_lines) == 4
+    assert stanza1_lines[0] == "زىنداننىڭ ئىچىدەك قاراڭغۇ كېچە..."
+    assert stanza1_lines[3] == "ئۇچىدۇ سارغايغان ياپراقلار ھەر يان ."
+
+    stanza2_lines = stanzas[1].split("\n")
+    assert len(stanza2_lines) == 4
+    assert stanza2_lines[0] == "گۈركىرەپ ماشىنا، دىرىلدىدى تام،"
+    assert stanza2_lines[3] == "چىراغتا پارقىرار قالپاق ۋە نەيزە ."

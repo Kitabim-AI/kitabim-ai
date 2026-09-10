@@ -3,9 +3,11 @@ import pytest
 from engine.config import (
     DEFAULT_OCR_BLEED_THROUGH_SUPPRESSION,
     DEFAULT_OCR_CONCURRENCY,
+    DEFAULT_OCR_DOT_ENHANCEMENT,
     DEFAULT_OCR_ENGINE,
     DEFAULT_OCR_MAX_RETRIES,
     DEFAULT_OCR_PAGE_TIMEOUT,
+    DEFAULT_OCR_PAGE_ZOOM_FACTOR,
     DEFAULT_SURYA_MAX_TOKENS_FULL_PAGE,
     MAX_SURYA_CONCURRENCY,
     apply_surya_token_limits,
@@ -13,9 +15,11 @@ from engine.config import (
     get_configured_engine,
     get_configured_max_retries,
     get_configured_page_timeout,
+    get_configured_zoom_factor,
     get_savitr_model_path,
     is_apple_silicon,
     is_bleed_through_suppression_enabled,
+    is_dot_enhancement_enabled,
     is_savitr_available,
     resolve_concurrency,
 )
@@ -249,3 +253,49 @@ def test_is_bleed_through_suppression_enabled_env_override(monkeypatch):
     monkeypatch.delenv("KITABIM_OCR_BLEED_THROUGH_SUPPRESSION", raising=False)
     monkeypatch.setenv("OCR_BLEED_THROUGH_SUPPRESSION", "false")
     assert is_bleed_through_suppression_enabled() is False
+
+
+def test_get_configured_zoom_factor(monkeypatch):
+    monkeypatch.delenv("KITABIM_OCR_ZOOM_FACTOR", raising=False)
+    monkeypatch.delenv("OCR_PAGE_ZOOM_FACTOR", raising=False)
+    assert get_configured_zoom_factor() == DEFAULT_OCR_PAGE_ZOOM_FACTOR
+    assert get_configured_zoom_factor() == 3.0
+
+    # Custom valid float
+    monkeypatch.setenv("KITABIM_OCR_ZOOM_FACTOR", "3.5")
+    assert get_configured_zoom_factor() == 3.5
+
+    # Fallback env var
+    monkeypatch.delenv("KITABIM_OCR_ZOOM_FACTOR", raising=False)
+    monkeypatch.setenv("OCR_PAGE_ZOOM_FACTOR", "2.8")
+    assert get_configured_zoom_factor() == 2.8
+
+    # Clamping behavior
+    monkeypatch.setenv("KITABIM_OCR_ZOOM_FACTOR", "1.0")
+    assert get_configured_zoom_factor() == 1.5
+    monkeypatch.setenv("KITABIM_OCR_ZOOM_FACTOR", "10.0")
+    assert get_configured_zoom_factor() == 5.0
+
+    # Invalid string falls back to default
+    monkeypatch.setenv("KITABIM_OCR_ZOOM_FACTOR", "invalid")
+    assert get_configured_zoom_factor() == DEFAULT_OCR_PAGE_ZOOM_FACTOR
+
+
+def test_is_dot_enhancement_enabled(monkeypatch):
+    monkeypatch.delenv("KITABIM_OCR_DOT_ENHANCEMENT", raising=False)
+    monkeypatch.delenv("OCR_DOT_ENHANCEMENT", raising=False)
+    assert DEFAULT_OCR_DOT_ENHANCEMENT is True
+    assert is_dot_enhancement_enabled() is True
+
+    for disabled_val in ("false", "0", "no", "off", "disable", "disabled"):
+        monkeypatch.setenv("KITABIM_OCR_DOT_ENHANCEMENT", disabled_val)
+        assert is_dot_enhancement_enabled() is False
+
+    for enabled_val in ("true", "1", "yes", "on"):
+        monkeypatch.setenv("KITABIM_OCR_DOT_ENHANCEMENT", enabled_val)
+        assert is_dot_enhancement_enabled() is True
+
+    # Fallback to OCR_DOT_ENHANCEMENT
+    monkeypatch.delenv("KITABIM_OCR_DOT_ENHANCEMENT", raising=False)
+    monkeypatch.setenv("OCR_DOT_ENHANCEMENT", "false")
+    assert is_dot_enhancement_enabled() is False

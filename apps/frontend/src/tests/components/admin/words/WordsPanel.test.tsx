@@ -80,3 +80,76 @@ test('admin can delete a word after confirming', async () => {
   expect(authService.authFetch).toHaveBeenCalledWith('/api/spell-check/words/1', { method: 'DELETE' });
   await waitFor(() => expect(screen.queryByText('كىتاب')).not.toBeInTheDocument());
 });
+
+test('race condition: search result for earlier query does not overwrite newer query result', async () => {
+  vi.mocked(AuthModule.useIsAdmin).mockReturnValue(false);
+
+  let resolveAbc!: (val: any) => void;
+  const abcPromise = new Promise((resolve) => {
+    resolveAbc = resolve;
+  });
+
+  let resolveAbcd!: (val: any) => void;
+  const abcdPromise = new Promise((resolve) => {
+    resolveAbcd = resolve;
+  });
+
+  vi.mocked(authService.authFetch).mockImplementation(async (url: string) => {
+    if (url.includes('/api/spell-check/words/stats')) {
+      return { ok: true, json: async () => ({ total_words: 2 }) } as Response;
+    }
+    if (url.includes('/api/spell-check/words?')) {
+      return { ok: true, json: async () => [] } as Response;
+    }
+    if (url.includes('q=ABC&')) {
+      return abcPromise as any;
+    }
+    if (url.includes('q=ABCD&')) {
+      return abcdPromise as any;
+    }
+    return { ok: true, json: async () => [] } as Response;
+  });
+
+  render(<WordsPanel />);
+
+  const input = screen.getByPlaceholderText('admin.words.searchPlaceholder');
+
+  // User types ABC
+  fireEvent.change(input, { target: { value: 'ABC' } });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 350));
+  });
+
+  // User types ABCD
+  fireEvent.change(input, { target: { value: 'ABCD' } });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 350));
+  });
+
+  // ABCD resolves FIRST
+  await act(async () => {
+    resolveAbcd({
+      ok: true,
+      json: async () => [{ id: 2, word: 'ABCD' }],
+    });
+  });
+
+  expect(await screen.findByText('ABCD')).toBeInTheDocument();
+
+  // ABC resolves SECOND (shortly after)
+  await act(async () => {
+    resolveAbc({
+      ok: true,
+      json: async () => [{ id: 1, word: 'ABC' }],
+    });
+  });
+
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  // ABCD should STILL be in the document and ABC should NOT have overwritten it
+  expect(screen.getByText('ABCD')).toBeInTheDocument();
+  expect(screen.queryByText('ABC')).not.toBeInTheDocument();
+});
+

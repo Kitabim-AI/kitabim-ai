@@ -121,10 +121,10 @@ export const useBookActions = (
   const handleLlmSpellCheckPage = (bookId: string, pageNum: number) => {
     setModal({
       isOpen: true,
-      title: t('modal.llmSpellCheckPage.title') || 'LLM ئارقىلىق ئىملا تەكشۈرۈش',
-      message: t('modal.llmSpellCheckPage.message', { pageNum }) || `بۇ بەتنى LLM ئارقىلىق ئىملا تەكشۈرەمسىز؟`,
+      title: t('modal.llmSpellCheckPage.title') || 'LLM ئارقىلىق كوررېكتورلاش',
+      message: t('modal.llmSpellCheckPage.message', { pageNum }) || `بۇ بەتنى LLM ئارقىلىق كوررېكتورلامسىز؟`,
       type: 'confirm',
-      confirmText: t('modal.llmSpellCheckPage.confirm') || 'تەكشۈرۈش',
+      confirmText: t('modal.llmSpellCheckPage.confirm') || 'كوررېكتورلاش',
       onConfirm: async () => {
         setModal(prev => ({ ...prev, isOpen: false }));
         try {
@@ -543,7 +543,7 @@ export const useBookActions = (
       [REPROCESS_STEP.CHUNKING]: t('modal.reprocessChunking.title') || 'پارچىلاشنى قايتا ئىشلەش',
       [REPROCESS_STEP.EMBEDDING]: t('modal.reprocessEmbedding.title') || 'ۋېكتورلاشتۇرۇشنى قايتا ئىشلەش',
       [REPROCESS_STEP.SPELL_CHECK]: t('modal.reprocessSpellCheck.title') || 'ئىملا تەكشۈرۈشنى قايتا ئىشلەش',
-      [REPROCESS_STEP.LLM_SPELL_CHECK]: t('modal.reprocessLlmSpellCheck.title') || 'LLM ئارقىلىق ئىملا تەكشۈرۈشنى قايتا ئىشلەش',
+      [REPROCESS_STEP.LLM_SPELL_CHECK]: t('modal.reprocessLlmSpellCheck.title') || 'LLM ئارقىلىق كوررېكتورلاشنى قايتا ئىشلەش',
       [REPROCESS_STEP.GRAPH]: t('modal.reprocessGraph.title') || 'بىلىم گىرافىنى قايتا ئىشلەش',
       [REPROCESS_STEP.SUMMARY]: t('modal.reprocessSummary.title') || 'قىسقىچە مەزمۇننى قايتا ھاسىللاش',
       [REPROCESS_STEP.HISTORY]: t('admin.table.extractHistory') || 'تارىخىي ئاتالغۇلارنى بايقاش',

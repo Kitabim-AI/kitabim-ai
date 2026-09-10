@@ -24,7 +24,7 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
 
   const reprocessingStep = bookActions.reprocessingBooks.get(book.id);
 
-  const hasFailures = Object.entries(book.pipelineStats || {}).some(([k, v]) => 
+  const hasFailures = Object.entries(book.pipelineStats || {}).some(([k, v]) =>
     k.toLowerCase().includes('failed') && typeof v === 'number' && v > 0
   );
 
@@ -43,11 +43,11 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
     <div
       ref={menuRef}
       dir="rtl"
-      style={{ 
-        position: 'fixed', 
-        top: anchorRect.bottom + 8, 
-        left: anchorRect.left, 
-        zIndex: 9999 
+      style={{
+        position: 'fixed',
+        top: anchorRect.bottom + 8,
+        left: anchorRect.left,
+        zIndex: 9999
       }}
       className="w-64 glass-panel dark:bg-slate-900/95 dark:border-slate-850 shadow-2xl py-2.5 rounded-[20px] border border-[#0369a1]/15 animate-in fade-in slide-in-from-top-2 duration-200"
     >
@@ -58,40 +58,40 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
         accept="image/*"
         onChange={handleFileChange}
       />
-      
+
       <div className="px-2 space-y-0.5">
-        <button 
-          onClick={() => { bookActions.openReader(book, () => { }, () => { }, () => { }); close(); }} 
-          disabled={book.pipelineStep === null && book.status === 'pending'} 
+        <button
+          onClick={() => { bookActions.openReader(book, () => { }, () => { }, () => { }); close(); }}
+          disabled={book.pipelineStep === null && book.status === 'pending'}
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[#1a1a1a] dark:text-slate-100 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
         >
           <BookOpen size={16} className="text-slate-500" />
           <span className="flex-1 text-right">{t('admin.table.view')}</span>
         </button>
- 
+
         <div className="h-px bg-slate-100/60 dark:bg-slate-800 my-1.5 mx-2" />
- 
-        <button 
-          onClick={() => fileInputRef.current?.click()} 
+
+        <button
+          onClick={() => fileInputRef.current?.click()}
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 rounded-xl transition-all active:scale-[0.98]"
         >
           <Image size={16} />
           <span className="flex-1 text-right">{t('admin.table.replaceCover') || 'مۇقاۋىنى ئالماشتۇرۇش'}</span>
         </button>
- 
+
         <div className="h-px bg-slate-100/60 dark:bg-slate-800 my-1.5 mx-2" />
- 
-        <button 
-          onClick={() => { bookActions.handleRetryFailedPages(book.id); close(); }} 
-          disabled={!canResetFailed} 
+
+        <button
+          onClick={() => { bookActions.handleRetryFailedPages(book.id); close(); }}
+          disabled={!canResetFailed}
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
         >
           <RotateCcw size={16} className="shrink-0" />
           <span className="flex-1 text-right">{t('admin.table.retryFailed') || 'مەغلۇپ بەتلەرنى قايتا سىناش'}</span>
         </button>
- 
+
         <div className="h-px bg-slate-100/60 dark:bg-slate-800 my-1.5 mx-2" />
- 
+
         {isAdmin && (
           <button
             onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.OCR); close(); }}
@@ -102,7 +102,7 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
             <span className="flex-1 text-right">{t('admin.table.reprocess.ocr') || 'قايتا OCR'}</span>
           </button>
         )}
- 
+
         <button
           onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.CHUNKING); close(); }}
           disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.CHUNKING}
@@ -111,7 +111,7 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
           {reprocessingStep === REPROCESS_STEP.CHUNKING ? <Loader2 size={16} className="animate-spin" /> : <Scissors size={16} />}
           <span className="flex-1 text-right">{t('admin.table.reprocess.chunking') || 'قايتا پارچىلاش'}</span>
         </button>
- 
+
         <button
           onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.EMBEDDING); close(); }}
           disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.EMBEDDING}
@@ -120,8 +120,8 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
           {reprocessingStep === REPROCESS_STEP.EMBEDDING ? <Loader2 size={16} className="animate-spin" /> : <Cuboid size={16} />}
           <span className="flex-1 text-right">{t('admin.table.reprocess.embedding') || 'قايتا ۋېكتورلاش'}</span>
         </button>
- 
- 
+
+
         <button
           onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.SPELL_CHECK); close(); }}
           disabled={book.pipelineStep === null || !spellCheckEnabled || reprocessingStep === REPROCESS_STEP.SPELL_CHECK}
@@ -138,7 +138,7 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
             className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-950/20 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
           >
             {reprocessingStep === REPROCESS_STEP.LLM_SPELL_CHECK ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-            <span className="flex-1 text-right">{t('admin.table.reprocess.llm_spell_check') || 'LLM ئارقىلىق ئىملا تەكشۈرۈش'}</span>
+            <span className="flex-1 text-right">{t('admin.table.reprocess.llm_spell_check') || 'LLM ئارقىلىق كوررېكتورلاش'}</span>
           </button>
         )}
 
@@ -152,7 +152,7 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
             <span className="flex-1 text-right">{t('admin.table.reprocess.graph') || 'قايتا گىرافىك قۇرۇش'}</span>
           </button>
         )}
- 
+
         {isAdmin && (
           <button
             onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.SUMMARY); close(); }}
@@ -174,11 +174,11 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
             <span className="flex-1 text-right">{t('admin.table.extractHistory') || 'تارىخىي ئاتالغۇلارنى بايقاش'}</span>
           </button>
         )}
- 
+
         <div className="h-px bg-slate-100/60 dark:bg-slate-800 my-1.5 mx-2" />
- 
-        <button 
-          onClick={() => { bookActions.handleDeleteBook(book.id); close(); }} 
+
+        <button
+          onClick={() => { bookActions.handleDeleteBook(book.id); close(); }}
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-all active:scale-[0.98]"
         >
           <Trash2 size={16} />

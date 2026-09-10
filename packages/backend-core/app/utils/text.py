@@ -39,12 +39,44 @@ def normalize_uyghur_chars(text: str) -> str:
     )
 
 
+_UYGHUR_VOWELS = r"[اەېىوئۆۇۈ]"
+
+_ORTHOGRAPHY_CORRECTIONS: list[tuple[re.Pattern[str], str]] = [
+    # Multilingual OCR models (like Surya) frequently substitute Arabic final beh
+    # for Uyghur peh in common vocabulary loanwords. In Uyghur morphophonology,
+    # stem-final peh only voices to beh when followed by a vowel suffix; when
+    # followed by a consonant suffix or word end, it is always peh.
+    (re.compile(r"\bمەكتەب(?!" + _UYGHUR_VOWELS + r")"), "مەكتەپ"),
+    (re.compile(r"\bمەنسەب(?!" + _UYGHUR_VOWELS + r")"), "مەنسەپ"),
+    (re.compile(r"\bتەلەب(?!" + _UYGHUR_VOWELS + r")"), "تەلەپ"),
+    (re.compile(r"\bكەسىب(?!" + _UYGHUR_VOWELS + r")"), "كەسىپ"),
+    (re.compile(r"\bئەدەب(?!" + _UYGHUR_VOWELS + r")"), "ئەدەپ"),
+    (re.compile(r"\bغېرىب(?!" + _UYGHUR_VOWELS + r")"), "غېرىپ"),
+    (re.compile(r"\bئەجەب\b"), "ئەجەپ"),
+    (re.compile(r"\bلالىزار(?!" + _UYGHUR_VOWELS + r")"), "لالەزار"),
+]
+
+
+def correct_uyghur_ocr_orthography(text: str) -> str:
+    """Post-correct common OCR orthographic errors caused by Arabic/Persian bias.
+
+    Multilingual models like Surya frequently confuse Arabic final beh with Uyghur peh
+    in standard Uyghur loanwords, or mistake vowels in common compounds (e.g. Lalazar).
+    """
+    if not text:
+        return ""
+    for pattern, repl in _ORTHOGRAPHY_CORRECTIONS:
+        text = pattern.sub(repl, text)
+    return text
+
+
 # Matches OCR structural markers ("[Header] ..." / "[Footer] ...") and
 # everything after them to end of line. Not anchored to line-start: OCR emits
 # these either alone on their own line or glued to the end of a real content
 # line (e.g. "...خانىسى.[Footer] 3"), and both cases are page furniture, not
 # retrievable content.
 _OCR_MARKER_RE = re.compile(r"\s*\[(?:Header|Footer)\].*", re.IGNORECASE)
+
 
 _PAGE_NUMBER_RE = re.compile(
     r"""^\s*
@@ -105,6 +137,61 @@ def strip_page_numbers(text: str) -> str:
     return "\n\n".join(b for b in blocks if b.strip())
 
 
+def is_poem_block(lines: list[str], width_ratio: float | None = None) -> bool:
+    """Return True if the given list of lines represents a poetic verse/stanza.
+
+    Poetic verses in Uyghur literature (Aruz and Barmaq/Heja meters) exhibit:
+    - High line length uniformity (low coefficient of variation).
+    - Average line lengths matching typical hemistichs (18 to 80 characters).
+    - No mid-line sentence stops (terminal periods/questions followed by text).
+    - No prose dialogue dashes or markdown structural markers.
+    - Narrow/centered column layout (width_ratio <= 0.75) when geometry is known.
+    """
+    if len(lines) < 2:
+        return False
+
+    clean_lines = [line.strip() for line in lines if line.strip()]
+    if len(clean_lines) < 2:
+        return False
+
+    # Disqualify markdown structural elements, list items, and dialogue dashes
+    for line in clean_lines:
+        if line.startswith(("#", "|", "*", "•")) or re.match(r"^\d+[.)]", line):
+            return False
+        if line.startswith(("-", "—", "–")):
+            return False
+        # Mid-line terminal punctuation followed by text is a strong prose signal
+        if re.search(r"[\.؟\!]\s+[\u0600-\u06FF\w]", line):
+            return False
+
+    lengths = [len(line) for line in clean_lines]
+    mean_len = sum(lengths) / len(lengths)
+    variance = sum((x - mean_len) ** 2 for x in lengths) / len(lengths)
+    std_len = variance**0.5
+    cv = std_len / mean_len if mean_len > 0 else 1.0
+    min_len = min(lengths)
+    max_len = max(lengths)
+    ratio = min_len / max_len if max_len > 0 else 0
+
+    is_narrow = (width_ratio is None) or (width_ratio <= 0.75)
+
+    # 1. Standard stanzas (4+ lines)
+    if len(clean_lines) >= 4:
+        if 18 <= mean_len <= 80 and cv <= 0.22 and ratio >= 0.55 and is_narrow:
+            return True
+
+    # 2. Couplets / triplets (2-3 lines)
+    if len(clean_lines) in (2, 3):
+        has_comma_break = any(line.endswith(("،", ",")) for line in clean_lines[:-1])
+        is_explicit_narrow = width_ratio is not None and width_ratio <= 0.70
+        if has_comma_break and 18 <= mean_len <= 75 and cv <= 0.20:
+            return True
+        if is_explicit_narrow and 18 <= mean_len <= 75 and cv <= 0.15 and ratio >= 0.75:
+            return True
+
+    return False
+
+
 def clean_uyghur_text(text: str) -> str:
     if not text:
         return ""
@@ -112,10 +199,13 @@ def clean_uyghur_text(text: str) -> str:
     # 1. Normalize characters
     text = normalize_uyghur_chars(text)
 
-    # 2. Strip OCR structural markers ([Header] ..., [Footer] ...)
+    # 2. Correct common OCR Arabic-bias orthographic substitutions
+    text = correct_uyghur_ocr_orthography(text)
+
+    # 3. Strip OCR structural markers ([Header] ..., [Footer] ...)
     text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
 
-    # 3. Strip header and footer page numbers
+    # 4. Strip header and footer page numbers
     text = strip_page_numbers(text)
 
     # 4. Split into blocks by double newlines (paragraphs)
@@ -134,6 +224,10 @@ def clean_uyghur_text(text: str) -> str:
         # DO NOT use line.strip() here as it kills indentation
         lines = [line.rstrip() for line in block.split("\n") if line.strip()]
         if not lines:
+            continue
+
+        if is_poem_block(lines):
+            cleaned_blocks.append("\n".join(lines))
             continue
 
         result_block = ""

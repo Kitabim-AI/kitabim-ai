@@ -133,7 +133,7 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
                 <button
                   onClick={onLlmSpellCheck}
                   disabled={(page?.llmSpellCheckStatus ?? page?.llm_spell_check_status) === 'in_progress'}
-                  className="flex items-center justify-center sm:justify-start gap-1.5 h-8 w-8 sm:w-auto sm:px-3 bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold uppercase"
+                  className="flex items-center justify-center sm:justify-start gap-1.5 h-8 w-8 sm:w-auto sm:px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold uppercase"
                   title={t('reader.llmSpellCheckTitle')}
                 >
                   {(page?.llmSpellCheckStatus ?? page?.llm_spell_check_status) === 'in_progress'

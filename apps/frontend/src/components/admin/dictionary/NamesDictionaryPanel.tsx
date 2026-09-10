@@ -90,23 +90,43 @@ export const NamesDictionaryPanel: React.FC = () => {
     [isLoadingMore, activeGroup],
   );
 
-  const searchEntries = async (q: string) => {
-    if (!q.trim()) {
+  const activeSearchRef = useRef<AbortController | null>(null);
+
+  const searchEntries = useCallback(async (q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed) {
+      activeSearchRef.current?.abort();
+      activeSearchRef.current = null;
       setSuggestions([]);
+      setIsSearching(false);
       return;
     }
+    activeSearchRef.current?.abort();
+    const controller = new AbortController();
+    activeSearchRef.current = controller;
+
     setIsSearching(true);
     try {
       const resp = await authFetch(
-        `/api/names-dictionary/search?q=${encodeURIComponent(q)}&limit=10`,
+        `/api/names-dictionary/search?q=${encodeURIComponent(trimmed)}&limit=10`,
+        { signal: controller.signal },
       );
-      if (resp.ok) setSuggestions(await resp.json());
-    } catch (e) {
-      console.error('Failed to search names dictionary', e);
+      if (controller.signal.aborted) return;
+      if (resp.ok) {
+        const data = await resp.json();
+        if (controller.signal.aborted) return;
+        setSuggestions(data);
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error('Failed to search names dictionary', e);
+      }
     } finally {
-      setIsSearching(false);
+      if (activeSearchRef.current === controller) {
+        setIsSearching(false);
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchStats();
@@ -114,9 +134,20 @@ export const NamesDictionaryPanel: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!searchQuery.trim()) {
+      activeSearchRef.current?.abort();
+      activeSearchRef.current = null;
+      setSuggestions([]);
+      setIsSearching(false);
+      return;
+    }
+
     const timer = setTimeout(() => searchEntries(searchQuery), 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+    return () => {
+      clearTimeout(timer);
+      activeSearchRef.current?.abort();
+    };
+  }, [searchQuery, searchEntries]);
 
   const handleGroupSelect = (group: string | null) => {
     setActiveGroup(group);
