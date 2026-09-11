@@ -521,7 +521,7 @@ def test_process_page_sync_discards_phantom_and_hallucinated_blocks():
     assert "في المثال" not in markdown
 
 
-def test_block_html_to_markdown_preserves_poem_lines_and_merges_prose():
+def test_block_html_to_markdown_preserves_lines_exactly():
     poem_html = (
         "<p>غېبى جانان، دېفى ھىجران تۇگەتتى ياش باھارمىنى،<br/>"
         "مېنى كىم كۆرسە پەرق ئەتمەس خازاندىن لالىزارمىنى .<br/>"
@@ -538,13 +538,10 @@ def test_block_html_to_markdown_preserves_poem_lines_and_merges_prose():
         "<p>خەيرىيەت، ئەمدى تاھارىتىڭنى ئال. مەن نامىزىمنى ئۆتۈۋېرەي، -<br/>"
         "دېدى شېرىكى كۈلۈمسىرەپ ئۇنىڭغا پىسەنت قىلماي.</p>"
     )
-    # Block markdown preserves lines; clean_uyghur_text merges mid-sentence wrapped lines
+    # Block markdown preserves lines; clean_uyghur_text never merges them
     prose_md = svc._block_html_to_markdown(prose_html)
     assert prose_md.count("\n") == 1
-    cleaned = clean_uyghur_text(prose_md)
-    assert "\n" not in cleaned
-    assert "خەيرىيەت" in cleaned
-    assert "شېرىكى" in cleaned
+    assert clean_uyghur_text(prose_md) == prose_md
 
 
 def test_prose_dialogue_lines_preserved_during_cleanup():
@@ -677,12 +674,12 @@ def test_process_page_sync_groups_verse_lines_into_couplets_and_separates_stanza
     assert stanza2_lines[3] == "چىراغتا پارقىرار قالپاق ۋە نەيزە ."
 
 
-def test_process_page_sync_merges_grouped_prose_lines_that_fail_poem_check():
+def test_process_page_sync_groups_non_poem_lines_without_merging_or_separating():
     """When Surya over-segments a single prose paragraph into short per-line
-    Text blocks (tight vertical spacing groups them as verse candidates), but
-    the group fails is_poem_block (irregular lengths, no rhyme/verse-ending
-    punctuation), the lines must be reflowed as continuous prose (merged with
-    spaces) - not treated as separate paragraphs split by blank lines."""
+    Text blocks (tight vertical spacing groups them as verse candidates), the
+    lines must stay grouped as one block - not split into separate paragraphs
+    by blank lines - but each line must be kept exactly as printed, never
+    reflowed/merged into flowing prose with spaces."""
     img = Image.new("RGB", (1000, 1000))
     mock_predictor = MagicMock()
     mock_result = MagicMock()
@@ -718,24 +715,27 @@ def test_process_page_sync_merges_grouped_prose_lines_that_fail_poem_check():
         markdown, mean_conf = svc._process_page_sync(img, mock_predictor)
 
     assert "\n\n" not in markdown, (
-        f"Expected the grouped non-poem lines to merge into one flowing "
-        f"paragraph, got separate blocks: {markdown!r}"
+        f"Expected the grouped non-poem lines to stay in one block, "
+        f"got separate blocks: {markdown!r}"
     )
-    assert "ئۇ ئۆيدىن چىقىپ كوچىغا قاراپ ماڭدى يولدا" in markdown
+    assert (
+        markdown == "ئۇ ئۆيدىن چىقىپ كوچىغا قاراپ ماڭدى\n"
+        "يولدا كۆپ ئادەم بار ئىدى ئەمما ھېچكىم ئۇنى تونۇمايتتى\n"
+        "ئاخىرى بازارغا يېتىپ باردى"
+    )
 
 
-def test_process_page_sync_merges_dense_prose_page_into_flowing_paragraphs():
+def test_process_page_sync_groups_dense_prose_page_without_merging_lines():
     """Regression test from a real book page: Surya segmented one continuous
     prose paragraph (narration interleaved with em-dash dialogue) into 24
     separate single-line Text blocks. _is_single_line_verse_block's
     width-ratio and dash-start checks - meant to exclude non-poem content -
     also blocked ordinary full-width prose lines and dialogue-attribution
     lines from ever being considered for grouping at all, so each printed
-    line ended up rendered as its own paragraph. Those checks are redundant
-    with is_poem_block's own (already-tested) equivalent checks applied to
-    the assembled group, so removing them at the grouping-eligibility stage
-    should let is_poem_block correctly reject the group as non-verse and
-    route it to the prose-reflow (space-join) branch instead."""
+    line ended up rendered as its own paragraph. Those checks were dropped so
+    these lines are recognized as grouping candidates and stay together as
+    one block - but each source line is kept exactly as printed, with no
+    reflow/merge into flowing prose."""
     img = Image.new("RGB", (1500, 2270))
     mock_predictor = MagicMock()
     mock_result = MagicMock()
@@ -909,19 +909,36 @@ def test_process_page_sync_merges_dense_prose_page_into_flowing_paragraphs():
         markdown, mean_conf = svc._process_page_sync(img, mock_predictor)
 
     paragraphs = markdown.split("\n\n")
-    assert len(paragraphs) <= 4, (
+    assert len(paragraphs) == 4, (
         f"Expected the dense dialogue page to collapse into a handful of "
-        f"flowing paragraphs, not one per printed line: got "
-        f"{len(paragraphs)}: {paragraphs}"
+        f"blocks, not one per printed line: got {len(paragraphs)}: {paragraphs}"
     )
     # A dash-prefixed dialogue line and its non-dash continuation (previously
-    # excluded from grouping entirely) must now reflow as one paragraph.
+    # excluded from grouping entirely) must now stay in the same block -
+    # each on its own line, not merged into one flowing line.
     assert (
-        "— مەنزىلگە يەنە قانچىلىك قالدۇق؟ — دەپ سورىدى ئۇ كەينىدىن كېلىۋاتقان بىرىدىن."
-        in markdown
-    )
+        "— مەنزىلگە يەنە قانچىلىك قالدۇق؟ — دەپ سورىدى ئۇ\n"
+        "كەينىدىن كېلىۋاتقان بىرىدىن.\n"
+        "— ئاز قالدۇق، نېمەتلىك پىرىم، ئەنە ئاۋۇ كۆرۈنگەن"
+    ) == paragraphs[1]
     # The opening (already internally-merged by Surya) paragraph is untouched.
-    assert paragraphs[0].startswith("ئالدىراش كېتىشۋاتاتتى.")
+    assert paragraphs[0] == (
+        "ئالدىراش كېتىشۋاتاتتى. ئۇلارنىڭ ئارىسىدا ئۇچىسىغا جۈببەئى سىنجاپ "
+        "يېپىنچاقلىۋالغان، ئۈستىگە يېشىل يېپەكتىن جۈببەۋە داستار كىيگەن، يېشى "
+        "ئاتمىشلاردا بار بىر مويسىپىت كىشى ھەممىنىڭ ئالدىدا كېتىپ باراتتى."
+    )
+    # The long isolated line stays its own block (a known, separate
+    # limitation - not this test's concern), never merged with a space.
+    assert paragraphs[2] == (
+        "تۆپىلىكتىن ئاشساقلا ھەزرىتى سۇلتان مازىرىنىڭ ئالتۇن قۇببىلىرى "
+        "كۆرۈنىدۇ! — دەپ جاۋاب بەردى ھېلىقى كىشى."
+    )
+    # The remaining 19 lines (orders 5-23) all stay grouped as one block,
+    # each on its own line - no space-merging, no blank-line separation.
+    block4_lines = paragraphs[3].split("\n")
+    assert len(block4_lines) == 19
+    assert block4_lines[0] == "— ھۆرمەتلىك مەككە خوجا، — دېدى بۇ چاغدا ئاتلىق"
+    assert block4_lines[-1] == "— ئى پەرزەنت، ئاشۇ كۆڭۈلسىز پەرغانىنى تىلغا"
 
 
 def test_process_page_sync_preserves_prose_paragraphs_as_separate_blocks():

@@ -215,7 +215,7 @@ def test_is_poem_block_rejects_prose_and_dialogue():
     assert is_poem_block(prose_ragged) is False
 
 
-def test_clean_uyghur_text_preserves_poem_lines_while_reflowing_prose():
+def test_clean_uyghur_text_preserves_poem_lines_exactly():
     poem = (
         "غېبى جانان، دېفى ھىجران تۇگەتتى ياش باھارمىنى،\n"
         "مېنى كىم كۆرسە پەرق ئەتمەس خازاندىن لالىزارمىنى .\n"
@@ -230,13 +230,12 @@ def test_clean_uyghur_text_preserves_poem_lines_while_reflowing_prose():
     assert "مېنى كىم كۆرسە" in poem_lines[1]
     assert "غېرىپ بولدى ئەزىز باشىم" in poem_lines[2]
 
-    # Prose paragraph should still be merged
+    # Prose lines must also stay exactly as they appear - never merged
     prose = (
         "بۇ بىر ئادەتتىكى تېكىست قۇرى بولۇپ كېيىنكى قۇرغا تۇتىشىدۇ\n"
         "ۋە ئاخىرقى قۇرمۇ مۇشۇ ئابزاسقا تەۋە بولىدۇ."
     )
-    cleaned_prose = clean_uyghur_text(prose)
-    assert "\n" not in cleaned_prose
+    assert clean_uyghur_text(prose) == prose
 
 
 def test_correct_uyghur_ocr_orthography():
@@ -318,21 +317,20 @@ def test_clean_uyghur_text_preserves_colophon_and_metadata_lines():
     assert lines[3] == "باھاسى : 18.00 يۈەن"
 
 
-def test_clean_uyghur_text_merges_multi_sentence_prose_paragraph():
+def test_clean_uyghur_text_never_merges_prose_lines():
     prose = (
         "سارغۇجىدا ئەنەلەر سۇ توشۇمايتتى، قازان بېشىغا ئارىلاشمايتتى، سۇ توشۇش، ئوتۇن يېرىش ئىشلىرى توي\n"
         "ئىشىغا كىرەتتى. ئوي ئىشىنى بولسا، ئاياللار قىلاتتى، ئەرلەر تالا ئىشىنى، ئېتىز - ئېرىق، مال -\n"
         "ۋارانغا قاراش، چۆپ چېپىش، ئوتۇن تارتىش، ئوبىنىك كەم - كۇسىنى تەييارلاپ بېرىشتەك ئىشلارنى\n"
         "قىلاتتى. كۈنلەر مۇشۇ تەرىقىدە ئۆتۈۋەردى."
     )
-    cleaned = clean_uyghur_text(prose)
-    assert "\n" not in cleaned
-    assert "كىرەتتى. ئوي ئىشىنى بولسا" in cleaned
-    assert "مال - ۋارانغا قاراش" in cleaned
-    assert "قىلاتتى. كۈنلەر" in cleaned
+    assert clean_uyghur_text(prose) == prose
 
 
-def test_clean_uyghur_text_prose_dialogue_separation():
+def test_clean_uyghur_text_never_separates_lines_into_paragraphs():
+    # Lines are kept exactly as OCR'd, in one block - never merged with
+    # spaces, and never split apart into separate blank-line-separated
+    # paragraphs either.
     mixed = (
         "ئەرلەر قازان بېشىغا ئارىلىشىپ قالسا، ئاياللار: - چىپىلمىسىلا، - دەپ قازان بېشىدىن\n"
         "ھەيدىۋېتەتتى. سارغۇجىا ئاياللىرى دىرەنزە، ھويلىلاردىن مارىشىپ قاقاقلاپ كۈلۈشتى:\n"
@@ -340,71 +338,13 @@ def test_clean_uyghur_text_prose_dialogue_separation():
         "— پۆرمىلىك كۆينەك كىيسە ئېرىگىنى تارتىۋالامدو تېخى!\n"
         "— ۋاھ - ھا - ھا! ھېيى - ھېي!"
     )
-    cleaned = clean_uyghur_text(mixed)
-    lines = cleaned.split("\n")
-    assert len(lines) == 4
-    assert lines[0].endswith("قاقاقلاپ كۈلۈشتى:")
-    assert lines[1] == "— ياغلىقلا تاڭسا چىرايلىق چوكان بولغۇدەك! - ھا - ھا - ھا!"
-    assert lines[2] == "— پۆرمىلىك كۆينەك كىيسە ئېرىگىنى تارتىۋالامدو تېخى!"
-    assert lines[3] == "— ۋاھ - ھا - ھا! ھېيى - ھېي!"
+    assert clean_uyghur_text(mixed) == mixed
 
 
-def test_clean_uyghur_text_wrapped_dialogue_attribution():
+def test_clean_uyghur_text_preserves_dash_attribution_lines_exactly():
     dialogue = (
         "— خەيرىيەت، ئەمدى تاھارىتىڭنى ئال. مەن نامىزىمنى ئۆتۈۋېرەي، —\n"
         "دېدى شېرىكى كۈلۈمسىرەپ ئۇنىڭغا پىسەنت قىلماي.\n"
         "— خۇپتەننى بىللە ئوقۇيلى."
     )
-    cleaned = clean_uyghur_text(dialogue)
-    lines = cleaned.split("\n")
-    assert len(lines) == 2
-    assert "دېدى شېرىكى كۈلۈمسىرەپ" in lines[0]
-    assert lines[1] == "— خۇپتەننى بىللە ئوقۇيلى."
-
-
-def test_clean_uyghur_text_preserves_short_line_with_no_other_break_cue():
-    # A line with no colon/dash/list-marker/indent cue, but much shorter than
-    # the block's other line, is very likely an intentional break rather than
-    # a print-width wrap - it must not be merged into the following line.
-    text = (
-        "قىسقا قۇر.\n"
-        "بۇ ئۇزۇن ۋە تولۇق ئابزاس قۇرى بولۇپ، ئالدىنقى قىسقا قۇردىن پۈتۈنلەي "
-        "باشقا ئۇزۇنلۇقتا تۇرىدۇ."
-    )
-    cleaned = clean_uyghur_text(text)
-    lines = cleaned.split("\n")
-    assert len(lines) == 2
-    assert lines[0] == "قىسقا قۇر."
-
-
-def test_clean_uyghur_text_still_merges_ordinary_wrap_variance():
-    # A non-final line at ~88% of the block's longest line is ordinary
-    # ragged-right wrap variance, not a short line - it must still merge.
-    text = (
-        "ئۇ ھەر كۈنى ئەتىگەندە تۇرۇپ مەكتەپكە بېرىش ئالدىدا دەرسلىرىنى قايتا كۆرۈپ چىقاتتى\n"
-        "شۇنداقلا كىتابلىرىنى تەرتىپلەپ سومكىسىغا سېلىپ قويۇشنى ئۇنتۇپ قالمايتتى\n"
-        "ئاندىن ئۆيدىن چىقاتتى."
-    )
-    cleaned = clean_uyghur_text(text)
-    assert "\n" not in cleaned
-
-
-def test_clean_uyghur_text_short_final_line_of_block_still_merges():
-    # The last line of a block is never checked for shortness - a normal
-    # paragraph naturally ends on a short final line, which must still merge
-    # into the line before it.
-    text = (
-        "ئۇ كىچىك چاغلىرىدا كۆپ كىتاب ئوقۇشنى ياخشى كۆرەتتى ۋە ھەر كۈنى "
-        "كۈتۈپخانىغا بېرىپ تۇراتتى\n"
-        "شۇڭا بىلىملىك بولدى."
-    )
-    cleaned = clean_uyghur_text(text)
-    assert "\n" not in cleaned
-
-
-def test_clean_uyghur_text_short_line_check_skipped_for_tiny_blocks():
-    # Below the 15-char block-max guard, the relative-length signal is too
-    # noisy to trust - falls back to existing (merge) behavior.
-    text = "ياخشى\nياخشىمۇسىز"
-    cleaned = clean_uyghur_text(text)
-    assert "\n" not in cleaned
+    assert clean_uyghur_text(dialogue) == dialogue

@@ -312,80 +312,18 @@ def clean_uyghur_text(text: str) -> str:
     # 4. Strip header and footer page numbers
     text = strip_page_numbers(text)
 
+    # Lines are kept exactly as OCR'd within each block - never reflowed/
+    # merged into flowing prose with spaces, and never split apart into
+    # separate paragraphs. The text should read exactly as it appears on
+    # the printed page.
     blocks = re.split(r"\n\s*\n", text)
     cleaned_blocks = []
 
-    dot_leader_pattern = re.compile(r"(?:[\.·•∙⋅․﹒｡]\s*){3,}|…{2,}")
-    list_marker_pattern = re.compile(r"^\s*([-—–*•]|\d+[.)])\s*")
-    header_prefixes = ("[Header]", "[Footer]", "#", "|")
-
     for block in blocks:
-        if not block.strip():
-            continue
-
         lines = [line.rstrip() for line in block.split("\n") if line.strip()]
         if not lines:
             continue
-
-        if is_poem_block(lines) or is_metadata_or_key_value_block(lines):
-            cleaned_blocks.append("\n".join(lines))
-            continue
-
-        block_max_len = max(len(ln.lstrip()) for ln in lines)
-
-        result_block = ""
-        for idx, line in enumerate(lines):
-            if idx < len(lines) - 1:
-                next_line = lines[idx + 1]
-                raw_line = line.lstrip()
-                raw_next = next_line.lstrip()
-
-                # Paragraph boundary signals where a line break (\n) MUST be preserved:
-                # 1. Current line ends with colon introducing dialogue, quote, or list
-                is_colon_intro = bool(re.search(r"[:：]\s*$", line))
-
-                # 2. Next line is a dialogue turn starting with a dash (—, -, –)
-                is_next_dialogue = bool(raw_next and raw_next[0] in "-—–")
-
-                # 3. Next line is a list item or numbered marker
-                is_next_list_marker = bool(list_marker_pattern.match(raw_next))
-
-                # 4. Markdown headers, table rows, TOC dot leaders, or colophon key-value lines
-                is_markdown_header = raw_line.startswith(header_prefixes)
-                is_next_markdown_header = raw_next.startswith(header_prefixes)
-                is_toc_line = bool(dot_leader_pattern.search(line))
-                is_next_toc_line = bool(dot_leader_pattern.search(next_line))
-                is_key_value = is_key_value_line(raw_line)
-                is_next_key_value = is_key_value_line(raw_next)
-
-                # 5. Current line is much shorter than the block's longest line -
-                # a print-width wrap should read close to the block's max width,
-                # so a line well under that (and long enough for the ratio to be
-                # meaningful) is very likely an intentional break instead.
-                is_short_relative_line = (
-                    block_max_len >= 15 and len(raw_line) <= 0.6 * block_max_len
-                )
-
-                if (
-                    is_colon_intro
-                    or is_next_dialogue
-                    or is_next_list_marker
-                    or is_markdown_header
-                    or is_next_markdown_header
-                    or is_toc_line
-                    or is_next_toc_line
-                    or is_key_value
-                    or is_next_key_value
-                    or is_short_relative_line
-                ):
-                    result_block += line + "\n"
-                else:
-                    # Same paragraph continuation -> merge lines with space
-                    result_block += line + " "
-            else:
-                result_block += line
-
-        cleaned_blocks.append(result_block)
+        cleaned_blocks.append("\n".join(lines))
 
     cleaned = "\n\n".join(cleaned_blocks)
     return strip_page_numbers(cleaned)

@@ -47,7 +47,6 @@ from engine.text_cleanup import (
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
     is_isolated_page_number,
-    is_poem_block,
 )
 
 logger = logging.getLogger("kitabim_ocr_client.engine.recognize")
@@ -464,12 +463,11 @@ def _is_single_line_verse_block(block: Any) -> bool:
     must already be a whole paragraph recognized without internal <br> (e.g.
     Surya's own reflowed output), rather than a single printed line - see
     test_process_page_sync_preserves_prose_paragraphs_as_separate_blocks.
-    Whether the resulting group is verse (kept as separate lines) or prose
-    (reflowed with spaces) is decided by is_poem_block on the assembled
-    group, which already re-checks width ratio, dialogue dashes, and
-    mid-line terminal punctuation - duplicating those checks here only
-    blocked ordinary full-width prose lines and dialogue-attribution lines
-    from ever being considered for grouping in the first place.
+    A grouped run of single-line blocks is always joined one-line-per-line
+    (never reflowed into flowing prose) regardless of whether it turns out
+    to be a poem stanza or consecutive print-wrapped prose lines - so this
+    only needs to gate whether blocks are even candidates for grouping,
+    not what kind of content they'll turn out to be.
     """
     html = (getattr(block, "html", "") or "").strip()
     if not html:
@@ -504,7 +502,6 @@ def _process_page_sync(
     footnotes: list[str] = []
     confidences: list[float] = []
     gray_arr = np.array(image.convert("L"))
-    img_w, _ = image.size
 
     valid_blocks: list[Any] = []
 
@@ -564,7 +561,6 @@ def _process_page_sync(
                 blocks.append(txt)
         else:
             lines: list[str] = []
-            group_boxes: list[tuple[float, float, float, float]] = []
             for b in current_group:
                 soup = BeautifulSoup(b.html, "html.parser")
                 for br in soup.find_all("br"):
@@ -574,25 +570,16 @@ def _process_page_sync(
                     line_str = line.strip()
                     if line_str:
                         lines.append(line_str)
-                box = _get_block_bbox(b)
-                if box:
-                    group_boxes.append(box)
 
             if lines:
-                w_ratio = None
-                if group_boxes and img_w > 0:
-                    min_x = min(bx[0] for bx in group_boxes)
-                    max_x = max(bx[1] for bx in group_boxes)
-                    w_ratio = (max_x - min_x) / img_w
-
-                if len(lines) > 1 and is_poem_block(lines, width_ratio=w_ratio):
-                    txt = "\n".join(lines)
-                else:
-                    # Not a poem stanza - these are print-wrapped lines of one
-                    # continuous prose paragraph that Surya over-segmented into
-                    # per-line blocks; reflow them with spaces rather than
-                    # treating each line as its own paragraph.
-                    txt = " ".join(lines)
+                # Consolidate the group into one block, each source line kept
+                # on its own line exactly as printed - never reflowed into
+                # flowing prose and never split apart into separate
+                # paragraphs. This keeps a poem's scattered verse-line blocks
+                # together as one stanza, and equally keeps consecutive
+                # print-wrapped prose lines together without a spurious
+                # blank-line gap between them.
+                txt = "\n".join(lines)
 
                 if (
                     txt.strip()
