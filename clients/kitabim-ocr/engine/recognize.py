@@ -596,7 +596,11 @@ def _process_page_sync(
                 if len(lines) > 1 and is_poem_block(lines, width_ratio=w_ratio):
                     txt = "\n".join(lines)
                 else:
-                    txt = "\n\n".join(lines)
+                    # Not a poem stanza - these are print-wrapped lines of one
+                    # continuous prose paragraph that Surya over-segmented into
+                    # per-line blocks; reflow them with spaces rather than
+                    # treating each line as its own paragraph.
+                    txt = " ".join(lines)
 
                 if (
                     txt.strip()

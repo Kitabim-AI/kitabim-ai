@@ -677,6 +677,53 @@ def test_process_page_sync_groups_verse_lines_into_couplets_and_separates_stanza
     assert stanza2_lines[3] == "چىراغتا پارقىرار قالپاق ۋە نەيزە ."
 
 
+def test_process_page_sync_merges_grouped_prose_lines_that_fail_poem_check():
+    """When Surya over-segments a single prose paragraph into short per-line
+    Text blocks (tight vertical spacing groups them as verse candidates), but
+    the group fails is_poem_block (irregular lengths, no rhyme/verse-ending
+    punctuation), the lines must be reflowed as continuous prose (merged with
+    spaces) - not treated as separate paragraphs split by blank lines."""
+    img = Image.new("RGB", (1000, 1000))
+    mock_predictor = MagicMock()
+    mock_result = MagicMock()
+
+    def make_line_block(order, y0, y1, text):
+        b = MagicMock()
+        b.label = "Text"
+        b.html = f"<p>{text}</p>"
+        b.reading_order = order
+        b.skipped = False
+        b.error = False
+        b.confidence = 0.95
+        b.polygon = [
+            [300.0, float(y0)],
+            [800.0, float(y0)],
+            [800.0, float(y1)],
+            [300.0, float(y1)],
+        ]
+        b.bbox = None
+        return b
+
+    mock_result.blocks = [
+        make_line_block(0, 100, 150, "ئۇ ئۆيدىن چىقىپ كوچىغا قاراپ ماڭدى"),
+        make_line_block(
+            1, 152, 202, "يولدا كۆپ ئادەم بار ئىدى ئەمما ھېچكىم ئۇنى تونۇمايتتى"
+        ),
+        make_line_block(2, 204, 254, "ئاخىرى بازارغا يېتىپ باردى"),
+    ]
+
+    with patch("engine.recognize.recognize_page", return_value=mock_result), patch(
+        "engine.recognize._is_phantom_bleed_through_block", return_value=False
+    ):
+        markdown, mean_conf = svc._process_page_sync(img, mock_predictor)
+
+    assert "\n\n" not in markdown, (
+        f"Expected the grouped non-poem lines to merge into one flowing "
+        f"paragraph, got separate blocks: {markdown!r}"
+    )
+    assert "ئۇ ئۆيدىن چىقىپ كوچىغا قاراپ ماڭدى يولدا" in markdown
+
+
 def test_process_page_sync_preserves_prose_paragraphs_as_separate_blocks():
     """Verify that multi-line prose paragraphs detected by Surya are preserved as separate
     blocks separated by empty lines (\n\n) and not merged together as a single block."""
