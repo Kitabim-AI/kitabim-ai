@@ -724,6 +724,206 @@ def test_process_page_sync_merges_grouped_prose_lines_that_fail_poem_check():
     assert "ئۇ ئۆيدىن چىقىپ كوچىغا قاراپ ماڭدى يولدا" in markdown
 
 
+def test_process_page_sync_merges_dense_prose_page_into_flowing_paragraphs():
+    """Regression test from a real book page: Surya segmented one continuous
+    prose paragraph (narration interleaved with em-dash dialogue) into 24
+    separate single-line Text blocks. _is_single_line_verse_block's
+    width-ratio and dash-start checks - meant to exclude non-poem content -
+    also blocked ordinary full-width prose lines and dialogue-attribution
+    lines from ever being considered for grouping at all, so each printed
+    line ended up rendered as its own paragraph. Those checks are redundant
+    with is_poem_block's own (already-tested) equivalent checks applied to
+    the assembled group, so removing them at the grouping-eligibility stage
+    should let is_poem_block correctly reject the group as non-verse and
+    route it to the prose-reflow (space-join) branch instead."""
+    img = Image.new("RGB", (1500, 2270))
+    mock_predictor = MagicMock()
+    mock_result = MagicMock()
+
+    def make_line_block(order, label, box, html):
+        b = MagicMock()
+        b.label = label
+        b.html = html
+        b.reading_order = order
+        b.skipped = False
+        b.error = False
+        b.confidence = 0.95
+        x0, x1, y0, y1 = box
+        b.polygon = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+        b.bbox = None
+        return b
+
+    # Captured verbatim from Surya's real recognition output on the failing page.
+    real_blocks = [
+        (
+            0,
+            "Text",
+            (205.5, 1360.5, 297.37, 542.53),
+            "<p>ئالدىراش كېتىشۋاتاتتى. ئۇلارنىڭ ئارىسىدا ئۇچىسىغا جۈببەئى سىنجاپ يېپىنچاقلىۋالغان، ئۈستىگە يېشىل يېپەكتىن جۈببەۋە داستار كىيگەن، يېشى ئاتمىشلاردا بار بىر مويسىپىت كىشى ھەممىنىڭ ئالدىدا كېتىپ باراتتى.</p>",
+        ),
+        (
+            1,
+            "Text",
+            (205.5, 1260.0, 540.26, 612.9),
+            "<p>— مەنزىلگە يەنە قانچىلىك قالدۇق؟ — دەپ سورىدى ئۇ</p>",
+        ),
+        (
+            2,
+            "Text",
+            (780.0, 1356.0, 603.82, 662.84),
+            "<p>كەينىدىن كېلىۋاتقان بىرىدىن.</p>",
+        ),
+        (
+            3,
+            "Text",
+            (205.5, 1260.0, 660.57, 726.4),
+            "<p>— ئاز قالدۇق، نېمەتلىك پىرىم، ئەنە ئاۋۇ كۆرۈنگەن</p>",
+        ),
+        (
+            4,
+            "Text",
+            (205.5, 1363.5, 719.59, 851.25),
+            "<p>تۆپىلىكتىن ئاشساقلا ھەزرىتى سۇلتان مازىرىنىڭ ئالتۇن قۇببىلىرى كۆرۈنىدۇ! — دەپ جاۋاب بەردى ھېلىقى كىشى.</p>",
+        ),
+        (
+            5,
+            "Text",
+            (205.5, 1260.0, 842.17, 908.0),
+            "<p>— ھۆرمەتلىك مەككە خوجا، — دېدى بۇ چاغدا ئاتلىق</p>",
+        ),
+        (
+            6,
+            "Text",
+            (205.5, 1363.5, 901.19, 964.75),
+            "<p>كېتىۋاتقانلارنىڭ ئارىسىدىكى ياش بىرى، — سىلىنىڭ: «مانا</p>",
+        ),
+        (
+            7,
+            "Text",
+            (205.5, 1363.5, 960.21, 1021.5),
+            "<p>ئاز قالدۇق!» دېگەن سۆزلىرىنى بۈگۈن ئونىنچى قېتىم</p>",
+        ),
+        (
+            8,
+            "Text",
+            (205.5, 1363.5, 1016.96, 1082.79),
+            "<p>ئاڭلاۋاتىمىز! بىراق، قاق سەھەردىن باشلاپ ماڭغىلى</p>",
+        ),
+        (
+            9,
+            "Text",
+            (205.5, 1363.5, 1078.25, 1144.08),
+            "<p>تۇرىۋىدۇق، ئەلھال، ناماز ئەسىر ۋاقتىمۇ بولاي دەپ قالدى،</p>",
+        ),
+        (
+            10,
+            "Text",
+            (205.5, 1363.5, 1139.54, 1205.37),
+            "<p>قېنى ئۇ سىلى دېگەن ھەزرىتى سۇلتان مازىرىنىڭ ئالتۇن</p>",
+        ),
+        (
+            11,
+            "Text",
+            (790.5, 1363.5, 1200.83, 1264.39),
+            "<p>قۇببىسى؟ ھېچ كۆرۈنمەيدىغۇ؟</p>",
+        ),
+        (
+            12,
+            "Text",
+            (205.5, 1260.0, 1264.39, 1327.95),
+            "<p>— ئىنەللاھا مەئەسسابىرىن، سەۋر قىل ئى پەرزەنت</p>",
+        ),
+        (
+            13,
+            "Text",
+            (205.5, 1363.5, 1323.41, 1389.24),
+            "<p>مۇھەممەتئىمىن ئىشان! ئاللا بەندىلىرىگە سەۋر قىلىڭلار! دەپ</p>",
+        ),
+        (
+            14,
+            "Text",
+            (205.5, 1363.5, 1382.43, 1448.26),
+            "<p>ئۆگەتكەن، — دېدى ھېلىقى مويسىپىت كىشى بوش ئاۋاز بىلەن.</p>",
+        ),
+        (
+            15,
+            "Text",
+            (205.5, 1260.0, 1443.72, 1507.28),
+            "<p>— ئىنشائاللا، نېمەتلىك ئۇلۇغ پىرىم، ئەپۇ قىلغايسىز،</p>",
+        ),
+        (
+            16,
+            "Text",
+            (205.5, 1363.5, 1502.74, 1566.3),
+            "<p>مەن خېلىدىن بېرى ساياھەتكە چىقمىغانىدىم، — دېدى ئاتلىق</p>",
+        ),
+        (
+            17,
+            "Text",
+            (205.5, 1363.5, 1561.76, 1627.59),
+            "<p>ئادەملەرنىڭ ئارىسىدىكى مۇھەممەتئىمىن ئىشان دەپ ئاتالغان</p>",
+        ),
+        (
+            18,
+            "Text",
+            (205.5, 1363.5, 1623.05, 1688.88),
+            "<p>ھېلىقى يىگىت خۇشخۇيلۇق بىلەن كۈلۈپ تۇرۇپ، —</p>",
+        ),
+        (
+            19,
+            "Text",
+            (205.5, 1363.5, 1684.34, 1750.17),
+            "<p>ئۆسمۈرلۈك چاغلىرىمىزدا بىر نەچچە قېتىم پەدەرىمگە ئەگىشىپ</p>",
+        ),
+        (
+            20,
+            "Text",
+            (205.5, 1363.5, 1745.63, 1811.46),
+            "<p>ئەنجان، مەرغىلانغا سەپەر قىلغاننى ھېسابقا ئالمىغاندا، بۇنداق</p>",
+        ),
+        (
+            21,
+            "Text",
+            (205.5, 1363.5, 1806.92, 1872.75),
+            "<p>نەچچە كۈنلەپ ئۇزاق يول مېڭىپ باقمىغانىكەنمەن! بۇ ھەقىقەتەن</p>",
+        ),
+        (
+            22,
+            "Text",
+            (562.5, 1363.5, 1865.94, 1929.5),
+            "<p>ھاياتىمدىكى ئەڭ كۆڭۈللۈك سەپەر بولدى.</p>",
+        ),
+        (
+            23,
+            "Text",
+            (205.5, 1260.0, 1924.96, 1990.79),
+            "<p>— ئى پەرزەنت، ئاشۇ كۆڭۈلسىز پەرغانىنى تىلغا</p>",
+        ),
+        (24, "PageFooter", (1288.5, 1320.0, 2008.95, 2045.27), "<p>2</p>"),
+    ]
+    mock_result.blocks = [make_line_block(*data) for data in real_blocks]
+
+    with patch("engine.recognize.recognize_page", return_value=mock_result), patch(
+        "engine.recognize._is_phantom_bleed_through_block", return_value=False
+    ):
+        markdown, mean_conf = svc._process_page_sync(img, mock_predictor)
+
+    paragraphs = markdown.split("\n\n")
+    assert len(paragraphs) <= 4, (
+        f"Expected the dense dialogue page to collapse into a handful of "
+        f"flowing paragraphs, not one per printed line: got "
+        f"{len(paragraphs)}: {paragraphs}"
+    )
+    # A dash-prefixed dialogue line and its non-dash continuation (previously
+    # excluded from grouping entirely) must now reflow as one paragraph.
+    assert (
+        "— مەنزىلگە يەنە قانچىلىك قالدۇق؟ — دەپ سورىدى ئۇ كەينىدىن كېلىۋاتقان بىرىدىن."
+        in markdown
+    )
+    # The opening (already internally-merged by Surya) paragraph is untouched.
+    assert paragraphs[0].startswith("ئالدىراش كېتىشۋاتاتتى.")
+
+
 def test_process_page_sync_preserves_prose_paragraphs_as_separate_blocks():
     """Verify that multi-line prose paragraphs detected by Surya are preserved as separate
     blocks separated by empty lines (\n\n) and not merged together as a single block."""

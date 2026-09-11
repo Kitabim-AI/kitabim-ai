@@ -454,11 +454,22 @@ def _get_block_bbox(block: Any) -> tuple[float, float, float, float] | None:
     return None
 
 
-def _is_single_line_verse_block(block: Any, img_w: float = 0.0) -> bool:
-    """Return True if block contains a single verse line suitable for poem stanza grouping.
+def _is_single_line_verse_block(block: Any) -> bool:
+    """Return True if block contains exactly one physical print line, making it
+    a grouping candidate for a vertically-adjacent block (whether the group
+    then turns out to be a poem stanza or a print-wrapped prose fragment).
 
-    Multi-line blocks, wide prose blocks, or blocks with terminal sentence punctuation
-    are prose paragraphs and must never be grouped, preserving paragraphs detected by layout analysis.
+    Only excludes blocks that are structurally NOT a single physical line:
+    multi-line/list/table HTML, or a block whose text is long enough that it
+    must already be a whole paragraph recognized without internal <br> (e.g.
+    Surya's own reflowed output), rather than a single printed line - see
+    test_process_page_sync_preserves_prose_paragraphs_as_separate_blocks.
+    Whether the resulting group is verse (kept as separate lines) or prose
+    (reflowed with spaces) is decided by is_poem_block on the assembled
+    group, which already re-checks width ratio, dialogue dashes, and
+    mid-line terminal punctuation - duplicating those checks here only
+    blocked ordinary full-width prose lines and dialogue-attribution lines
+    from ever being considered for grouping in the first place.
     """
     html = (getattr(block, "html", "") or "").strip()
     if not html:
@@ -473,29 +484,10 @@ def _is_single_line_verse_block(block: Any, img_w: float = 0.0) -> bool:
     if len(lines) != 1:
         return False
 
-    line = lines[0]
-    # Verse lines in Uyghur books are typically under 85 characters
-    if len(line) > 85:
-        return False
-
-    # Check width ratio if geometry is available (poems are narrow/centered, width_ratio <= 0.75)
-    box = _get_block_bbox(block)
-    if box and img_w > 0:
-        w_ratio = (box[1] - box[0]) / img_w
-        if w_ratio > 0.75:
-            return False
-
-    # Disqualify structural markers, list items, dialogue turns
-    if line.startswith(("#", "|", "*", "•", "-", "—", "–")) or re.match(
-        r"^\d+[.)]", line
-    ):
-        return False
-
-    # Disqualify mid-line terminal punctuation (strong prose signal)
-    if re.search(r"[\.؟\!]\s+[\u0600-\u06FF\w]", line):
-        return False
-
-    return True
+    # Verse lines (and ordinary print lines) in Uyghur books are typically
+    # under 85 characters; a "single line" well past that is almost always a
+    # whole paragraph Surya already reflowed internally, not one print line.
+    return len(lines[0]) <= 85
 
 
 def _process_page_sync(
@@ -635,7 +627,7 @@ def _process_page_sync(
             continue
 
         box = _get_block_bbox(block)
-        is_curr_verse = _is_single_line_verse_block(block, img_w)
+        is_curr_verse = _is_single_line_verse_block(block)
 
         if not box or not current_group or not is_curr_verse:
             flush_group()
@@ -644,7 +636,7 @@ def _process_page_sync(
 
         prev_block = current_group[-1]
         prev_box = _get_block_bbox(prev_block)
-        is_prev_verse = _is_single_line_verse_block(prev_block, img_w)
+        is_prev_verse = _is_single_line_verse_block(prev_block)
 
         if not prev_box or not is_prev_verse:
             flush_group()
