@@ -1,10 +1,10 @@
 import io
 from unittest.mock import MagicMock, patch
 
-import pytest
-from PIL import Image
-
 import engine.recognize as svc
+import pytest
+from engine.text_cleanup import clean_uyghur_text
+from PIL import Image
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +95,7 @@ def test_is_page_blank_true_for_uniform_pixels():
 
 def test_is_page_blank_false_for_varied_pixels():
     pix = MagicMock()
-    pix.samples = bytes(([10, 250] * 1500))
+    pix.samples = bytes([10, 250] * 1500)
     assert svc.is_page_blank(pix) is False
 
 
@@ -183,11 +183,27 @@ def test_process_page_sync_skips_discarded_and_errored_blocks():
     assert markdown == "good content"
 
 
+def test_process_page_sync_preserves_page_footer_with_text_content():
+    img = Image.new("RGB", (200, 200))
+    mock_predictor = MagicMock()
+    mock_result = MagicMock()
+    mock_result.blocks = [
+        _block("Text", "<p>شېئىر مىسرالىرى</p>", position=0),
+        _block("PageFooter", "<p>1983 - يىل 24 - فېۋرال، ئۈرۈمچى</p>", position=1),
+    ]
+
+    with patch("engine.recognize.recognize_page", return_value=mock_result):
+        markdown, _ = svc._process_page_sync(img, mock_predictor)
+
+    assert "شېئىر مىسرالىرى" in markdown
+    assert "1983 - يىل 24 - فېۋرال، ئۈرۈمچى" in markdown
+
+
 @pytest.mark.asyncio
 async def test_ocr_page_happy_path():
     mock_page = MagicMock()
     mock_pix = MagicMock()
-    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.samples = bytes([10, 250] * 1500)
     mock_pix.tobytes.return_value = _fake_png_bytes()
     mock_page.get_pixmap.return_value = mock_pix
 
@@ -218,7 +234,7 @@ async def test_ocr_page_blank_page_returns_empty_without_processing():
 async def test_ocr_page_retries_on_low_confidence():
     mock_page = MagicMock()
     mock_pix = MagicMock()
-    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.samples = bytes([10, 250] * 1500)
     mock_pix.tobytes.return_value = _fake_png_bytes()
     mock_page.get_pixmap.return_value = mock_pix
 
@@ -240,7 +256,7 @@ async def test_ocr_page_retries_on_low_confidence():
 async def test_ocr_page_retries_on_degenerate_repetition_loop():
     mock_page = MagicMock()
     mock_pix = MagicMock()
-    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.samples = bytes([10, 250] * 1500)
     mock_pix.tobytes.return_value = _fake_png_bytes()
     mock_page.get_pixmap.return_value = mock_pix
 
@@ -264,7 +280,7 @@ async def test_ocr_page_retries_on_degenerate_repetition_loop():
 async def test_ocr_page_timeout_aborts_immediately_without_further_retries():
     mock_page = MagicMock()
     mock_pix = MagicMock()
-    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.samples = bytes([10, 250] * 1500)
     mock_pix.tobytes.return_value = _fake_png_bytes()
     mock_page.get_pixmap.return_value = mock_pix
 
@@ -283,7 +299,7 @@ async def test_ocr_page_timeout_aborts_immediately_without_further_retries():
 async def test_ocr_page_respects_custom_max_retries():
     mock_page = MagicMock()
     mock_pix = MagicMock()
-    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.samples = bytes([10, 250] * 1500)
     mock_pix.tobytes.return_value = _fake_png_bytes()
     mock_page.get_pixmap.return_value = mock_pix
 
@@ -326,7 +342,7 @@ def test_get_executor_scales_and_reuses():
 async def test_ocr_page_passes_max_parallel_to_executor():
     mock_page = MagicMock()
     mock_pix = MagicMock()
-    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.samples = bytes([10, 250] * 1500)
     mock_pix.tobytes.return_value = _fake_png_bytes()
     mock_page.get_pixmap.return_value = mock_pix
 
@@ -346,7 +362,7 @@ async def test_ocr_page_passes_max_parallel_to_executor():
 async def test_ocr_page_caps_surya_concurrency_to_max_four():
     mock_page = MagicMock()
     mock_pix = MagicMock()
-    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.samples = bytes([10, 250] * 1500)
     mock_pix.tobytes.return_value = _fake_png_bytes()
     mock_page.get_pixmap.return_value = mock_pix
 
@@ -375,7 +391,7 @@ async def test_ocr_page_executes_concurrently_in_parallel():
 
     mock_page = MagicMock()
     mock_pix = MagicMock()
-    mock_pix.samples = bytes(([10, 250] * 1500))
+    mock_pix.samples = bytes([10, 250] * 1500)
     mock_pix.tobytes.return_value = _fake_png_bytes()
     mock_page.get_pixmap.return_value = mock_pix
 
@@ -512,20 +528,39 @@ def test_block_html_to_markdown_preserves_poem_lines_and_merges_prose():
         "ئاقار سەل ئورنىدا ياشىم، غېرىب بولدى ئەزىز باشىم،<br/>"
         "ماڭا تار ئەيلىدى چۈنكى بۇ دەۋران ئۆز دىيارمىنى .</p>"
     )
-    # Poem should keep newlines
-    poem_md = svc._block_html_to_markdown(poem_html, width_ratio=0.62)
+    # Poem should keep newlines in block markdown and after clean_uyghur_text
+    poem_md = svc._block_html_to_markdown(poem_html)
     assert poem_md.count("\n") == 3
     assert poem_md.split("\n")[0] == "غېبى جانان، دېفى ھىجران تۇگەتتى ياش باھارمىنى،"
+    assert clean_uyghur_text(poem_md).count("\n") == 3
 
     prose_html = (
         "<p>خەيرىيەت، ئەمدى تاھارىتىڭنى ئال. مەن نامىزىمنى ئۆتۈۋېرەي، -<br/>"
         "دېدى شېرىكى كۈلۈمسىرەپ ئۇنىڭغا پىسەنت قىلماي.</p>"
     )
-    # Prose should merge lines with space
-    prose_md = svc._block_html_to_markdown(prose_html, width_ratio=0.78)
-    assert "\n" not in prose_md
-    assert "خەيرىيەت" in prose_md
-    assert "شېرىكى" in prose_md
+    # Block markdown preserves lines; clean_uyghur_text merges mid-sentence wrapped lines
+    prose_md = svc._block_html_to_markdown(prose_html)
+    assert prose_md.count("\n") == 1
+    cleaned = clean_uyghur_text(prose_md)
+    assert "\n" not in cleaned
+    assert "خەيرىيەت" in cleaned
+    assert "شېرىكى" in cleaned
+
+
+def test_prose_dialogue_lines_preserved_during_cleanup():
+    prose_dialogue = (
+        "دىرەنزە، ھويلىلاردىن مارىشىپ، ھاسانشاھنى زاڭلىق قىلىشتى، قاقاقلاپ كۈلۈشتى:\n"
+        "— ياغلىقلا تاڭسا چىرايلىق چوكان بولغۇدەك! - ھا - ھا - ھا!\n"
+        "— پۆرمىلىك كۆينەك كىيسە ئېرىگىنى تارتىۋالامدو تېخى!\n"
+        "— ۋاھ - ھا - ھا! ھېيى - ھېي!"
+    )
+    cleaned = clean_uyghur_text(prose_dialogue)
+    assert cleaned.count("\n") == 3
+    lines = cleaned.split("\n")
+    assert lines[0].endswith("قاقاقلاپ كۈلۈشتى:")
+    assert lines[1].startswith("— ياغلىقلا تاڭسا")
+    assert lines[2].startswith("— پۆرمىلىك كۆينەك")
+    assert lines[3].startswith("— ۋاھ - ھا - ھا!")
 
 
 def test_enhance_dots_and_contrast():
@@ -640,3 +675,69 @@ def test_process_page_sync_groups_verse_lines_into_couplets_and_separates_stanza
     assert len(stanza2_lines) == 4
     assert stanza2_lines[0] == "گۈركىرەپ ماشىنا، دىرىلدىدى تام،"
     assert stanza2_lines[3] == "چىراغتا پارقىرار قالپاق ۋە نەيزە ."
+
+
+def test_process_page_sync_preserves_prose_paragraphs_as_separate_blocks():
+    """Verify that multi-line prose paragraphs detected by Surya are preserved as separate
+    blocks separated by empty lines (\n\n) and not merged together as a single block."""
+    img = Image.new("RGB", (859, 1200))
+    mock_predictor = MagicMock()
+    mock_result = MagicMock()
+
+    def make_prose_block(order, bbox, text):
+        b = MagicMock()
+        b.label = "Text"
+        b.html = f'<div data-label="Text"><p>{text}</p></div>'
+        b.reading_order = order
+        b.skipped = False
+        b.error = False
+        b.confidence = 0.98
+        b.bbox = bbox
+        b.polygon = None
+        return b
+
+    mock_result.blocks = [
+        make_prose_block(
+            0,
+            (57.0, 132.0, 802.0, 261.0),
+            "كەلتۈرگەن، شۇنداقلا ئۇيغۇر ھازىرقى زامان شېئىرىيىتىنىڭ ئالدىنقى قاراتارىدىكى ۋەكىللىرىنىڭ بىرىگە ئايلانغان. ئۇنىڭ «تاڭ شاماللىرى»، «ياخشى»، «مەن ئاق بايراق ئەمەس» قاتارلىق شېئىرلىرى، «ئۇلۇغ ئانا ھەققىدە چۆچەك»، «قەشقەر كېچىسى» قاتارلىق داستانلىرى ھازىرقى زامان ئۇيغۇر شېئىرىيىتىدە ئالاھىدە ئورۇن تۇتىدۇ.",
+        ),
+        make_prose_block(
+            1,
+            (57.0, 257.0, 802.0, 363.0),
+            "ئابدۇرېھىم ئۆتكۈز 1980 - يىللاردىن تارتىپ بەدىئىي جەھەتتىكى تالانتىنى تارىخىي رومان ئىجادىيىتىگە قارىتىپ «ئىز»، «ئويغانغان زېمىن» رومانلىرىنى يازغان. بۇ رومانلار ئۇيغۇر رومانچىلىقىنىڭ شەكىللىك ئىشىگە ئاساس سالغان رومانلار بولۇپ ھېسابلىنىدۇ.",
+        ),
+        make_prose_block(
+            2,
+            (57.0, 358.0, 802.0, 435.0),
+            "ئابدۇرېھىم ئۆتكۈز يەنە «تۈركىي تىللار دىۋانى»، «قۇتادغۇ بىدىلىك» قاتارلىق نادىر كلاسسىك ئەسەرلەرنى ھازىرقى زامان ئۇيغۇر تىلىدا نەشرگە تەييارلاش ئىشىدا ئالاھىدە تۆھپە قوشقان تەتقىقاتچى.",
+        ),
+        make_prose_block(
+            3,
+            (57.0, 432.0, 802.0, 687.0),
+            "ھازىرغا قەدەر ئابدۇرېھىم ئۆتكۈزىنىڭ «يۈرەك مۇڭلىرى» (1946 - يىلى، لەنجۇ)، «تارىم بويلىرى» (1948 - يىلى، تيانشان نەشرىياتى) ناملىق شېئىرلار توپلىمى، «قەشقەر كېچىسى» (1980 - يىلى، شىنجاڭ خەلق نەشرىياتى) ناملىق داستانى، «ئۇمۇر مەنزىللىرى» (1985 - يىلى، شىنجاڭ ياشلار - ئۆسمۈرلەر نەشرىياتى) ناملىق شېئىرلار توپلىمى، «ئىز» (1985 - يىلى، شىنجاڭ خەلق نەشرىياتى)، «ئويغانغان زېمىن» (ئىككى قىسىم، 1988 -، 1994 - يىللىرى، شىنجاڭ خەلق نەشرىياتى) ناملىق رومانلىرى، «خەزىنىلەر بوسۇغىسىدا» (1996 - يىلى، شىنجاڭ خەلق نەشرىياتى) ناملىق ئىلمىي ماقالىلەر توپلىمى نەشر قىلىنغان.",
+        ),
+        make_prose_block(
+            4,
+            (57.0, 686.0, 802.0, 737.0),
+            "بۇ توپلامغا شائىر ئابدۇرېھىم ئۆتكۈزىنىڭ ۋەكىللىك خاراكتېرىگە ئىگە لىرىك شېئىرلىرى كىرگۈزۈلدى.",
+        ),
+    ]
+
+    with patch("engine.recognize.recognize_page", return_value=mock_result), patch(
+        "engine.recognize._is_phantom_bleed_through_block", return_value=False
+    ):
+        markdown, mean_conf = svc._process_page_sync(img, mock_predictor)
+
+    paragraphs = markdown.split("\n\n")
+    assert (
+        len(paragraphs) == 5
+    ), f"Expected 5 paragraphs, got {len(paragraphs)}: {paragraphs}"
+    cleaned = clean_uyghur_text(markdown)
+    cleaned_paras = cleaned.split("\n\n")
+    assert (
+        len(cleaned_paras) == 5
+    ), f"Expected 5 cleaned paragraphs, got {len(cleaned_paras)}"
+    assert cleaned_paras[0].startswith("كەلتۈرگەن، شۇنداقلا")
+    assert cleaned_paras[1].startswith("ئابدۇرېھىم ئۆتكۈز 1980")
+    assert cleaned_paras[4].startswith("بۇ توپلامغا شائىر")

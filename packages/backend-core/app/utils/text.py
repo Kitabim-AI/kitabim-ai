@@ -1,7 +1,6 @@
 import re
 import unicodedata
 from collections import Counter
-from typing import Optional
 
 # ── Arabic Presentation Forms Normalization ───────────────────────────────────
 # Pre-calculate mapping for performance. range(0xFB50, 0xFE00) and range(0xFE70, 0xFF00)
@@ -54,6 +53,13 @@ _ORTHOGRAPHY_CORRECTIONS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bغېرىب(?!" + _UYGHUR_VOWELS + r")"), "غېرىپ"),
     (re.compile(r"\bئەجەب\b"), "ئەجەپ"),
     (re.compile(r"\bلالىزار(?!" + _UYGHUR_VOWELS + r")"), "لالەزار"),
+    # OCR models frequently mistake the terminal Uyghur question mark '؟'
+    # following the interrogative suffix 'مۇ' for the Arabic letter mim ('م'),
+    # producing '...مۇم' instead of '...مۇ؟' (e.g. 'قىلدىمۇم' -> 'قىلدىمۇ؟').
+    (
+        re.compile(r"(?<!ئۇ)(?<!ئو)(?<=\w)مۇم(?:\s*؟)?(?=[.,،!»\"”\)\s]|$)"),
+        "مۇ؟",
+    ),
 ]
 
 
@@ -182,14 +188,118 @@ def is_poem_block(lines: list[str], width_ratio: float | None = None) -> bool:
 
     # 2. Couplets / triplets (2-3 lines)
     if len(clean_lines) in (2, 3):
-        has_comma_break = any(line.endswith(("،", ",")) for line in clean_lines[:-1])
+        # Verse lines frequently end with commas, question marks, exclamation marks,
+        # periods, semicolons, ellipsis, quotes, or Uyghur interrogative clitic 'مۇ'
+        has_verse_break = any(
+            line.endswith(
+                (
+                    "،",
+                    ",",
+                    "؟",
+                    "?",
+                    "!",
+                    "!",
+                    ".",
+                    "…",
+                    "...",
+                    "؛",
+                    ";",
+                    ":",
+                    "»",
+                    '"',
+                    "”",
+                )
+            )
+            or bool(re.search(r"(?:[،,؟?!.؛;…:]|\.\.\.|»|\"|”|مۇم?)$", line))
+            for line in clean_lines[:-1]
+        )
+        # Check if lines share common rhyme/radif endings (common in mesnevi/qoshma/ghazal)
+        rhymes = False
+        words = [
+            re.sub(r"[^\w\u0600-\u06FF]", "", word.split()[-1])
+            for word in clean_lines
+            if word.split()
+        ]
+        if len(words) == len(clean_lines):
+            for i in range(len(words) - 1):
+                w1, w2 = words[i], words[i + 1]
+                if w1 == w2 and len(w1) >= 3:
+                    rhymes = True
+                    break
+                c_len = 0
+                while (
+                    c_len < len(w1)
+                    and c_len < len(w2)
+                    and w1[-(c_len + 1)] == w2[-(c_len + 1)]
+                ):
+                    c_len += 1
+                if c_len >= 4:
+                    rhymes = True
+                    break
+
         is_explicit_narrow = width_ratio is not None and width_ratio <= 0.70
-        if has_comma_break and 18 <= mean_len <= 75 and cv <= 0.20:
+
+        if (has_verse_break or rhymes) and 18 <= mean_len <= 75 and cv <= 0.20:
             return True
         if is_explicit_narrow and 18 <= mean_len <= 75 and cv <= 0.15 and ratio >= 0.75:
             return True
 
     return False
+
+
+_KEY_VALUE_LINE_RE = re.compile(r"^\s*([^\n:：]{1,35})\s*[:：]")
+_SPEECH_VERBS = frozenset(
+    {
+        "دېدى",
+        "دەيدۇ",
+        "دەپتۇ",
+        "دەپتىكەن",
+        "سورىدى",
+        "سورايدۇ",
+        "پىچىرلىدى",
+        "قىچقىردى",
+        "ۋارقىرىدى",
+    }
+)
+# Dialogue attributions in play-script/interview-style text are a single pronoun
+# or name followed by a colon (e.g. 'ئۇ:', 'مەن:') and must not be mistaken for
+# a metadata/colophon key such as 'ئاپتورى:' or 'ISBN:'.
+_PRONOUNS = frozenset({"ئۇ", "مەن", "سەن", "سىز", "بىز", "سىلەر", "سىزلەر", "ئۇلار"})
+
+
+def is_key_value_line(line: str) -> bool:
+    """Return True if line begins with a key-value label (e.g. 'ئاپتورى:', 'ISBN:')."""
+    m = _KEY_VALUE_LINE_RE.match(line.strip())
+    if not m:
+        return False
+    key = m.group(1).strip()
+    words = key.split()
+    if not (1 <= len(words) <= 5):
+        return False
+    if any(ch in key for ch in ",،.?!:;()[]{}"):
+        return False
+    if len(words) == 1 and key in _PRONOUNS:
+        return False
+    return words[-1] not in _SPEECH_VERBS
+
+
+def is_metadata_or_key_value_block(lines: list[str]) -> bool:
+    """Return True if lines represent a colophon, publishing metadata, or key-value list."""
+    if len(lines) < 2:
+        return False
+
+    clean_lines = [line.strip() for line in lines if line.strip()]
+    if len(clean_lines) < 2:
+        return False
+
+    kv_count = sum(1 for line in clean_lines if is_key_value_line(line))
+    total = len(clean_lines)
+
+    if total == 2:
+        return kv_count == 2
+
+    # For 3+ lines: at least 2 key-value lines and at least 30% of lines match
+    return kv_count >= 2 and (kv_count / total) >= 0.30
 
 
 def clean_uyghur_text(text: str) -> str:
@@ -213,7 +323,7 @@ def clean_uyghur_text(text: str) -> str:
     cleaned_blocks = []
 
     dot_leader_pattern = re.compile(r"(?:[\.·•∙⋅․﹒｡]\s*){3,}|…{2,}")
-    list_marker_pattern = re.compile(r"^\s*([-—–*•]|\d+[.)])\s+")
+    list_marker_pattern = re.compile(r"^\s*([-—–*•]|\d+[.)])\s*")
     header_prefixes = ("[Header]", "[Footer]", "#", "|")
 
     for block in blocks:
@@ -226,47 +336,49 @@ def clean_uyghur_text(text: str) -> str:
         if not lines:
             continue
 
-        if is_poem_block(lines):
+        if is_poem_block(lines) or is_metadata_or_key_value_block(lines):
             cleaned_blocks.append("\n".join(lines))
             continue
 
         result_block = ""
         for idx, line in enumerate(lines):
-            # If line has leading spaces, it's likely intentional indentation
-            # We preserve it.
             if idx < len(lines) - 1:
                 next_line = lines[idx + 1]
-                is_ending = re.search(r"[.؟!:؛»\"”)\]}﴾﴿…]\s*$", line)
-
-                # A line is a "New Item" (list) only if the previous line ended a sentence.
-                # Otherwise, it's just a continuation (like a mid-line dash).
-                raw_next = next_line.lstrip()
-                is_list_marker = raw_next and raw_next[0] in "-—–*•"
-                is_digit_marker = (
-                    raw_next
-                    and raw_next[0].isdigit()
-                    and (len(raw_next) > 1 and raw_next[1] in ". )")
-                )
-
-                is_new_item = is_ending and (is_list_marker or is_digit_marker)
-
                 raw_line = line.lstrip()
-                is_markdown_list = bool(list_marker_pattern.match(raw_line))
+                raw_next = next_line.lstrip()
+
+                # Paragraph boundary signals where a line break (\n) MUST be preserved:
+                # 1. Current line ends with colon introducing dialogue, quote, or list
+                is_colon_intro = bool(re.search(r"[:：]\s*$", line))
+
+                # 2. Next line is a dialogue turn starting with a dash (—, -, –)
+                is_next_dialogue = bool(raw_next and raw_next[0] in "-—–")
+
+                # 3. Next line is a list item or numbered marker
+                is_next_list_marker = bool(list_marker_pattern.match(raw_next))
+
+                # 4. Markdown headers, table rows, TOC dot leaders, or colophon key-value lines
                 is_markdown_header = raw_line.startswith(header_prefixes)
+                is_next_markdown_header = raw_next.startswith(header_prefixes)
                 is_toc_line = bool(dot_leader_pattern.search(line))
+                is_next_toc_line = bool(dot_leader_pattern.search(next_line))
+                is_key_value = is_key_value_line(raw_line)
+                is_next_key_value = is_key_value_line(raw_next)
 
                 if (
-                    is_markdown_list
+                    is_colon_intro
+                    or is_next_dialogue
+                    or is_next_list_marker
                     or is_markdown_header
+                    or is_next_markdown_header
                     or is_toc_line
-                    or is_ending
-                    or is_new_item
-                    or is_list_marker
-                    or is_digit_marker
+                    or is_next_toc_line
+                    or is_key_value
+                    or is_next_key_value
                 ):
                     result_block += line + "\n"
                 else:
-                    # Join with space if it's clearly part of the same sentence flow
+                    # Same paragraph continuation -> merge lines with space
                     result_block += line + " "
             else:
                 result_block += line
@@ -403,7 +515,7 @@ def generate_uyghur_regex(q: str) -> str:
     return pattern.sub(lambda m: norm_map[m.group(0)], res)
 
 
-def extract_standalone_page_number(text: str) -> Optional[int]:
+def extract_standalone_page_number(text: str) -> int | None:
     """Extract printed page number from header or footer if it represents a standalone page number.
 
     Supports ASCII, Uyghur, and Arabic numeral scripts (e.g., '1', '١', '- 1 -', '~ 15 ~').

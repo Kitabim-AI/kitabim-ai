@@ -1,12 +1,14 @@
 from engine.text_cleanup import (
-    normalize_uyghur_chars,
-    correct_uyghur_ocr_orthography,
     clean_uyghur_text,
-    is_toc_page,
-    is_degenerate_ocr_output,
+    correct_uyghur_ocr_orthography,
     is_block_repetition_loop,
+    is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
+    is_key_value_line,
+    is_metadata_or_key_value_block,
     is_poem_block,
+    is_toc_page,
+    normalize_uyghur_chars,
 )
 
 
@@ -167,6 +169,26 @@ def test_is_poem_block_detects_couplets():
     ]
     assert is_poem_block(couplet) is True
 
+    # Couplet ending with question marks (or OCR artifact mum)
+    question_couplet = [
+        "يا سېنىڭكى ئۆگەي ئاناڭ دىل ئازار قىلدىمۇ؟",
+        "ياكى قوغلاپ ئۆيدىن سېنى، خارۇزار قىلدىمۇ؟",
+    ]
+    assert is_poem_block(question_couplet) is True
+
+    ocr_question_couplet = [
+        "يا سېنىڭكى ئۆگەي ئاناڭ دىل ئازار قىلدىمۇم",
+        "ياكى قوغلاپ ئۆيدىن سېنى، خارۇزار قىلدىمۇم",
+    ]
+    assert is_poem_block(ocr_question_couplet) is True
+
+    # Rhyming couplet without punctuation
+    rhyme_couplet = [
+        "ئاقتى بۇلاق تاغ باغرىدا شارقىراپ",
+        "ياشلار كېلەر مەيدانلاردا پارقىراپ",
+    ]
+    assert is_poem_block(rhyme_couplet) is True
+
 
 def test_is_poem_block_rejects_prose_and_dialogue():
     # Dialogue with dashes
@@ -245,4 +267,96 @@ def test_correct_uyghur_ocr_orthography():
         correct_uyghur_ocr_orthography("خازاندىن لالىزار ئەيلىدى")
         == "خازاندىن لالەزار ئەيلىدى"
     )
+    assert correct_uyghur_ocr_orthography("دىل ئازار قىلدىمۇم") == "دىل ئازار قىلدىمۇ؟"
     assert correct_uyghur_ocr_orthography("") == ""
+
+
+def test_is_key_value_line():
+    assert is_key_value_line("ئاپتورى : ئابدۇرىھىم ئۆتكۈر") is True
+    assert is_key_value_line("مەسئۇل كۇررېكتورى: گۈلشەھەر نېغمەت") is True
+    assert is_key_value_line("باھاسى : 18.00 يۈەن") is True
+    assert is_key_value_line("ISBN: 978-7-228-11683-6") is True
+    # Dialogue and prose clauses should be rejected
+    assert is_key_value_line("ئەخمەت دېدى: قېنى كىرىڭلار!") is False
+    assert is_key_value_line("ئۇ كۈلۈپ تۇرۇپ مۇنداق دېدى: ماقۇل") is False
+    assert is_key_value_line("ئانىسى سورىدى: قاچان كېلىسەن؟") is False
+
+
+def test_is_metadata_or_key_value_block():
+    colophon_lines = [
+        "ئاپتورى : ئابدۇرىھىم ئۆتكۈر",
+        "مەسئۇل مۇھەررىرى : ئابدۇراخمان ئەبەي ، ئەزىز توردى",
+        "تېخنىكىلىق كۇررېكتورى : ئەلى زەيدۇن",
+        "نەشر قىلىپ تارقاتقۇچى : شىنجاڭ خەلق نەشرىياتى",
+        "تېلېفون : 0991_2827472",
+        "باھاسى : 18.00 يۈەن",
+    ]
+    assert is_metadata_or_key_value_block(colophon_lines) is True
+
+    # Standard prose paragraph with 1 colon should be False
+    prose_lines = [
+        "ئۇ كەچلىك شەپەقكە قاراپ تۇرۇپ مۇنداق دېدى: ھاۋا ناھايىتى گۈزەل بولدى.",
+        "بىز ئەتە يەنە مۇشۇ تاغ باغرىغا كېلىپ سەيلە قىلايلى.",
+        "ئۇلار ئۆيگە قاراپ ماڭدى.",
+    ]
+    assert is_metadata_or_key_value_block(prose_lines) is False
+
+
+def test_clean_uyghur_text_preserves_colophon_and_metadata_lines():
+    colophon_text = (
+        "ئاپتورى : ئابدۇرىھىم ئۆتكۈر\n"
+        "مەسئۇل مۇھەررىرى : ئابدۇراخمان ئەبەي ، ئەزىز توردى\n"
+        "تېخنىكىلىق كۇررېكتورى : ئەلى زەيدۇن\n"
+        "باھاسى : 18.00 يۈەن"
+    )
+    cleaned = clean_uyghur_text(colophon_text)
+    lines = cleaned.split("\n")
+    assert len(lines) == 4
+    assert lines[0] == "ئاپتورى : ئابدۇرىھىم ئۆتكۈر"
+    assert lines[1] == "مەسئۇل مۇھەررىرى : ئابدۇراخمان ئەبەي ، ئەزىز توردى"
+    assert lines[2] == "تېخنىكىلىق كۇررېكتورى : ئەلى زەيدۇن"
+    assert lines[3] == "باھاسى : 18.00 يۈەن"
+
+
+def test_clean_uyghur_text_merges_multi_sentence_prose_paragraph():
+    prose = (
+        "سارغۇجىدا ئەنەلەر سۇ توشۇمايتتى، قازان بېشىغا ئارىلاشمايتتى، سۇ توشۇش، ئوتۇن يېرىش ئىشلىرى توي\n"
+        "ئىشىغا كىرەتتى. ئوي ئىشىنى بولسا، ئاياللار قىلاتتى، ئەرلەر تالا ئىشىنى، ئېتىز - ئېرىق، مال -\n"
+        "ۋارانغا قاراش، چۆپ چېپىش، ئوتۇن تارتىش، ئوبىنىك كەم - كۇسىنى تەييارلاپ بېرىشتەك ئىشلارنى\n"
+        "قىلاتتى. كۈنلەر مۇشۇ تەرىقىدە ئۆتۈۋەردى."
+    )
+    cleaned = clean_uyghur_text(prose)
+    assert "\n" not in cleaned
+    assert "كىرەتتى. ئوي ئىشىنى بولسا" in cleaned
+    assert "مال - ۋارانغا قاراش" in cleaned
+    assert "قىلاتتى. كۈنلەر" in cleaned
+
+
+def test_clean_uyghur_text_prose_dialogue_separation():
+    mixed = (
+        "ئەرلەر قازان بېشىغا ئارىلىشىپ قالسا، ئاياللار: - چىپىلمىسىلا، - دەپ قازان بېشىدىن\n"
+        "ھەيدىۋېتەتتى. سارغۇجىا ئاياللىرى دىرەنزە، ھويلىلاردىن مارىشىپ قاقاقلاپ كۈلۈشتى:\n"
+        "— ياغلىقلا تاڭسا چىرايلىق چوكان بولغۇدەك! - ھا - ھا - ھا!\n"
+        "— پۆرمىلىك كۆينەك كىيسە ئېرىگىنى تارتىۋالامدو تېخى!\n"
+        "— ۋاھ - ھا - ھا! ھېيى - ھېي!"
+    )
+    cleaned = clean_uyghur_text(mixed)
+    lines = cleaned.split("\n")
+    assert len(lines) == 4
+    assert lines[0].endswith("قاقاقلاپ كۈلۈشتى:")
+    assert lines[1] == "— ياغلىقلا تاڭسا چىرايلىق چوكان بولغۇدەك! - ھا - ھا - ھا!"
+    assert lines[2] == "— پۆرمىلىك كۆينەك كىيسە ئېرىگىنى تارتىۋالامدو تېخى!"
+    assert lines[3] == "— ۋاھ - ھا - ھا! ھېيى - ھېي!"
+
+
+def test_clean_uyghur_text_wrapped_dialogue_attribution():
+    dialogue = (
+        "— خەيرىيەت، ئەمدى تاھارىتىڭنى ئال. مەن نامىزىمنى ئۆتۈۋېرەي، —\n"
+        "دېدى شېرىكى كۈلۈمسىرەپ ئۇنىڭغا پىسەنت قىلماي.\n"
+        "— خۇپتەننى بىللە ئوقۇيلى."
+    )
+    cleaned = clean_uyghur_text(dialogue)
+    lines = cleaned.split("\n")
+    assert len(lines) == 2
+    assert "دېدى شېرىكى كۈلۈمسىرەپ" in lines[0]
+    assert lines[1] == "— خۇپتەننى بىللە ئوقۇيلى."
