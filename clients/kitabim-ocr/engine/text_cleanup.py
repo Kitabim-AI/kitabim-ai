@@ -331,6 +331,8 @@ def clean_uyghur_text(text: str) -> str:
             cleaned_blocks.append("\n".join(lines))
             continue
 
+        block_max_len = max(len(ln.lstrip()) for ln in lines)
+
         result_block = ""
         for idx, line in enumerate(lines):
             if idx < len(lines) - 1:
@@ -356,6 +358,14 @@ def clean_uyghur_text(text: str) -> str:
                 is_key_value = is_key_value_line(raw_line)
                 is_next_key_value = is_key_value_line(raw_next)
 
+                # 5. Current line is much shorter than the block's longest line -
+                # a print-width wrap should read close to the block's max width,
+                # so a line well under that (and long enough for the ratio to be
+                # meaningful) is very likely an intentional break instead.
+                is_short_relative_line = (
+                    block_max_len >= 15 and len(raw_line) <= 0.6 * block_max_len
+                )
+
                 if (
                     is_colon_intro
                     or is_next_dialogue
@@ -366,6 +376,7 @@ def clean_uyghur_text(text: str) -> str:
                     or is_next_toc_line
                     or is_key_value
                     or is_next_key_value
+                    or is_short_relative_line
                 ):
                     result_block += line + "\n"
                 else:
