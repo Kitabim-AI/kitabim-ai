@@ -2842,7 +2842,15 @@ async def create_book(
     book_dict.pop("pipeline_stats", None)
     book_dict.pop("page_stats", None)
     book_dict.pop("completed_count", None)
+    book_dict.pop("has_summary", None)
+    book_dict.pop("has_graph", None)
+    book_dict.pop("has_history", None)
     pages_input = book_dict.pop("pages", []) or []
+
+    # Ensure only valid column names for the Book model are passed
+    if hasattr(BookDB, "__table__") and hasattr(BookDB.__table__, "columns"):
+        valid_columns = set(BookDB.__table__.columns.keys())
+        book_dict = {k: v for k, v in book_dict.items() if k in valid_columns}
 
     # Sync pages if they exist
     if pages_input:
@@ -2994,6 +3002,7 @@ async def update_book_details(
         "page_stats",
         "has_summary",
         "has_graph",
+        "has_history",
     ]
     for field in read_only_fields:
         book_update.pop(field, None)
@@ -3032,6 +3041,11 @@ async def update_book_details(
             for c in book_update["categories"]
             if isinstance(c, str) and c.strip()
         ]
+
+    # Ensure only valid column names for the Book model are passed to update
+    if hasattr(BookDB, "__table__") and hasattr(BookDB.__table__, "columns"):
+        valid_columns = set(BookDB.__table__.columns.keys()) - {"id"}
+        book_update = {k: v for k, v in book_update.items() if k in valid_columns}
 
     await books_repo.update_one(book_id, **book_update)
     await session.commit()
