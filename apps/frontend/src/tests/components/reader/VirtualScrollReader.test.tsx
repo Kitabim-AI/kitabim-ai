@@ -148,6 +148,56 @@ test('re-observes all pages after exiting edit mode so scrolling down loads subs
   vi.stubGlobal('IntersectionObserver', realIntersectionObserver);
 });
 
+test('scrolls back to the edited page after exiting edit mode (save or cancel)', () => {
+  // Regression test: exiting edit mode remounts every other page at once
+  // (see the previous test) — the reader used to correct for this with a
+  // one-shot scroll that had nothing to re-check itself against subsequent
+  // layout shifts. It now reuses the same alignment mechanism the ToC-jump
+  // path uses (useScrollToPage), which is asserted here via its externally
+  // observable effect: scrolling the container and reporting the edited
+  // page back through onPageChange.
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { id: 'user-1', role: 'reader' },
+  } as any);
+
+  const container = document.createElement('div');
+  container.scrollTo = vi.fn();
+  const onPageChange = vi.fn();
+
+  const { rerender } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-1"
+        totalPages={5}
+        fontSize={16}
+        editingPageNum={2}
+        scrollParentRef={{ current: container }}
+        onPageChange={onPageChange}
+      />
+    </I18nContext.Provider>
+  );
+
+  onPageChange.mockClear();
+
+  // Exit edit mode (save or cancel both just clear editingPageNum)
+  rerender(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-1"
+        totalPages={5}
+        fontSize={16}
+        editingPageNum={null}
+        scrollParentRef={{ current: container }}
+        onPageChange={onPageChange}
+      />
+    </I18nContext.Provider>
+  );
+
+  expect(container.scrollTo).toHaveBeenCalled();
+  expect(onPageChange).toHaveBeenCalledWith(2);
+});
+
 test('passes bookId/bookTitle to PageItem and only gates highlightQuote to the current-center page', () => {
   vi.mocked(AuthModule.useAuth).mockReturnValue({
     isAuthenticated: true,

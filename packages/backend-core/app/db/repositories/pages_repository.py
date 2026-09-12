@@ -164,6 +164,88 @@ class PagesRepository(BaseRepository[Page]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def find_toc_pages(self, book_id: str) -> List[Page]:
+        """Find a book's table-of-contents pages (``is_toc``), ordered by
+        page number. A ToC can span multiple pages (e.g. a long anthology),
+        so this returns all of them, not just the first."""
+        stmt = (
+            select(Page)
+            .where(Page.book_id == book_id, Page.is_toc.is_(True))
+            .order_by(Page.page_number)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def search_toc_pages_by_phrase(
+        self,
+        phrase: str,
+        book_ids: Optional[List[str]] = None,
+        limit: int = 10,
+    ) -> List[dict]:
+        """Full-text search over `pages.text_search` restricted to
+        table-of-contents pages (`is_toc IS TRUE`) -- the inverse filter of
+        `ChunksRepository.keyword_search`/`search_content_pages`, which both
+        exclude ToC pages as non-content. Used to locate which book(s)'
+        ToC lists a named short work when the calling book isn't already
+        known (global chat with no reader-mode book_id).
+        """
+        if book_ids is not None and not book_ids:
+            return []
+
+        book_filter = "AND p.book_id = ANY(:book_ids)" if book_ids else ""
+        query = text(f"""
+            SELECT p.book_id, p.page_number, p.text,
+                   ts_rank(p.text_search, phraseto_tsquery('simple', :phrase)) AS rank
+            FROM pages p
+            WHERE p.text_search @@ phraseto_tsquery('simple', :phrase)
+              AND p.is_toc IS TRUE
+              {book_filter}
+            ORDER BY rank DESC
+            LIMIT :limit
+        """)
+        params: dict = {"phrase": phrase, "limit": limit}
+        if book_ids:
+            params["book_ids"] = [str(bid) for bid in book_ids]
+
+        await self.session.execute(
+            text(f"SET LOCAL work_mem = '{_KEYWORD_SEARCH_WORK_MEM}'")
+        )
+        await self.session.execute(
+            text(
+                f"SET LOCAL statement_timeout = '{_KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS}'"
+            )
+        )
+        result = await self.session.execute(query, params)
+        rows = result.fetchall()
+
+        return [
+            {
+                "book_id": str(row.book_id),
+                "page_number": row.page_number,
+                "text": row.text,
+                "rank": float(row.rank),
+            }
+            for row in rows
+        ]
+
+    async def find_range(
+        self, book_id: str, start_page: int, end_page: int
+    ) -> List[Page]:
+        """Find all pages for a book within [start_page, end_page] inclusive,
+        ordered by page number. Used to fetch a short work's full content
+        once its page range has been resolved from the ToC."""
+        stmt = (
+            select(Page)
+            .where(
+                Page.book_id == book_id,
+                Page.page_number >= start_page,
+                Page.page_number <= end_page,
+            )
+            .order_by(Page.page_number)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def find_first_pages_with_text(
         self, book_id: str, limit: int = 5
     ) -> List[Page]:

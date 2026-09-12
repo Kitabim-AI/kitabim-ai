@@ -253,6 +253,11 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Maximum number of knowledge-graph facts fed into RAG context per turn, highest-scoring first.",
         },
         {
+            "key": "toc_short_work_max_pages",
+            "value": "10",
+            "description": "Maximum page span a table-of-contents entry may cover to be treated as a lookup-able short work (poem, song) by the ToC-based retrieval shortcut. Entries spanning more pages than this are left to the normal retrieval agent instead. Also caps how much page content is fetched/sent to the LLM for a matched entry — content beyond the cap is truncated with a note rather than dropped silently.",
+        },
+        {
             "key": "rag_agent_max_llm_calls",
             "value": "12",
             "description": "Hard ceiling on ADK LLM calls per retrieval-agent run (google.adk.RunConfig.max_llm_calls), enforced by the ADK runner itself. AGENT_SYSTEM_PROMPT already asks the model to stop within 6 tool calls (10 for multi-sub-question turns), but that's prose the model can ignore; this is the code-enforced backstop. Set above the prompt's own budget (tool calls + 1 final no-tool-call round) so it only catches genuine runaway loops, not normal completions. When the limit is hit mid-run, the orchestrator logs a warning and proceeds to answer synthesis with whatever evidence was gathered so far, rather than failing the turn.",

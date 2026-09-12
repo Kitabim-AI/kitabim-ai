@@ -82,6 +82,8 @@
     "volume_unknown": "توم ئۇچۇرى يوق",
     "pages_suffix": "، {pages} بەت",
     "followup_context_prefix": "[ئالدىنقى جاۋاب: {context}]",
-    "knowledge_graph_title": "بىلىم گىرافى"
+    "knowledge_graph_title": "بىلىم گىرافى",
+    "short_work_intro": "«{title}» ناملىق شېئىرنىڭ تولۇق تېكىستى تۆۋەندىكىچە:",
+    "short_work_truncated_note": "(مەزمۇن چەكلەنگەن؛ كىتابنىڭ ئۆزىدە داۋامى بار)"
   }
 }

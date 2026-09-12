@@ -86,6 +86,8 @@
     "exact_phrase_page_hits_header": "Found {count} exact match(es):",
     "exact_phrase_page_hit_line": "{title} — page {page}",
     "exact_phrase_page_hit_line_no_page": "{title}",
-    "knowledge_graph_title": "Knowledge Graph"
+    "knowledge_graph_title": "Knowledge Graph",
+    "short_work_intro": "The full text of the poem «{title}» is as follows:",
+    "short_work_truncated_note": "(Content truncated; the rest continues in the book.)"
   }
 }

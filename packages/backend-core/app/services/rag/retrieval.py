@@ -160,8 +160,13 @@ async def agent_keyword_search(
     phrase = phrase.strip()
     if not phrase:
         return []
+    # An explicit empty list is the agent's documented "broaden to the whole
+    # library" signal (agent/prompts.py: "broaden by calling search_chunks
+    # with an empty book_ids list to search the entire library") after a
+    # scoped search or book-discovery step came up empty — treat it as an
+    # unscoped search rather than silently returning nothing.
     if book_ids is not None and not book_ids:
-        return []
+        book_ids = None
 
     from app.core.providers import get_vector_store
     from app.db.repositories.system_configs_repository import SystemConfigsRepository
@@ -201,9 +206,13 @@ async def vector_search(
     if not effective_vector:
         return []
 
-    # Explicit empty list means discovery tools returned nothing — don't fall back to global scan.
+    # An explicit empty list is the agent's documented "broaden to the whole
+    # library" signal (agent/prompts.py: "broaden by calling search_chunks
+    # with an empty book_ids list to search the entire library") after a
+    # scoped search or book-discovery step came up empty — treat it as an
+    # unscoped search rather than silently returning nothing.
     if book_ids is not None and not book_ids:
-        return []
+        book_ids = None
 
     from app.core.providers import get_vector_store
     from app.db.repositories.system_configs_repository import SystemConfigsRepository

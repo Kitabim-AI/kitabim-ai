@@ -245,3 +245,74 @@ async def test_set_llm_spell_check_status_returns_false_for_unknown_page():
 
     result = await repo.set_llm_spell_check_status("b1", 999, PAGE_MILESTONE_SUCCEEDED)
     assert result is False
+
+
+@pytest.mark.asyncio
+async def test_find_toc_pages_orders_by_page_number():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.all.return_value = [
+        Page(id=1, book_id="b1", page_number=9, is_toc=True),
+        Page(id=2, book_id="b1", page_number=10, is_toc=True),
+    ]
+    session.execute.return_value = mock_res
+
+    pages = await repo.find_toc_pages("b1")
+    assert [p.page_number for p in pages] == [9, 10]
+
+
+@pytest.mark.asyncio
+async def test_search_toc_pages_by_phrase_scoped():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+
+    mock_row = MagicMock()
+    mock_row.book_id = "b1"
+    mock_row.page_number = 9
+    mock_row.text = "| ئۇچراشقاندا | 25 |"
+    mock_row.rank = 0.5
+
+    mock_query_res = MagicMock()
+    mock_query_res.fetchall.return_value = [mock_row]
+
+    session.execute.side_effect = [
+        MagicMock(),  # SET work_mem
+        MagicMock(),  # SET statement_timeout
+        mock_query_res,
+    ]
+
+    results = await repo.search_toc_pages_by_phrase("ئۇچراشقاندا", book_ids=["b1"])
+
+    assert len(results) == 1
+    assert results[0]["book_id"] == "b1"
+    assert results[0]["page_number"] == 9
+    assert results[0]["rank"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_search_toc_pages_by_phrase_empty_book_ids_list_returns_empty_without_querying():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+
+    results = await repo.search_toc_pages_by_phrase("ئۇچراشقاندا", book_ids=[])
+
+    assert results == []
+    session.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_find_range_filters_by_page_number_bounds():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.all.return_value = [
+        Page(id=1, book_id="b1", page_number=37),
+        Page(id=2, book_id="b1", page_number=38),
+    ]
+    session.execute.return_value = mock_res
+
+    pages = await repo.find_range("b1", 37, 38)
+    assert [p.page_number for p in pages] == [37, 38]

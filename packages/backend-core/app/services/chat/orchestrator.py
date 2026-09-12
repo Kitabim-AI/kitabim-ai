@@ -15,6 +15,7 @@ from google.genai import types
 
 from app.core.characters import CHARACTERS, DEFAULT_CHARACTER_ID
 from app.core.config import settings
+from app.core.i18n import t
 from app.db.models import Conversation
 from app.db.repositories.books_repository import BooksRepository
 from app.db.repositories.conversation_repository import ConversationRepository
@@ -38,6 +39,8 @@ from app.services.chat.context_grading import (
 from app.services.chat.query_signals import analyze_query_signals
 from app.services.rag.agent.reranker import rerank_context
 from app.services.rag.context import QueryContext, set_current_query_context
+from app.services.rag.short_work_intent import detect_short_work_intent
+from app.services.rag.toc_lookup_service import ShortWorkMatch, resolve_short_work
 from app.services.rag.phrase_intent import detect_phrase_intent
 from app.services.rag.retrieval import find_books_by_title_in_question
 from app.utils.citation_fixer import fix_malformed_citations
@@ -63,6 +66,38 @@ def _extract_effective_question(question: str, observations: list[dict]) -> str:
             if isinstance(res, dict) and res.get("rewritten_question"):
                 return res["rewritten_question"]
     return question
+
+
+def _format_short_work_answer(match: ShortWorkMatch) -> str:
+    """Format a resolved ToC short-work match as the final answer directly —
+    no LLM call, so no risk of the model refusing or hedging on reproducing
+    the poem/song verbatim (see skip_answer_synthesis in stream_response)."""
+    quoted_lines = "\n".join(
+        f"> {line}" if line.strip() else ">" for line in match.text.split("\n")
+    )
+    pages = (
+        str(match.start_page)
+        if match.start_page == match.end_page
+        else ",".join(str(p) for p in range(match.start_page, match.end_page + 1))
+    )
+    book_label = match.book_title or ""
+    if match.book_author:
+        book_label = (
+            f"{book_label} ({match.book_author})" if book_label else match.book_author
+        )
+    citation_label = (
+        f"{book_label} — «{match.title}»" if book_label else f"«{match.title}»"
+    )
+    citation = (
+        f"**مەنبە:** [{citation_label}، {match.start_page}-بەت]"
+        f"(ref:{match.book_id}:{pages})"
+    )
+
+    parts = [t("rag.short_work_intro", title=match.title), quoted_lines]
+    if match.truncated:
+        parts.append(t("rag.short_work_truncated_note"))
+    parts.append(citation)
+    return "\n\n".join(parts)
 
 
 class ChatOrchestrator:
@@ -198,9 +233,83 @@ class ChatOrchestrator:
                 ctx.context_book_ids = matched_book_ids
                 phrase_intent.is_exact = False
 
+        # Named short-work (poem/song) lookup gate -- deterministic, like the
+        # phrase-intent gate above, so this doesn't depend on the retrieval
+        # agent's own discretion to reach for lexical search on a named
+        # title (that discretion was the confirmed root cause of poem-title
+        # lookups silently failing in production).
+        #
+        # Deliberately NOT gated on phrase_intent.is_exact: the real-world
+        # shape this exists for is "«book» ناملىق ئەسەردىكى «work»" -- TWO
+        # quotes, where the catalog-first check above already matched the
+        # first quote as a real book title and, correctly for ITS purpose,
+        # flipped phrase_intent.is_exact to False. Gating on is_exact here
+        # made this whole branch unreachable for exactly that case (caught
+        # in production: catalog-first resolved the book, then the turn
+        # fell through to the full retrieval agent and found nothing for
+        # the work). detect_short_work_intent has its own independent
+        # quote + locate-verb check, so it's safe to run unconditionally --
+        # and it benefits from ctx.context_book_ids already being populated
+        # by catalog-first when scoping the lookup below.
+        short_work_intent = detect_short_work_intent(request_dto.question)
+        short_work_match = None
+        if short_work_intent.applies and short_work_intent.title:
+            scoped_book_id = (
+                ctx.context_book_ids[0] if len(ctx.context_book_ids) == 1 else None
+            )
+            short_work_match = await resolve_short_work(
+                db_session, short_work_intent.title, book_id=scoped_book_id
+            )
+            if short_work_match is not None:
+                phrase_intent.is_exact = False
+
         observations: list[dict] = []
 
-        if phrase_intent.is_exact:
+        if short_work_match is not None:
+            yield {"type": "planning", "intent": "short_work_lookup"}
+            yield {
+                "type": "tool_call",
+                "tool": "toc_lookup",
+                "name": "toc_lookup",
+            }
+            # Package as a single search_chunks-shaped observation purely so
+            # _extract_used_book_ids / rag_evaluations record-keeping see this
+            # turn's book like any other — the answer itself is NOT
+            # synthesized from this observation (see skip_answer_synthesis
+            # below): an LLM is never asked to reproduce this text, since
+            # Gemini's own built-in reluctance to quote full poems/creative
+            # works verbatim proved resistant to an explicit prompt
+            # instruction telling it to do so (confirmed in production).
+            observations.append(
+                {
+                    "tool": "search_chunks",
+                    "result": {
+                        "ok": True,
+                        "data": {
+                            "chunks": [
+                                {
+                                    "book_id": short_work_match.book_id,
+                                    "page_number": short_work_match.start_page,
+                                    "page": short_work_match.start_page,
+                                    "text": short_work_match.text,
+                                    "title": short_work_match.title,
+                                    "volume": None,
+                                    "author": short_work_match.book_author,
+                                    "score": 1.0,
+                                }
+                            ]
+                        },
+                        "found_count": 1,
+                    },
+                }
+            )
+            ctx.context_book_ids = [short_work_match.book_id]
+            yield {
+                "type": "tool_result",
+                "tool": "toc_lookup",
+                "found": 1,
+            }
+        elif phrase_intent.is_exact:
             yield {"type": "planning", "intent": "exact_phrase"}
 
             yield {
@@ -382,8 +491,16 @@ class ChatOrchestrator:
 
         # Page-finding exact-phrase requests are formatted as raw page hits,
         # not a synthesized answer — skip grading/reranking and the LLM
-        # answer agent entirely.
-        skip_answer_synthesis = phrase_intent.is_exact and phrase_intent.is_page_finding
+        # answer agent entirely. A resolved short-work match skips the same
+        # stages for a different reason: the text is already known-correct
+        # (deterministically resolved via the ToC), so reranking it adds a
+        # pointless LLM call, and synthesizing "an answer" from it through
+        # the Answer Agent risks the model refusing/hedging on reproducing
+        # the poem verbatim instead of just returning it (see the direct
+        # short_work_match formatting below).
+        skip_answer_synthesis = (
+            phrase_intent.is_exact and phrase_intent.is_page_finding
+        ) or short_work_match is not None
 
         # 4. Context Grading
         used_book_ids = _extract_used_book_ids(observations)
@@ -440,7 +557,10 @@ class ChatOrchestrator:
         # 5. Answer Agent Execution
         yield {"type": "answer_start"}
 
-        if skip_answer_synthesis:
+        if short_work_match is not None:
+            accumulated_text = _format_short_work_answer(short_work_match)
+            yield {"type": "chunk", "text": accumulated_text}
+        elif skip_answer_synthesis:
             page_hits = format_page_hits(hits)
             accumulated_text = summarize_page_hits_as_text(
                 hits, phrase=", ".join(phrase_intent.phrases)

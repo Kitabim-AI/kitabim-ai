@@ -123,13 +123,76 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
 
   const isEditingAny = editingPageNum !== null;
 
+  // Exiting edit mode (save or cancel) remounts every OTHER page at once (see
+  // pageNumbersToRender below) and rebuilds both IntersectionObservers below —
+  // exactly the same "content around the target resizes right after a jump"
+  // situation useScrollToPage exists for, so reuse it here instead of a
+  // one-shot scroll that has nothing to correct itself if something resizes
+  // (or the center-detection observer misfires) after its single attempt.
+  const [editExitTarget, setEditExitTarget] = useState<{ page: number; key: string } | null>(null);
+  const lastEditingPageRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (editingPageNum !== null) {
+      lastEditingPageRef.current = editingPageNum;
+    } else if (lastEditingPageRef.current !== null) {
+      const page = lastEditingPageRef.current;
+      lastEditingPageRef.current = null;
+      setEditExitTarget({ page, key: `edit-exit:${bookId}:${page}:${Date.now()}` });
+    }
+  }, [editingPageNum, bookId]);
+
+  const isScrollingToEditExitTargetRef = useScrollToPage({
+    containerRef: scrollParentRef as React.RefObject<HTMLElement>,
+    // Inert until a real edit-exit has happened — otherwise this would race
+    // the initial jump-to-page scroll above on first mount.
+    getPageElement: useCallback(
+      (page: number) => (editExitTarget ? pageRefs.current.get(page) : null),
+      [editExitTarget]
+    ),
+    targetPage: editExitTarget?.page ?? 1,
+    targetKey: editExitTarget?.key ?? 'edit-exit:none',
+    currentCenterPage,
+    onScrolled: useCallback((page: number) => {
+      currentCenterPageRef.current = page;
+      setCurrentCenterPage(page);
+      onPageChange?.(page);
+    }, [onPageChange]),
+  });
+
+  // Dedicated jump target for Table of Contents navigation.
+  // Using a unique timestamped key ensures clicks always trigger immediate alignment
+  // even if the target page matches where the user was previously centered.
+  const [tocJumpTarget, setTocJumpTarget] = useState<{ page: number; key: string } | null>(null);
+
+  const isScrollingToTocJumpTargetRef = useScrollToPage({
+    containerRef: scrollParentRef as React.RefObject<HTMLElement>,
+    getPageElement: useCallback(
+      (page: number) => (tocJumpTarget ? pageRefs.current.get(page) : null),
+      [tocJumpTarget]
+    ),
+    targetPage: tocJumpTarget?.page ?? 1,
+    targetKey: tocJumpTarget?.key ?? 'toc-jump:none',
+    currentCenterPage,
+    onScrolled: useCallback((page: number) => {
+      currentCenterPageRef.current = page;
+      setCurrentCenterPage(page);
+      onPageChange?.(page);
+    }, [onPageChange]),
+  });
+
   // Keeps the visible page stationary as off-screen-above placeholders resolve
   // to real content during ordinary scrolling (useScrollToPage handles the
-  // equivalent for the initial jump-to-page settle window, hence the suppression).
+  // equivalent for the initial jump-to-page, edit-exit, and toc-jump settle windows,
+  // hence the suppression).
+  const isAnyScrollAlignmentActiveRef = useRef<{ current: boolean }>({
+    get current() {
+      return isScrollingToTargetRef.current || isScrollingToEditExitTargetRef.current || isScrollingToTocJumpTargetRef.current;
+    },
+  } as React.MutableRefObject<boolean>).current;
   useScrollStabilizer({
     containerRef: scrollParentRef as React.RefObject<HTMLElement>,
     itemsRef: pageRefs,
-    suppressedRef: isScrollingToTargetRef,
+    suppressedRef: isAnyScrollAlignmentActiveRef,
     resubscribeKey: `${effectiveTotalPages}:${isEditingAny}`,
   });
 
@@ -203,7 +266,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   // to be rebuilt when the visible page changes (no currentCenterPage in deps)
   useEffect(() => {
     const centerObserver = new IntersectionObserver((entries) => {
-      if (isScrollingToTargetRef.current) return;
+      if (isAnyScrollAlignmentActiveRef.current) return;
 
       let mostVisiblePage = -1;
       let maxRatio = 0;
@@ -241,7 +304,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   // is far wider than the loadObserver's rootMargin so it can't fight with eager-loading.
   const EVICTION_WINDOW = 40;
   useEffect(() => {
-    if (isEditingAny || isScrollingToTargetRef.current) return;
+    if (isEditingAny || isAnyScrollAlignmentActiveRef.current) return;
     setPages(prev => {
       if (prev.size === 0) return prev;
       let changed = false;
@@ -255,7 +318,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
       });
       return changed ? next : prev;
     });
-  }, [currentCenterPage, isEditingAny, isScrollingToTargetRef]);
+  }, [currentCenterPage, isEditingAny, isAnyScrollAlignmentActiveRef]);
 
   // Reset pages cache when bookId changes
   useEffect(() => {
@@ -274,39 +337,6 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
       fetchPage(editingPageNum);
     }
   }, [editingPageNum, pages, fetchPage]);
-
-  // Scroll back to edited page when page editing ends (save or cancel)
-  const lastEditingPageRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (editingPageNum !== null) {
-      lastEditingPageRef.current = editingPageNum;
-    } else if (lastEditingPageRef.current !== null) {
-      const targetPage = lastEditingPageRef.current;
-      lastEditingPageRef.current = null;
-
-      let attempts = 0;
-      const tryScroll = () => {
-        const el = pageRefs.current.get(targetPage);
-        const container = scrollParentRef?.current;
-        if (el && container) {
-          const containerTop = container.getBoundingClientRect().top;
-          const elTop = el.getBoundingClientRect().top;
-          container.scrollTo({
-            top: container.scrollTop + (elTop - containerTop) - 24,
-            behavior: 'instant'
-          });
-          currentCenterPageRef.current = targetPage;
-          setCurrentCenterPage(targetPage);
-          onPageChange?.(targetPage);
-        } else if (attempts < 10) {
-          attempts++;
-          setTimeout(tryScroll, 30);
-        }
-      };
-
-      setTimeout(tryScroll, 40);
-    }
-  }, [editingPageNum, scrollParentRef, onPageChange]);
 
   const allPageNumbers = React.useMemo(() => Array.from({ length: effectiveTotalPages }, (_, i) => i + 1), [effectiveTotalPages]);
   const pageNumbersToRender = isEditingAny ? [editingPageNum] : allPageNumbers;
@@ -345,6 +375,18 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   const handlePageCancel = useCallback(() => {
     onCancel?.();
   }, [onCancel]);
+
+  const handleTocPageClick = useCallback((targetPageNum: number) => {
+    const safeTarget = isGuestRef.current ? Math.min(targetPageNum, GUEST_PAGE_LIMIT) : targetPageNum;
+
+    // Immediately pre-fetch the target page and its immediate neighbors
+    fetchPage(safeTarget);
+    if (safeTarget > 1) fetchPage(safeTarget - 1);
+    if (safeTarget < effectiveTotalPages) fetchPage(safeTarget + 1);
+
+    setTocJumpTarget({ page: safeTarget, key: `toc-jump:${bookId}:${safeTarget}:${Date.now()}` });
+    onTocPageClick?.(targetPageNum);
+  }, [bookId, effectiveTotalPages, fetchPage, onTocPageClick]);
 
   return (
     <div
@@ -395,7 +437,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   isSaving={isSaving}
                   isFullscreen={isFullscreen}
                   contentPageOffset={contentPageOffset}
-                  onTocPageClick={onTocPageClick}
+                  onTocPageClick={handleTocPageClick}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center min-h-[400px] bg-white/30 dark:bg-slate-900/30 rounded-[32px] border border-dashed border-[#0369a1]/10 dark:border-[#38bdf8]/10">

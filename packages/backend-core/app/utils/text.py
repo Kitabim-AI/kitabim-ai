@@ -389,6 +389,30 @@ def clean_uyghur_text(text: str) -> str:
     return strip_page_numbers(cleaned)
 
 
+def clean_known_poem_text(text: str) -> str:
+    """Clean OCR text already known to be a poem/song (e.g. resolved via a
+    book's table-of-contents entry) -- applies the same character
+    normalization, orthography correction, and marker/page-number stripping
+    as ``clean_uyghur_text``, but always preserves the original line breaks
+    exactly as printed.
+
+    Deliberately skips ``clean_uyghur_text``'s prose-vs-poem heuristic
+    (``is_poem_block``) entirely: that heuristic requires fairly uniform
+    line lengths and no mid-line terminal punctuation, so it can misjudge a
+    real but irregularly-lined poem (or one with inline footnote markers) as
+    prose and reflow its verses into a single paragraph. When the caller
+    already knows the text is a poem -- as with a ToC-resolved short work --
+    that heuristic has nothing to add and only risks getting it wrong.
+    """
+    if not text:
+        return ""
+
+    text = normalize_uyghur_chars(text)
+    text = correct_uyghur_ocr_orthography(text)
+    text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
+    return strip_page_numbers(text)
+
+
 def is_toc_page(text: str) -> bool:
     """
     Detect if a page is likely a Table of Contents.
@@ -460,6 +484,45 @@ def is_toc_page(text: str) -> bool:
         return True
 
     return False
+
+
+_TOC_PIPE_ENTRY_RE = re.compile(r"^\|\s*(.+?)\s*\|\s*(\d+)\s*\|?\s*$")
+_TOC_DOT_LEADER_ENTRY_RE = re.compile(r"^(.+?)\s*[.\-_·]{3,}\s*(\d+)\s*$")
+
+
+def parse_toc_entries(text: str) -> list[tuple[str, int]]:
+    """Extract (title, printed_page_number) pairs from a page already
+    identified as a table of contents (see ``is_toc_page``).
+
+    Supports the same two entry shapes ``is_toc_page`` recognizes: modern
+    pipe tables ("| Title | 123 |") and old-style dot leaders
+    ("Title ....... 123"). Any line matching neither shape -- the
+    "مۇندەرىجە" heading itself, a pipe-table header/separator row with no
+    trailing page number, blank lines -- is skipped rather than raising.
+    Duplicate titles are not deduplicated; a title legitimately appearing
+    twice (e.g. two poems both called "غەزەل") returns two entries, and
+    disambiguating between them is the caller's job.
+    """
+    if not text:
+        return []
+
+    entries: list[tuple[str, int]] = []
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        match = _TOC_PIPE_ENTRY_RE.match(line)
+        if not match:
+            match = _TOC_DOT_LEADER_ENTRY_RE.match(line)
+        if not match:
+            continue
+
+        title = match.group(1).strip()
+        if title:
+            entries.append((title, int(match.group(2))))
+
+    return entries
 
 
 # Generous upper bound for a single page's OCR text. Real pages in this

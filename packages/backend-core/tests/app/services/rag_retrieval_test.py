@@ -370,22 +370,38 @@ async def test_agent_keyword_search_empty_phrase_returns_empty_without_querying(
 
 
 @pytest.mark.asyncio
-async def test_agent_keyword_search_empty_book_ids_list_returns_empty_without_querying():
+async def test_agent_keyword_search_empty_book_ids_list_broadens_to_global_scan():
+    """An explicit empty book_ids list is the agent's documented "broaden to the
+    whole library" signal (agent/prompts.py: "broaden by calling search_chunks
+    with an empty book_ids list to search the entire library"). It must reach
+    keyword_search as an unscoped (book_ids=None) search, not be silently
+    short-circuited to zero results — that mismatch was the root cause of named
+    short-work (e.g. poem) title lookups failing whenever discovery tools
+    scoped to the wrong book(s) first."""
     from app.services.rag.retrieval import agent_keyword_search
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
     from app.db.repositories.chunks_repository import ChunksRepository
 
     ctx = MagicMock()
     ctx.session = AsyncMock()
+    ctx.character_categories = []
 
-    called = False
+    captured = {}
 
-    async def fake_keyword_search(self, *a, **kw):
-        nonlocal called
-        called = True
-        return []
+    async def fake_get_value(self, key, default=None):
+        return "10"
 
-    with patch.object(ChunksRepository, "keyword_search", fake_keyword_search):
+    async def fake_keyword_search(
+        self, phrase, book_ids=None, categories=None, limit=10
+    ):
+        captured["book_ids"] = book_ids
+        return [{"book_id": "b1", "page_number": 5, "text": "hit", "rank": 0.9}]
+
+    with (
+        patch.object(SystemConfigsRepository, "get_value", fake_get_value),
+        patch.object(ChunksRepository, "keyword_search", fake_keyword_search),
+    ):
         result = await agent_keyword_search(ctx, "term", [])
 
-    assert result == []
-    assert called is False
+    assert captured["book_ids"] is None
+    assert result == [{"book_id": "b1", "page_number": 5, "text": "hit", "rank": 0.9}]

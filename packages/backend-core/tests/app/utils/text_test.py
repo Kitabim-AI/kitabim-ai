@@ -1,4 +1,5 @@
 from app.utils.text import (
+    clean_known_poem_text,
     clean_uyghur_text,
     correct_uyghur_ocr_orthography,
     generate_uyghur_regex,
@@ -7,6 +8,7 @@ from app.utils.text import (
     is_metadata_or_key_value_block,
     is_poem_block,
     normalize_uyghur_chars,
+    parse_toc_entries,
 )
 
 
@@ -249,3 +251,93 @@ def test_clean_uyghur_text_prose_dialogue_separation():
     assert lines[1] == "— ياغلىقلا تاڭسا چىرايلىق چوكان بولغۇدەك! - ھا - ھا - ھا!"
     assert lines[2] == "— پۆرمىلىك كۆينەك كىيسە ئېرىگىنى تارتىۋالامدو تېخى!"
     assert lines[3] == "— ۋاھ - ھا - ھا! ھېيى - ھېي!"
+
+
+def test_parse_toc_entries_pipe_table():
+    # Real ToC page shape from production (book "ئۆمۈر مەنزىللىرى", page 9):
+    # a markdown heading followed by pipe-table rows.
+    text = (
+        "## مۇندەرىجە\n"
+        "\n"
+        "| سالام دەڭ | 1 |\n"
+        "| تاڭ شاماللىرى | 3 |\n"
+        "| ئۇچراشقاندا | 25 |\n"
+    )
+    assert parse_toc_entries(text) == [
+        ("سالام دەڭ", 1),
+        ("تاڭ شاماللىرى", 3),
+        ("ئۇچراشقاندا", 25),
+    ]
+
+
+def test_parse_toc_entries_dot_leaders():
+    text = "بىرىنچى باب ................ 5\n" "ئىككىنچى باب ................ 22\n"
+    assert parse_toc_entries(text) == [
+        ("بىرىنچى باب", 5),
+        ("ئىككىنچى باب", 22),
+    ]
+
+
+def test_parse_toc_entries_skips_non_entry_lines():
+    # The "مۇندەرىجە" heading and a pipe-table header/separator row (no
+    # trailing digits) must not be mistaken for entries.
+    text = (
+        "## مۇندەرىجە\n"
+        "\n"
+        "| نامى | بېتى |\n"
+        "| ---- | ---- |\n"
+        "| سالام دەڭ | 1 |\n"
+    )
+    assert parse_toc_entries(text) == [("سالام دەڭ", 1)]
+
+
+def test_parse_toc_entries_empty_text_returns_empty_list():
+    assert parse_toc_entries("") == []
+    assert parse_toc_entries("   \n  \n") == []
+
+
+def test_parse_toc_entries_duplicate_titles_both_returned():
+    # A ToC can legitimately list the same title twice (e.g. two poems both
+    # called "غەزەل") -- the parser must not deduplicate; disambiguation is
+    # the caller's job.
+    text = "| غەزەل | 27 |\n| غەزەل | 76 |\n"
+    assert parse_toc_entries(text) == [("غەزەل", 27), ("غەزەل", 76)]
+
+
+def test_clean_known_poem_text_preserves_line_breaks_even_when_not_poem_shaped():
+    # This block fails is_poem_block's heuristic outright (mid-line terminal
+    # punctuation on line 1 is an explicit prose disqualifier) and gets
+    # reflowed into one paragraph by clean_uyghur_text -- but content already
+    # known to be a poem (e.g. resolved via a book's ToC entry) must never be
+    # run through that heuristic at all, regardless of its line shape.
+    text = (
+        "تاڭ شامىلى. سالام دەيمەن ساڭا،\n" "كۆمۈش كەبى يالتىراق تولۇن ئاي،\n" "غۇنچە."
+    )
+    # Confirm the premise: clean_uyghur_text reflows this (merges lines).
+    assert "\n" not in clean_uyghur_text(text)
+
+    cleaned = clean_known_poem_text(text)
+    lines = cleaned.split("\n")
+    assert len(lines) == 3
+    assert lines[0].startswith("تاڭ شامىلى")
+    assert lines[1].startswith("كۆمۈش كەبى")
+    assert lines[2] == "غۇنچە."
+
+
+def test_clean_known_poem_text_applies_normalization_and_orthography_correction():
+    # Same char-level cleanup as clean_uyghur_text -- just without the
+    # paragraph-reflow-or-preserve heuristic.
+    text = "مەكتەب\nكەسىب"
+    cleaned = clean_known_poem_text(text)
+    assert cleaned == "مەكتەپ\nكەسىپ"
+
+
+def test_clean_known_poem_text_strips_ocr_markers_and_page_numbers():
+    text = "[Header] 1\nبىرىنچى قۇر\nئىككىنچى قۇر\n5"
+    cleaned = clean_known_poem_text(text)
+    assert "[Header]" not in cleaned
+    assert cleaned.split("\n")[-1] != "5"
+
+
+def test_clean_known_poem_text_empty_returns_empty():
+    assert clean_known_poem_text("") == ""

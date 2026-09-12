@@ -615,7 +615,7 @@ export const ReaderView: React.FC = () => {
           </div>
 
           {/* Reading Canvas */}
-          <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col`}>
+          <div ref={mainScrollRef} dir="rtl" style={{ overflowAnchor: 'none' }} className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col`}>
             {isEditing ? (
               <div className="h-full relative w-full max-w-4xl mx-auto">
                 {isFetchingContent && <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] dark:text-[#38bdf8] animate-spin" /></div>}
