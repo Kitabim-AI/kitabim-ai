@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from engine.config import (
@@ -59,7 +61,9 @@ def test_get_configured_engine_invalid_raises_value_error(monkeypatch):
 def test_get_savitr_model_path(monkeypatch):
     monkeypatch.delenv("SAVITR_MODEL_PATH", raising=False)
     monkeypatch.delenv("SAVITR_BASE_PATH", raising=False)
-    assert get_savitr_model_path() is None
+    assert get_savitr_model_path() == str(
+        Path.home() / ".cache" / "savitr" / "surya-mlx-4bit"
+    )
 
     monkeypatch.setenv("SAVITR_MODEL_PATH", "/custom/path/model")
     assert get_savitr_model_path() == "/custom/path/model"

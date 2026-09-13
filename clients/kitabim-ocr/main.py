@@ -17,7 +17,9 @@ DEFAULT_CONFIG_PATH = Path.home() / ".config" / "kitabim-ocr-client" / "token.js
 DOTENV_PATH = Path(__file__).resolve().parent / ".env"
 
 
-def cmd_app(engine: str | None = None, concurrency: int | None = None) -> None:
+def cmd_app(
+    engine: str | None = None, concurrency: int | None = None, port: int = 8765
+) -> None:
     load_dotenv(DOTENV_PATH)
     base_url = os.environ.get("KITABIM_BASE_URL")
     if not base_url:
@@ -32,6 +34,7 @@ def cmd_app(engine: str | None = None, concurrency: int | None = None) -> None:
         Path(work_dir).expanduser(),
         engine=engine,
         concurrency=concurrency,
+        port=port,
     )
 
 
@@ -122,6 +125,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya)",
     )
+    app_parser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="Local port to serve the app on (default: 8765); use a different port per instance to run multiple books concurrently",
+    )
 
     preview_parser = sub.add_parser(
         "preview", help="Reopen the preview UI for an existing work directory"
@@ -158,7 +167,7 @@ def main() -> None:
     concurrency = getattr(args, "concurrency", None)
 
     if command == "app":
-        cmd_app(engine=engine, concurrency=concurrency)
+        cmd_app(engine=engine, concurrency=concurrency, port=getattr(args, "port", 8765))
     elif command == "preview":
         cmd_preview(Path(args.workdir), args.base_url)
     elif command == "push":

@@ -64,12 +64,19 @@ def get_configured_engine(default: str = DEFAULT_OCR_ENGINE) -> str:
     return engine
 
 
-def get_savitr_model_path() -> str | None:
-    """Read optional custom Savitr model path from environment variables."""
+def get_savitr_model_path() -> str:
+    """Read the Savitr MLX model path from environment variables.
+
+    Falls back to the same default `python main.py setup-savitr` converts
+    the model into, so callers never pass `None` through to `MLXSuryaOCR`
+    (which would override its own internal default with `None`).
+    """
+    from pathlib import Path
+
     return (
         os.environ.get("SAVITR_MODEL_PATH")
         or os.environ.get("SAVITR_BASE_PATH")
-        or None
+        or str(Path.home() / ".cache" / "savitr" / "surya-mlx-4bit")
     )
 
 
