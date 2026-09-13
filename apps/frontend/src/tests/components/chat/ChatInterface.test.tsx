@@ -32,9 +32,12 @@ vi.mock('@/src/components/common/ProverbDisplay', () => ({
 }));
 
 const i18nValue = {
-  language: 'en' as const,
+  language: 'ug' as const,
   setLanguage: vi.fn(),
   t: (key: string, params?: Record<string, string | number>) => {
+    if (key === 'chat.answerCost') {
+      return `جاۋاب تەننەرقى: ${params?.cost}، ${params?.tokens} توكېن`;
+    }
     if (params) {
       return Object.entries(params).reduce(
         (value, [paramKey, paramValue]) => value.replace(`{{${paramKey}}}`, String(paramValue)),
@@ -430,5 +433,93 @@ test('ChatInterface renders delete button in reader mode when conversationId is 
   expect(onDeleteConversation).toHaveBeenCalledWith('conv-reader-1');
 });
 
+test('ChatInterface renders cost info side by side with feedback buttons in global chat', () => {
+  const ref = { current: document.createElement('div') };
+  const messages: Message[] = [
+    { role: 'user', text: 'What is this?' },
+    {
+      role: 'model',
+      text: 'This is the answer',
+      cost: { inputTokens: 70000, outputTokens: 3100, costUsd: 0.0122 },
+      feedback: undefined,
+    },
+  ];
 
+  renderChat(
+    <ChatInterface
+      type="global"
+      chatMessages={messages}
+      chatInput=""
+      setChatInput={vi.fn()}
+      onSendMessage={vi.fn()}
+      isChatting={false}
+      chatContainerRef={ref}
+      submitFeedback={vi.fn()}
+    />
+  );
 
+  expect(screen.getByText(/جاۋاب تەننەرقى.*0\.0122.*73\.1K/)).toBeInTheDocument();
+  expect(screen.getByTitle('جاۋاب ياقتى')).toBeInTheDocument();
+  expect(screen.getByTitle('جاۋاب ياقمىدى')).toBeInTheDocument();
+});
+
+test('ChatInterface renders cost info side by side with feedback buttons in reader chat', () => {
+  const ref = { current: document.createElement('div') };
+  const messages: Message[] = [
+    { role: 'user', text: 'What is this?' },
+    {
+      role: 'model',
+      text: 'Reader answer',
+      evalId: 42,
+      cost: { inputTokens: 500, outputTokens: 100, costUsd: 0.0005 },
+    },
+  ];
+
+  renderChat(
+    <ChatInterface
+      type="book"
+      bookId="book-1"
+      chatMessages={messages}
+      chatInput=""
+      setChatInput={vi.fn()}
+      onSendMessage={vi.fn()}
+      isChatting={false}
+      chatContainerRef={ref}
+      submitFeedback={vi.fn()}
+    />
+  );
+
+  expect(screen.getByText(/جاۋاب تەننەرقى.*0\.0005.*600/)).toBeInTheDocument();
+  expect(screen.getByTitle('جاۋاب ياقتى')).toBeInTheDocument();
+  expect(screen.getByTitle('جاۋاب ياقمىدى')).toBeInTheDocument();
+});
+
+test('ChatInterface hides cost info when showChatCost is false', async () => {
+  const authService = await import('@/src/services/authService');
+  vi.spyOn(authService, 'getShowChatCost').mockReturnValue(false);
+
+  const ref = { current: document.createElement('div') };
+  const messages: Message[] = [
+    { role: 'user', text: 'What is this?' },
+    {
+      role: 'model',
+      text: 'Hidden cost test',
+      cost: { inputTokens: 500, outputTokens: 100, costUsd: 0.0005 },
+    },
+  ];
+
+  renderChat(
+    <ChatInterface
+      type="global"
+      chatMessages={messages}
+      chatInput=""
+      setChatInput={vi.fn()}
+      onSendMessage={vi.fn()}
+      isChatting={false}
+      chatContainerRef={ref}
+      submitFeedback={vi.fn()}
+    />
+  );
+
+  expect(screen.queryByText(/جاۋاب تەننەرقى:/)).not.toBeInTheDocument();
+});

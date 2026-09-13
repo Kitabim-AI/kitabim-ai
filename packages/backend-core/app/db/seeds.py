@@ -223,6 +223,11 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Globally enable/disable async LLM-judge scoring (faithfulness/answer_relevance/context_precision) of RAG chat turns. Set to 'false' to skip scoring and worker dispatch entirely.",
         },
         {
+            "key": "rag_chat_cost_enabled",
+            "value": "true",
+            "description": "Globally show or hide answer cost information (tokens and USD) in chat windows.",
+        },
+        {
             "key": "rag_gemini_judge_model",
             "value": "gemini-3.1-flash-lite",
             "description": "Gemini model used for the RAG answer-quality judge (faithfulness/answer_relevance/context_precision scoring).",

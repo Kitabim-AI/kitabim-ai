@@ -174,12 +174,18 @@ async def chat_with_book_stream(
                         updated_usage = await chat_limit_service.get_user_usage_status(
                             current_user, session
                         )
+                        cost = event.get("cost") or {}
                         done_payload = {
                             "done": True,
                             "usage": updated_usage,
                             "conversationId": event.get("conversation_id"),
                             "contextBookIds": event.get("used_book_ids", []),
                             "evalId": event.get("eval_id"),
+                            "cost": {
+                                "inputTokens": cost.get("input_tokens", 0),
+                                "outputTokens": cost.get("output_tokens", 0),
+                                "costUsd": cost.get("cost_usd", 0),
+                            },
                         }
                         yield f"data: {json.dumps(done_payload)}\n\n"
                     else:
@@ -393,6 +399,25 @@ async def list_conversation_messages_endpoint(
                 "usedBookIds": m.used_book_ids,
                 "currentPage": m.current_page,
                 "evalId": m.eval_id,
+                "cost": (
+                    {
+                        "inputTokens": m.evaluation.input_tokens,
+                        "outputTokens": m.evaluation.output_tokens,
+                        "costUsd": (
+                            float(m.evaluation.cost_usd)
+                            if m.evaluation.cost_usd is not None
+                            else 0.0
+                        ),
+                    }
+                    if m.evaluation
+                    and (
+                        m.evaluation.input_tokens > 0
+                        or m.evaluation.output_tokens > 0
+                        or (m.evaluation.cost_usd and float(m.evaluation.cost_usd) > 0)
+                    )
+                    else None
+                ),
+                "feedback": m.evaluation.user_feedback if m.evaluation else None,
                 "createdAt": m.created_at.isoformat(),
             }
             for m in messages

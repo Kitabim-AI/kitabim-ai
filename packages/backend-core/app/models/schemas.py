@@ -243,6 +243,9 @@ class RagQuestionAdmin(BaseModel):
     faithfulness_score: Optional[float] = None
     answer_relevance_score: Optional[float] = None
     context_precision_score: Optional[float] = None
+    input_tokens: Optional[int] = 0
+    output_tokens: Optional[int] = 0
+    cost_usd: Optional[float] = 0.0
 
 
 class RagQuestionsPage(BaseModel):

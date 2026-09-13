@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -752,6 +753,17 @@ class RAGEvaluation(Base):
         Boolean, default=False, nullable=False
     )
 
+    # LLM cost tracking. input_tokens/output_tokens/cost_usd cover the
+    # synchronous chat turn only (query-signal extraction, retrieval agent,
+    # reranker, answer agent, estimated embedding). judge_cost_usd is
+    # nullable and backfilled by rag_eval_job once async judge scoring runs.
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cost_usd: Mapped[float] = mapped_column(Numeric(12, 6), default=0, nullable=False)
+    judge_cost_usd: Mapped[Optional[float]] = mapped_column(
+        Numeric(12, 6), nullable=True
+    )
+
     # Timestamp
     ts: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -1186,6 +1198,10 @@ class ConversationMessage(Base):
         default=func.now(),
         server_default=func.now(),
         nullable=False,
+    )
+
+    evaluation: Mapped[Optional["RAGEvaluation"]] = relationship(
+        "RAGEvaluation", foreign_keys=[eval_id], lazy="selectin"
     )
 
 

@@ -42,6 +42,9 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         answer: Optional[str] = None,
         retrieved_context: Optional[str] = None,
         is_first_turn: bool = False,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cost_usd: float = 0,
     ) -> RAGEvaluation:
         """Create a new RAG evaluation record"""
         evaluation = await self.create(
@@ -69,6 +72,9 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
             answer=answer,
             retrieved_context=retrieved_context,
             is_first_turn=is_first_turn,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd,
         )
         return evaluation
 

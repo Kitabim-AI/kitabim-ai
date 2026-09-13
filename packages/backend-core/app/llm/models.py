@@ -152,6 +152,41 @@ def _get_ocr_client() -> genai.Client:
     return _ocr_client
 
 
+def _record_usage(
+    model: str,
+    usage_metadata: Any,
+    *,
+    stage: str,
+    estimated: bool = False,
+    usage_out: dict | None = None,
+) -> None:
+    """Attribute token usage to the active turn's CostTracker (if any) and/or
+    a caller-supplied usage_out dict — the latter is how code running outside
+    a live chat turn's QueryContext (e.g. the worker's async judge scoring)
+    still gets the usage back."""
+    if usage_metadata is None:
+        return
+    input_tokens = getattr(usage_metadata, "prompt_token_count", None) or 0
+    output_tokens = getattr(usage_metadata, "candidates_token_count", None) or 0
+    if input_tokens <= 0 and output_tokens <= 0:
+        return
+
+    from app.services.rag.context import get_current_query_context
+
+    ctx = get_current_query_context()
+    if ctx is not None:
+        ctx.cost_tracker.add(
+            stage=stage,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated=estimated,
+        )
+    if usage_out is not None:
+        usage_out["input_tokens"] = usage_out.get("input_tokens", 0) + input_tokens
+        usage_out["output_tokens"] = usage_out.get("output_tokens", 0) + output_tokens
+
+
 def _normalize_prompt_value(value: Any) -> str:
     if hasattr(value, "to_string"):
         try:
@@ -445,6 +480,8 @@ class ProtectedLLM:
             else self.model_name
         )
 
+        stage = kwargs.pop("stage", "llm")
+        usage_out = kwargs.pop("usage_out", None)
         timeout = kwargs.pop("timeout", None)
         timeout_config_key = kwargs.pop("timeout_config_key", None)
         if timeout is None:
@@ -477,13 +514,18 @@ class ProtectedLLM:
             elif isinstance(config, types.GenerateContentConfig):
                 config.http_options = types.HttpOptions(timeout=int(timeout * 1000))
 
+        usage_metadata = None
+
         async def _call():
+            nonlocal usage_metadata
             response = await client.aio.models.generate_content(
                 model=model, contents=prompt, config=config, **kwargs
             )
+            usage_metadata = response.usage_metadata
             return response.text or ""
 
         text = await _call_with_breaker(self.breaker, _call, timeout=timeout)
+        _record_usage(model, usage_metadata, stage=stage, usage_out=usage_out)
         log_json(
             _logger,
             logging.INFO,
@@ -504,6 +546,8 @@ class ProtectedLLM:
         )
         log_json(_logger, logging.INFO, "ProtectedLLM stream started", model=model)
 
+        stage = kwargs.pop("stage", "llm")
+        usage_out = kwargs.pop("usage_out", None)
         timeout = kwargs.pop("timeout", None)
         timeout_config_key = kwargs.pop("timeout_config_key", None)
         if timeout is None:
@@ -542,11 +586,15 @@ class ProtectedLLM:
             )
 
         chunk_count = 0
+        last_usage_metadata = None
         async for chunk in _stream_with_breaker(self.breaker, _get_stream):
+            if getattr(chunk, "usage_metadata", None) is not None:
+                last_usage_metadata = chunk.usage_metadata
             text_chunk = chunk.text
             if text_chunk:
                 chunk_count += 1
                 yield text_chunk
+        _record_usage(model, last_usage_metadata, stage=stage, usage_out=usage_out)
         log_json(
             _logger, logging.INFO, "ProtectedLLM stream completed", chunks=chunk_count
         )
@@ -633,7 +681,21 @@ class GeminiEmbeddings:
                         raise ValueError(f"No embedding returned from API: {data}")
                     return data["embedding"]["values"]
 
-        return await _call_with_breaker(_EMBED_BREAKER, _call)
+        values = await _call_with_breaker(_EMBED_BREAKER, _call)
+        # Gemini's embedContent response carries no usage_metadata — estimate
+        # from input length (~4 chars/token) rather than leave it uncounted.
+        from app.services.rag.context import get_current_query_context
+
+        ctx = get_current_query_context()
+        if ctx is not None:
+            ctx.cost_tracker.add(
+                stage="embedding",
+                model=model_name,
+                input_tokens=max(1, len(text) // 4),
+                output_tokens=0,
+                estimated=True,
+            )
+        return values
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         return _run_sync(self.aembed_documents(texts))

@@ -145,3 +145,76 @@ async def test_delete_conversation_endpoint_calls_repository_soft_delete():
 
     assert res == {"ok": True, "id": "conv-456"}
     mock_delete.assert_called_once_with("conv-456", "user-123")
+
+
+@pytest.mark.asyncio
+async def test_list_conversation_messages_endpoint_returns_cost_and_feedback():
+    setup_paths()
+    from api.endpoints.chat_router import list_conversation_messages_endpoint
+    from app.models.user import User
+    from datetime import datetime, timezone
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock(spec=User)
+    mock_user.id = "user-123"
+
+    mock_conv = MagicMock()
+    mock_conv.id = "conv-456"
+    mock_conv.user_id = "user-123"
+
+    mock_eval = MagicMock()
+    mock_eval.input_tokens = 1500
+    mock_eval.output_tokens = 350
+    mock_eval.cost_usd = 0.00052
+    mock_eval.user_feedback = "positive"
+
+    mock_msg1 = MagicMock()
+    mock_msg1.id = "msg-1"
+    mock_msg1.conversation_id = "conv-456"
+    mock_msg1.role = "user"
+    mock_msg1.content = "سۇئال"
+    mock_msg1.agent_steps = None
+    mock_msg1.used_book_ids = None
+    mock_msg1.current_page = None
+    mock_msg1.eval_id = None
+    mock_msg1.evaluation = None
+    mock_msg1.created_at = datetime(2026, 9, 13, 12, 0, 0, tzinfo=timezone.utc)
+
+    mock_msg2 = MagicMock()
+    mock_msg2.id = "msg-2"
+    mock_msg2.conversation_id = "conv-456"
+    mock_msg2.role = "model"
+    mock_msg2.content = "جاۋاب"
+    mock_msg2.agent_steps = {"llm_calls": 1}
+    mock_msg2.used_book_ids = None
+    mock_msg2.current_page = None
+    mock_msg2.eval_id = 10
+    mock_msg2.evaluation = mock_eval
+    mock_msg2.created_at = datetime(2026, 9, 13, 12, 0, 1, tzinfo=timezone.utc)
+
+    with patch(
+        "app.db.repositories.conversation_repository.ConversationRepository.get_conversation",
+        AsyncMock(return_value=mock_conv),
+    ), patch(
+        "app.db.repositories.conversation_repository.ConversationRepository.get_conversation_messages",
+        AsyncMock(return_value=[mock_msg1, mock_msg2]),
+    ):
+        res = await list_conversation_messages_endpoint(
+            conversation_id="conv-456",
+            limit=100,
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert "messages" in res
+    assert len(res["messages"]) == 2
+    assert res["messages"][0]["cost"] is None
+    assert res["messages"][0]["feedback"] is None
+
+    assert res["messages"][1]["cost"] == {
+        "inputTokens": 1500,
+        "outputTokens": 350,
+        "costUsd": 0.00052,
+    }
+    assert res["messages"][1]["feedback"] == "positive"
+    assert res["messages"][1]["evalId"] == 10

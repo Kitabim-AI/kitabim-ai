@@ -517,8 +517,12 @@ async def get_public_config(session: AsyncSession = Depends(get_session)):
     except (ValueError, TypeError):
         collection_page_size = 40
 
+    show_chat_cost_str = await repo.get_value("rag_chat_cost_enabled", "true")
+    show_chat_cost = show_chat_cost_str.lower() in ("true", "1", "yes")
+
     return {
         "collectionPageSize": collection_page_size,
+        "showChatCost": show_chat_cost,
     }
 
 

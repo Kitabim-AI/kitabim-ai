@@ -431,6 +431,15 @@ class ChatOrchestrator:
                         max_llm_calls=agent_max_llm_calls,
                     ),
                 ):
+                    if getattr(event, "usage_metadata", None) is not None:
+                        ctx.cost_tracker.add(
+                            stage="retrieval_agent",
+                            model=agent_model,
+                            input_tokens=event.usage_metadata.prompt_token_count or 0,
+                            output_tokens=event.usage_metadata.candidates_token_count
+                            or 0,
+                        )
+
                     if not event.partial and event.content and event.content.parts:
                         for part in event.content.parts:
                             if part.function_call:
@@ -595,6 +604,14 @@ class ChatOrchestrator:
                 new_message=content,
                 run_config=RunConfig(streaming_mode=StreamingMode.SSE),
             ):
+                if getattr(event, "usage_metadata", None) is not None:
+                    ctx.cost_tracker.add(
+                        stage="answer_agent",
+                        model=chat_model,
+                        input_tokens=event.usage_metadata.prompt_token_count or 0,
+                        output_tokens=event.usage_metadata.candidates_token_count or 0,
+                    )
+
                 if event.partial and event.content and event.content.parts:
                     for part in event.content.parts:
                         if part.text:
@@ -618,6 +635,8 @@ class ChatOrchestrator:
             await configs_repo.get_value("rag_judge_scoring_enabled", "true")
         ).lower() == "true"
 
+        cost = ctx.cost_tracker.as_dict()
+
         eval_repo = RAGEvaluationsRepository(db_session)
         eval_record = await eval_repo.create_evaluation(
             book_id=request_dto.book_id if not request_dto.is_global else None,
@@ -637,6 +656,9 @@ class ChatOrchestrator:
             answer=fixed_text,
             retrieved_context=graded_context,
             is_first_turn=is_first_turn,
+            input_tokens=cost["input_tokens"],
+            output_tokens=cost["output_tokens"],
+            cost_usd=cost["cost_usd"],
         )
         eval_id = eval_record.id
 
@@ -687,6 +709,7 @@ class ChatOrchestrator:
             "eval_id": eval_id,
             "conversation_id": conv_id,
             "used_book_ids": used_book_ids,
+            "cost": cost,
         }
 
     async def answer(

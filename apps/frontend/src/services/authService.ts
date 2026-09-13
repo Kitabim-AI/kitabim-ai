@@ -12,6 +12,7 @@ let _configPromise: Promise<void> | null = null;
 
 const DEFAULT_COLLECTION_PAGE_SIZE = 40;
 let _collectionPageSize = DEFAULT_COLLECTION_PAGE_SIZE;
+let _showChatCost = true;
 
 export async function initAppConfig(): Promise<void> {
   if (!_configPromise) {
@@ -24,6 +25,10 @@ export async function initAppConfig(): Promise<void> {
             typeof data.collectionPageSize === 'number'
               ? data.collectionPageSize
               : DEFAULT_COLLECTION_PAGE_SIZE;
+          _showChatCost =
+            typeof data.showChatCost === 'boolean'
+              ? data.showChatCost
+              : true;
         }
       } catch {
         // Non-fatal — defaults used
@@ -37,6 +42,10 @@ export async function initAppConfig(): Promise<void> {
 
 export function getCollectionPageSize(): number {
   return _collectionPageSize;
+}
+
+export function getShowChatCost(): boolean {
+  return _showChatCost;
 }
 
 // Access token lives in memory only — never persisted to localStorage.

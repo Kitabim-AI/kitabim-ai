@@ -64,6 +64,12 @@ export interface Message {
   feedback?: 'positive' | 'negative';
   /** Whether the message is a degraded/partial response due to a tool failure */
   partialResult?: boolean;
+  /** Estimated LLM token usage/cost for this turn, from the SSE done event. */
+  cost?: {
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  };
 }
 
 export interface Conversation {
@@ -86,6 +92,12 @@ export interface ConversationMessage {
   usedBookIds?: string[] | Record<string, unknown> | null;
   currentPage?: number | null;
   evalId?: number | null;
+  cost?: {
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  } | null;
+  feedback?: 'positive' | 'negative' | null;
   createdAt: string;
 }
 

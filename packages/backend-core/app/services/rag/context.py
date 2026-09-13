@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, List, Optional
 
+from app.llm.cost_tracker import CostTracker
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
     from app.db.models import Book
@@ -78,6 +80,9 @@ class QueryContext:
 
     # ── Correlation/Request ID ──────────────────────────────────────────────
     request_id: Optional[str] = None
+
+    # ── LLM cost tracking for this turn ──────────────────────────────────────
+    cost_tracker: CostTracker = field(default_factory=CostTracker)
 
     # ── Dead config fields — populated by the deleted legacy pipeline's
     # `_build_context` from `system_configs` keys that have since been
