@@ -6,6 +6,7 @@ import { AlertCircle, BookOpen, Globe, Loader, MessageSquare, RefreshCw, Search,
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 import { authFetch } from '../../services/authService';
+import { formatAnswerCost } from '../../utils/costUtils';
 
 const PAGE_SIZE = 25;
 
@@ -25,6 +26,9 @@ interface RagQuestion {
   faithfulnessScore: number | null;
   answerRelevanceScore: number | null;
   contextPrecisionScore: number | null;
+  inputTokens?: number;
+  outputTokens?: number;
+  costUsd?: number;
 }
 
 interface QuestionsPage {
@@ -330,6 +334,11 @@ export function AdminQuestions() {
                         </span>
                       ) : (
                         <span className="text-slate-300 dark:text-slate-650">—</span>
+                      )}
+                      {(q.costUsd != null || (q.inputTokens ?? 0) + (q.outputTokens ?? 0) > 0) && (
+                        <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500 select-none whitespace-nowrap uyghur-text">
+                          {formatAnswerCost(q.costUsd ?? 0, (q.inputTokens ?? 0) + (q.outputTokens ?? 0), t)}
+                        </div>
                       )}
                     </td>
 

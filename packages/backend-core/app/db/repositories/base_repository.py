@@ -46,6 +46,12 @@ class BaseRepository(Generic[ModelType]):
 
     async def create(self, **kwargs) -> ModelType:
         """Create new record"""
+        if hasattr(self.model, "__table__") and hasattr(
+            self.model.__table__, "columns"
+        ):
+            valid_cols = set(self.model.__table__.columns.keys())
+            kwargs = {k: v for k, v in kwargs.items() if k in valid_cols}
+
         instance = self.model(**kwargs)
         self.session.add(instance)
         await self.session.flush()  # Get ID without committing
@@ -57,6 +63,15 @@ class BaseRepository(Generic[ModelType]):
         from sqlalchemy import inspect
 
         pk_column = inspect(self.model).primary_key[0]
+        if hasattr(self.model, "__table__") and hasattr(
+            self.model.__table__, "columns"
+        ):
+            valid_cols = set(self.model.__table__.columns.keys())
+            kwargs = {k: v for k, v in kwargs.items() if k in valid_cols}
+
+        if not kwargs:
+            return await self.get(id)
+
         stmt = (
             update(self.model)
             .where(pk_column == id)

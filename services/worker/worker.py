@@ -46,11 +46,15 @@ from scanners.batch_embedding_poller_scanner import (
     run_batch_embedding_poller_scanner,
 )
 from scanners.batch_history_poller_scanner import run_batch_history_poller_scanner
+from scanners.batch_llm_spell_check_poller_scanner import (
+    run_batch_llm_spell_check_poller_scanner,
+)
 from scanners.graph_resolution_scanner import run_graph_resolution_scanner
 from jobs.ocr_job import ocr_job
 from jobs.chunking_job import chunking_job
 from jobs.embedding_job import embedding_job
 from jobs.spell_check_job import spell_check_job
+from jobs.llm_spell_check_job import llm_spell_check_job
 from jobs.summary_job import summary_job
 from jobs.auto_correct_job import auto_correct_job
 from jobs.knowledge_graph_job import knowledge_graph_job
@@ -67,6 +71,7 @@ class WorkerSettings:
         chunking_job,
         embedding_job,
         spell_check_job,
+        llm_spell_check_job,
         summary_job,
         auto_correct_job,
         knowledge_graph_job,
@@ -90,6 +95,7 @@ class WorkerSettings:
         cron(run_batch_embedding_poller_scanner),
         cron(run_spell_check_scanner),
         cron(run_batch_history_poller_scanner),
+        cron(run_batch_llm_spell_check_poller_scanner),
         cron(run_stale_watchdog, minute={0, 30}),
         cron(
             run_summary_scanner, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}

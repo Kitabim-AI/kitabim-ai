@@ -175,6 +175,13 @@ Dictionary subtype rules:
             contents=contents,
             config=config,
         )
+        if res_obj.usage_metadata is not None:
+            ctx.cost_tracker.add(
+                stage="query_signals",
+                model=model,
+                input_tokens=res_obj.usage_metadata.prompt_token_count or 0,
+                output_tokens=res_obj.usage_metadata.candidates_token_count or 0,
+            )
 
         # Add model response to history
         if res_obj.candidates and res_obj.candidates[0].content:

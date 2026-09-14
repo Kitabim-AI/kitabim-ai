@@ -1,0 +1,12 @@
+surya-ocr==0.22.1
+savitr>=0.3.0; sys_platform == 'darwin' and platform_machine == 'arm64'
+pymupdf
+pillow
+beautifulsoup4
+python-dotenv
+fastapi
+python-multipart
+uvicorn
+httpx
+pytest
+pytest-asyncio

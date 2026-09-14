@@ -28,17 +28,28 @@ def _clamp(value: float) -> float:
 
 
 async def score_answer(
-    question: str, answer: str, context: str, model: str
+    question: str,
+    answer: str,
+    context: str,
+    model: str,
+    usage_out: dict | None = None,
 ) -> JudgeScores:
     """Score a RAG chat turn on faithfulness, answer_relevance, and context_precision
     with a single combined LLM-judge call. Raises on malformed/missing judge output —
-    callers are expected to treat that as a scoring failure, not silently default."""
+    callers are expected to treat that as a scoring failure, not silently default.
+
+    This runs in the worker, outside any live chat turn's QueryContext, so
+    usage isn't auto-attributed via the ContextVar the way it is for the
+    reranker/agents — pass a dict via usage_out to read the token counts
+    back (see rag_eval_job, which uses this to backfill judge_cost_usd)."""
     prompt = RAG_JUDGE_PROMPT.format(question=question, context=context, answer=answer)
 
     llm = build_text_llm(model)
     res_text = await llm.ainvoke(
         prompt,
         config=types.GenerateContentConfig(response_mime_type="application/json"),
+        stage="judge",
+        usage_out=usage_out,
     )
 
     match = re.search(r"\{.*\}", res_text, re.DOTALL)

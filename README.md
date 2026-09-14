@@ -46,9 +46,9 @@ Uyghur literature and historical publications exist overwhelmingly in physical f
 - **Smart Chunking & Embeddings**: Overlapping window chunking stored with `pgvector` similarity indexes using Gemini Embedding v2.
 
 ### 🤖 Agentic RAG & Natural Language QA
-- **`ChatOrchestrator`** (the only chat pipeline): Persistent conversation history, query-signal analysis, ADK Retrieval Agent (19 tools), context reranking / context grading, and ADK Answer Agent with streaming SSE output.
-- **Hybrid Retrieval**: `pgvector` semantic search fused with PostgreSQL full-text keyword search via Reciprocal Rank Fusion (`rag_hybrid_search_enabled`), followed by an LLM-based reranking pass (`rag_reranker_enabled`) before context grading.
-- **19 Specialized ADK Tools**: Includes passage search, summary search, title/author matching, catalog lookup, current reader page text, sister volume discovery, Uyghur dictionary lookups, scripture (Quran) vector search, and post-vector knowledge graph entity lookup.
+- **`ChatOrchestrator`** (the only chat pipeline): Persistent conversation history, query-signal analysis, ADK Retrieval Agent (20 tools), context reranking / context grading, and ADK Answer Agent with streaming SSE output.
+- **Agent-Driven Retrieval**: `pgvector` semantic search (`search_chunks`) as the primary retrieval tool, with an agent-invoked exact-phrase lexical search (`search_keyword_phrase`) called as a supplement for proper nouns and specific terms, followed by an LLM-based reranking pass (`rag_reranker_enabled`) before context grading.
+- **20 Specialized ADK Tools**: Includes passage search, summary search, title/author matching, catalog lookup, current reader page text, sister volume discovery, Uyghur dictionary lookups, scripture (Quran) vector search, and post-vector knowledge graph entity lookup.
 - **Fine-Grained Citations**: Answers cite `ref:book_id:page_number` inline immediately after the relevant sentence (with multi-page and Quran surah:ayah variants), not just at the book level.
 - **Automated RAG Evaluation**: Post-turn async scoring (`rag_eval_job`) evaluating answer faithfulness, relevance, context precision, and context recall per turn.
 
@@ -60,6 +60,7 @@ Uyghur literature and historical publications exist overwhelmingly in physical f
 - **Uyghur Spell-Checking**: Per-page spell audit against an extensive Uyghur dictionary with custom auto-correct rules.
 - **Human-in-the-Loop OCR Correction**: Dedicated spell-check review workspace (`SpellCheckPanel` / `SpellCheckView`) where editors accept, edit, skip, or dictionary-add flagged OCR words per page, with confidence badges and full state tracking (`page_spell_issues`).
 - **Bulk OCR Auto-Correction**: Scheduled daily job (`auto_correct_scanner`) applying auto-correction rules across processed pages.
+- **LLM-Based Spell Correction**: Admin-triggered Gemini-powered spell correction per book (`llm_spell_check_job`), with an asynchronous Gemini Batch API mode (`llm_spell_check_batch_enabled` / `batch_llm_spell_check_poller_scanner`) as an alternative to the dictionary-based pipeline above.
 - **Interactive Reader & Curation UI**: Modern React 19 SPA with PDF viewer, in-reader query assistant, spellcheck review workspace, and admin analytics panel.
 
 ### 📚 AI-Driven History Dictionary Extraction
@@ -68,7 +69,8 @@ Uyghur literature and historical publications exist overwhelmingly in physical f
 
 ### 🔐 User Management & Access Control
 - **OAuth2 & JWT Authentication**: Support for Google, Facebook, Twitter/X, and Instagram login with secure `httpOnly` cookies.
-- **Role Hierarchy**: Strict role-based access control (**Admin**, **Editor**, **Reader**, **Guest**).
+- **Role Hierarchy**: Strict role-based access control for authenticated users (**Admin**, **Editor**, **Reader**).
+- **Guest Reading Wall**: Unauthenticated visitors can read up to the first 20 pages of any book before hitting a sign-in wall (`GuestAuthWall`) prompting OAuth login.
 
 ---
 
@@ -150,10 +152,14 @@ flowchart TD
 
     %% Quality layer
     subgraph SpellCheck ["Quality Layer"]
-        S_SC["Spell Check Scanner"] -->|Claim idle| J_SC[Spell Check Job]
+        S_SC["Spell Check Scanner<br/>(dictionary-based)"] -->|Claim idle| J_SC[Spell Check Job]
     end
     InitDB -.->|ocr done| S_SC
     J_SC -->|"Write Event"| OB
+
+    %% LLM-based spell check — admin-triggered, independent of the pipeline above
+    Ready -.->|"Manual trigger only (admin)<br/>POST /reprocess/llm-spell-check"| J_LSC[LLM Spell Check Job]
+    J_LSC -->|"Save corrected text"| PG
 ```
 
 ### Agentic RAG Question Answering Pipeline
@@ -163,7 +169,7 @@ Question answering is served entirely by `ChatOrchestrator` — the single pipel
 ```mermaid
 flowchart TD
     Q(["User Question + Context"]) --> ORCH["ChatOrchestrator"]
-    ORCH --> RET_AGENT["[LLM] KitabimRetrievalAgent<br/>(Google ADK + 19 Tools)"]
+    ORCH --> RET_AGENT["[LLM] KitabimRetrievalAgent<br/>(Google ADK + 20 Tools)"]
     RET_AGENT --> RERANK{"rag_reranker_enabled?"}
     RERANK -- Yes --> RR["LLM Reranker"]
     RERANK -- No --> GRADE["Context Grading"]
@@ -196,12 +202,14 @@ Interactive HTML diagrams generated with [Archify](https://github.com/tt-a1i/arc
 kitabim-ai/
 ├── apps/
 │   └── frontend/              # React 19 + Vite + TypeScript SPA
+├── clients/
+│   └── kitabim-ocr/           # Standalone local OCR client (currently Surya OCR; not deployed, not containerized)
 ├── packages/
 │   ├── backend-core/          # Shared Python core: models, repos, LLM clients, services, ADK tools
 │   └── shared/                # Generated OpenAPI TypeScript types (npm workspace package)
 ├── services/
 │   ├── backend/                # FastAPI HTTP API (routes, auth, middleware)
-│   └── worker/                 # ARQ background processing worker (16 scanners, 10 jobs)
+│   └── worker/                 # ARQ background processing worker (17 scanners, 11 jobs)
 ├── deploy/
 │   ├── local/                 # Local Docker Compose rebuild & execution scripts
 │   └── gcp/                    # Production GCP infrastructure & deployment scripts
@@ -216,10 +224,10 @@ kitabim-ai/
 ### Core Package Breakdown (`packages/backend-core/app/`)
 
 - **`core/`**: Environment configurations (`config.py`), cache templates (`cache_config.py`), pipeline state constants (`pipeline.py`), character personas (`characters.py`), and i18n (`i18n.py`).
-- **`db/`**: SQLAlchemy models (`models.py` — 30 PostgreSQL tables), database engine factory (`session.py`), system configuration seeds (`seeds.py`), and 18 repository classes in `db/repositories/`.
+- **`db/`**: SQLAlchemy models (`models.py` — 31 PostgreSQL tables), database engine factory (`session.py`), system configuration seeds (`seeds.py`), and 18 repository classes in `db/repositories/`.
 - **`llm/`**: `GeminiLLM` client, `TextChain` / `StructuredChain` wrappers, Redis rate limiting, and circuit breaker resilience.
 - **`services/`**: Core business services including OCR, chunking, embeddings, spell-check, auto-correction, summary generation, storage abstraction, and sub-packages:
-  - **`services/rag/`**: Shared retrieval primitives used by `ChatOrchestrator` — no handlers. Retrieval engine (`retrieval.py`), `QueryContext`, the 19 ADK tools (`rag/agent/tools.py`), the LLM reranker, and other tool-implementation helpers.
+  - **`services/rag/`**: Shared retrieval primitives used by `ChatOrchestrator` — no handlers. Retrieval engine (`retrieval.py`), `QueryContext`, the 20 ADK tools (`rag/agent/tools.py`), the LLM reranker, and other tool-implementation helpers.
   - **`services/chat/`**: `ChatOrchestrator`, `KitabimRetrievalAgent`, `KitabimAnswerAgent`, conversation state management (`history.py`), and context builders.
 
 ---
@@ -233,7 +241,7 @@ kitabim-ai/
 | **Worker / Queue** | Python 3.13, ARQ (Async Redis Queue) |
 | **Relational Database** | PostgreSQL 16+ with `pgvector` extension (Vector Similarity Search) |
 | **Graph Database** | Neo4j 5+ (Cypher Graph Database for GraphRAG) |
-| **Cache & Locking** | Redis (L0-L3 Query Caching, Distributed `MultiPageLock`, Rate Limiting) |
+| **Cache & Locking** | Redis (L0-L2 Query Caching, Distributed `MultiPageLock`, Rate Limiting) |
 | **Storage** | Google Cloud Storage (GCS) with local `./data/` volume fallback |
 | **AI & LLM Frameworks** | Google Gemini API (`google-genai` SDK), Google ADK (`google-adk` framework) |
 | **Authentication** | JWT (httpOnly Cookies) + OAuth2 (Google, Facebook, Twitter/X, Instagram) |
@@ -335,7 +343,7 @@ Detailed architectural specs, milestone state machine details, and stage documen
 | [**`EMBEDDING_DESIGN.md`**](docs/main/EMBEDDING_DESIGN.md) | Vector embeddings, pgvector indexing, and batch embedding mode |
 | [**`SPELLCHECK_DESIGN.md`**](docs/main/SPELLCHECK_DESIGN.md) | Uyghur dictionary spell-checking and auto-correction engine |
 | [**`SUMMARY_DESIGN.md`**](docs/main/SUMMARY_DESIGN.md) | Book-level summary generation for RAG book selection |
-| [**`CHAT_RAG_DESIGN.md`**](docs/main/CHAT_RAG_DESIGN.md) | ChatOrchestrator, 19 ADK tools, reranking, and evaluation |
+| [**`CHAT_RAG_DESIGN.md`**](docs/main/CHAT_RAG_DESIGN.md) | ChatOrchestrator, 20 ADK tools, reranking, and evaluation |
 | [**`KNOWLEDGE_GRAPH_DESIGN.md`**](docs/main/KNOWLEDGE_GRAPH_DESIGN.md) | Neo4j GraphRAG entity extraction and scheduled entity resolution |
 | [**`PROJECT_STRUCTURE.md`**](docs/main/PROJECT_STRUCTURE.md) | Directory structure map, module responsibilities, and key files |
 | [**`REQUIREMENTS.md`**](docs/main/REQUIREMENTS.md) | Business functional requirements and user role permission matrix |

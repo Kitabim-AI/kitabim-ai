@@ -507,7 +507,7 @@ app.include_router(
 
 @app.get("/api/config")
 async def get_public_config(session: AsyncSession = Depends(get_session)):
-    """Public endpoint — returns config the frontend needs before it can authenticate."""
+    """Public endpoint — returns public configuration like collectionPageSize."""
     from app.db.repositories.system_configs_repository import SystemConfigsRepository
 
     repo = SystemConfigsRepository(session)
@@ -517,9 +517,12 @@ async def get_public_config(session: AsyncSession = Depends(get_session)):
     except (ValueError, TypeError):
         collection_page_size = 40
 
+    show_chat_cost_str = await repo.get_value("rag_chat_cost_enabled", "true")
+    show_chat_cost = show_chat_cost_str.lower() in ("true", "1", "yes")
+
     return {
-        "appId": settings.security_app_id,
         "collectionPageSize": collection_page_size,
+        "showChatCost": show_chat_cost,
     }
 
 

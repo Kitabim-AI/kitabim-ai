@@ -78,6 +78,16 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Gemini model used for OCR page processing.",
         },
         {
+            "key": "llm_spell_check_batch_enabled",
+            "value": "false",
+            "description": "When true, the per-book LLM spell-check trigger submits a Gemini Batch API job instead of live concurrent calls",
+        },
+        {
+            "key": "gemini_llm_spell_check_model",
+            "value": "gemini-3.1-flash-lite",
+            "description": "Gemini model used for LLM-based spell correction, both live and batch paths",
+        },
+        {
             "key": "ocr_batch_enabled",
             "value": "true",
             "description": "Globally enable/disable Gemini Batch API for OCR page processing. Set to 'true' to use Batch API (50% cost discount) or 'false' for online real-time OCR.",
@@ -213,6 +223,11 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Globally enable/disable async LLM-judge scoring (faithfulness/answer_relevance/context_precision) of RAG chat turns. Set to 'false' to skip scoring and worker dispatch entirely.",
         },
         {
+            "key": "rag_chat_cost_enabled",
+            "value": "true",
+            "description": "Globally show or hide answer cost information (tokens and USD) in chat windows.",
+        },
+        {
             "key": "rag_gemini_judge_model",
             "value": "gemini-3.1-flash-lite",
             "description": "Gemini model used for the RAG answer-quality judge (faithfulness/answer_relevance/context_precision scoring).",
@@ -241,6 +256,11 @@ async def seed_system_configs(session: AsyncSession):
             "key": "rag_graph_top_k",
             "value": "10",
             "description": "Maximum number of knowledge-graph facts fed into RAG context per turn, highest-scoring first.",
+        },
+        {
+            "key": "toc_short_work_max_pages",
+            "value": "10",
+            "description": "Maximum page span a table-of-contents entry may cover to be treated as a lookup-able short work (poem, song) by the ToC-based retrieval shortcut. Entries spanning more pages than this are left to the normal retrieval agent instead. Also caps how much page content is fetched/sent to the LLM for a matched entry — content beyond the cap is truncated with a note rather than dropped silently.",
         },
         {
             "key": "rag_agent_max_llm_calls",

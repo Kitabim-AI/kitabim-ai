@@ -287,6 +287,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/content-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Book Content
+         * @description Home 'Content' tab: exact-phrase search over book content, returning
+         *     matching page content hits with snippets and page numbers, paginated for infinite scroll.
+         */
+        get: operations["search_book_content_api_books_content_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/random-proverb": {
         parameters: {
             query?: never;
@@ -356,9 +377,29 @@ export interface paths {
         };
         /**
          * Get Global Graph
-         * @description Retrieve global knowledge graph data for public visualization.
+         * @description Retrieve global or book-specific knowledge graph data for visualization.
          */
         get: operations["get_global_graph_api_books_graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/graph/chunk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Graph Chunk Detail
+         * @description Retrieve original text and metadata for a chunk referenced by a graph edge.
+         */
+        get: operations["get_graph_chunk_detail_api_books_graph_chunk_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -378,7 +419,7 @@ export interface paths {
         put?: never;
         /**
          * Merge Graph Entities
-         * @description Merge two knowledge graph entities (admin only).
+         * @description Merge two knowledge graph entities by id (admin only).
          */
         post: operations["merge_graph_entities_api_books_graph_merge_post"];
         delete?: never;
@@ -398,7 +439,7 @@ export interface paths {
         put?: never;
         /**
          * Delete Graph Relationship
-         * @description Delete a relationship between two knowledge graph entities (admin only).
+         * @description Delete a relationship between two knowledge graph entities by edge id (admin only).
          */
         post: operations["delete_graph_relationship_api_books_graph_relationship_delete_post"];
         delete?: never;
@@ -418,7 +459,10 @@ export interface paths {
         put?: never;
         /**
          * Rename Graph Entity
-         * @description Rename a knowledge graph entity (admin only).
+         * @description Rename a knowledge graph entity by id (admin only).
+         *
+         *     The previous canonical_name is folded into aliases (see GraphRepository.rename_entity)
+         *     so existing citations/lookups by the old spelling keep resolving.
          */
         post: operations["rename_graph_entity_api_books_graph_entity_rename_post"];
         delete?: never;
@@ -597,6 +641,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/upload-ocrd": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Pdf Ocrd
+         * @description Upload a PDF whose OCR has already been done externally (e.g. the
+         *     local Surya OCR client). Pages arrive pre-filled and the book enters
+         *     the pipeline at chunking, the same shape DOCX uploads already use.
+         */
+        post: operations["upload_pdf_ocrd_api_books_upload_ocrd_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{book_id}/reprocess/ocr": {
         parameters: {
             query?: never;
@@ -714,6 +780,8 @@ export interface paths {
          * @description Manually trigger/reprocess Knowledge Graph extraction for a book.
          *
          *     This queues the `knowledge_graph_job` to extract entities and relations in Neo4j.
+         *     `scope` ("fiction" | "nonfiction") is required — the admin already knows which,
+         *     since they're the one choosing to extract this specific book (design v2 §3).
          */
         post: operations["reprocess_graph_api_books__book_id__reprocess_graph_post"];
         delete?: never;
@@ -738,6 +806,54 @@ export interface paths {
          *     Deletes any existing summary row so the summary_job generates a fresh one.
          */
         post: operations["reprocess_summary_api_books__book_id__reprocess_summary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/reprocess/llm-spell-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reprocess Llm Spell Check
+         * @description Manually trigger the on-demand Gemini-based LLM spell-check pass for
+         *     every eligible page in a book. Runs independently of the dictionary-based
+         *     spell check pipeline; each trigger costs real Gemini API calls, hence
+         *     require_admin. Branches on llm_spell_check_batch_enabled to choose the
+         *     live vs. Gemini Batch API path.
+         */
+        post: operations["reprocess_llm_spell_check_api_books__book_id__reprocess_llm_spell_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/pages/{page_num}/llm-spell-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Llm Spell Check Page
+         * @description Manually trigger the on-demand Gemini-based LLM spell-check pass for a
+         *     single page. Always uses the live path regardless of
+         *     llm_spell_check_batch_enabled — matches how the embedding pipeline's
+         *     reactive per-chunk dispatch always stays interactive
+         *     (docs/main/EMBEDDING_DESIGN.md:13-14).
+         */
+        post: operations["trigger_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -798,6 +914,26 @@ export interface paths {
          * @description Update page text with SQLAlchemy and synchronously re-chunk/re-embed (Edge Case #4a)
          */
         post: operations["update_page_text_api_books__book_id__pages__page_num__update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/pages/{page_num}/toc": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Page Toc
+         * @description Manually mark or unmark a page as a Table of Contents page
+         */
+        post: operations["set_page_toc_api_books__book_id__pages__page_num__toc_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -923,7 +1059,7 @@ export interface paths {
         put?: never;
         /**
          * Chat With Book Api
-         * @description Chat with book using RAG with SQLAlchemy and role-based daily limits
+         * @description Chat with book using the ADK chat orchestrator with role-based daily limits
          */
         post: operations["chat_with_book_api_api_chat__post"];
         delete?: never;
@@ -989,6 +1125,70 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Conversations Endpoint
+         * @description List current user's conversations
+         */
+        get: operations["list_conversations_endpoint_api_chat_conversations_get"];
+        put?: never;
+        /**
+         * Create Conversation Endpoint
+         * @description Create a new conversation session
+         */
+        post: operations["create_conversation_endpoint_api_chat_conversations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/conversations/{conversation_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Conversation Messages Endpoint
+         * @description Get message history for a conversation
+         */
+        get: operations["list_conversation_messages_endpoint_api_chat_conversations__conversation_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Conversation Endpoint
+         * @description Delete a conversation by ID
+         */
+        delete: operations["delete_conversation_endpoint_api_chat_conversations__conversation_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1466,6 +1666,29 @@ export interface paths {
         patch: operations["update_auto_correct_rule_api_auto_correct_rules__word__patch"];
         trace?: never;
     };
+    "/api/dictionary/check-spelling": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Spelling
+         * @description Check whether a Uyghur word exists in the spelling word list.
+         *
+         *     Public read-only lookup used by the home search box's "Spell Check" tab
+         *     and the equivalent `check_word_spelling` chat tool.
+         */
+        get: operations["check_spelling_api_dictionary_check_spelling_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dictionary/search": {
         parameters: {
             query?: never;
@@ -1546,6 +1769,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dictionary/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Dictionary Entry
+         * @description Delete a dictionary entry (Admin only).
+         */
+        delete: operations["delete_dictionary_entry_api_dictionary__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/spell-check/words/search": {
         parameters: {
             query?: never;
@@ -1621,6 +1864,26 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/spell-check/words/{word_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Word
+         * @description Delete a spell check word entry (Admin only).
+         */
+        delete: operations["delete_word_api_spell_check_words__word_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1726,6 +1989,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/synonyms/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Synonym Entry
+         * @description Delete a synonym entry (Admin only).
+         */
+        delete: operations["delete_synonym_entry_api_synonyms__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/history-dictionary/stats": {
         parameters: {
             query?: never;
@@ -1787,11 +2070,39 @@ export interface paths {
         /** List History Entries */
         get: operations["list_history_entries_api_history_dictionary_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create History Entry
+         * @description Create a new live history dictionary entry (Admin only).
+         */
+        post: operations["create_history_entry_api_history_dictionary_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/history-dictionary/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete History Entry
+         * @description Delete a history dictionary entry (Admin only).
+         */
+        delete: operations["delete_history_entry_api_history_dictionary__entry_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update History Entry
+         * @description Update transliteration/definition of a live history dictionary entry (Admin only).
+         */
+        patch: operations["update_history_entry_api_history_dictionary__entry_id__patch"];
         trace?: never;
     };
     "/api/names-dictionary/stats": {
@@ -1857,6 +2168,26 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/names-dictionary/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Name Entry
+         * @description Delete a names dictionary entry (Admin only).
+         */
+        delete: operations["delete_name_entry_api_names_dictionary__entry_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1930,6 +2261,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/english-uyghur-dictionary/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete English Uyghur Entry
+         * @description Delete an English-Uyghur dictionary entry (Admin only).
+         */
+        delete: operations["delete_english_uyghur_entry_api_english_uyghur_dictionary__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/share/book/{book_id}": {
         parameters: {
             query?: never;
@@ -1956,6 +2307,23 @@ export interface paths {
         };
         /** Share Qa */
         get: operations["share_qa_api_share_qa_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share/page/{book_id}/{page_number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Share Page */
+        get: operations["share_page_api_share_page__book_id___page_number__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2112,6 +2480,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/proverbs/{proverb_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Proverb
+         * @description Update a proverb's text (Admin / Editor only). Volume and page number are
+         *     source references and are never changed by this endpoint.
+         */
+        put: operations["update_proverb_api_proverbs__proverb_id__put"];
+        post?: never;
+        /**
+         * Delete Proverb
+         * @description Delete a proverb (Admin only).
+         */
+        delete: operations["delete_proverb_api_proverbs__proverb_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/quran/surahs": {
         parameters: {
             query?: never;
@@ -2192,6 +2585,255 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/books/{book_id}/extract-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger History Extraction
+         * @description Trigger background ARQ extraction task for a specific book ("تارىخىي ئاتالغۇلارنى تېپىش").
+         */
+        post: operations["trigger_history_extraction_api_admin_books__book_id__extract_history_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/history-dictionary/staging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Staging Terms
+         * @description List staging queue terms ordered by significance_score DESC.
+         */
+        get: operations["list_staging_terms_api_admin_history_dictionary_staging_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/history-dictionary/staging/{staging_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Staging Term
+         * @description Approve candidate term and publish to live history_dictionary.
+         */
+        post: operations["approve_staging_term_api_admin_history_dictionary_staging__staging_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/history-dictionary/staging/bulk-approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Approve Staging Terms
+         * @description Bulk approve multiple staging candidate terms. Items with unresolved
+         *     conflicts or a failed synthesis are skipped and reported, not silently dropped.
+         */
+        post: operations["bulk_approve_staging_terms_api_admin_history_dictionary_staging_bulk_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/history-dictionary/staging/{staging_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Reject Staging Term
+         * @description Reject candidate term.
+         */
+        delete: operations["reject_staging_term_api_admin_history_dictionary_staging__staging_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/history-dictionary/staging/{staging_id}/facts/{fact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Resolve Staging Fact
+         * @description Resolve a single fact (accept/reject/edit) on a pending staging candidate.
+         */
+        patch: operations["resolve_staging_fact_api_admin_history_dictionary_staging__staging_id__facts__fact_id__patch"];
+        trace?: never;
+    };
+    "/api/admin/history-dictionary/staging/{staging_id}/synthesize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Synthesize Staging Definition
+         * @description Regenerate the preview `definition` from the candidate's current active facts.
+         */
+        post: operations["synthesize_staging_definition_api_admin_history_dictionary_staging__staging_id__synthesize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/graph/entities/{entity_id}/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Split Entity
+         * @description Split an over-merged entity at `split_point_edge_id` via connected-component
+         *     partitioning (design v2 §5). Edges that don't cluster with either anchor are left
+         *     on the original node and returned as `unclusteredEdgeIds` for manual reassignment.
+         */
+        post: operations["split_entity_api_admin_graph_entities__entity_id__split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/graph/merge-log/{merge_log_id}/unmerge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unmerge Entity
+         * @description Reverts a merge by its `graph_merge_log` id (design v2 §5). Restores the
+         *     removed node and re-points its original edges (matched by stable edge id) back
+         *     onto it — edges that collided with a pre-existing edge on the kept node during
+         *     the merge cannot be re-pointed (see `unrecoverableEdgeIds`, a known accepted gap).
+         */
+        post: operations["unmerge_entity_api_admin_graph_merge_log__merge_log_id__unmerge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/graph/review-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Review Queue
+         * @description Paginated list of pending gray-zone resolution reviews (design v2 §4.1/§5).
+         */
+        get: operations["list_review_queue_api_admin_graph_review_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/graph/review-queue/{review_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Review
+         * @description Approves a pending review and executes its `suggestedAction` (merge only —
+         *     'split'/'unsure' suggestions require the admin to call split/unmerge explicitly
+         *     with the specific edge/log id, since neither can be inferred from the review row
+         *     alone).
+         */
+        post: operations["approve_review_api_admin_graph_review_queue__review_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/graph/review-queue/{review_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Review
+         * @description Rejects a pending review — leaves both entities exactly as they are.
+         */
+        post: operations["reject_review_api_admin_graph_review_queue__review_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config": {
         parameters: {
             query?: never;
@@ -2201,7 +2843,7 @@ export interface paths {
         };
         /**
          * Get Public Config
-         * @description Public endpoint — returns config the frontend needs before it can authenticate.
+         * @description Public endpoint — returns public configuration like collectionPageSize.
          */
         get: operations["get_public_config_api_config_get"];
         put?: never;
@@ -2329,6 +2971,13 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_pdf_ocrd_api_books_upload_ocrd_post */
+        Body_upload_pdf_ocrd_api_books_upload_ocrd_post: {
+            /** File */
+            file: string;
+            /** Pages */
+            pages: string;
+        };
         /**
          * Book
          * @description Book schema with automatic camelCase conversion from SQLAlchemy models.
@@ -2347,6 +2996,11 @@ export interface components {
             author: string;
             /** Volume */
             volume?: number | null;
+            /**
+             * Contentpageoffset
+             * @default 0
+             */
+            contentPageOffset: number;
             /** Totalpages */
             totalPages: number;
             /** Pages */
@@ -2396,6 +3050,11 @@ export interface components {
              */
             hasGraph: boolean;
             /**
+             * Hashistory
+             * @default false
+             */
+            hasHistory: boolean;
+            /**
              * Ocrmilestone
              * @default idle
              */
@@ -2432,15 +3091,27 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** BulkApproveRequest */
+        BulkApproveRequest: {
+            /** Staging Ids */
+            staging_ids: number[];
+        };
         /**
          * ChatRequest
          * @description Chat request with automatic camelCase conversion
          */
         ChatRequest: {
             /** Bookid */
-            bookId: string;
+            bookId?: string | null;
             /** Question */
             question: string;
+            /**
+             * Isglobal
+             * @default false
+             */
+            isGlobal: boolean;
+            /** Conversationid */
+            conversationId?: string | null;
             /**
              * History
              * @default []
@@ -2457,6 +3128,11 @@ export interface components {
              * @default []
              */
             contextBookIds: string[];
+            /**
+             * Exactphrase
+             * @default false
+             */
+            exactPhrase: boolean;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -2545,6 +3221,33 @@ export interface components {
              */
             createdAt: string;
         };
+        /**
+         * ContentSearchHit
+         * @description Single page content hit for Home 'Content' search tab.
+         */
+        ContentSearchHit: {
+            /** Id */
+            id: string;
+            /** Bookid */
+            bookId: string;
+            /** Booktitle */
+            bookTitle: string;
+            /** Bookauthor */
+            bookAuthor?: string | null;
+            /** Bookvolume */
+            bookVolume?: number | null;
+            /** Bookcoverurl */
+            bookCoverUrl?: string | null;
+            /** Pagenumber */
+            pageNumber: number;
+            /** Snippet */
+            snippet: string;
+            /**
+             * Rank
+             * @default 0
+             */
+            rank: number | null;
+        };
         /** CorrectionItem */
         CorrectionItem: {
             /** Issue Id */
@@ -2580,14 +3283,22 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** CreateConversationRequest */
+        CreateConversationRequest: {
+            /** Book Id */
+            book_id?: string | null;
+            /**
+             * Is Global
+             * @default false
+             */
+            is_global: boolean;
+            /** Title */
+            title?: string | null;
+        };
         /** DeleteRelationshipRequest */
         DeleteRelationshipRequest: {
-            /** Sourcename */
-            sourceName: string;
-            /** Targetname */
-            targetName: string;
-            /** Reltype */
-            relType: string;
+            /** Edgeid */
+            edgeId: string;
         };
         /** DictionaryEntryOut */
         DictionaryEntryOut: {
@@ -2637,6 +3348,14 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** ExtractHistoryRequest */
+        ExtractHistoryRequest: {
+            /**
+             * Min Significance
+             * @default 5
+             */
+            min_significance: number | null;
+        };
         /**
          * ExtractionResult
          * @description Page extraction result with automatic camelCase conversion
@@ -2644,6 +3363,10 @@ export interface components {
         ExtractionResult: {
             /** Pagenumber */
             pageNumber: number;
+            /** Contentpagenumber */
+            contentPageNumber?: string | null;
+            /** Displaypagenumber */
+            displayPageNumber?: string | null;
             /** Text */
             text?: string | null;
             /** Status */
@@ -2661,6 +3384,13 @@ export interface components {
              * @default false
              */
             isToc: boolean;
+            /**
+             * Llmspellcheckstatus
+             * @default idle
+             */
+            llmSpellCheckStatus: string;
+            /** Llmspellcheckat */
+            llmSpellCheckAt?: string | null;
         };
         /** FeedbackRequest */
         FeedbackRequest: {
@@ -2674,6 +3404,25 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HistoryEntryCreate */
+        HistoryEntryCreate: {
+            /** Term */
+            term: string;
+            /** Transliteration */
+            transliteration?: string | null;
+            /** Definition */
+            definition?: string | null;
+            /**
+             * Is Ai Generated
+             * @default true
+             */
+            is_ai_generated: boolean;
+            /**
+             * Aliases
+             * @default []
+             */
+            aliases: string[];
+        };
         /** HistoryEntryOut */
         HistoryEntryOut: {
             /** Id */
@@ -2686,6 +3435,27 @@ export interface components {
             definition?: string | null;
             /** Letter Group */
             letter_group: string;
+            /**
+             * Is Ai Generated
+             * @default false
+             */
+            is_ai_generated: boolean;
+            /**
+             * Aliases
+             * @default []
+             */
+            aliases: string[];
+        };
+        /** HistoryEntryUpdate */
+        HistoryEntryUpdate: {
+            /** Transliteration */
+            transliteration?: string | null;
+            /** Definition */
+            definition?: string | null;
+            /** Is Ai Generated */
+            is_ai_generated?: boolean | null;
+            /** Aliases */
+            aliases?: string[] | null;
         };
         /** HistoryStatsOut */
         HistoryStatsOut: {
@@ -2699,10 +3469,10 @@ export interface components {
         };
         /** MergeEntitiesRequest */
         MergeEntitiesRequest: {
-            /** Keepname */
-            keepName: string;
-            /** Removename */
-            removeName: string;
+            /** Keepid */
+            keepId: string;
+            /** Removeid */
+            removeId: string;
         };
         /** NameEntryOut */
         NameEntryOut: {
@@ -2774,6 +3544,14 @@ export interface components {
             /** Count */
             count: number;
         };
+        /**
+         * PageTocUpdate
+         * @description Request body for manually marking/unmarking a page as ToC
+         */
+        PageTocUpdate: {
+            /** Istoc */
+            isToc: boolean;
+        };
         /** PaginatedBooks */
         PaginatedBooks: {
             /** Books */
@@ -2786,6 +3564,20 @@ export interface components {
             page: number;
             /** Pagesize */
             pageSize: number;
+        };
+        /**
+         * PaginatedContentHits
+         * @description Paginated response for Home 'Content' search hits.
+         */
+        PaginatedContentHits: {
+            /** Hits */
+            hits: components["schemas"]["ContentSearchHit"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
         };
         /**
          * PaginatedUsers
@@ -2829,6 +3621,11 @@ export interface components {
             volume?: number | null;
             /** Page Number */
             page_number?: number | null;
+        };
+        /** ProverbUpdate */
+        ProverbUpdate: {
+            /** Text */
+            text?: string | null;
         };
         /** ProverbsStatsOut */
         ProverbsStatsOut: {
@@ -2875,6 +3672,8 @@ export interface components {
             avg_faithfulness?: number | null;
             /** Avg Answer Relevance */
             avg_answer_relevance?: number | null;
+            /** Avg Context Precision */
+            avg_context_precision?: number | null;
         };
         /**
          * RagQuestionAdmin
@@ -2893,6 +3692,8 @@ export interface components {
             bookTitle?: string | null;
             /** Userid */
             userId?: string | null;
+            /** Userdisplayname */
+            userDisplayName?: string | null;
             /** Isfirstturn */
             isFirstTurn: boolean;
             /** Showonhomepage */
@@ -2904,6 +3705,14 @@ export interface components {
              * Format: date-time
              */
             ts: string;
+            /** Evalstatus */
+            evalStatus: string;
+            /** Faithfulnessscore */
+            faithfulnessScore?: number | null;
+            /** Answerrelevancescore */
+            answerRelevanceScore?: number | null;
+            /** Contextprecisionscore */
+            contextPrecisionScore?: number | null;
         };
         /**
          * RagQuestionToggle
@@ -2958,10 +3767,22 @@ export interface components {
         };
         /** RenameEntityRequest */
         RenameEntityRequest: {
-            /** Oldname */
-            oldName: string;
+            /** Entityid */
+            entityId: string;
             /** Newname */
             newName: string;
+        };
+        /** ReprocessGraphRequest */
+        ReprocessGraphRequest: {
+            /** Scope */
+            scope: string;
+        };
+        /** ResolveFactRequest */
+        ResolveFactRequest: {
+            /** Status */
+            status: string;
+            /** Text */
+            text?: string | null;
         };
         /** SpellIssueOut */
         SpellIssueOut: {
@@ -2984,6 +3805,29 @@ export interface components {
             word: string;
             /** Confidence */
             confidence: number;
+        };
+        /** SpellingCheckOut */
+        SpellingCheckOut: {
+            /** Is Known */
+            is_known: boolean;
+            /** Word */
+            word?: string | null;
+            /** Suggestions */
+            suggestions: components["schemas"]["SpellingSuggestionOut"][];
+        };
+        /** SpellingSuggestionOut */
+        SpellingSuggestionOut: {
+            /** Id */
+            id: number;
+            /** Word */
+            word: string;
+            /** Score */
+            score?: number | null;
+        };
+        /** SplitEntityRequest */
+        SplitEntityRequest: {
+            /** Splitpointedgeid */
+            splitPointEdgeId: string;
         };
         /** SurahOut */
         SurahOut: {
@@ -3551,6 +4395,39 @@ export interface operations {
             };
         };
     };
+    search_book_content_api_books_content_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedContentHits"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_random_proverb_api_books_random_proverb_get: {
         parameters: {
             query?: {
@@ -3649,6 +4526,39 @@ export interface operations {
         parameters: {
             query?: {
                 q?: string | null;
+                book_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_graph_chunk_detail_api_books_graph_chunk_get: {
+        parameters: {
+            query: {
+                /** @description Chunk ref string (e.g. book_id:page:chunk_index or chunk_id) */
+                ref: string;
             };
             header?: never;
             path?: never;
@@ -4088,6 +4998,39 @@ export interface operations {
             };
         };
     };
+    upload_pdf_ocrd_api_books_upload_ocrd_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_pdf_ocrd_api_books_upload_ocrd_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reprocess_ocr_api_books__book_id__reprocess_ocr_post: {
         parameters: {
             query?: never;
@@ -4221,7 +5164,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReprocessGraphRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4249,6 +5196,69 @@ export interface operations {
             header?: never;
             path: {
                 book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reprocess_llm_spell_check_api_books__book_id__reprocess_llm_spell_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+                page_num: number;
             };
             cookie?: never;
         };
@@ -4352,6 +5362,42 @@ export interface operations {
                 "application/json": {
                     [key: string]: unknown;
                 };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_page_toc_api_books__book_id__pages__page_num__toc_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+                page_num: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PageTocUpdate"];
             };
         };
         responses: {
@@ -4630,6 +5676,137 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_conversations_endpoint_api_chat_conversations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                book_id?: string | null;
+                is_global?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_conversation_endpoint_api_chat_conversations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateConversationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_conversation_messages_endpoint_api_chat_conversations__conversation_id__messages_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_conversation_endpoint_api_chat_conversations__conversation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -5414,6 +6591,37 @@ export interface operations {
             };
         };
     };
+    check_spelling_api_dictionary_check_spelling_get: {
+        parameters: {
+            query: {
+                word: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpellingCheckOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_dictionary_api_dictionary_search_get: {
         parameters: {
             query: {
@@ -5530,6 +6738,35 @@ export interface operations {
             };
         };
     };
+    delete_dictionary_entry_api_dictionary__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_words_api_spell_check_words_search_get: {
         parameters: {
             query: {
@@ -5634,6 +6871,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WordOut"][];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_word_api_spell_check_words__word_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                word_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -5793,6 +7059,35 @@ export interface operations {
             };
         };
     };
+    delete_synonym_entry_api_synonyms__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_history_stats_api_history_dictionary_stats_get: {
         parameters: {
             query?: {
@@ -5896,6 +7191,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoryEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_history_entry_api_history_dictionary_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistoryEntryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryEntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_history_entry_api_history_dictionary__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_history_entry_api_history_dictionary__entry_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistoryEntryUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryEntryOut"];
                 };
             };
             /** @description Validation Error */
@@ -6025,6 +7417,35 @@ export interface operations {
             };
         };
     };
+    delete_name_entry_api_names_dictionary__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_english_uyghur_stats_api_english_uyghur_dictionary_stats_get: {
         parameters: {
             query?: {
@@ -6141,6 +7562,35 @@ export interface operations {
             };
         };
     };
+    delete_english_uyghur_entry_api_english_uyghur_dictionary__entry_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     share_book_api_share_book__book_id__get: {
         parameters: {
             query?: never;
@@ -6181,6 +7631,40 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    share_page_api_share_page__book_id___page_number__get: {
+        parameters: {
+            query?: {
+                quote?: string | null;
+            };
+            header?: never;
+            path: {
+                book_id: string;
+                page_number: number;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -6431,6 +7915,70 @@ export interface operations {
             };
         };
     };
+    update_proverb_api_proverbs__proverb_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proverb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProverbUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProverbEntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_proverb_api_proverbs__proverb_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proverb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_surahs_api_quran_surahs_get: {
         parameters: {
             query?: never;
@@ -6534,6 +8082,399 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuranAyahOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_history_extraction_api_admin_books__book_id__extract_history_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtractHistoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_staging_terms_api_admin_history_dictionary_staging_get: {
+        parameters: {
+            query?: {
+                status?: string;
+                category?: string | null;
+                minSignificance?: number | null;
+                bookId?: string | null;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_staging_term_api_admin_history_dictionary_staging__staging_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staging_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_approve_staging_terms_api_admin_history_dictionary_staging_bulk_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_staging_term_api_admin_history_dictionary_staging__staging_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staging_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_staging_fact_api_admin_history_dictionary_staging__staging_id__facts__fact_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staging_id: number;
+                fact_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveFactRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    synthesize_staging_definition_api_admin_history_dictionary_staging__staging_id__synthesize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staging_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    split_entity_api_admin_graph_entities__entity_id__split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SplitEntityRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmerge_entity_api_admin_graph_merge_log__merge_log_id__unmerge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                merge_log_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_review_queue_api_admin_graph_review_queue_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_review_api_admin_graph_review_queue__review_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_review_api_admin_graph_review_queue__review_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

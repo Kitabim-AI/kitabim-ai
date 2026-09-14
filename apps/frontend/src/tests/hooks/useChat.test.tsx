@@ -190,3 +190,59 @@ test('useChat carries the server-assigned conversationId to the next message and
   const [thirdParams] = vi.mocked(chatWithBookStream).mock.calls[2];
   expect(thirdParams.conversationId).toBeUndefined();
 });
+
+test('useChat loads conversation messages preserving cost and feedback', async () => {
+  const { getUserConversations, getConversationMessages } = await import('@/src/services/geminiService');
+  vi.mocked(getUserConversations).mockResolvedValue([
+    {
+      id: 'conv-test-1',
+      userId: 'user-1',
+      isGlobal: false,
+      createdAt: '2026-09-13T00:00:00Z',
+      updatedAt: '2026-09-13T00:00:00Z',
+    },
+  ]);
+  vi.mocked(getConversationMessages).mockResolvedValue([
+    {
+      id: 'm1',
+      conversationId: 'conv-test-1',
+      role: 'user',
+      content: 'سۇئال',
+      createdAt: '2026-09-13T00:00:00Z',
+    },
+    {
+      id: 'm2',
+      conversationId: 'conv-test-1',
+      role: 'model',
+      content: 'جاۋاب',
+      evalId: 42,
+      cost: {
+        inputTokens: 1200,
+        outputTokens: 300,
+        costUsd: 0.00045,
+      },
+      feedback: 'positive',
+      createdAt: '2026-09-13T00:00:01Z',
+    },
+  ]);
+
+  const { result } = renderHook(() => useChat('reader', mockBook, 1));
+
+  await waitFor(() => {
+    expect(result.current.isLoadingMessages).toBe(false);
+  });
+
+  await waitFor(() => {
+    expect(result.current.chatMessages).toHaveLength(2);
+  });
+
+  const modelMsg = result.current.chatMessages[1];
+  expect(modelMsg.cost).toEqual({
+    inputTokens: 1200,
+    outputTokens: 300,
+    costUsd: 0.00045,
+  });
+  expect(modelMsg.feedback).toBe('positive');
+  expect(modelMsg.evalId).toBe(42);
+});
+

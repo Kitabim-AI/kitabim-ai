@@ -112,6 +112,11 @@ async def test_get_with_page_stats_ready():
     mock_book = Book(id="b1", status="ready", total_pages=10, title="T1", author="A1")
     repo.get = AsyncMock(return_value=mock_book)
 
+    # 1b. Mock llm_spell_check query (always run first, before the ready-book branch)
+    mock_llm_row = MagicMock(done=0, failed=0, active=0)
+    mock_llm_res = MagicMock()
+    mock_llm_res.fetchone.return_value = mock_llm_row
+
     # 2. Mock summary query
     mock_summary_res = MagicMock()
     mock_summary_res.scalar.return_value = 1
@@ -128,7 +133,12 @@ async def test_get_with_page_stats_ready():
     mock_sc_res = MagicMock()
     mock_sc_res.fetchone.return_value = mock_row
 
-    session.execute.side_effect = [mock_summary_res, mock_history_res, mock_sc_res]
+    session.execute.side_effect = [
+        mock_llm_res,
+        mock_summary_res,
+        mock_history_res,
+        mock_sc_res,
+    ]
 
     result = await repo.get_with_page_stats("b1")
 
@@ -145,6 +155,11 @@ async def test_get_with_page_stats_processing():
 
     mock_book = Book(id="b1", status="processing", total_pages=10)
     repo.get = AsyncMock(return_value=mock_book)
+
+    # llm_spell_check query result (always run first)
+    mock_llm_row = MagicMock(done=0, failed=0, active=0)
+    mock_llm_res = MagicMock()
+    mock_llm_res.fetchone.return_value = mock_llm_row
 
     # stats_stmt result
     mock_row = MagicMock()
@@ -176,6 +191,7 @@ async def test_get_with_page_stats_processing():
     mock_history_res.scalar.return_value = 0
 
     session.execute.side_effect = [
+        mock_llm_res,
         mock_stats_res,
         mock_summary_res,
         mock_history_res,
@@ -347,3 +363,79 @@ async def test_find_titles_by_ids_empty_input_no_db_call():
 
     assert result == []
     session.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_with_page_stats_ready_book_does_not_assume_llm_spell_check_done():
+    session = AsyncMock()
+    repo = BooksRepository(session)
+
+    mock_book = Book(id="b1", status="ready", total_pages=10, title="T1", author="A1")
+    repo.get = AsyncMock(return_value=mock_book)
+
+    # Execution order inside get_with_page_stats for a "ready" book:
+    # 1. llm_stmt (always run, before the ready-book branch)
+    # 2. summary_stmt
+    # 3. history_stmt
+    # 4. sc_stmt (dictionary spell check)
+    mock_llm_res = MagicMock()
+    mock_llm_row = MagicMock(done=2, failed=0, active=1)
+    mock_llm_res.fetchone.return_value = mock_llm_row
+
+    mock_summary_res = MagicMock()
+    mock_summary_res.scalar.return_value = 1
+
+    mock_history_res = MagicMock()
+    mock_history_res.scalar.return_value = 0
+
+    mock_sc_res = MagicMock()
+    mock_sc_row = MagicMock(done=10, failed=0, active=0)
+    mock_sc_res.fetchone.return_value = mock_sc_row
+
+    session.execute.side_effect = [
+        mock_llm_res,
+        mock_summary_res,
+        mock_history_res,
+        mock_sc_res,
+    ]
+
+    result = await repo.get_with_page_stats("b1")
+
+    # A "ready" book still shows only 2/10 llm_spell_check done — NOT 10/10
+    # like ocr/chunking/embedding get from the ready-book shortcut.
+    assert result["pipeline_stats"]["llm_spell_check"] == 2
+    assert result["pipeline_stats"]["llm_spell_check_failed"] == 0
+    assert result["pipeline_stats"]["llm_spell_check_active"] == 1
+    assert result["pipeline_stats"]["ocr"] == 10  # unaffected — still shortcut
+
+
+@pytest.mark.asyncio
+async def test_get_batch_stats_llm_spell_check_never_assumed_done_for_ready_books():
+    session = AsyncMock()
+    repo = BooksRepository(session)
+
+    mock_book_row = MagicMock(id="book-1", status="ready", total_pages=10)
+    mock_books_res = MagicMock()
+    mock_books_res.fetchall.return_value = [mock_book_row]
+
+    # No milestone_stats row returned for book-1 (simulates the "missing
+    # books" fallback path exercised when a ready book has no page rows yet).
+    mock_stats_res = MagicMock()
+    mock_stats_res.fetchall.return_value = []
+
+    mock_summary_res = MagicMock()
+    mock_summary_res.fetchall.return_value = []
+    mock_history_res = MagicMock()
+    mock_history_res.fetchall.return_value = []
+
+    session.execute.side_effect = [
+        mock_books_res,
+        mock_stats_res,
+        mock_summary_res,
+        mock_history_res,
+    ]
+
+    stats = await repo.get_batch_stats(["book-1"])
+
+    assert stats["book-1"]["pipeline_stats"]["ocr"] == 10  # ready shortcut applies
+    assert stats["book-1"]["pipeline_stats"]["llm_spell_check"] == 0  # never shortcut

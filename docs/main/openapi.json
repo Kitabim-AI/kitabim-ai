@@ -1031,7 +1031,7 @@
           "books"
         ],
         "summary": "Get Global Graph",
-        "description": "Retrieve global knowledge graph data for public visualization.",
+        "description": "Retrieve global or book-specific knowledge graph data for visualization.",
         "operationId": "get_global_graph_api_books_graph_get",
         "security": [
           {
@@ -1054,6 +1054,23 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "name": "book_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Book Id"
             }
           }
         ],
@@ -1760,6 +1777,51 @@
         ]
       }
     },
+    "/api/books/upload-ocrd": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Upload Pdf Ocrd",
+        "description": "Upload a PDF whose OCR has already been done externally (e.g. the\nlocal Surya OCR client). Pages arrive pre-filled and the book enters\nthe pipeline at chunking, the same shape DOCX uploads already use.",
+        "operationId": "upload_pdf_ocrd_api_books_upload_ocrd_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_pdf_ocrd_api_books_upload_ocrd_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/books/{book_id}/reprocess/ocr": {
       "post": {
         "tags": [
@@ -2021,6 +2083,107 @@
             "schema": {
               "type": "string",
               "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/reprocess/llm-spell-check": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Reprocess Llm Spell Check",
+        "description": "Manually trigger the on-demand Gemini-based LLM spell-check pass for\nevery eligible page in a book. Runs independently of the dictionary-based\nspell check pipeline; each trigger costs real Gemini API calls, hence\nrequire_admin. Branches on llm_spell_check_batch_enabled to choose the\nlive vs. Gemini Batch API path.",
+        "operationId": "reprocess_llm_spell_check_api_books__book_id__reprocess_llm_spell_check_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/pages/{page_num}/llm-spell-check": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Trigger Llm Spell Check Page",
+        "description": "Manually trigger the on-demand Gemini-based LLM spell-check pass for a\nsingle page. Always uses the live path regardless of\nllm_spell_check_batch_enabled \u2014 matches how the embedding pipeline's\nreactive per-chunk dispatch always stays interactive\n(docs/main/EMBEDDING_DESIGN.md:13-14).",
+        "operationId": "trigger_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Num"
             }
           }
         ],
@@ -5908,6 +6071,72 @@
         }
       }
     },
+    "/api/share/page/{book_id}/{page_number}": {
+      "get": {
+        "tags": [
+          "share"
+        ],
+        "summary": "Share Page",
+        "operationId": "share_page_api_share_page__book_id___page_number__get",
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Number"
+            }
+          },
+          {
+            "name": "quote",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quote"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/cache/invalidate": {
       "post": {
         "tags": [
@@ -7306,7 +7535,7 @@
     "/api/config": {
       "get": {
         "summary": "Get Public Config",
-        "description": "Public endpoint \u2014 returns config the frontend needs before it can authenticate.",
+        "description": "Public endpoint \u2014 returns public configuration like collectionPageSize.",
         "operationId": "get_public_config_api_config_get",
         "responses": {
           "200": {
@@ -7537,6 +7766,33 @@
           "file"
         ],
         "title": "Body_upload_pdf_api_books_upload_post"
+      },
+      "Body_upload_pdf_ocrd_api_books_upload_ocrd_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "string",
+                "contentMediaType": "application/octet-stream"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "pages"
+        ],
+        "title": "Body_upload_pdf_ocrd_api_books_upload_ocrd_post"
       },
       "Book": {
         "properties": {
@@ -8560,6 +8816,23 @@
             "type": "boolean",
             "title": "Istoc",
             "default": false
+          },
+          "llmSpellCheckStatus": {
+            "type": "string",
+            "title": "Llmspellcheckstatus",
+            "default": "idle"
+          },
+          "llmSpellCheckAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llmspellcheckat"
           }
         },
         "type": "object",
@@ -9390,6 +9663,17 @@
             ],
             "title": "Bookid"
           },
+          "bookTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booktitle"
+          },
           "userId": {
             "anyOf": [
               {
@@ -9472,6 +9756,42 @@
               }
             ],
             "title": "Contextprecisionscore"
+          },
+          "inputTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputtokens",
+            "default": 0
+          },
+          "outputTokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outputtokens",
+            "default": 0
+          },
+          "costUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Costusd",
+            "default": 0.0
           }
         },
         "type": "object",

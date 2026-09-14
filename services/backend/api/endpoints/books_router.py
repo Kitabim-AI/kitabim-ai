@@ -8,7 +8,7 @@ import io
 import re
 import warnings
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Union
 
 from fastapi import (
     APIRouter,
@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.pipeline import (
     FAILED_PAGE_MILESTONES,
     PAGE_MILESTONE_IDLE,
+    PAGE_MILESTONE_IN_PROGRESS,
     PAGE_MILESTONE_SUCCEEDED,
     PIPELINE_STEP_CHUNKING,
     PIPELINE_STEP_EMBEDDING,
@@ -51,12 +52,14 @@ from app.models.schemas import (
     ContentSearchHit,
     PaginatedContentHits,
     ExtractionResult,
+    OcrPageInput,
     PageTocUpdate,
     to_camel,
 )
 from app.models.user import User
 from app.services.storage_service import storage
 from app.services.chunking_service import chunking_service
+from app.services.batch_llm_spell_check_service import submit_batch_llm_spell_check
 from app.utils.markdown import normalize_markdown, strip_markdown
 from app.llm.models import GeminiEmbeddings
 from auth.dependencies import (
@@ -1480,6 +1483,12 @@ async def get_book_page(
 
     await ensure_book_access(book_dict, current_user)
 
+    # Guest user restriction: guests can only read the first 20 pages
+    if current_user is None and page_num > 20:
+        raise HTTPException(
+            status_code=403, detail=t("errors.guest_page_limit_reached")
+        )
+
     # Get page by number
     page = await pages_repo.find_one(book_id, page_num)
     if not page:
@@ -1514,6 +1523,14 @@ async def get_book_pages(
     }
 
     await ensure_book_access(book_dict, current_user)
+
+    # Guest user restriction: guests can only read the first 20 pages
+    if current_user is None:
+        if skip >= 20:
+            raise HTTPException(
+                status_code=403, detail=t("errors.guest_page_limit_reached")
+            )
+        limit = min(limit, max(0, 20 - skip))
 
     # Get pages with pagination
     pages = await pages_repo.find_by_book(book_id, skip=skip, limit=limit)
@@ -1687,6 +1704,168 @@ async def upload_pdf(
     await session.commit()
 
     # Invalidate lists by bumping versions
+    await cache_service.bump_namespace_version("books:list")
+    await cache_service.bump_namespace_version("category")
+
+    return {"bookId": book_id, "status": "uploaded"}
+
+
+@router.post("/upload-ocrd")
+async def upload_pdf_ocrd(
+    file: UploadFile = File(...),
+    pages: Union[UploadFile, str] = File(...),
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Upload a PDF whose OCR has already been done externally (e.g. the
+    local Surya OCR client). Pages arrive pre-filled and the book enters
+    the pipeline at chunking, the same shape DOCX uploads already use."""
+    from pydantic import TypeAdapter, ValidationError
+
+    try:
+        if isinstance(pages, str):
+            raw_pages = json.loads(pages)
+        elif hasattr(pages, "read"):
+            pages_bytes = await pages.read()
+            raw_pages = json.loads(
+                pages_bytes.decode("utf-8")
+                if isinstance(pages_bytes, bytes)
+                else pages_bytes
+            )
+        else:
+            raise ValueError("Invalid pages payload type")
+        pages_data = TypeAdapter(List[OcrPageInput]).validate_python(raw_pages)
+    except (
+        json.JSONDecodeError,
+        ValidationError,
+        UnicodeDecodeError,
+        ValueError,
+        AttributeError,
+    ):
+        raise HTTPException(status_code=400, detail=t("errors.invalid_pages_payload"))
+
+    books_repo = BooksRepository(session)
+
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=400, detail=t("errors.invalid_file_type", allowed=".pdf")
+        )
+
+    temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}.pdf"
+    hasher = hashlib.sha256()
+    total_bytes = 0
+    try:
+        with open(temp_path, "wb") as handle:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > settings.max_book_upload_bytes:
+                    handle.close()
+                    temp_path.unlink(missing_ok=True)
+                    max_mb = settings.max_book_upload_bytes // (1024 * 1024)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File size exceeds maximum limit of {max_mb}MB",
+                    )
+                hasher.update(chunk)
+                handle.write(chunk)
+
+        content_hash = hasher.hexdigest()
+
+        existing = await books_repo.find_by_hash(content_hash)
+        if existing:
+            temp_path.unlink(missing_ok=True)
+            return {"bookId": str(existing.id), "status": "existing"}
+
+        page_count = read_pdf_page_count(temp_path)
+        expected_numbers = set(range(1, page_count + 1))
+        got_numbers = {p.page_number for p in pages_data}
+        if len(pages_data) != page_count or got_numbers != expected_numbers:
+            temp_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400,
+                detail=t(
+                    "errors.pages_count_mismatch",
+                    total=page_count,
+                    count=len(pages_data),
+                ),
+            )
+
+        book_id = secrets.token_hex(6)
+        remote_path = f"uploads/{book_id}.pdf"
+        cover_url = None
+        cover_temp_path = settings.uploads_dir / f".cover_{book_id}.jpg"
+
+        if extract_pdf_cover(temp_path, cover_temp_path):
+            try:
+                remote_cover_path = f"covers/{book_id}.jpg"
+                await storage.upload_file(cover_temp_path, remote_cover_path)
+                cover_url = remote_cover_path
+            finally:
+                cover_temp_path.unlink(missing_ok=True)
+        await storage.upload_file(temp_path, remote_path)
+        temp_path.unlink(missing_ok=True)
+
+    except HTTPException:
+        raise
+    except Exception:
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+        raise
+
+    now = datetime.now(timezone.utc)
+    ext = ".pdf"
+    title_raw = file.filename[: file.filename.lower().rfind(ext)]
+
+    await books_repo.create(
+        id=book_id,
+        content_hash=content_hash,
+        title=normalize_uyghur_chars(title_raw),
+        file_name=file.filename,
+        file_type="pdf",
+        author="",
+        volume=None,
+        total_pages=page_count,
+        cover_url=cover_url,
+        status="ocr_done",
+        pipeline_step=PIPELINE_STEP_CHUNKING,
+        upload_date=now,
+        last_updated=now,
+        created_by=current_user.email,
+        updated_by=current_user.email,
+        categories=[],
+        visibility="private",
+        source="surya_local",
+        ocr_milestone="complete",
+        chunking_milestone=PAGE_MILESTONE_IDLE,
+        embedding_milestone=PAGE_MILESTONE_IDLE,
+        spell_check_milestone=PAGE_MILESTONE_IDLE,
+    )
+
+    pages_by_number = {p.page_number: p for p in pages_data}
+    session.add_all(
+        [
+            Page(
+                book_id=book_id,
+                page_number=n,
+                text=pages_by_number[n].text,
+                is_toc=pages_by_number[n].is_toc,
+                pipeline_step=PIPELINE_STEP_CHUNKING,
+                milestone=PAGE_MILESTONE_IDLE,
+                status="ocr_done",
+                ocr_milestone=PAGE_MILESTONE_SUCCEEDED,
+                chunking_milestone=PAGE_MILESTONE_IDLE,
+                embedding_milestone=PAGE_MILESTONE_IDLE,
+                spell_check_milestone=PAGE_MILESTONE_IDLE,
+            )
+            for n in range(1, page_count + 1)
+        ]
+    )
+
+    await session.commit()
+
     await cache_service.bump_namespace_version("books:list")
     await cache_service.bump_namespace_version("category")
 
@@ -2072,6 +2251,178 @@ async def reprocess_summary(
         "status": "summary_reprocess_started",
         "message": "Summary generation queued.",
     }
+
+
+@router.post("/{book_id}/reprocess/llm-spell-check")
+async def reprocess_llm_spell_check(
+    book_id: str,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually trigger the on-demand Gemini-based LLM spell-check pass for
+    every eligible page in a book. Runs independently of the dictionary-based
+    spell check pipeline; each trigger costs real Gemini API calls, hence
+    require_admin. Branches on llm_spell_check_batch_enabled to choose the
+    live vs. Gemini Batch API path."""
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    pages_res = await session.execute(
+        select(Page.id).where(
+            Page.book_id == book_id,
+            Page.llm_spell_check_status != PAGE_MILESTONE_IN_PROGRESS,
+        )
+    )
+    page_ids = [row[0] for row in pages_res.fetchall()]
+    if not page_ids:
+        return {"status": "llm_spell_check_started", "queued": 0}
+
+    configs_repo = SystemConfigsRepository(session)
+    batch_enabled = await configs_repo.get_value(
+        "llm_spell_check_batch_enabled", "false"
+    )
+
+    if batch_enabled == "true":
+        try:
+            await submit_batch_llm_spell_check(book_id, page_ids, session)
+        except Exception as exc:
+            log_json(
+                logger,
+                logging.ERROR,
+                "failed to submit batch_llm_spell_check job",
+                book_id=book_id,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
+            )
+        return {"status": "llm_spell_check_batch_submitted", "queued": len(page_ids)}
+
+    await session.execute(
+        update(Page)
+        .where(Page.id.in_(page_ids))
+        .values(
+            llm_spell_check_status=PAGE_MILESTONE_IN_PROGRESS,
+            last_updated=datetime.now(timezone.utc),
+        )
+    )
+    await session.commit()
+
+    try:
+        import arq
+
+        redis_pool = await arq.create_pool(
+            arq.connections.RedisSettings.from_dsn(settings.redis_url)
+        )
+        try:
+            await redis_pool.enqueue_job(
+                "llm_spell_check_job",
+                page_ids=page_ids,
+                _job_id=f"llm_spell_check:book:{book_id}",
+            )
+        finally:
+            await redis_pool.aclose()
+        log_json(
+            logger,
+            logging.INFO,
+            "manually enqueued llm_spell_check_job",
+            book_id=book_id,
+            page_count=len(page_ids),
+            user=current_user.email,
+        )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.ERROR,
+            "failed to enqueue llm_spell_check_job",
+            book_id=book_id,
+            error=str(exc),
+        )
+        await session.execute(
+            update(Page)
+            .where(Page.id.in_(page_ids))
+            .values(
+                llm_spell_check_status=PAGE_MILESTONE_IDLE,
+                last_updated=datetime.now(timezone.utc),
+            )
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
+        )
+
+    return {"status": "llm_spell_check_started", "queued": len(page_ids)}
+
+
+@router.post("/{book_id}/pages/{page_num}/llm-spell-check")
+async def trigger_llm_spell_check_page(
+    book_id: str,
+    page_num: int,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually trigger the on-demand Gemini-based LLM spell-check pass for a
+    single page. Always uses the live path regardless of
+    llm_spell_check_batch_enabled — matches how the embedding pipeline's
+    reactive per-chunk dispatch always stays interactive
+    (docs/main/EMBEDDING_DESIGN.md:13-14)."""
+    pages_repo = PagesRepository(session)
+    page = await pages_repo.find_one(book_id, page_num)
+    if not page:
+        raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
+
+    if page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS:
+        raise HTTPException(
+            status_code=409, detail=t("errors.llm_spell_check_already_running")
+        )
+
+    await pages_repo.set_llm_spell_check_status(
+        book_id, page_num, PAGE_MILESTONE_IN_PROGRESS
+    )
+    await session.commit()
+
+    try:
+        import arq
+
+        redis_pool = await arq.create_pool(
+            arq.connections.RedisSettings.from_dsn(settings.redis_url)
+        )
+        try:
+            await redis_pool.enqueue_job(
+                "llm_spell_check_job",
+                page_ids=[page.id],
+                _job_id=f"llm_spell_check:page:{page.id}",
+            )
+        finally:
+            await redis_pool.aclose()
+        log_json(
+            logger,
+            logging.INFO,
+            "manually enqueued llm_spell_check_job for single page",
+            book_id=book_id,
+            page=page_num,
+            user=current_user.email,
+        )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.ERROR,
+            "failed to enqueue llm_spell_check_job for single page",
+            book_id=book_id,
+            page=page_num,
+            error=str(exc),
+        )
+        await pages_repo.set_llm_spell_check_status(
+            book_id, page_num, PAGE_MILESTONE_IDLE
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
+        )
+
+    return {"status": "llm_spell_check_started"}
 
 
 @router.post("/{book_id}/retry-failed")
@@ -2491,7 +2842,15 @@ async def create_book(
     book_dict.pop("pipeline_stats", None)
     book_dict.pop("page_stats", None)
     book_dict.pop("completed_count", None)
+    book_dict.pop("has_summary", None)
+    book_dict.pop("has_graph", None)
+    book_dict.pop("has_history", None)
     pages_input = book_dict.pop("pages", []) or []
+
+    # Ensure only valid column names for the Book model are passed
+    if hasattr(BookDB, "__table__") and hasattr(BookDB.__table__, "columns"):
+        valid_columns = set(BookDB.__table__.columns.keys())
+        book_dict = {k: v for k, v in book_dict.items() if k in valid_columns}
 
     # Sync pages if they exist
     if pages_input:
@@ -2643,6 +3002,7 @@ async def update_book_details(
         "page_stats",
         "has_summary",
         "has_graph",
+        "has_history",
     ]
     for field in read_only_fields:
         book_update.pop(field, None)
@@ -2681,6 +3041,11 @@ async def update_book_details(
             for c in book_update["categories"]
             if isinstance(c, str) and c.strip()
         ]
+
+    # Ensure only valid column names for the Book model are passed to update
+    if hasattr(BookDB, "__table__") and hasattr(BookDB.__table__, "columns"):
+        valid_columns = set(BookDB.__table__.columns.keys()) - {"id"}
+        book_update = {k: v for k, v in book_update.items() if k in valid_columns}
 
     await books_repo.update_one(book_id, **book_update)
     await session.commit()

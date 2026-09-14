@@ -100,6 +100,7 @@ export interface ChatStreamCallbacks {
   onAgentEvent?: (event: Record<string, any>) => void;
   onEvalId?: (evalId: number) => void;
   onConversationId?: (convId: string) => void;
+  onCostUpdate?: (cost: { inputTokens: number; outputTokens: number; costUsd: number }) => void;
 }
 
 export const chatWithBookStream = async (
@@ -107,7 +108,7 @@ export const chatWithBookStream = async (
   callbacks: ChatStreamCallbacks,
 ): Promise<void> => {
   const { question, bookId, currentPage, history, characterId, contextBookIds, conversationId, signal } = params;
-  const { onChunk, onComplete, onError, onCorrection, onUsageUpdate, onContextBookIds, onAgentEvent, onEvalId, onConversationId } = callbacks;
+  const { onChunk, onComplete, onError, onCorrection, onUsageUpdate, onContextBookIds, onAgentEvent, onEvalId, onConversationId, onCostUpdate } = callbacks;
 
   try {
     const response = await authFetch(`${API_BASE}/chat/stream`, {
@@ -199,6 +200,9 @@ export const chatWithBookStream = async (
               }
               if (onConversationId && data.conversationId) {
                 onConversationId(data.conversationId);
+              }
+              if (onCostUpdate && data.cost) {
+                onCostUpdate(data.cost);
               }
               onComplete();
               return;

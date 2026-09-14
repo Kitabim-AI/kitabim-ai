@@ -29,6 +29,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { AgentStep } from '../../hooks/useChat';
 import { useI18n } from '../../i18n/I18nContext';
 import { translations } from '../../i18n/i18n';
+import { getShowChatCost, initAppConfig } from '../../services/authService';
+import { formatAnswerCost } from '../../utils/costUtils';
 import { OAuthButtonGroup } from '../auth/AuthButton';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { AgentThinkingSteps } from './AgentThinkingSteps';
@@ -158,8 +160,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [selectedReference, setSelectedReference] = React.useState<{ bookId: string; pageNums: number[]; isGraph?: boolean; graphQuery?: string } | null>(null);
   const [shareMsg, setShareMsg] = useState<{ question: string; answer: string } | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : false);
+  const [showChatCost, setShowChatCost] = useState(() => getShowChatCost());
   const inputRef = useRef<HTMLInputElement>(null);
   const readerOuterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    initAppConfig().then(() => setShowChatCost(getShowChatCost()));
+  }, []);
 
 
   const focusInput = React.useCallback(() => {
@@ -340,42 +347,51 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                         <span>{t('chat.partialResultsWarning')}</span>
                       </div>
                     )}
-                    {msg.role === 'model' && !isChatting && (
-                      <div dir="ltr" className="mt-1 flex items-center gap-0.5 px-1">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
-                            setShareMsg({
-                              question: userMsg?.text || '',
-                              answer: msg.text || '',
-                            });
-                          }}
-                          title={t('share.shareQA')}
-                          className="p-1.5 rounded-lg text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
-                        >
-                          <Share2 size={18} strokeWidth={2} />
-                        </button>
-                        {submitFeedback && (
-                          <>
-                            <button
-                              onClick={() => submitFeedback(idx, 'positive')}
-                              disabled={!!msg.feedback}
-                              title="جاۋاب ياقتى"
-                              className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
-                            >
-                              <ThumbsUp size={18} strokeWidth={2} />
-                            </button>
-                            <button
-                              onClick={() => submitFeedback(idx, 'negative')}
-                              disabled={!!msg.feedback}
-                              title="جاۋاب ياقمىدى"
-                              className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
-                            >
-                              <ThumbsDown size={18} strokeWidth={2} />
-                            </button>
-                          </>
+                    {msg.role === 'model' && (!isChatting || idx < chatMessages.length - 1) && (
+                      <div className="w-full flex items-center justify-between mt-1 px-1">
+                        {showChatCost && msg.cost ? (
+                          <div className="text-[11px] text-slate-400 dark:text-slate-500 select-none px-1 uyghur-text">
+                            {formatAnswerCost(msg.cost.costUsd, msg.cost.inputTokens + msg.cost.outputTokens, t)}
+                          </div>
+                        ) : (
+                          <div />
                         )}
+                        <div dir="ltr" className="flex items-center gap-0.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
+                              setShareMsg({
+                                question: userMsg?.text || '',
+                                answer: msg.text || '',
+                              });
+                            }}
+                            title={t('share.shareQA')}
+                            className="p-1.5 rounded-lg text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
+                          >
+                            <Share2 size={18} strokeWidth={2} />
+                          </button>
+                          {submitFeedback && (
+                            <>
+                              <button
+                                onClick={() => submitFeedback(idx, 'positive')}
+                                disabled={!!msg.feedback}
+                                title="جاۋاب ياقتى"
+                                className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
+                              >
+                                <ThumbsUp size={18} strokeWidth={2} />
+                              </button>
+                              <button
+                                onClick={() => submitFeedback(idx, 'negative')}
+                                disabled={!!msg.feedback}
+                                title="جاۋاب ياقمىدى"
+                                className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
+                              >
+                                <ThumbsDown size={18} strokeWidth={2} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -800,42 +816,51 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   <span>{t('chat.partialResultsWarning')}</span>
                 </div>
               )}
-              {msg.role === 'model' && !isChatting && (
-                <div dir="ltr" className="flex gap-0.5 items-center px-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
-                      setShareMsg({
-                        question: userMsg?.text || '',
-                        answer: msg.text || '',
-                      });
-                    }}
-                    title={t('share.shareQA')}
-                    className="p-1.5 rounded-lg text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
-                  >
-                    <Share2 size={18} strokeWidth={2} />
-                  </button>
-                  {msg.evalId !== undefined && (
-                    <>
-                      <button
-                        onClick={() => submitFeedback?.(idx, 'positive')}
-                        disabled={!!msg.feedback}
-                        title="👍"
-                        className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-300 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
-                      >
-                        <ThumbsUp size={18} strokeWidth={2} />
-                      </button>
-                      <button
-                        onClick={() => submitFeedback?.(idx, 'negative')}
-                        disabled={!!msg.feedback}
-                        title="👎"
-                        className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-300 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
-                      >
-                        <ThumbsDown size={18} strokeWidth={2} />
-                      </button>
-                    </>
+              {msg.role === 'model' && (!isChatting || idx < chatMessages.length - 1) && (
+                <div className="w-full flex items-center justify-between mt-1 px-1">
+                  {showChatCost && msg.cost ? (
+                    <div className="text-[11px] text-slate-400 dark:text-slate-500 select-none px-1 uyghur-text">
+                      {formatAnswerCost(msg.cost.costUsd, msg.cost.inputTokens + msg.cost.outputTokens, t)}
+                    </div>
+                  ) : (
+                    <div />
                   )}
+                  <div dir="ltr" className="flex items-center gap-0.5">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
+                        setShareMsg({
+                          question: userMsg?.text || '',
+                          answer: msg.text || '',
+                        });
+                      }}
+                      title={t('share.shareQA')}
+                      className="p-1.5 rounded-lg text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
+                    >
+                      <Share2 size={18} strokeWidth={2} />
+                    </button>
+                    {submitFeedback && (
+                      <>
+                        <button
+                          onClick={() => submitFeedback(idx, 'positive')}
+                          disabled={!!msg.feedback}
+                          title="جاۋاب ياقتى"
+                          className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
+                        >
+                          <ThumbsUp size={18} strokeWidth={2} />
+                        </button>
+                        <button
+                          onClick={() => submitFeedback(idx, 'negative')}
+                          disabled={!!msg.feedback}
+                          title="جاۋاب ياقمىدى"
+                          className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
+                        >
+                          <ThumbsDown size={18} strokeWidth={2} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

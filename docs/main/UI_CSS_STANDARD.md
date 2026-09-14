@@ -50,6 +50,8 @@ Confirmed in active use today via Tailwind's built-in palette (not yet as named 
 | `status-pending` | `slate-300` | Step is waiting/idle |
 | `status-error` | `red-500` | Step encountered an error |
 
+Newer admin status indicators (e.g. the three-state LLM spell-check `Sparkles` icon in `AdminView.tsx`, `getLlmSpellCheckIconClass`) use a simplified variant of this scale: `emerald-500` (all pages done), `amber-500` (some pages done or in progress), `slate-300` (not started) — no pulse animation and no dedicated error color (failures surface as a count in the hover tooltip instead of an icon color change). This diverges from the pulsing `text-[#FF9800]` "active" treatment used elsewhere for pipeline steps (e.g. `getStepStatusColor` in the same file); treat both as valid current patterns rather than converging one onto the other until this doc's tokens are implemented.
+
 ---
 
 ## Typography Scale
@@ -129,7 +131,7 @@ To be added to `tailwind.config.js` under `theme.extend.boxShadow`.
 
 ## Glass Morphism
 
-`.glass-panel` (defined in `apps/frontend/index.css`) is the standard frosted-surface utility class and is already used across the app (navbar, admin menus, modals, ~28 components), including via the reusable `<GlassPanel>` wrapper component (`apps/frontend/src/components/ui/GlassPanel.tsx`).
+`.glass-panel` (defined in `apps/frontend/index.css`) is the standard frosted-surface utility class and is already used across the app (navbar, admin menus, modals, 28 components as of this writing), including via the reusable `<GlassPanel>` wrapper component (`apps/frontend/src/components/ui/GlassPanel.tsx`).
 
 | Class | Status | Opacity | Usage |
 |---|---|---|---|
@@ -148,7 +150,7 @@ CSS variables backing `.glass-panel` (in `index.css` `:root`, overridden under `
 
 ## Dark Mode
 
-`tailwind.config.js` sets `darkMode: 'class'`. Dark mode is toggled by adding a `.dark` class to the root element (not a media-query strategy), and is already extensively adopted — components use `dark:` variants directly (over 2,000 occurrences across `apps/frontend/src`), most often paired with the arbitrary-hex pattern rather than a semantic token, e.g.:
+`tailwind.config.js` sets `darkMode: 'class'`. Dark mode is toggled by adding a `.dark` class to the root element (not a media-query strategy), and is already extensively adopted — components use `dark:` variants directly (over 2,600 occurrences across `apps/frontend/src`, up from ~2,000 at the last sync), most often paired with the arbitrary-hex pattern rather than a semantic token, e.g.:
 
 ```
 text-[#0369a1] dark:text-[#38bdf8]
@@ -178,7 +180,7 @@ When ready to implement, make changes in this order — no component files need 
 
 ## Current Inconsistencies to Fix During Migration
 
-Verified against `apps/frontend/src` — arbitrary values remain widespread (over 250 arbitrary font-size classes alone):
+Verified against `apps/frontend/src` — arbitrary values remain widespread (261 arbitrary font-size classes alone):
 
 | Issue | Example (current) | Target |
 |---|---|---|
