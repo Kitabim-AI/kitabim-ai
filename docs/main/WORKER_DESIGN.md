@@ -12,11 +12,12 @@ Key characteristics:
 - **States** — `idle | in_progress | succeeded | failed`, one per step, per page.
 - **Mandatory pipeline** — `ocr → chunking → embedding` is sequential; embedding is the terminal mandatory step.
 - **Spell check** — an independent quality layer. It only depends on OCR being done, runs in parallel with chunking/embedding, and does not block book readiness.
-- **Knowledge graph extraction, spell check, history dictionary extraction, and Gemini Batch API mode for OCR/embedding/history extraction are all feature-flagged** — see [Feature Flags](#feature-flags).
+- **LLM-based spell check is a fully separate, admin-triggered, on-demand feature — not a pipeline stage at all.** `llm_spell_check_job` uses a context-aware Gemini call (vs. the dictionary lookup used by `spell_check_job`/`auto_correct_job`) and is tracked entirely through its own `pages.llm_spell_check_status`/`llm_spell_check_at` columns — it writes no `PipelineEvent`, does not touch `retry_count`, has no book-level rollup column, is not claimed by any scanner, and is not reset by `StaleWatchdog` if it gets stuck `in_progress`. It never gates chunking or anything else. See [LLMSpellCheckJob](#llmspellcheckjob--batchllmspellcheckpollerscanner).
+- **Knowledge graph extraction, spell check, history dictionary extraction, and Gemini Batch API mode for OCR/embedding/history extraction/LLM spell check are all feature-flagged** — see [Feature Flags](#feature-flags).
 - **History dictionary extraction is a fully separate, admin-triggered sub-system.** It does not use the milestone columns/state machine described below at all — see [HistoryExtractionJob](#historyextractionjob--batchhistorypollerscanner).
 - **Transactional Outbox** — the `pipeline_events` table records a row for every milestone transition, written in the same DB transaction as the result. The Event Dispatcher polls this table and immediately enqueues the next job, so most pages move `ocr → chunking → embedding` inside seconds rather than waiting for the next 1-minute scanner tick.
-- **Per-page distributed locking** — `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` each wrap their claimed page IDs in a `MultiPageLock` (Redis `SET NX` per page, 1‑hour expiry, keyed as `lock:{prefix}:{page_id}` with each stage passing its own `prefix` — e.g. `ocr`, `chunking` — so the same page can be locked independently per pipeline stage) before processing, so the same page can never be worked on by two job instances concurrently even if a scanner double-claims it.
-- **Optional Gemini Batch API mode** — OCR, embedding, and history dictionary extraction can each independently run through the Gemini Batch API instead of the interactive API (`ocr_batch_enabled` / `embed_batch_enabled` / `history_batch_enabled`, all `false` by default), trading latency (async submit + poll) for lower cost on high-volume ingestion. See [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the full OCR/embedding batch-mode algorithm.
+- **Per-page distributed locking** — `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` each wrap their claimed page IDs in a `MultiPageLock` (Redis `SET NX` per page, 1‑hour expiry, keyed as `lock:{prefix}:{page_id}` with each stage passing its own `prefix` — e.g. `ocr`, `chunking` — so the same page can be locked independently per pipeline stage) before processing, so the same page can never be worked on by two job instances concurrently even if a scanner double-claims it. `llm_spell_check_job` is the exception — it takes no `MultiPageLock`; its only concurrency guard is the `llm_spell_check_status != in_progress` check made by the triggering endpoint before enqueueing.
+- **Optional Gemini Batch API mode** — OCR, embedding, history dictionary extraction, and the on-demand LLM spell check can each independently run through the Gemini Batch API instead of the interactive API (`ocr_batch_enabled`, default `true`; `embed_batch_enabled` / `history_batch_enabled` / `llm_spell_check_batch_enabled`, all default `false`), trading latency (async submit + poll) for lower cost on high-volume ingestion. See [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the full OCR/embedding batch-mode algorithm.
 
 ## Goals
 
@@ -35,10 +36,11 @@ Several pipeline stages are gated by boolean flags in `system_configs` (checked 
 | `spell_check_enabled` | `true` | `spell_check_scanner` — returns immediately if not `"true"` |
 | `auto_correct_enabled` | `true` | `auto_correct_scanner` — returns immediately if not `"true"` |
 | `kg_enabled` | `false` | `graph_scanner`, `graph_resolution_scanner`, and `knowledge_graph_job` — all no-op if not `"true"` (`knowledge_graph_job` additionally resets `graph_milestone` back to `idle`); also gates `POST /{book_id}/reprocess/graph`, which returns `400` if the flag isn't `"true"` |
-| `ocr_batch_enabled` | `false` | `ocr_job` — submits a `batch_ocr_jobs` row via the Gemini Batch API instead of OCR'ing inline when `"true"` |
+| `ocr_batch_enabled` | `true` | `ocr_job` — submits a `batch_ocr_jobs` row via the Gemini Batch API instead of OCR'ing inline when `"true"` |
 | `embed_batch_enabled` | `false` | `embedding_scanner` — submits a `batch_embedding_jobs` row via the Gemini Batch API instead of dispatching `embedding_job` when `"true"` |
 | `history_extraction_enabled` | `true` | `history_extraction_job` — returns `{"status": "skipped", ...}` without processing if not `"true"`; also gates `POST /api/admin/books/{book_id}/extract-history`, which returns `400` if the flag isn't `"true"` |
 | `history_batch_enabled` | `false` | `history_extraction_job` — submits a `batch_history_extraction_jobs` row via the Gemini Batch API instead of extracting inline when `"true"` |
+| `llm_spell_check_batch_enabled` | `false` | `POST /{book_id}/reprocess/llm-spell-check` (the book-wide trigger only) — submits a `batch_llm_spell_check_jobs` row via the Gemini Batch API instead of running `llm_spell_check_job` live when `"true"`; also gates whether `batch_llm_spell_check_poller_scanner` finds anything to do. The single-page trigger (`POST /{book_id}/pages/{page_num}/llm-spell-check`) always uses the live path regardless of this flag. |
 
 > **Knowledge graph extraction is off by default in a fresh environment.** It must be explicitly enabled via `system_configs` before `graph_scanner` or the "Reprocess Graph" admin action will do anything.
 
@@ -52,7 +54,8 @@ Several pipeline stages are gated by boolean flags in `system_configs` (checked 
 | `chunking_milestone` | `varchar` | `idle \| in_progress \| succeeded \| failed` |
 | `embedding_milestone` | `varchar` | `idle \| in_progress \| succeeded \| failed` |
 | `spell_check_milestone` | `varchar` | `idle \| in_progress \| succeeded \| failed` |
-| `retry_count` | `integer` | Shared failure counter for the page — incremented by whichever step's job fails (OCR, chunking, embedding, or spell check all write to the same counter). |
+| `llm_spell_check_status` / `llm_spell_check_at` | `varchar` / `timestamptz` | `idle \| in_progress \| succeeded \| failed`, set by the on-demand LLM spell-check feature (see [LLMSpellCheckJob](#llmspellcheckjob--batchllmspellcheckpollerscanner)). Tracked entirely separately from the four milestone columns above — no book-level rollup, not read/written by `retry_count` logic, and **not** reset by `StaleWatchdog` (see [StaleWatchdog](#stalewatchdog)). |
+| `retry_count` | `integer` | Shared failure counter for the page — incremented by whichever step's job fails (OCR, chunking, embedding, or spell check all write to the same counter). `llm_spell_check_job` does not use this counter at all. |
 | `worker_id` / `claimed_at` | `varchar` / `timestamptz` | Set by the scanner that claimed the page; used by `StaleWatchdog` to detect dead workers. |
 | `pipeline_step` | `varchar` | Legacy/display field showing the step a page is currently associated with (`ocr`, `chunking`, `embedding`, `spell_check`). Not read by scanners to gate work — milestones are the source of truth. |
 
@@ -66,6 +69,8 @@ Several pipeline stages are gated by boolean flags in `system_configs` (checked 
 | `graph_milestone` | `varchar` | `idle \| in_progress \| complete \| partial \| failed`. `has_graph` in the API is derived as `graph_milestone == 'complete'` — there is no separate Neo4j lookup. |
 
 Note: history dictionary extraction (`history_extraction_job`) does **not** use any of the columns above. It is tracked entirely through its own tables — `batch_history_extraction_jobs` (job/status, mirrors `batch_ocr_jobs`/`batch_embedding_jobs`), `history_dictionary_staging` (candidate terms awaiting admin review), and `history_dictionary` (published terms) — keyed by `book_id` with no page- or book-level milestone column.
+
+Note: the on-demand LLM spell check similarly does not use the `books` table columns above — it has no book-level status at all. When run via the Gemini Batch API (`llm_spell_check_batch_enabled`), its in-flight jobs are tracked in `batch_llm_spell_check_jobs` (mirrors `batch_ocr_jobs`/`batch_embedding_jobs`/`batch_history_extraction_jobs`), keyed by `book_id` and holding the triggering `page_ids`.
 
 ## Architecture
 
@@ -88,24 +93,26 @@ worker/
     graph_scanner.py           ← backfills/retries missing knowledge graphs for ready books (feature-flagged; see note below)
     graph_resolution_scanner.py ← claims graph_resolution_queue rows every 5 min, dispatches GraphResolutionJob per scope (feature-flagged)
     batch_history_poller_scanner.py ← polls in-flight batch_history_extraction_jobs, ingests results into history_dictionary_staging (feature-flagged path)
+    batch_llm_spell_check_poller_scanner.py ← polls in-flight batch_llm_spell_check_jobs, applies completed corrections to pages.text (feature-flagged path)
     maintenance_scanner.py     ← deletes old processed pipeline_events rows
   jobs/
     ocr_job.py                 ← downloads PDF, OCRs pages via Gemini Vision (google-genai)
     chunking_job.py            ← splits page text into chunks, upserts into the chunks table
     embedding_job.py           ← generates and stores chunk embeddings (google-genai)
     spell_check_job.py         ← identifies unknown words and suggests corrections
+    llm_spell_check_job.py     ← on-demand, context-aware Gemini spell correction for a given set of pages (admin-triggered only, not a scanner-driven pipeline stage — see below)
     auto_correct_job.py        ← applies auto-correction rules to open spell issues
     summary_job.py             ← generates a semantic book summary + embedding for RAG routing
     knowledge_graph_job.py     ← extracts entities/relationships and indexes them in Neo4j
     graph_resolution_job.py    ← resolves/merges duplicate graph entities against Neo4j fuzzy-match candidates
     history_extraction_job.py  ← extracts/stages Uyghur history-dictionary candidate terms from a book's pages (admin-triggered only, see below)
     rag_eval_job.py            ← post-turn async judge scoring for rag_evaluations (not a pipeline/cron job)
-  worker.py                    ← ARQ WorkerSettings: registers the 10 jobs and 15 of the 16 scanners as cron jobs
+  worker.py                    ← ARQ WorkerSettings: registers the 11 jobs and 16 of the 17 scanners as cron jobs
 ```
 
-**Job and scanner count:** 10 job functions are registered in `WorkerSettings.functions` (`ocr_job`, `chunking_job`, `embedding_job`, `spell_check_job`, `summary_job`, `auto_correct_job`, `knowledge_graph_job`, `graph_resolution_job`, `rag_eval_job`, `extract_book_history_terms_task`). 16 scanner modules exist under `services/worker/scanners/` (including the three batch-API poller scanners and `graph_resolution_scanner.py`), but only **15** are wired into `WorkerSettings.cron_jobs` in `worker.py` — `graph_scanner.py` is fully implemented and tested but is **not currently scheduled** (see [Cron Schedule](#cron-schedule)).
+**Job and scanner count:** 11 job functions are registered in `WorkerSettings.functions` (`ocr_job`, `chunking_job`, `embedding_job`, `spell_check_job`, `llm_spell_check_job`, `summary_job`, `auto_correct_job`, `knowledge_graph_job`, `graph_resolution_job`, `rag_eval_job`, `extract_book_history_terms_task`). 17 scanner modules exist under `services/worker/scanners/` (including the four batch-API poller scanners and `graph_resolution_scanner.py`), but only **16** are wired into `WorkerSettings.cron_jobs` in `worker.py` — `graph_scanner.py` is fully implemented and tested but is **not currently scheduled** (see [Cron Schedule](#cron-schedule)).
 
-Batch OCR/embedding/history-extraction submission itself is **not** a separate ARQ job — it happens inline inside `ocr_job.py`, `embedding_scanner.py`, and `history_extraction_job.py` respectively, gated by the feature flags above (see [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow)).
+Batch OCR/embedding/history-extraction submission itself is **not** a separate ARQ job — it happens inline inside `ocr_job.py`, `embedding_scanner.py`, and `history_extraction_job.py` respectively, gated by the feature flags above (see [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow)). Batch LLM spell check submission is likewise not a separate job — it happens inline inside the `POST /{book_id}/reprocess/llm-spell-check` endpoint itself (`books_router.py`), not inside a worker job or scanner.
 
 ## Component Responsibilities
 
@@ -145,6 +152,7 @@ Each claims idle pages atomically (`SELECT ... FOR UPDATE SKIP LOCKED`, or an at
 - See [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md) for the full chunking algorithm (`ChunkingJob`).
 - See [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) for the full embedding algorithm (`EmbeddingJob`).
 - See [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) for the full spellcheck/auto-correct algorithm (`SpellCheckJob`, `AutoCorrectJob`).
+- `llm_spell_check_job` — see [LLMSpellCheckJob](#llmspellcheckjob--batchllmspellcheckpollerscanner) below; no dedicated design doc yet.
 - See [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) for the full summary algorithm (`SummaryJob`).
 - See [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) for the full knowledge-graph extraction algorithm (`KnowledgeGraphJob`) and the entity-resolution sub-pipeline (`graph_resolution_scanner` / `GraphResolutionJob`).
 - `history_extraction_job` (function `extract_book_history_terms_task`) — see [HistoryExtractionJob](#historyextractionjob--batchhistorypollerscanner) below; no dedicated design doc yet.
@@ -194,6 +202,20 @@ Deletes `pipeline_events` rows where `processed=true` and `created_at` is older 
 
 See [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) for the full auto-correct algorithm.
 
+### LLMSpellCheckJob / BatchLlmSpellCheckPollerScanner
+
+A second, independent spell-check mechanism alongside the dictionary-based `spell_check_job`/`auto_correct_job` pair above — context-aware Gemini correction of real-word errors that a dictionary lookup can't catch, run on demand rather than automatically. Like `history_extraction_job`, it has **no scanner that claims idle work for it** and does **not** use the `ocr`/`chunking`/`embedding`/`spell_check` milestone columns, `retry_count`, or `PipelineEvent` rows at all — it is entirely out-of-band from the state machine described in this document and never gates chunking or book readiness.
+
+Two admin-only endpoints in `books_router.py` trigger it directly:
+- `POST /{book_id}/reprocess/llm-spell-check` — every page on the book not already `llm_spell_check_status='in_progress'`. Live path by default; if `llm_spell_check_batch_enabled` is `"true"`, submits a `batch_llm_spell_check_jobs` row via the Gemini Batch API instead.
+- `POST /{book_id}/pages/{page_num}/llm-spell-check` — a single page. Always uses the live path regardless of `llm_spell_check_batch_enabled`; returns `409` if that page is already `in_progress`.
+
+The live job (`llm_spell_check_job`) processes its given `page_ids` concurrently (`MAX_PARALLEL_LLM_SPELL_CHECK`, default 6) via `correct_page_text()`, which sends one page's text plus its neighboring pages' text as context through `build_text_llm`/`ProtectedLLM` (the shared circuit-breaker/rate-limiter path, not a raw `genai.Client` call) using the `gemini_llm_spell_check_model` system_config (default `gemini-3.1-flash-lite`). A cheap guardrail (`_validate_correction`) rejects empty output or output whose length deviates more than 30% from the original, shared by both the live and batch paths. Unlike every other pipeline job, it takes no `MultiPageLock` — its only concurrency guard is the endpoint's `in_progress` pre-check.
+
+`batch_llm_spell_check_poller_scanner` (every 1 min, no-op unless a batch job is in flight) polls `batch_llm_spell_check_jobs` and applies completed corrections to `pages.text` the same way `batch_ocr_poller_scanner`/`batch_embedding_poller_scanner`/`batch_history_poller_scanner` do for their stages — there is likewise no dedicated `*_timeout_hours`/`*_max_retry_count` config for a stuck batch LLM-spell-check job.
+
+Because `llm_spell_check_status` is not covered by `StaleWatchdog`, a page can be left stuck at `in_progress` indefinitely if the job crashes or the worker dies mid-run: the single-page endpoint then returns `409` on every retry for that page, and the book-wide endpoint silently excludes it from every future run (it only selects pages where the status is *not* `in_progress`) — a genuinely stuck page needs a manual DB fix, there is no dedicated unstick action for it.
+
 ### HistoryExtractionJob / BatchHistoryPollerScanner
 
 Unlike every other job described above, `history_extraction_job` has **no scanner that claims idle work for it** — it is admin-triggered only. `POST /api/admin/books/{book_id}/extract-history` (admin-only, `admin_history_dictionary_router.py`) enqueues the job directly with a `min_significance` threshold; it 400s if `history_extraction_enabled` isn't `"true"`.
@@ -213,12 +235,13 @@ Authoritative source: `WorkerSettings.cron_jobs` in `services/worker/worker.py`.
 | `gcs_discovery_scanner` | Every 5 min | List GCS bucket, register new books |
 | `pipeline_driver` | Every 1 min (+ at startup) | Initialize, reset retryable failures, mark ready/error, enqueue summary jobs |
 | `ocr_scanner` | Every 1 min | Groups claimed pages by book |
-| `batch_ocr_poller_scanner` | Every 1 min | Polls in-flight `batch_ocr_jobs` (no-op unless `ocr_batch_enabled` has been used) |
+| `batch_ocr_poller_scanner` | Every 1 min | Polls in-flight `batch_ocr_jobs` (active whenever `ocr_batch_enabled` is `"true"`, which is the default) |
 | `chunking_scanner` | Every 1 min | Cross-book |
 | `embedding_scanner` | Every 1 min | Cross-book |
 | `batch_embedding_poller_scanner` | Every 1 min | Polls in-flight `batch_embedding_jobs` (no-op unless `embed_batch_enabled` has been used) |
 | `spell_check_scanner` | Every 1 min | Cross-book; no-op unless `spell_check_enabled` |
 | `batch_history_poller_scanner` | Every 1 min | Polls in-flight `batch_history_extraction_jobs` (no-op unless `history_batch_enabled` has been used) |
+| `batch_llm_spell_check_poller_scanner` | Every 1 min | Polls in-flight `batch_llm_spell_check_jobs` (no-op unless `llm_spell_check_batch_enabled` has been used) |
 | `event_dispatcher` | Every 1 min (+ at startup) | Reactive low-latency progression via the outbox |
 | `stale_watchdog` | Minute 0 and 30 (i.e. every 30 min) | Worker-heartbeat-aware reset |
 | `summary_scanner` | Every 5 min | Backfill/retry missing book summaries |
@@ -250,6 +273,7 @@ flowchart TD
     SPELL_FAIL["spell_check / failed"]
     EXHAUSTED["ocr/chunking/embedding failed<br/>retry_count >= max<br/>(book-wide status=error;<br/>OCR only lands here via repeated<br/>PDF download failures — a per-page<br/>Gemini OCR error always soft-skips<br/>to OCR_OK at exhaustion instead)"]
     HISTORY_NOTE["history_extraction_job<br/>(admin-triggered only — POST /api/admin/books/{id}/extract-history)<br/>Uses batch_history_extraction_jobs /<br/>history_dictionary_staging / history_dictionary.<br/>NOT part of this milestone state machine —<br/>no page/book milestone column involved.<br/>See HistoryExtractionJob section above."]
+    LLM_SPELL_NOTE["llm_spell_check_job<br/>(admin-triggered only — POST /{id}/reprocess/llm-spell-check<br/>or /{id}/pages/{n}/llm-spell-check)<br/>Own pages.llm_spell_check_status column, not one of the<br/>four milestones above. No PipelineEvent, no retry_count,<br/>no scanner claim, not reset by StaleWatchdog.<br/>See LLMSpellCheckJob section above."]
 
     OCR_IDLE -->|OcrScanner: claim| OCR_IP
     OCR_IP -->|"Gemini call succeeds, or retries exhausted (soft-skip)"| OCR_OK
@@ -299,7 +323,7 @@ flowchart TD
     class EXHAUSTED,SPELL_TERMINAL terminal
     class BookReady book
     class BookError bookErr
-    class HISTORY_NOTE note
+    class HISTORY_NOTE,LLM_SPELL_NOTE note
 ```
 
 ## Retry Logic
@@ -334,7 +358,7 @@ All batch sizes, concurrency limits, and model names below are `system_configs` 
 | `kg_chunk_batch_size` | `5` | `knowledge_graph_job` — chunks combined per LLM call |
 | `kg_max_parallel_chunks` | `5` | `knowledge_graph_job` — concurrent batch LLM calls |
 | `sys_maintenance_retention_days` | `7` | `maintenance_scanner` — processed-event retention |
-| `ocr_batch_enabled` | `false` | `ocr_job` — routes OCR through the Gemini Batch API instead of inline |
+| `ocr_batch_enabled` | `true` | `ocr_job` — routes OCR through the Gemini Batch API instead of inline |
 | `ocr_batch_size_per_job` | `50` | `ocr_job` — pages per submitted batch-OCR sub-job |
 | `embed_batch_enabled` | `false` | `embedding_scanner` — routes embedding through the Gemini Batch API instead of `embedding_job` |
 | `embed_batch_max_chunks_per_job` | `100` | `batch_embedding_service` — chunks per submitted batch-embedding sub-job |
@@ -344,6 +368,9 @@ All batch sizes, concurrency limits, and model names below are `system_configs` 
 | `history_gemini_model` | `gemini-2.5-flash` | `history_extraction_job` / `batch_history_extraction_service` — Gemini model used for term extraction and factual synthesis |
 | `history_batch_size` | `15` | `history_extraction_service` / `batch_history_extraction_service` — pages per sliding-window/batch extraction request |
 | `history_batch_enabled` | `false` | `history_extraction_job` — routes extraction through the Gemini Batch API instead of inline; unlike batch OCR/embedding, there is no dedicated `*_timeout_hours` or `*_max_retry_count` key for stuck batch history jobs |
+| `llm_spell_check_batch_enabled` | `false` | The book-wide `POST /{book_id}/reprocess/llm-spell-check` endpoint — routes it through the Gemini Batch API instead of live calls; also gates whether `batch_llm_spell_check_poller_scanner` finds anything to poll. Like batch history, there is no dedicated `*_timeout_hours`/`*_max_retry_count` key for a stuck batch LLM-spell-check job. Does not affect the single-page endpoint, which always uses the live path |
+| `gemini_llm_spell_check_model` | `gemini-3.1-flash-lite` | `llm_spell_check_service` / `batch_llm_spell_check_service` — Gemini model used for LLM-based spell correction, both live and batch paths |
+| `MAX_PARALLEL_LLM_SPELL_CHECK` (env) | `6` | `llm_spell_check_job` — pages spell-checked concurrently via Gemini |
 | `MAX_PARALLEL_SPELL_CHECK` (env) | `6` | `spell_check_job` — pages spell-checked concurrently |
 | `MAX_CONCURRENT_SPELL_CHECK_BOOKS` (env) | `3` | `spell_check_scanner` — books actively spell-checked at once |
 | `MAX_PARALLEL_AUTO_CORRECT` (env) | `10` | `auto_correct_job` — pages corrected concurrently |

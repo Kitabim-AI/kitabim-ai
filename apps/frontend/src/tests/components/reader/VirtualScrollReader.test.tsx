@@ -148,6 +148,56 @@ test('re-observes all pages after exiting edit mode so scrolling down loads subs
   vi.stubGlobal('IntersectionObserver', realIntersectionObserver);
 });
 
+test('scrolls back to the edited page after exiting edit mode (save or cancel)', () => {
+  // Regression test: exiting edit mode remounts every other page at once
+  // (see the previous test) — the reader used to correct for this with a
+  // one-shot scroll that had nothing to re-check itself against subsequent
+  // layout shifts. It now reuses the same alignment mechanism the ToC-jump
+  // path uses (useScrollToPage), which is asserted here via its externally
+  // observable effect: scrolling the container and reporting the edited
+  // page back through onPageChange.
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { id: 'user-1', role: 'reader' },
+  } as any);
+
+  const container = document.createElement('div');
+  container.scrollTo = vi.fn();
+  const onPageChange = vi.fn();
+
+  const { rerender } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-1"
+        totalPages={5}
+        fontSize={16}
+        editingPageNum={2}
+        scrollParentRef={{ current: container }}
+        onPageChange={onPageChange}
+      />
+    </I18nContext.Provider>
+  );
+
+  onPageChange.mockClear();
+
+  // Exit edit mode (save or cancel both just clear editingPageNum)
+  rerender(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-1"
+        totalPages={5}
+        fontSize={16}
+        editingPageNum={null}
+        scrollParentRef={{ current: container }}
+        onPageChange={onPageChange}
+      />
+    </I18nContext.Provider>
+  );
+
+  expect(container.scrollTo).toHaveBeenCalled();
+  expect(onPageChange).toHaveBeenCalledWith(2);
+});
+
 test('passes bookId/bookTitle to PageItem and only gates highlightQuote to the current-center page', () => {
   vi.mocked(AuthModule.useAuth).mockReturnValue({
     isAuthenticated: true,
@@ -196,4 +246,207 @@ test('passes bookId/bookTitle to PageItem and only gates highlightQuote to the c
   expect(shareProps).toContain('book-1|My Book|a quote'); // page 1 (current center) is highlighted
   expect(shareProps).toContain('book-1|My Book|'); // page 2 is not
 });
+
+test('restricts guest users to first 20 pages and displays GuestAuthWall when totalPages > 20', () => {
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: false,
+    user: null,
+    loginWithGoogle: vi.fn(),
+    loginWithFacebook: vi.fn(),
+    isLoading: false,
+  } as any);
+
+  const { container } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-long"
+        totalPages={35}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+      />
+    </I18nContext.Provider>
+  );
+
+  // Pages rendered should only be up to 20
+  const renderedPageElements = container.querySelectorAll('[data-page-number]');
+  expect(renderedPageElements.length).toBe(20);
+  expect(container.querySelector('[data-page-number="20"]')).not.toBeNull();
+  expect(container.querySelector('[data-page-number="21"]')).toBeNull();
+
+  // GuestAuthWall should be rendered
+  const authWall = screen.getByTestId('guest-auth-wall');
+  expect(authWall).toBeInTheDocument();
+  expect(screen.getByTestId('guest-auth-google-btn')).toBeInTheDocument();
+  expect(screen.getByTestId('guest-auth-facebook-btn')).toBeInTheDocument();
+});
+
+test('does not display GuestAuthWall for guest users when totalPages <= 20', () => {
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: false,
+    user: null,
+    loginWithGoogle: vi.fn(),
+    loginWithFacebook: vi.fn(),
+    isLoading: false,
+  } as any);
+
+  const { container } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-short"
+        totalPages={15}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+      />
+    </I18nContext.Provider>
+  );
+
+  const renderedPageElements = container.querySelectorAll('[data-page-number]');
+  expect(renderedPageElements.length).toBe(15);
+  expect(screen.queryByTestId('guest-auth-wall')).toBeNull();
+});
+
+test('renders all pages and does not show GuestAuthWall for authenticated users even if totalPages > 20', () => {
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { id: 'user-1', role: 'reader' },
+    loginWithGoogle: vi.fn(),
+    loginWithFacebook: vi.fn(),
+    isLoading: false,
+  } as any);
+
+  const { container } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-long-auth"
+        totalPages={25}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+      />
+    </I18nContext.Provider>
+  );
+
+  const renderedPageElements = container.querySelectorAll('[data-page-number]');
+  expect(renderedPageElements.length).toBe(25);
+  expect(container.querySelector('[data-page-number="25"]')).not.toBeNull();
+  expect(screen.queryByTestId('guest-auth-wall')).toBeNull();
+});
+
+test('allows fetching and displaying pages > 20 after guest user logs in', async () => {
+  const { PersistenceService } = await import('@/src/services/persistenceService');
+  vi.mocked(PersistenceService.getBookPages).mockClear();
+
+  let loadObserverCallback: any = null;
+  const realIntersectionObserver = global.IntersectionObserver;
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(cb: any, options: any) {
+      if (options?.rootMargin?.includes('1200px')) {
+        loadObserverCallback = cb;
+      }
+    }
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  });
+
+  // Start as guest
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: false,
+    user: null,
+    loginWithGoogle: vi.fn(),
+    loginWithFacebook: vi.fn(),
+    isLoading: false,
+  } as any);
+
+  const { rerender } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-test"
+        totalPages={25}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+      />
+    </I18nContext.Provider>
+  );
+
+  // User logs in
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { id: 'user-1', role: 'reader' },
+    loginWithGoogle: vi.fn(),
+    loginWithFacebook: vi.fn(),
+    isLoading: false,
+  } as any);
+
+  rerender(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-test"
+        totalPages={25}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+      />
+    </I18nContext.Provider>
+  );
+
+  // Simulate intersection on page 21
+  const targetEl = document.createElement('div');
+  targetEl.setAttribute('data-page-number', '21');
+  loadObserverCallback([{ isIntersecting: true, target: targetEl }]);
+
+  expect(PersistenceService.getBookPages).toHaveBeenCalledWith('book-test', 20, 1);
+
+  vi.stubGlobal('IntersectionObserver', realIntersectionObserver);
+});
+
+test('proactively loads page 21 when a guest reading at page 20 logs in', async () => {
+  const { PersistenceService } = await import('@/src/services/persistenceService');
+  vi.mocked(PersistenceService.getBookPages).mockClear();
+
+  // Start as guest at page 20
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: false,
+    user: null,
+    loginWithGoogle: vi.fn(),
+    loginWithFacebook: vi.fn(),
+    isLoading: false,
+  } as any);
+
+  const { rerender } = render(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-test-20"
+        totalPages={30}
+        initialPage={20}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+      />
+    </I18nContext.Provider>
+  );
+
+  // User logs in
+  vi.mocked(AuthModule.useAuth).mockReturnValue({
+    isAuthenticated: true,
+    user: { id: 'user-1', role: 'reader' },
+    loginWithGoogle: vi.fn(),
+    loginWithFacebook: vi.fn(),
+    isLoading: false,
+  } as any);
+
+  rerender(
+    <I18nContext.Provider value={i18nValue}>
+      <VirtualScrollReader
+        bookId="book-test-20"
+        totalPages={30}
+        initialPage={20}
+        fontSize={16}
+        scrollParentRef={{ current: document.createElement('div') }}
+      />
+    </I18nContext.Provider>
+  );
+
+  // Proactive fetch fires for center (20), center+1 (21), center+2 (22)
+  expect(PersistenceService.getBookPages).toHaveBeenCalledWith('book-test-20', 20, 1); // skip 20 = page 21
+});
+
+
 

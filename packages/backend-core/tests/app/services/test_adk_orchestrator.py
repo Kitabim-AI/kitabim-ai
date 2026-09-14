@@ -1574,6 +1574,375 @@ async def test_stream_response_non_page_finding_exact_phrase_still_synthesizes_a
 
 
 @pytest.mark.asyncio
+async def test_stream_response_short_work_lookup_hit_bypasses_retrieval_agent_and_answer_llm():
+    """A named-short-work question (quoted title + locate verb) that
+    resolves via the ToC lookup must never reach the ADK retrieval agent's
+    tool-calling loop -- that discretionary loop not reliably reaching for
+    keyword search on a named title was the confirmed root cause of poem
+    lookups failing in production.
+
+    It must also never reach the Answer Agent's own LLM call: confirmed in
+    production that even an explicit "reproduce this verbatim" instruction
+    didn't reliably stop Gemini from refusing/hedging on quoting a full
+    poem. Since the ToC-resolved text is already known-correct, the answer
+    is formatted directly in code -- no reranker call, no Answer Agent LLM
+    call, no refusal risk."""
+    db_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = []
+    db_session.execute.return_value = mock_result
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id="book-1", is_global=False
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "retrieval agent must not run for a short-work lookup hit"
+        )
+    )
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "answer agent LLM must not run for a short-work lookup hit"
+        )
+    )
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({})
+    )
+
+    from app.services.rag.toc_lookup_service import ShortWorkMatch
+
+    match = ShortWorkMatch(
+        book_id="book-1",
+        title="ئۇچراشقاندا",
+        text="سەھەر كۆرگەن چېغىم كۆزۈم سۇلتانىنى...",
+        start_page=37,
+        end_page=38,
+        truncated=False,
+        book_title="ئۆمۈر مەنزىللىرى",
+        book_author="ئابدۇرېھىم ئۆتكۈر",
+    )
+
+    with _exact_phrase_orchestrator_patches(
+        conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.resolve_short_work",
+        AsyncMock(return_value=match),
+    ), patch(
+        "app.services.chat.orchestrator.build_answer_agent"
+    ) as mock_build_answer_agent, patch(
+        "app.services.chat.orchestrator._grade_context"
+    ) as mock_grade, patch(
+        "app.services.chat.orchestrator.analyze_query_signals"
+    ) as mock_analyze:
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="«ئۇچراشقاندا» ناملىق شېئىرنى تېپىپ بەر",
+            user_id="user-1",
+            book_id="book-1",
+            is_global=False,
+        )
+
+        events = [
+            event async for event in orchestrator.stream_response(dto, db_session)
+        ]
+
+    mock_analyze.assert_not_called()
+    mock_grade.assert_not_called()
+    mock_build_answer_agent.assert_not_called()
+
+    tool_call_events = [
+        e
+        for e in events
+        if e.get("type") == "tool_call" and e.get("tool") == "toc_lookup"
+    ]
+    assert len(tool_call_events) == 1
+    answer_start_events = [e for e in events if e.get("type") == "answer_start"]
+    assert len(answer_start_events) == 1
+
+    chunk_events = [e for e in events if e.get("type") == "chunk"]
+    assert len(chunk_events) == 1
+    text = chunk_events[0]["text"]
+    assert "> سەھەر كۆرگەن چېغىم كۆزۈم سۇلتانىنى..." in text
+    assert "ئۇچراشقاندا" in text
+    assert "ئۆمۈر مەنزىللىرى" in text
+    assert "ئابدۇرېھىم ئۆتكۈر" in text
+    assert "ref:book-1:37,38" in text
+
+
+@pytest.mark.asyncio
+async def test_stream_response_short_work_lookup_fires_even_when_catalog_first_already_matched_book():
+    """Regression test for a production miss: the real-world question shape
+    this feature exists for is "«book» ناملىق ئەسەردىكى «work»" -- TWO
+    quotes, where the catalog-first resolution (which runs first) correctly
+    matches the FIRST quote against a real book title and flips
+    phrase_intent.is_exact to False for its own purposes. The short-work
+    gate must still fire in this case (gating it on phrase_intent.is_exact
+    made it unreachable here, confirmed live in production: catalog-first
+    resolved the book, then the turn fell through to the full retrieval
+    agent and found zero chunks for the actual poem)."""
+    db_session = AsyncMock()
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id=None, is_global=True
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "retrieval agent must not run once catalog-first resolved the "
+            "book AND the short-work gate resolved the work"
+        )
+    )
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "answer agent LLM must not run for a short-work lookup hit"
+        )
+    )
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({})
+    )
+
+    from app.services.rag.toc_lookup_service import ShortWorkMatch
+
+    match = ShortWorkMatch(
+        book_id="45c03c0e0119",
+        title="ئۇچراشقاندا",
+        text="سەھەر كۆرگەن چېغىم كۆزۈم سۇلتانىنى...",
+        start_page=37,
+        end_page=38,
+        truncated=False,
+        book_title="ئۆمۈر مەنزىللىرى",
+        book_author="ئابدۇرېھىم ئۆتكۈر",
+    )
+
+    mock_find_books = AsyncMock(
+        return_value=[
+            {
+                "id": "45c03c0e0119",
+                "title": "ئۆمۈر مەنزىللىرى",
+                "author": "ئابدۇرېھىم ئۆتكۈر",
+                "volume": None,
+            }
+        ]
+    )
+    mock_resolve_short_work = AsyncMock(return_value=match)
+
+    with _exact_phrase_orchestrator_patches(
+        conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.find_books_by_title_in_question",
+        mock_find_books,
+    ), patch(
+        "app.services.chat.orchestrator.resolve_short_work",
+        mock_resolve_short_work,
+    ), patch(
+        "app.services.chat.orchestrator.build_answer_agent"
+    ) as mock_build_answer_agent, patch(
+        "app.services.chat.orchestrator._grade_context"
+    ) as mock_grade, patch(
+        "app.services.chat.orchestrator.analyze_query_signals"
+    ) as mock_analyze:
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="«ئۆمۈر مەنزىللىرى» ناملىق ئەسەردىكى «ئۇچراشقاندا» ناملىق شېئىرنىڭ تېكىستى قانداق؟",
+            user_id="user-1",
+            book_id=None,
+            is_global=True,
+        )
+
+        events = [
+            event async for event in orchestrator.stream_response(dto, db_session)
+        ]
+
+    mock_find_books.assert_awaited_once()
+    mock_resolve_short_work.assert_awaited_once()
+    # The book catalog-first resolved must be what scopes the ToC lookup.
+    assert mock_resolve_short_work.await_args.kwargs["book_id"] == "45c03c0e0119"
+    mock_analyze.assert_not_called()
+    mock_grade.assert_not_called()
+    mock_build_answer_agent.assert_not_called()
+    answer_start_events = [e for e in events if e.get("type") == "answer_start"]
+    assert len(answer_start_events) == 1
+    chunk_events = [e for e in events if e.get("type") == "chunk"]
+    assert len(chunk_events) == 1
+    assert "سەھەر كۆرگەن" in chunk_events[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_stream_response_short_work_lookup_miss_falls_through_to_exact_phrase():
+    """A quoted short-work title question that the ToC lookup can't resolve
+    (no ToC match, entry too long, etc.) must fall through to the existing
+    exact-phrase keyword search unchanged -- phrase_intent.is_exact is only
+    cleared on an actual ToC hit, so a miss leaves the pre-existing quoted-
+    phrase handling exactly as it was before this feature existed."""
+    db_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = []
+    db_session.execute.return_value = mock_result
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id="book-1", is_global=False
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "retrieval agent must not run for a still-quoted question"
+        )
+    )
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({})
+    )
+
+    with _exact_phrase_orchestrator_patches(
+        conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.resolve_short_work",
+        AsyncMock(return_value=None),
+    ) as mock_resolve, patch(
+        "app.services.chat.orchestrator.run_exact_phrase_retrieval",
+        AsyncMock(
+            return_value=(
+                [],
+                {
+                    "tool": "search_chunks",
+                    "result": {"ok": True, "data": {"chunks": []}, "found_count": 0},
+                },
+            )
+        ),
+    ) as mock_run_exact_phrase, patch(
+        "app.services.chat.orchestrator.build_answer_agent", return_value=MagicMock()
+    ), patch(
+        "app.services.chat.orchestrator._grade_context",
+        return_value=("", 0, 0),
+    ), patch("app.services.chat.orchestrator.analyze_query_signals") as mock_analyze:
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="«ئۇچراشقاندا» ناملىق شېئىرنى تېپىپ بەر",
+            user_id="user-1",
+            book_id="book-1",
+            is_global=False,
+        )
+
+        [event async for event in orchestrator.stream_response(dto, db_session)]
+
+    mock_resolve.assert_awaited_once()
+    mock_run_exact_phrase.assert_awaited_once()
+    mock_analyze.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stream_response_unquoted_short_work_question_never_attempts_toc_lookup():
+    """A short-work-style question with no quoted title at all doesn't match
+    detect_short_work_intent (it requires a quoted span), so resolve_short_work
+    must never even be attempted -- the question proceeds through the normal
+    signal-analysis + retrieval-agent path exactly as before this feature
+    existed."""
+    db_session = AsyncMock()
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id="book-1", is_global=False
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(return_value=_empty_async_gen())
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({})
+    )
+
+    inmemory_session_service = MagicMock()
+    inmemory_session_service.create_session = AsyncMock(
+        return_value=_mock_adk_session()
+    )
+
+    mock_book = MagicMock(
+        title="ئۆمۈر مەنزىللىرى", author="ئابدۇرېھىم ئۆتكۈر", volume=None
+    )
+    mock_books_repo = AsyncMock()
+    mock_books_repo.get.return_value = mock_book
+
+    with _exact_phrase_orchestrator_patches(
+        conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.resolve_short_work",
+        AsyncMock(return_value=None),
+    ) as mock_resolve, patch(
+        "app.services.chat.orchestrator.InMemorySessionService",
+        return_value=inmemory_session_service,
+    ), patch(
+        "app.services.chat.orchestrator.BooksRepository",
+        return_value=mock_books_repo,
+    ), patch(
+        "app.services.chat.orchestrator.build_retrieval_agent",
+        return_value=MagicMock(),
+    ), patch(
+        "app.services.chat.orchestrator.build_answer_agent", return_value=MagicMock()
+    ), patch(
+        "app.services.chat.orchestrator._grade_context",
+        return_value=("", 0, 0),
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        AsyncMock(return_value={"intent": "passage"}),
+    ) as mock_analyze:
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="ئۇچراشقاندا دېگەن شېئىرنى تېپىپ بەر",
+            user_id="user-1",
+            book_id="book-1",
+            is_global=False,
+        )
+
+        [event async for event in orchestrator.stream_response(dto, db_session)]
+
+    mock_resolve.assert_not_awaited()
+    mock_analyze.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_answer_concatenates_chunks_and_returns_done_metadata(monkeypatch):
     orchestrator = ChatOrchestrator()
 

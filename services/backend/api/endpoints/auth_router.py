@@ -61,6 +61,24 @@ OAUTH_STATE_COOKIE = "kitabim_oauth_state"
 REFRESH_TOKEN_COOKIE = "kitabim_refresh_token"
 
 
+def _is_allowed_redirect_uri(uri: str) -> bool:
+    """Whether an OAuth post-login redirect_uri is safe to use.
+
+    Accepts anything in CORS_ORIGINS, plus loopback interface redirects
+    (RFC 8252 §7.3) for native/CLI clients that bind an ephemeral local
+    port each run and so can't be pre-registered. Loopback must be the
+    literal 127.0.0.1 / ::1 IP, never the hostname "localhost" — DNS or
+    a hosts-file entry could otherwise point it off-box.
+    """
+    parsed = urlparse(uri)
+    if parsed.scheme != "http" and parsed.scheme != "https":
+        return False
+    if parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "::1"):
+        return True
+    allowed_origins = {o.strip() for o in settings.cors_origins.split(",") if o.strip()}
+    return f"{parsed.scheme}://{parsed.netloc}" in allowed_origins
+
+
 @router.get("/me", response_model=UserPublic)
 async def get_current_user_profile(
     current_user: User = Depends(get_current_user),
@@ -123,15 +141,7 @@ async def oauth_login(
     use_pkce = provider.lower() == "twitter"
     oauth_state = OAuthState.generate(use_pkce=use_pkce)
     if next:
-        _parsed_next = urlparse(next)
-        _allowed_origins = {
-            o.strip() for o in settings.cors_origins.split(",") if o.strip()
-        }
-        _next_origin = f"{_parsed_next.scheme}://{_parsed_next.netloc}"
-        if (
-            _parsed_next.scheme not in ("http", "https")
-            or _next_origin not in _allowed_origins
-        ):
+        if not _is_allowed_redirect_uri(next):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid redirect URI",
@@ -285,17 +295,9 @@ async def oauth_callback(
         # Commit changes
         await session.commit()
 
-        # Mobile redirect flow: redirect back to app with token in fragment
+        # Mobile/CLI redirect flow: redirect back to app with token in fragment
         if saved_state.redirect_uri:
-            parsed = urlparse(saved_state.redirect_uri)
-            allowed_origins = {
-                o.strip() for o in settings.cors_origins.split(",") if o.strip()
-            }
-            redirect_origin = f"{parsed.scheme}://{parsed.netloc}"
-            if (
-                parsed.scheme in ("http", "https")
-                and redirect_origin in allowed_origins
-            ):
+            if _is_allowed_redirect_uri(saved_state.redirect_uri):
                 # Use fragment (#) so the token is never sent to the server or logged
                 callback_url = f"{saved_state.redirect_uri}#{urlencode({'access_token': access_token})}"
                 redirect_response = RedirectResponse(url=callback_url)

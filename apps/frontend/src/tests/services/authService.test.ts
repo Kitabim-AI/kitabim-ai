@@ -40,4 +40,27 @@ describe('authService.initAppConfig / getCollectionPageSize', () => {
 
     expect(getCollectionPageSize()).toBe(40);
   });
+
+  it('fetches showChatCost from /api/config and exposes it', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ showChatCost: false }),
+    });
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { initAppConfig, getShowChatCost } = await import('../../services/authService');
+    await initAppConfig();
+
+    expect(getShowChatCost()).toBe(false);
+  });
+
+  it('defaults showChatCost to true when omitted or on error', async () => {
+    const mockFetch = vi.fn().mockRejectedValue(new Error('error'));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { initAppConfig, getShowChatCost } = await import('../../services/authService');
+    await initAppConfig();
+
+    expect(getShowChatCost()).toBe(true);
+  });
 });

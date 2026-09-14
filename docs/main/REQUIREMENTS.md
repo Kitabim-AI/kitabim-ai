@@ -51,7 +51,7 @@ The system supports four levels of access. Three roles (`reader`, `editor`, `adm
 
 A guest is any visitor who has not signed in. Guests have broad but read-only access.
 
-- Can browse and view books that are both **publicly visible** and **fully processed**.
+- Can browse and view books that are both **publicly visible** and **fully processed** — but only the **first 20 pages** of any book. Requesting page 21 or beyond, whether by page navigation or a table-of-contents jump, is blocked both in the reader UI (an in-place sign-in prompt) and by the API itself (`403`).
 - Can browse the reference library (dictionary, proverbs, synonyms, history, names, English–Uyghur, Quran) and the public knowledge graph visualization.
 - Cannot use the AI chat assistant.
 - Cannot upload, edit, or manage any content.
@@ -89,6 +89,7 @@ An administrator has full control over the system.
 - Can trigger a **full OCR reprocess** for a book (re-extracting all page text).
 - Can trigger **Knowledge Graph extraction/reprocessing** and curate the graph (merge duplicate entities, rename entities, delete incorrect relationships).
 - Can trigger **AI book summary regeneration**.
+- Can trigger a separate **LLM-based (Gemini) spell correction** pass for a book or a single page — distinct from the editor-accessible dictionary/rule-based spell check in Section 3.9, gated to admins because each run makes real, billed AI calls.
 - Can **bulk-reset** books stuck in an incomplete OCR state.
 - Can **delete books** permanently.
 - Can **view and manage all user accounts**.
@@ -101,12 +102,13 @@ An administrator has full control over the system.
 
 | Action | Guest | Reader | Editor | Admin |
 |--------|:-----:|:------:|:------:|:-----:|
-| Browse public, ready books | ✅ | ✅ | ✅ | ✅ |
+| Browse public, ready books | ✅ (first 20 pages only) | ✅ | ✅ | ✅ |
 | Browse reference library, Quran search, knowledge graph view | ✅ | ✅ | ✅ | ✅ |
 | Use AI Chat (per-book & global) | ❌ | ✅ | ✅ | ✅ |
 | Upload books (PDF/DOCX) | ❌ | ❌ | ✅ | ✅ |
 | Retry failed OCR pages | ❌ | ❌ | ✅ | ✅ |
 | Reprocess Chunking / Embedding / Spell Check | ❌ | ❌ | ✅ | ✅ |
+| Trigger LLM-based (Gemini) spell correction (per-book/per-page) | ❌ | ❌ | ❌ | ✅ |
 | Full OCR reprocess | ❌ | ❌ | ❌ | ✅ |
 | Reprocess Knowledge Graph / Book Summary | ❌ | ❌ | ❌ | ✅ |
 | Edit page content | ❌ | ❌ | ✅ | ✅ |
@@ -213,7 +215,7 @@ The OCR process preserves the structure of the original text:
 - Paragraphs are maintained as separate blocks.
 - Titles and chapter headings are identified and marked.
 - Tables of contents are preserved as lists.
-- Poems retain their original line breaks.
+- Poems retain their original line breaks. Verse is told apart from ordinary prose automatically, by a line-length-uniformity heuristic (short, evenly-sized lines with no mid-line sentence punctuation), so poem stanzas are left as printed instead of being reflowed into justified paragraphs like regular text.
 - Headers and footers are identified and labeled.
 - Punctuation, Uyghur symbols, and Arabic script are preserved exactly.
 
@@ -376,6 +378,9 @@ The assistant uses AI-powered semantic search to find relevant content, combinin
 **REQ-CHAT-007: Multi-Part and Comparative Questions**
 The assistant detects when a message contains multiple distinct questions and decomposes it into sub-questions, each addressed with its own tool calls within the same retrieval pass. It also detects comparison/contrast questions spanning multiple books or entities and answers across the relevant sources.
 
+**REQ-CHAT-008: Named Short-Work Lookup**
+A question asking to find, show, or give the full text of a specific named short work (a poem or song) quoted by title is answered deterministically: the title is matched against the relevant book's table of contents and the exact printed pages are returned, bypassing the general retrieval agent so the answer isn't dependent on the agent choosing to search for it. This shortcut only applies to a table-of-contents entry spanning a short page range; the maximum span is an administrator-configurable system setting, so unusually long entries fall back to normal retrieval.
+
 ---
 
 ### 3.9 Spell Check & Correction
@@ -402,6 +407,15 @@ Detected spelling issues are visually highlighted within the reader text, allowi
 
 **REQ-SPELL-005: Global Auto-Correction Rules**
 Editors can maintain a shared library of word-level auto-correction rules (incorrect form → corrected form) through a dedicated admin panel. Rules that are applied frequently are automatically fed back into the OCR prompt, helping the system avoid repeating the same recognition errors on future pages and books.
+
+**REQ-SPELL-006: LLM-Based Spell Correction**
+Separately from the dictionary/rule-based spell check above, administrators can trigger an AI (Gemini) spell-correction pass for an entire book or a single page. Unlike REQ-SPELL-002/003, this pass does not surface suggestions for review — it rewrites the page's text directly with the corrected version, using the preceding and following pages as context for continuity across a page break. A basic safety guardrail rejects an AI response that comes back empty or whose length deviates too far from the original, to protect against a garbled result silently replacing good text. This action is restricted to administrators because each run makes billed AI calls.
+
+**REQ-SPELL-007: Batch-Mode LLM Spell Correction**
+As a lower-cost alternative to the live path, a system-wide configuration flag (default off) routes the per-book LLM spell-correction trigger through the AI provider's asynchronous batch API instead of live concurrent calls, trading turnaround time for reduced cost. A background scanner polls for completed batch jobs and applies their corrections once ready.
+
+**REQ-SPELL-008: LLM Spell-Check Status Visibility**
+The management dashboard's book table shows a status icon summarizing each book's LLM spell-correction coverage, with three states: not yet checked, partially checked or in progress, and fully checked (every page done). Hovering the icon shows the exact completed/total page count and any failure count. In the reader, a page showing an in-progress LLM spell check is visually indicated and its trigger control is disabled until the pass completes.
 
 ---
 
@@ -461,6 +475,9 @@ Books that are private, pending, processing, or in an error state are hidden fro
 **REQ-VIS-004: Error Status Override on Publish**
 If an editor sets a book's visibility to **public** while its processing status is **error**, the system clears the error state (status is set to `ready`) instead of leaving the book stuck hidden from guests despite the visibility change. This is unconditional — it does not re-verify that every page actually completed OCR/chunking/embedding — so editors should only publish an errored book after confirming its content is usable.
 
+**REQ-VIS-005: Guest Reading Limit**
+Even for a book that passes the guest-visibility check (REQ-VIS-003), an unauthenticated guest may only read its first 20 pages. Attempting to go further — via next-page navigation, direct page entry, or a table-of-contents jump — is stopped at page 20: the API rejects the request, and the reader displays an inline sign-in prompt (offering Google or Facebook sign-in) in place of further content. Signing in removes the limit immediately.
+
 ---
 
 ### 3.13 Administration Dashboard
@@ -510,6 +527,9 @@ Editors can view system configuration values and processing circuit-breaker stat
 
 **REQ-ADMIN-008: Contact Submissions Review**
 Administrators can view and filter messages submitted through the public contact form (see REQ-CONTACT-001).
+
+**REQ-ADMIN-009: Abortable Reference-Library Search**
+Search-as-you-type in each reference-library management panel (dictionary, English–Uyghur, history, names, proverbs, synonyms, words) is debounced, and any search request still in flight is canceled the moment a newer one is issued or the query is cleared. This prevents a slower, earlier response from a previous keystroke overwriting more recent, correct results, and avoids piling up redundant backend load while a user is still typing.
 
 ---
 

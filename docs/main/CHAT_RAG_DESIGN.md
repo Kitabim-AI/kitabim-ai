@@ -6,13 +6,15 @@ See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the ingestion pipeline overvi
 
 Chat / RAG retrieval is the only *read* stage of the pipeline: it consumes the artifacts every prior stage produced (`chunks` + their embeddings, `book_summaries`, `pages.text`, `books` metadata) and turns a user question into a streamed, cited Uyghur answer. It is a synchronous request-path stage in the FastAPI backend — no worker job, no scanner, no page milestones. The one worker job in this doc (`rag_eval_job`) runs *after* the answer has already been streamed and persisted, and never blocks a request.
 
-**One chat pipeline serves every request.** `ChatOrchestrator` (`packages/backend-core/app/services/chat/orchestrator.py`) — a two-agent Google-ADK pipeline with server-side conversation persistence, an LLM reranker, and async judge scoring — is constructed unconditionally by both `POST /api/chat/` (via its non-streaming `answer()` wrapper) and `POST /api/chat/stream` (via `stream_response()`) in `services/backend/api/endpoints/chat_router.py`. There is no feature flag and no alternate pipeline; a prior split-brain design (a flag-gated legacy `RAGService`/`HandlerRegistry` path that the non-streaming endpoint never even consulted) was consolidated away — see the note at the end of this section.
+**One chat pipeline serves every request.** `ChatOrchestrator` (`packages/backend-core/app/services/chat/orchestrator.py`) — a two-agent Google-ADK pipeline with server-side conversation persistence, an LLM reranker, per-turn LLM cost tracking, and async judge scoring — is constructed unconditionally by both `POST /api/chat/` (via its non-streaming `answer()` wrapper) and `POST /api/chat/stream` (via `stream_response()`) in `services/backend/api/endpoints/chat_router.py`. There is no feature flag and no alternate pipeline; a prior split-brain design (a flag-gated legacy `RAGService`/`HandlerRegistry` path that the non-streaming endpoint never even consulted) was consolidated away — see the note at the end of this section.
 
 Key characteristics:
 
-- **Retrieval is tool-driven, not hand-routed.** `ChatOrchestrator` builds a `QueryContext` (`rag/context.py`) and drives all 19 ADK tools (`rag/agent/tools.py`, listed via `ALL_TOOLS` in `chat/retrieval_agent.py`) over shared primitives (`rag/retrieval.py`: `embed_query`, `vector_search`, `find_books_by_title_in_question`, `graph_entity_lookup`), using `AGENT_SYSTEM_PROMPT` (`rag/agent/prompts.py`). A single-shot structured LLM call (`analyze_query_signals`, `chat/query_signals.py`) extracts pre-processing signals (intent, catalog/dictionary/Quran subtype hints, resolved book/author matches) before the retrieval agent runs; only `signals["intent"]` is read directly by the orchestrator today — the rest of the extracted signal dict feeds the retrieval agent's system-prompt hints (see `build_retrieval_agent`).
-- **Exact-phrase questions bypass the retrieval agent — unless the quoted text is actually a catalog book title.** `phrase_intent.detect_phrase_intent()` classifies a quoted phrase (`"..."` / `«...»` / `"..."`) or the explicit `ChatRequest.exact_phrase` flag as exact-phrase intent. Before honoring that intent, `ChatOrchestrator` runs a **catalog-first check**: when the phrase came from quotes (not the explicit flag) and the question isn't page-finding, it calls `find_books_by_title_in_question` directly; a match scopes the turn to those book(s) (`ctx.context_book_ids`) and flips `phrase_intent.is_exact` back to `False`, so the turn is routed through the normal retrieval agent (vector + graph) instead. Only when no book title matches — or the explicit `exact_phrase` flag/page-finding phrasing was used — does `ChatOrchestrator` answer from the keyword-only leg (`chat/exact_phrase.py` → `retrieval.exact_phrase_chunk_search` → `ChunksRepository.keyword_search`'s `phraseto_tsquery` match) instead. Vector search itself (`vector_search` in `retrieval.py`) is vector-only; there is no hybrid vector+keyword fusion (removed along with `rag_hybrid_search_enabled` — see Feature Flags).
+- **Retrieval is tool-driven, not hand-routed.** `ChatOrchestrator` builds a `QueryContext` (`rag/context.py`) and drives all 20 ADK tools (`rag/agent/tools.py`, listed via `ALL_TOOLS` in `chat/retrieval_agent.py`) over shared primitives (`rag/retrieval.py`: `embed_query`, `vector_search`, `find_books_by_title_in_question`, `graph_entity_lookup`), using `AGENT_SYSTEM_PROMPT` (`rag/agent/prompts.py`). A single-shot structured LLM call (`analyze_query_signals`, `chat/query_signals.py`) extracts pre-processing signals (intent, catalog/dictionary/Quran subtype hints, resolved book/author matches) before the retrieval agent runs; only `signals["intent"]` is read directly by the orchestrator today — the rest of the extracted signal dict feeds the retrieval agent's system-prompt hints (see `build_retrieval_agent`).
+- **Exact-phrase questions bypass the retrieval agent — unless the quoted text is actually a catalog book title.** `phrase_intent.detect_phrase_intent()` classifies a quoted phrase (`"..."` / `«...»` / `"..."`) or the explicit `ChatRequest.exact_phrase` flag as exact-phrase intent. Before honoring that intent, `ChatOrchestrator` runs a **catalog-first check**: when the phrase came from quotes (not the explicit flag) and the question isn't page-finding, it calls `find_books_by_title_in_question` directly; a match scopes the turn to those book(s) (`ctx.context_book_ids`) and flips `phrase_intent.is_exact` back to `False`, so the turn is routed through the normal retrieval agent (vector + graph) instead. Only when no book title matches — or the explicit `exact_phrase` flag/page-finding phrasing was used — does `ChatOrchestrator` answer from the keyword-only leg (`chat/exact_phrase.py` → `retrieval.exact_phrase_chunk_search` → `ChunksRepository.keyword_search`'s `phraseto_tsquery` match) instead. Vector search itself (`vector_search` in `retrieval.py`) is vector-only; there is no hybrid vector+keyword fusion (removed along with `rag_hybrid_search_enabled` — see Feature Flags). The retrieval agent does have its own separate lexical-assist tool, `search_keyword_phrase` (→ `agent_keyword_search` in `retrieval.py`), which it may call *alongside* `search_chunks` (never as a fusion within it) when a question names a distinguishing proper noun/date/term vector similarity might blur — see the Agent Tools table.
+- **A named short-work (poem/song) title also bypasses both agents — deterministically, via the book's own table of contents.** On every turn (not gated on `phrase_intent.is_exact`), `detect_short_work_intent()` (`rag/short_work_intent.py`) looks for a quoted title next to a "find/show/give the full text of" locate verb — one quoted span is the candidate title, or the second of two quoted spans for the "«book» ناملىق ئەسەردىكى «work»" shape (the first span is presumed already resolved as a book title by the catalog-first check above). A match is then resolved against the scoped book's OCR'd ToC by `resolve_short_work()` (`rag/toc_lookup_service.py`), which walks `Page.is_toc` pages, matches the title exactly, and only accepts entries short enough to be a "work" rather than a chapter (`toc_short_work_max_pages`, default 10 printed pages) — verifying the resolved start page actually contains the matched heading before returning it. A resolved `ShortWorkMatch` short-circuits `ChatOrchestrator.stream_response()` completely: it skips the retrieval agent, the exact-phrase leg, grading/reranking, *and* the answer agent — `_format_short_work_answer()` builds the final answer directly from the ToC-resolved page text (block-quoted verbatim) plus a deterministic citation, with **no LLM call in the loop at all**, because Gemini's own reluctance to reproduce a full poem/song verbatim proved resistant to prompting it to do so. A miss at any stage (no ToC, no title match, entry too long) is a pure no-op — the turn falls through to the normal `phrase_intent.is_exact` / retrieval-agent path unaffected.
 - **The judge is opt-in per turn, not per pipeline.** Every turn writes a `rag_evaluations` row; `rag_judge_scoring_enabled` decides whether that row is `eval_status='queued'` (and `rag_eval_job` gets enqueued) or `'skipped'`.
+- **Every turn's LLM token usage is tracked for cost estimation.** `QueryContext.cost_tracker` (a `CostTracker`, `app/llm/cost_tracker.py`) accumulates a `CostEntry` (stage, model, input/output tokens) from every Gemini call the turn makes — query-signal extraction, the retrieval agent's ADK run, the reranker, the answer agent's ADK run, and an estimated per-call cost for embeddings (which carry no `usage_metadata`, so `GeminiEmbeddings.aembed_query` estimates `len(text)//4` input tokens). `ProtectedLLM.ainvoke`/`.astream` (`app/llm/models.py`) auto-attribute usage to the active turn's `CostTracker` via the same `get_current_query_context()` ContextVar the retrieval tools use. Cost is priced from a static table (`app/llm/pricing.py`'s `MODEL_PRICING`, $/1M tokens, falling back to the default chat model's rate for an unrecognized model) and totalled via `cost_tracker.as_dict()` into `rag_evaluations.input_tokens` / `output_tokens` / `cost_usd` at turn-persistence time — see Schema. The async judge call (`rag_eval_job`, off the request path, outside any `QueryContext`) reports its own usage back through an explicit `usage_out` dict parameter instead, backfilled into `rag_evaluations.judge_cost_usd`.
 - **Book summaries drive book routing, not answer content.** `search_books_by_summary` / `get_book_summary` (see [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md)) narrow *which* books to search before `search_chunks` runs; chunk passages remain the citable evidence.
 - **Composite/multi-part question decomposition no longer exists as a distinct mechanism.** An earlier design ran an explicit LLM-driven question-splitting step and fanned sub-questions out concurrently. That machinery was part of the deleted legacy pipeline and was never wired into `ChatOrchestrator`; `analyze_query_signals` still asks the model for `is_composite`/`sub_questions` in its structured JSON response, but nothing reads those two fields today. A compound question is handled implicitly by the retrieval agent's own multi-turn tool-calling loop, not by a dedicated splitting/fan-out step.
 
@@ -61,7 +63,7 @@ This stage **writes** four tables and **reads** the artifacts of every prior sta
 | `eval_id` | `integer`, FK → `rag_evaluations.id` (`SET NULL`), nullable | Links the `model` row to its evaluation. |
 | `created_at` | `timestamptz`, not null, default `CURRENT_TIMESTAMP` | |
 
-`conversations` / `conversation_messages` and `rag_evaluations.conversation_id` are created by migration `072_add_conversations.sql`; `conversations.deleted_at` is added separately by `073_add_conversations_soft_delete.sql` (which also creates a partial index filtered on `deleted_at IS NULL`), with `073_rollback_add_conversations_soft_delete.sql` as its paired rollback.
+`conversations` / `conversation_messages` and `rag_evaluations.conversation_id` are created by migration `072_add_conversations.sql`; `conversations.deleted_at` is added separately by `073_add_conversations_soft_delete.sql` (which also creates a partial index filtered on `deleted_at IS NULL`), with `073_rollback_add_conversations_soft_delete.sql` as its paired rollback. `rag_evaluations`'s four cost columns are added by `092_add_llm_cost_tracking_to_rag_evaluations.sql` (paired rollback `092_rollback_add_llm_cost_tracking_to_rag_evaluations.sql`), which also seeds the `rag_chat_cost_enabled` system_configs row — see Configuration Reference. The ORM also declares `ConversationMessage.evaluation` (a `lazy="selectin"` relationship to `RAGEvaluation` via `eval_id`), which `GET /api/chat/conversations/{id}/messages` uses to surface each message's `cost` and `feedback` without an extra query per row.
 
 ### `rag_evaluations` (written by `ChatOrchestrator`, updated by `rag_eval_job`)
 
@@ -81,6 +83,9 @@ This stage **writes** four tables and **reads** the artifacts of every prior sta
 | `conversation_id` | `varchar(36)`, FK → `conversations.id` (`SET NULL`), nullable | Set by `ChatOrchestrator` after insert. |
 | `is_first_turn` | `boolean`, not null, default `false` | `True` when the conversation was just created this turn. |
 | `show_on_homepage` | `boolean`, not null, default `false` | Admin-curated flag for the home-page rotator. |
+| `input_tokens`, `output_tokens` | `integer`, not null, default `0` | Summed token usage for the synchronous chat turn (query-signal extraction, retrieval agent, reranker, answer agent, estimated embedding) — from `ChatOrchestrator`'s `ctx.cost_tracker.as_dict()`. Added by migration `092_add_llm_cost_tracking_to_rag_evaluations.sql`. |
+| `cost_usd` | `numeric(12,6)`, not null, default `0` | Estimated USD cost of the same turn, priced via `app/llm/pricing.py`'s static `MODEL_PRICING` table. Not a billing-grade reconciliation — a best-effort estimate for trend/eval purposes. |
+| `judge_cost_usd` | `numeric(12,6)`, nullable | Estimated cost of the async judge call, written **only** by `rag_eval_job` (`usage_out` reported back from `judge.score_answer`) — `NULL` until that job runs, same lifecycle as the three judge scores. |
 | `ts` | `timestamptz`, not null, default `now()`, indexed | |
 
 ### `user_chat_usage` (written by `chat_limit_service`)
@@ -97,44 +102,50 @@ This stage **writes** four tables and **reads** the artifacts of every prior sta
 | File | Purpose |
 |---|---|
 | `services/backend/api/endpoints/chat_router.py` | All chat HTTP surface: builds a `ChatOrchestrator` per request (unconditionally — no flag, no branch) for both `POST /api/chat/` (via `answer()`) and `POST /api/chat/stream` (via `stream_response()`); SSE framing; per-request daily-limit enforcement; conversation and feedback endpoints. |
-| `packages/backend-core/app/services/chat/orchestrator.py` | `ChatOrchestrator.stream_response()` — conversation get-or-create, signal pre-processing, retrieval agent run, rerank/grade, answer agent run, citation fix, eval insert + `rag_eval_job` enqueue, turn persistence. `ChatOrchestrator.answer()` — non-streaming wrapper that drains `stream_response()` and returns `{answer, conversation_id, used_book_ids, eval_id}`, used by `POST /api/chat/`. |
+| `packages/backend-core/app/services/chat/orchestrator.py` | `ChatOrchestrator.stream_response()` — conversation get-or-create, phrase-intent/catalog-first/short-work gates, signal pre-processing, retrieval agent run, rerank/grade, answer agent run, citation fix, eval insert (now including token/cost totals) + `rag_eval_job` enqueue, turn persistence. `_format_short_work_answer()` renders a resolved `ShortWorkMatch` as the final answer with no LLM call. `ChatOrchestrator.answer()` — non-streaming wrapper that drains `stream_response()` and returns `{answer, conversation_id, used_book_ids, eval_id}` (cost is dropped in this wrapper — only the streaming `done` event carries `cost`), used by `POST /api/chat/`. |
 | `packages/backend-core/app/services/chat/context.py` | `ChatRequestDTO` (frozen dataclass the router builds from `ChatRequest`, now including `exact_phrase: bool = False`) and `ToolDependencies`. |
 | `packages/backend-core/app/services/chat/context_grading.py` | `_build_human_message()`, `_grade_context()`, `_extract_used_book_ids()` — context formatting/grading helpers imported by `orchestrator.py`. |
-| `packages/backend-core/app/services/chat/query_signals.py` | `analyze_query_signals()` — the single-shot structured-JSON signal-extraction LLM call, plus `repair_json_unescaped_quotes()`; imported by `orchestrator.py`. |
+| `packages/backend-core/app/services/chat/query_signals.py` | `analyze_query_signals()` — the single-shot structured-JSON signal-extraction LLM call, plus `repair_json_unescaped_quotes()`; imported by `orchestrator.py`. Records its own token usage onto `ctx.cost_tracker` under `stage="query_signals"`. |
 | `packages/backend-core/app/services/chat/history.py` | `format_history_for_analysis()` — renders `ConversationMessage` rows as `User: …` / `Assistant: …` lines. |
 | `packages/backend-core/app/services/chat/exact_phrase.py` | `run_exact_phrase_retrieval()` — wraps `retrieval.exact_phrase_chunk_search` and packages its hits as a `search_chunks`-shaped observation so the normal grading/rerank/answer-agent pipeline can consume them unchanged; `format_page_hits()` — structured payload for the `page_hits` SSE event; `summarize_page_hits_as_text()` — plain-text fallback for conversation persistence when the turn skips answer synthesis. |
 | `packages/backend-core/app/services/rag/phrase_intent.py` | `detect_phrase_intent(text, exact_phrase_flag)` → `PhraseIntent(is_exact, phrases, is_page_finding)`. A quoted span (`"..."` / `«...»` / `"..."`) or the explicit `exact_phrase` flag marks exact-phrase intent; multiple quoted phrases are ANDed by the retrieval leg. `«...»` is reserved exclusively for this now — it no longer marks a quoted book title (see `retrieval.find_books_by_title_in_question` / `rag/utils.entity_matches_question`, both changed accordingly). |
-| `packages/backend-core/app/services/chat/retrieval_agent.py` | `ALL_TOOLS` (the 19-tool list, defined here) and `build_retrieval_agent()` — ADK `Agent` named `KitabimRetrievalAgent` over `ALL_TOOLS` with `AGENT_SYSTEM_PROMPT` plus appended "Structured Intent Hints" derived from the extracted signals. |
+| `packages/backend-core/app/services/rag/short_work_intent.py` | `detect_short_work_intent(text)` → `ShortWorkIntent(applies, title)` — a deterministic, non-LLM gate for "locate this named poem/song" questions: a quoted title next to a locate verb (`تېپىپ بەر`, `كۆرسەت`, `تولۇق تېكىستى`, `تېكىستى قانداق`, `مەزمۇنى`), excluding authorship-question phrasings. Run unconditionally by `ChatOrchestrator`, independent of `phrase_intent.is_exact`. |
+| `packages/backend-core/app/services/rag/toc_lookup_service.py` | `resolve_short_work(session, title, book_id=None)` → `Optional[ShortWorkMatch]` — resolves a short-work title straight to its exact page range via the book's OCR'd table of contents (`Page.is_toc`, `parse_toc_entries`), rejecting ToC entries that span more than `toc_short_work_max_pages` printed pages (a chapter, not a short work) and verifying the resolved start page actually contains the matched heading. A pure additive shortcut — every miss returns `None` rather than asserting the content doesn't exist, so callers must fall through to the normal retrieval agent. |
+| `packages/backend-core/app/services/chat/retrieval_agent.py` | `ALL_TOOLS` (the 20-tool list, defined here) and `build_retrieval_agent()` — ADK `Agent` named `KitabimRetrievalAgent` over `ALL_TOOLS` with `AGENT_SYSTEM_PROMPT` plus appended "Structured Intent Hints" derived from the extracted signals. |
 | `packages/backend-core/app/services/chat/answer_agent.py` | `build_answer_agent()` — tool-less ADK `Agent` named `KitabimAnswerAgent`; the graded context is embedded directly into its `instruction`. |
-| `packages/backend-core/app/services/chat/answer_prompts.py` | `build_answer_instructions()` — the orchestrator's own citation/grammar instruction builder (a parallel implementation of `answer_builder.build_instructions`). |
-| `packages/backend-core/app/services/rag/context.py` | `QueryContext` dataclass + `set_current_query_context()` / `get_current_query_context()` ContextVar (the fallback path tools use when ADK state is empty). Still declares `agent_max_steps: int = 6` / `agent_enough_chunks: int = 8` fields — dead, nothing sets or reads them now that the config keys that used to populate them are gone. |
+| `packages/backend-core/app/services/chat/answer_prompts.py` | `build_answer_instructions()` — the orchestrator's own citation/grammar instruction builder (a parallel implementation of `answer_builder.build_instructions`). Also instructs the Answer Agent to reproduce a requested work's full text verbatim (blockquoted, original line breaks preserved) rather than refuse or hedge with a copyright disclaimer — a fallback for verbatim-quote requests the deterministic short-work ToC gate (`rag/short_work_intent.py` / `rag/toc_lookup_service.py`) doesn't catch, e.g. a work not present in the book's ToC. |
+| `packages/backend-core/app/services/rag/context.py` | `QueryContext` dataclass + `set_current_query_context()` / `get_current_query_context()` ContextVar (the fallback path tools use when ADK state is empty). Also holds `cost_tracker: CostTracker` (default-constructed per turn) — see `llm/cost_tracker.py`. Still declares `agent_max_steps: int = 6` / `agent_enough_chunks: int = 8` fields — dead, nothing sets or reads them now that the config keys that used to populate them are gone. |
 | `packages/backend-core/app/services/rag/retrieval.py` | Shared, LLM-free retrieval primitives: `embed_query` (L1 cache), `vector_search` (L2 cache, vector-only, per-book isolated-session quotas, threshold retry, dev-only fuzzy fallback, Quran merge), `exact_phrase_chunk_search` (keyword-only, ANDed-phrase leg behind `ChatOrchestrator`'s exact-phrase gate), `graph_entity_lookup` (own Redis cache, prefix + IDF scoring, Neo4j fuzzy fallback), `find_books_by_title_in_question`. |
-| `packages/backend-core/app/services/rag/agent/tools.py` | The 19 ADK tool declarations, `_execute_and_record_tool` (writes `tool_context.state["observations"]`), `_dispatch_tool_with_retry` (name→implementation switch), and every `_run_*` implementation. |
+| `packages/backend-core/app/services/rag/agent/tools.py` | The 20 ADK tool declarations, `_execute_and_record_tool` (writes `tool_context.state["observations"]`), `_dispatch_tool_with_retry` (name→implementation switch), and every `_run_*` implementation. |
 | `packages/backend-core/app/services/rag/agent/prompts.py` | `AGENT_SYSTEM_PROMPT` — the 8-step retrieval decision tree plus `_HARD_LIMITS`, used by the retrieval agent. |
 | `packages/backend-core/app/services/rag/agent/reranker.py` | `rerank_context()` — LLM reranker; raises on any failure so the caller can fall back. Called only from `orchestrator.py`. |
 | `packages/backend-core/app/services/rag/agent/config.py` | Numeric constants: `AGENT_MAX_STEPS`, `AGENT_ENOUGH_CHUNKS`, `AGENT_MAX_CONTEXT_CHUNKS`, `GRADE_RELATIVE_THRESHOLD`, `MIN_CHUNKS_AFTER_GRADING`, `RERANK_MAX_INPUT_CHUNKS`, `CONTEXT_SWITCH_SCORE_THRESHOLD`. `RRF_K` was removed along with RRF fusion (see `retrieval.py`). `AGENT_MAX_STEPS`/`AGENT_ENOUGH_CHUNKS` have no importers anywhere in the repo today — dead code, the constant-level counterparts of the dead `QueryContext` fields above. |
 | `packages/backend-core/app/services/rag/answer_builder.py` | `Document`, `format_document()` (the `[BookID: …, Page: N]` header the citation instructions reference), `build_instructions()`. Also still defines `generate_answer_stream()`, the deleted legacy pipeline's answer synthesis — now dead code with zero callers anywhere in the repo (`ChatOrchestrator` builds its answers through `KitabimAnswerAgent` instead), not yet removed. |
 | `packages/backend-core/app/services/rag/query_rewriter.py` | `QueryRewriter.rewrite()` — L0-cached follow-up rewriting behind the `rewrite_query` tool. |
-| `packages/backend-core/app/services/rag/judge.py` | `JudgeScores` dataclass + `score_answer()` — single combined faithfulness/answer_relevance/context_precision LLM call. Called only from the worker. |
+| `packages/backend-core/app/services/rag/judge.py` | `JudgeScores` dataclass + `score_answer(question, answer, context, model, usage_out=None)` — single combined faithfulness/answer_relevance/context_precision LLM call. Called only from the worker; `usage_out` (a dict the caller passes in) is how `rag_eval_job` reads back this call's token usage, since the worker runs outside any live turn's `QueryContext`/`CostTracker`. |
 | `packages/backend-core/app/services/rag/handlers/catalog.py` | `CatalogHandler` — static helpers `_build_catalog_context()` / `_prepend_current_book()` behind the `search_catalog` tool. Despite its module docstring calling it a handler, it is a plain static-method helper class, not an ADK agent or a routing construct. |
 | `packages/backend-core/app/services/rag/llm_resources.py` | Cached `get_embeddings` / `get_rag_chain` / `get_rewrite_chain` factories. |
 | `packages/backend-core/app/services/rag/keywords.py`, `utils.py` | Uyghur keyword/pronoun lists and `normalize_uyghur` / `format_chat_history` / `fuzzy_token_similar` / `is_islam_or_quran_query`. |
+| `packages/backend-core/app/llm/cost_tracker.py` | `CostTracker` (a list of `CostEntry(stage, model, input_tokens, output_tokens, estimated)`) — the per-turn token/cost accumulator attached to `QueryContext.cost_tracker`. `.add()` is a no-op for a zero-token call; `.as_dict()` returns the totals `orchestrator.py` writes into `rag_evaluations`. |
+| `packages/backend-core/app/llm/pricing.py` | Static Gemini `MODEL_PRICING` table ($ per 1M tokens, by model name) + `estimate_cost_usd(model, input_tokens, output_tokens)`. An unrecognized model name prices at the default chat model's rate rather than showing as free. Update this table when a `system_configs` model key changes. |
+| `packages/backend-core/app/llm/models.py` | `ProtectedLLM.ainvoke()` / `.astream()` — the shared Gemini call wrapper (circuit breaker, timeout, retry). Also `_record_usage()`, called after every call: reads `response.usage_metadata`, attributes it to the active turn's `CostTracker` via `get_current_query_context()` when one exists, and/or writes it into a caller-supplied `usage_out` dict (for callers like `rag_eval_job` that run outside a turn's `QueryContext`). `GeminiEmbeddings.aembed_query` estimates embedding cost the same way (`len(text)//4` input tokens, `estimated=True`), since Gemini's `embedContent` response carries no `usage_metadata`. |
 | `packages/backend-core/app/services/chat_limit_service.py` | `ChatLimitService` singleton — per-role daily limits, Redis+Postgres usage counters (atomic Lua `INCR`+`EXPIRE`). |
 | `packages/backend-core/app/db/repositories/conversation_repository.py` | `create_conversation`, `get_conversation`, `list_user_conversations`, `add_message`, `get_conversation_messages` (full history, oldest-first — what the messages endpoint serves), `get_recent_messages` (the last N turns the orchestrator feeds to signal extraction), `save_turn`, `update_title`, `delete_conversation` (soft). |
-| `packages/backend-core/app/db/repositories/rag_evaluations_repository.py` | `create_evaluation`, `update_feedback`, `get_recent_standalone_questions`, `get_questions_paginated`, `toggle_show_on_homepage`, `get_featured_questions`, plus the generic `get` / `update_one` inherited from `BaseRepository` (the only two `rag_eval_job` uses). |
-| `services/worker/jobs/rag_eval_job.py` | `rag_eval_job(ctx, eval_id)` — post-turn async judge scoring. Not a pipeline/cron job. |
+| `packages/backend-core/app/db/repositories/rag_evaluations_repository.py` | `create_evaluation` (now also takes `input_tokens` / `output_tokens` / `cost_usd`, all defaulting to `0`), `update_feedback`, `get_recent_standalone_questions`, `get_questions_paginated`, `toggle_show_on_homepage`, `get_featured_questions`, plus the generic `get` / `update_one` inherited from `BaseRepository` (the only two `rag_eval_job` uses — `update_one` is how it writes `judge_cost_usd` alongside the three judge scores). |
+| `services/worker/jobs/rag_eval_job.py` | `rag_eval_job(ctx, eval_id)` — post-turn async judge scoring; also estimates and backfills `judge_cost_usd` via `pricing.estimate_cost_usd()` from the `usage_out` dict `score_answer` fills in. Not a pipeline/cron job. |
 | `services/backend/api/endpoints/questions_router.py` | Admin/public views over `rag_evaluations` questions (curation + home-page rotator). |
 | `services/backend/main.py` | Startup: builds the ADK `DatabaseSessionService` into `app.state.adk_session_service` (falls back to `None` on failure); mounts `chat_router` at `/api/chat`, `ai_router` at `/api/ai`, `questions_router` at `/api/questions`. |
 
 ### Agent Tools
 
-All 19 tools are registered once, in `ALL_TOOLS` (`chat/retrieval_agent.py`), and passed to the single retrieval agent `build_retrieval_agent()` builds. Every tool function lives in `packages/backend-core/app/services/rag/agent/tools.py` and dispatches through `_execute_and_record_tool`, which appends the call to `tool_context.state["observations"]`. Cache tiers referenced below are the L0/L1/L2 layers defined in [Cache Layers](#cache-layers).
+All 20 tools are registered once, in `ALL_TOOLS` (`chat/retrieval_agent.py`), and passed to the single retrieval agent `build_retrieval_agent()` builds. Every tool function lives in `packages/backend-core/app/services/rag/agent/tools.py` and dispatches through `_execute_and_record_tool`, which appends the call to `tool_context.state["observations"]`. Cache tiers referenced below are the L0/L1/L2 layers defined in [Cache Layers](#cache-layers).
 
 **Content Retrieval**
 
 | Tool | Wraps | Cache | Description |
 |---|---|---|---|
-| `search_chunks` | `vector_search` (pgvector `ChunksRepository.similarity_search`, vector-only — no keyword fusion) | L1 (`embed_query`) + L2 (`vector_search` results) | Vector-search passages; the primary retrieval tool. Also appends knowledge-graph facts via `graph_entity_lookup` (own Redis cache, no LLM call, capped by `rag_graph_top_k`) as extra chunk-shaped results titled `Knowledge Graph` — see [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md). Exact-phrase (quoted) questions bypass this tool entirely on the `ChatOrchestrator` path — see the exact-phrase leg in Overview. |
+| `search_chunks` | `vector_search` (pgvector `ChunksRepository.similarity_search`, vector-only — no keyword fusion) | L1 (`embed_query`) + L2 (`vector_search` results) | Vector-search passages; the primary retrieval tool. Also appends knowledge-graph facts via `graph_entity_lookup` (own Redis cache, no LLM call, capped by `rag_graph_top_k`) as extra chunk-shaped results titled with the i18n key `rag.knowledge_graph_title` (`t("rag.knowledge_graph_title", default="بىلىم گىرافى")` — Uyghur "بىلىم گىرافى" by default and for the `ug` locale; `en.json` has it as the English "Knowledge Graph") — see [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md). Exact-phrase (quoted) questions bypass this tool entirely on the `ChatOrchestrator` path — see the exact-phrase leg in Overview. |
+| `search_keyword_phrase` | `agent_keyword_search` (`retrieval.py`) → `ChunksRepository.keyword_search` (same `phraseto_tsquery` phrase match and `rag_keyword_top_k` cap as the exact-phrase leg, but no vector fusion) | none (Postgres queried every call) | A supplement the agent calls *alongside* `search_chunks` (never instead of it) for a short (2-6 word), specific, distinguishing phrase — a proper noun, exact date, or rare term vector similarity might blur or miss. An explicit empty `book_ids` list is treated the same "broaden to the whole library" way `search_chunks` treats it (see `vector_search` below), not as "return nothing." Added in a separate commit (`9486b61`, 2026-08-24) after the last full doc sync. |
 | `search_books_by_summary` | `BookSummariesRepository.summary_search` (pgvector over `book_summaries.embedding`) | L1 (`embed_query`) only — the search results themselves are not cached; `KEY_RAG_SUMMARY_SEARCH` is defined but never written (see Cache Layers) | Find which book(s) cover a topic when book scope is unknown ("book routing" — see [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md)). |
 | `find_books_by_title` | `find_books_by_title_in_question` (`retrieval.py`) plus a fuzzy-keyword fallback over `Book` when strict matching finds nothing | In-request only (`ctx._title_cache`, a plain dict — not a Redis tier) | Resolve a book title mentioned in the question to internal book IDs via fuzzy word-prefix matching; includes a false-positive guard for lone single-word matches. Quoting the title (`«...»`) no longer has any special effect on this tool's own matching — it resolves the same whether quoted or not, since `«...»` now primarily signals exact-phrase-search intent elsewhere in the pipeline (see `phrase_intent.py`). Note this is distinct from `ChatOrchestrator`'s own catalog-first check (see Overview and the `stream_response` pseudocode step 6), which calls the same `find_books_by_title_in_question` primitive directly — outside this tool — specifically to decide whether a quoted phrase should be treated as a book title instead of an exact-phrase search. |
 | `get_book_summary` | `BookSummariesRepository.get_summaries_for_books`, with a `PagesRepository.find_first_pages_with_text` intro-excerpt fallback | none | Full semantic summary text for specific books, with server-side sister-volume expansion; falls back to a ≤2,000-char intro excerpt per book when no summary row exists yet. |
@@ -169,7 +180,7 @@ All 19 tools are registered once, in `ALL_TOOLS` (`chat/retrieval_agent.py`), an
 |---|---|---|---|
 | `search_quran` | Direct `quran` table query: surah/ayah lookup, or pgvector semantic search with an `ILIKE` keyword fallback | L1 (`embed_query`) when doing semantic search; no dedicated results cache | Surah/ayah lookup or free-text search within the Quran (a source separate from the book library); also returns surah metadata (total ayah count, Uyghur/Arabic/English surah names) for every surah touched by the results. |
 
-7 + 3 + 8 + 1 = 19 tools total, matching the count referenced throughout this doc's Data Flow, Component Responsibilities, and Testing sections.
+8 + 3 + 8 + 1 = 20 tools total, matching the count referenced throughout this doc's Data Flow, Component Responsibilities, and Testing sections.
 
 ## Data Flow
 
@@ -182,31 +193,34 @@ flowchart TD
 
     subgraph Orchestrator ["ChatOrchestrator — orchestrator.py"]
         CONV[("conversations:<br/>get-or-create + title,<br/>load last 6 messages")]
-        OCTX["Build QueryContext<br/>+ set_current_query_context"]
+        OCTX["Build QueryContext<br/>+ set_current_query_context<br/>(incl. cost_tracker)"]
         PGATE{"phrase_intent.is_exact?<br/>(quoted text, or<br/>exactPhrase flag)"}
         CATFIRST{"Catalog-first: quoted (not<br/>explicit flag), not page-finding,<br/>AND find_books_by_title_in_question<br/>matches a book?"}
+        SWGATE{"detect_short_work_intent<br/>(quoted title + locate verb)?<br/>AND resolve_short_work<br/>(book's ToC) matches?"}
+        SWANS["_format_short_work_answer:<br/>ToC page text quoted verbatim<br/>+ citation — NO LLM call"]
+        PBRANCH{"phrase_intent.is_exact?<br/>(re-checked after catalog-first<br/>+ short-work, either may<br/>have flipped it to false)"}
         EXACT["exact_phrase_chunk_search<br/>(keyword-only leg, phrases<br/>ANDed via chunks.text_search)"]
         PAGEQ{"phrase_intent.is_page_finding?"}
         PAGEHITS["format_page_hits →<br/>{type:page_hits} SSE event;<br/>summarize_page_hits_as_text<br/>— no answer-agent call"]
-        SIG["analyze_query_signals<br/>(chat/query_signals.py) → planning"]
-        RETR["KitabimRetrievalAgent<br/>ADK Runner (SSE) over 19 tools<br/>→ tool_call / tool_result / agent_thinking"]
+        SIG["analyze_query_signals<br/>(chat/query_signals.py) → planning<br/>(records query_signals cost)"]
+        RETR["KitabimRetrievalAgent<br/>ADK Runner (SSE) over 20 tools<br/>→ tool_call / tool_result / agent_thinking<br/>(records retrieval_agent cost)"]
         RERANK{"rag_reranker_enabled?"}
-        RR["rerank_context<br/>(LLM, max_chunks = rag_vector_top_k)"]
+        RR["rerank_context<br/>(LLM, max_chunks = rag_vector_top_k;<br/>records reranker cost)"]
         GC1["_grade_context<br/>(max_chunks = rag_vector_top_k)"]
-        ANSA["KitabimAnswerAgent<br/>tool-less ADK Agent, graded context<br/>in instruction → answer_start / chunk / answer_end"]
-        PERSIST[("rag_evaluations insert<br/>+ conversation_messages ×2<br/>(save_turn)")]
+        ANSA["KitabimAnswerAgent<br/>tool-less ADK Agent, graded context<br/>in instruction → answer_start / chunk / answer_end<br/>(records answer_agent cost)"]
+        PERSIST[("rag_evaluations insert<br/>(incl. input_tokens/output_tokens/cost_usd<br/>from ctx.cost_tracker) +<br/>conversation_messages ×2 (save_turn)")]
         JUDGE{"rag_judge_scoring_enabled?"}
         ENQ["enqueue rag_eval_job<br/>(_job_id=rag_eval:&lt;eval_id&gt;)"]
     end
 
     subgraph Shared ["Shared retrieval — rag/agent/tools.py + rag/retrieval.py"]
-        TOOLS["19 tools: search_chunks, search_books_by_summary,<br/>find_books_by_title, rewrite_query, get_book_author,<br/>get_books_by_author, search_catalog, get_book_summary,<br/>get_sister_volumes, get_current_page, search_quran,<br/>+ 8 dictionary tools"]
-        VS["embed_query (L1) → vector_search (L2, vector-only,<br/>per-book isolated DB sessions)<br/>+ Quran merge; then, in _run_search_chunks,<br/>graph_entity_lookup (own Redis cache, prefix + IDF<br/>scoring, Neo4j fuzzy fallback; capped by rag_graph_top_k)"]
+        TOOLS["20 tools: search_chunks, search_keyword_phrase,<br/>search_books_by_summary, find_books_by_title, rewrite_query,<br/>get_book_author, get_books_by_author, search_catalog,<br/>get_book_summary, get_sister_volumes, get_current_page,<br/>search_quran, + 8 dictionary tools"]
+        VS["embed_query (L1, estimated cost) →<br/>vector_search (L2, vector-only,<br/>per-book isolated DB sessions)<br/>+ Quran merge; then, in _run_search_chunks,<br/>graph_entity_lookup (own Redis cache, prefix + IDF<br/>scoring, Neo4j fuzzy fallback; capped by rag_graph_top_k)"]
         DATA[("chunks / book_summaries / pages /<br/>books / quran / dictionary tables")]
     end
 
-    WORKER["rag_eval_job (arq worker):<br/>score_answer → faithfulness /<br/>answer_relevance / context_precision"]
-    OUT(["response to client:<br/>SSE chunk × N + done {usage, contextBookIds,<br/>evalId, conversationId} on /stream,<br/>or a single {answer, usage} JSON body on POST /"])
+    WORKER["rag_eval_job (arq worker):<br/>score_answer → faithfulness /<br/>answer_relevance / context_precision<br/>+ judge_cost_usd backfill"]
+    OUT(["response to client:<br/>SSE chunk × N + done {usage, contextBookIds,<br/>evalId, conversationId, cost} on /stream,<br/>or a single {answer, usage} JSON body on POST /"])
     INC["chat_limit_service.increment_usage"]
 
     Q --> LIMIT
@@ -215,10 +229,14 @@ flowchart TD
     EP --> CONV
 
     CONV --> OCTX --> PGATE
-    PGATE -- No --> SIG --> RETR --> RERANK
-    PGATE -- Yes --> CATFIRST
-    CATFIRST -- "Match: scope to book(s),<br/>is_exact → false" --> SIG
-    CATFIRST -- "No match (or explicit<br/>flag / page-finding)" --> EXACT
+    PGATE -- "Yes (quoted, not flag,<br/>not page-finding)" --> CATFIRST
+    PGATE -- "No (flag / page-finding /<br/>not quoted)" --> SWGATE
+    CATFIRST -- "Match: scope to book(s),<br/>is_exact → false" --> SWGATE
+    CATFIRST -- "No match" --> SWGATE
+    SWGATE -- "Match: is_exact → false,<br/>scope to matched book" --> SWANS --> PERSIST
+    SWGATE -- No match --> PBRANCH
+    PBRANCH -- Yes --> EXACT
+    PBRANCH -- No --> SIG --> RETR --> RERANK
     EXACT --> PAGEQ
     PAGEQ -- Yes --> PAGEHITS --> PERSIST
     PAGEQ -- No --> RERANK
@@ -241,9 +259,9 @@ flowchart TD
     classDef done fill:#d4f1f4,stroke:#189ab4
     classDef fail fill:#ffcccb,stroke:#d32f2f
 
-    class Q,LIMIT,EP,PGATE,CATFIRST,PAGEQ,RERANK,JUDGE idle
+    class Q,LIMIT,EP,PGATE,CATFIRST,SWGATE,PBRANCH,PAGEQ,RERANK,JUDGE idle
     class OCTX,SIG,RETR,EXACT,RR,GC1,ANSA,ENQ,TOOLS,VS,WORKER,INC active
-    class CONV,PERSIST,PAGEHITS,DATA,OUT done
+    class CONV,PERSIST,PAGEHITS,SWANS,DATA,OUT done
     class L429 fail
 ```
 
@@ -320,11 +338,44 @@ flowchart TD
    primitive the find_books_by_title tool wraps, but invoked here in the
    orchestrator, outside the retrieval agent. IF it matches book(s):
    ctx.context_book_ids = the matched book IDs, and phrase_intent.is_exact
-   is flipped to False — the turn falls through to step 7's normal
-   retrieval-agent path, scoped to those books, instead of the
-   exact-phrase leg. An explicit exactPhrase flag or page-finding phrasing
-   always skips this check.
-7. IF phrase_intent.is_exact — the retrieval agent is skipped entirely:
+   is flipped to False — the turn falls through to step 6b and, absent a
+   short-work match there, to step 7's normal retrieval-agent path, scoped
+   to those books, instead of the exact-phrase leg. An explicit
+   exactPhrase flag or page-finding phrasing always skips this check.
+6b. Named short-work (poem/song) lookup gate — deterministic, and run on
+    EVERY turn regardless of phrase_intent.is_exact (deliberately NOT
+    gated on it: the real-world shape this exists for is "«book» ناملىق
+    ئەسەردىكى «work»" — TWO quotes, where step 6 already matched the
+    first quote as a real book title and, correctly for its own purpose,
+    flipped is_exact to False; gating this step on is_exact made it
+    unreachable for exactly that case, confirmed in production).
+    short_work_intent = detect_short_work_intent(question)
+    (rag/short_work_intent.py) — a quoted title next to a locate verb
+    ("تېپىپ بەر" / "كۆرسەت" / "تولۇق تېكىستى" / "تېكىستى قانداق" /
+    "مەزمۇنى"), excluding authorship-question phrasings. IF it applies and
+    yields a title: scoped_book_id = ctx.context_book_ids[0] when exactly
+    one book is already scoped, else None; short_work_match =
+    resolve_short_work(db_session, title, book_id=scoped_book_id)
+    (rag/toc_lookup_service.py) — resolves the title against the book's
+    OCR'd table of contents (Page.is_toc rows, parsed via
+    parse_toc_entries), rejecting entries spanning more than
+    toc_short_work_max_pages (default 10) printed pages as "too long to
+    be a short work," and verifying the resolved start page actually
+    contains the matched heading before returning it. IF short_work_match
+    is not None: phrase_intent.is_exact is flipped to False too (a
+    resolved short-work match always wins over the exact-phrase leg).
+7. IF short_work_match is not None — both the retrieval agent AND the
+   exact-phrase leg are skipped entirely:
+   a. yield {"type":"planning","intent":"short_work_lookup"}; yield
+      {"type":"tool_call","tool":"toc_lookup"}.
+   b. Package the match as a single search_chunks-shaped observation
+      (one chunk: the ToC-resolved page text, score=1.0) purely so
+      _extract_used_book_ids / rag_evaluations record-keeping see this
+      turn's book like any other — the text itself is never handed to an
+      LLM (see step 10). observations = [that observation].
+      ctx.context_book_ids = [short_work_match.book_id].
+   c. yield {"type":"tool_result","tool":"toc_lookup","found":1}.
+   ELIF phrase_intent.is_exact — the retrieval agent is skipped entirely:
    a. yield {"type":"planning","intent":"exact_phrase"}; yield
       {"type":"tool_call","tool":"exact_phrase_search"}.
    b. rag_keyword_top_k = int(system_configs "rag_keyword_top_k",
@@ -342,7 +393,7 @@ flowchart TD
    d. yield {"type":"tool_result","tool":"exact_phrase_search",
       "found": len(hits)}.
    ELSE (the normal path — including turns that fell through from the
-   catalog-first check in step 6):
+   catalog-first check in step 6 and/or the short-work gate in step 6b):
    a. TRY signals = analyze_query_signals(question, ctx)
       (chat/query_signals.py); ON ANY EXCEPTION (e.g. a plain
       ValueError("Too many tool call iterations in query analysis") or a
@@ -369,10 +420,15 @@ flowchart TD
       yield tool_call / agent_thinking on non-partial events, and for
       every function response append {"tool","result"} to a local
       observations list and yield tool_result with result["found_count"].
-8. skip_answer_synthesis = phrase_intent.is_exact AND
+8. skip_answer_synthesis = (phrase_intent.is_exact AND
    phrase_intent.is_page_finding (a "find pages with…" / "which pages
    mention…" / "show me where" style question — see
-   phrase_intent._PAGE_FINDING_MARKERS).
+   phrase_intent._PAGE_FINDING_MARKERS)) OR short_work_match is not None
+   — a resolved short-work match skips grading/reranking/the answer agent
+   for a different reason than page-finding: the text is already
+   known-correct (deterministically resolved via the ToC), so reranking
+   it is a pointless LLM call, and the Answer Agent risks refusing/
+   hedging on reproducing a poem verbatim instead of just returning it.
 9. used_book_ids = _extract_used_book_ids(observations).
    IF skip_answer_synthesis: graded_context, before_count, after_count =
    "", 0, 0 (grading/reranking is skipped entirely). ELSE: rag_top_k =
@@ -385,26 +441,41 @@ flowchart TD
    ELSE: _grade_context(observations, max_chunks=rag_top_k).
    IF before_count > 0: yield {"type":"grading","before","after"}.
 10. yield {"type":"answer_start"}.
-    IF skip_answer_synthesis: page_hits = format_page_hits(hits); yield
-    {"type":"page_hits","hits":page_hits}; accumulated_text =
-    summarize_page_hits_as_text(hits, phrase=", ".join(
+    IF short_work_match is not None: accumulated_text =
+    _format_short_work_answer(short_work_match) — t("rag.short_work_intro",
+    title=...) + the ToC page text block-quoted verbatim (each line
+    prefixed "> ") + t("rag.short_work_truncated_note") when truncated by
+    toc_short_work_max_pages + a deterministic
+    [citation](ref:book_id:pages) footer. yield
+    {"type":"chunk","text":accumulated_text} — again, NO LLM call.
+    ELIF skip_answer_synthesis (the page-finding case): page_hits =
+    format_page_hits(hits); yield {"type":"page_hits","hits":page_hits};
+    accumulated_text = summarize_page_hits_as_text(hits, phrase=", ".join(
     phrase_intent.phrases)) — a plain i18n-templated listing of book/page
     hits, built with NO LLM call.
     ELSE: build_answer_agent(chat_model, graded_context, persona_prompt,
     is_global, has_categories) and run it through the same shared session
     service (or an InMemoryRunner), yielding {"type":"chunk","text"} per
-    partial part; fall back to non-partial parts if no partial events
-    arrived. yield answer_end either way.
+    partial part (each partial event with usage_metadata records
+    "answer_agent" cost onto ctx.cost_tracker); fall back to non-partial
+    parts if no partial events arrived. yield answer_end either way.
 11. fixed_text = fix_malformed_citations(accumulated_text) — a no-op on
-    page-hit text, which carries no citations to fix.
-12. create_evaluation(... retrieved_count=len(observations),
-    context_chars=len(graded_context) (0 for a page-hit turn),
-    scores=[1.0]*len(observations) (placeholders, not real similarities),
-    category_filter=request context_book_ids, agent_steps=len(observations),
-    tools_called=[obs["tool"] ...], eval_status="queued" if
-    rag_judge_scoring_enabled else "skipped", answer=fixed_text,
-    retrieved_context=graded_context, is_first_turn). Set
-    eval_record.conversation_id = conv_id; flush; commit.
+    page-hit and short-work text, neither of which carries LLM-emitted
+    citations to fix (the short-work citation is already well-formed).
+12. cost = ctx.cost_tracker.as_dict() — {input_tokens, output_tokens,
+    cost_usd} totalled across every stage that recorded usage this turn
+    (query_signals, retrieval_agent, reranker, answer_agent, and
+    estimated embedding calls).
+    create_evaluation(... retrieved_count=len(observations),
+    context_chars=len(graded_context) (0 for a page-hit or short-work
+    turn), scores=[1.0]*len(observations) (placeholders, not real
+    similarities), category_filter=request context_book_ids,
+    agent_steps=len(observations), tools_called=[obs["tool"] ...],
+    eval_status="queued" if rag_judge_scoring_enabled else "skipped",
+    answer=fixed_text, retrieved_context=graded_context, is_first_turn,
+    input_tokens=cost["input_tokens"], output_tokens=cost["output_tokens"],
+    cost_usd=cost["cost_usd"]). Set eval_record.conversation_id = conv_id;
+    flush; commit.
 13. IF rag_judge_scoring_enabled: create a short-lived arq pool from
     settings.redis_url, enqueue_job("rag_eval_job", eval_id=eval_id,
     _job_id=f"rag_eval:{eval_id}"), aclose it. Any exception here is
@@ -412,9 +483,12 @@ flowchart TD
 14. save_turn(conv_id, question, fixed_text, used_book_ids, eval_id,
     current_page, agent_steps={"llm_calls":len(observations),
     "tools":[...]}); commit.
-15. yield {"type":"done","eval_id","conversation_id","used_book_ids"} —
-    the router converts this into the SSE done payload and increments
-    the user's daily usage.
+15. yield {"type":"done","eval_id","conversation_id","used_book_ids",
+    "cost"} — the router converts this into the SSE done payload
+    (camelCased as {inputTokens, outputTokens, costUsd}) and increments
+    the user's daily usage. The non-streaming answer() wrapper reads
+    conversation_id/used_book_ids/eval_id off this event but drops
+    "cost" — only the streaming endpoint's done payload carries it.
 ```
 
 **`rag_eval_job(ctx, eval_id)` — post-turn, off the request path:**
@@ -424,12 +498,17 @@ flowchart TD
 2. row = RAGEvaluationsRepository.get(eval_id). IF missing: warn, return.
 3. model = system_configs "rag_gemini_judge_model" (default
    "gemini-3.1-flash-lite").
-4. scores = judge.score_answer(row.question, row.answer or "",
-   row.retrieved_context or "", model) — one LLM call with
-   RAG_JUDGE_PROMPT and response_mime_type="application/json"; each score
-   clamped to [0,1]; raises on a missing JSON object or invalid fields.
+4. usage = {}; scores = judge.score_answer(row.question, row.answer or "",
+   row.retrieved_context or "", model, usage_out=usage) — one LLM call
+   with RAG_JUDGE_PROMPT and response_mime_type="application/json"; each
+   score clamped to [0,1]; raises on a missing JSON object or invalid
+   fields. usage is filled in as a side effect (this call runs outside
+   any live turn's QueryContext, so there's no cost_tracker to attribute
+   to automatically). judge_cost_usd = pricing.estimate_cost_usd(model,
+   usage.get("input_tokens",0), usage.get("output_tokens",0)).
 5. update_one(eval_id, faithfulness_score, answer_relevance_score,
-   context_precision_score, eval_status="completed"); commit.
+   context_precision_score, eval_status="completed", judge_cost_usd);
+   commit.
 6. ON EXCEPTION: update_one(eval_id, eval_status="failed"); commit; log
    ERROR; do NOT re-raise — single attempt, no arq retry, no backfill
    scanner. The answer was already delivered; scoring is best-effort.
@@ -484,9 +563,15 @@ flowchart TD
 **Shared retrieval — `vector_search(ctx, book_ids, query_vector)` (`retrieval.py`), reached by every `search_chunks` call. Vector-only — there is no keyword/hybrid fusion here (see `exact_phrase_chunk_search` below for the separate keyword-only leg):**
 
 ```
-1. Return [] when the effective vector is empty, or when book_ids is an
-   explicit empty list (discovery found nothing — do NOT silently widen
-   to a global scan; None means global).
+1. Return [] when the effective vector is empty. An explicit empty
+   book_ids list is now treated as the agent's documented "broaden to the
+   whole library" signal (AGENT_SYSTEM_PROMPT tells it to retry
+   search_chunks with an empty book_ids list after a scoped search or
+   book-discovery step comes up empty) — coerced to None (global) rather
+   than short-circuited to []. This is a reversal of the prior behavior
+   (previously an explicit [] meant "discovery found nothing, do not
+   widen to a global scan"); `agent_keyword_search` was changed
+   identically, in the same commit.
 2. Read rag_vector_top_k from system_configs (falling back to
    settings.rag_top_k) — renamed from rag_top_k.
 3. Build an L2 cache key: single-book reader searches with no category
@@ -517,7 +602,7 @@ flowchart TD
 8. Cache and return.
 ```
 
-`_run_search_chunks` adds two things on top: a **context-switch rescue** (when a global turn reused the previous answer's `context_book_ids` verbatim and the top score is below `CONTEXT_SWITCH_SCORE_THRESHOLD`, rediscover books via `search_books_by_summary` and re-search), and a **knowledge-graph entity lookup** (`graph_entity_lookup`, capped by `rag_graph_top_k` — no LLM call — appended as chunk-shaped dicts titled `Knowledge Graph`; any failure is logged and ignored).
+`_run_search_chunks` adds two things on top: a **context-switch rescue** (when a global turn reused the previous answer's `context_book_ids` verbatim and the top score is below `CONTEXT_SWITCH_SCORE_THRESHOLD`, rediscover books via `search_books_by_summary` and re-search), and a **knowledge-graph entity lookup** (`graph_entity_lookup`, capped by `rag_graph_top_k` — no LLM call — appended as chunk-shaped dicts titled `t("rag.knowledge_graph_title", default="بىلىم گىرافى")`, i.e. the Uyghur "بىلىم گىرافى" in production; any failure is logged and ignored). `fix_malformed_citations` (`app/utils/citation_fixer.py`) also rewrites any stray English "Knowledge Graph" text the model emits anyway into this same Uyghur label before the answer reaches the client.
 
 `graph_entity_lookup` lives in `retrieval.py` but is called from `_run_search_chunks` in `tools.py`, *after* `vector_search` returns — it is not part of `vector_search`, and its results are never written to the L2 search cache; it keeps its own separate cache (`rag_graph_lookup:{md5(question)}`, TTL 60s, holding the full uncapped result set so a later call with a different `top_k` isn't stuck with a stale truncated list). Its matching has three stages:
 
@@ -590,6 +675,7 @@ flowchart TD
 | Reranker judged 0 of N candidates relevant | Not treated as an error: pad back to `MIN_CHUNKS_AFTER_GRADING` (3) by original score. A partial selection (e.g. 2 of 3) is respected as-is. |
 | Vector search with the strict threshold returns nothing | Automatically retried with `threshold=0.0` (same scope and shape). |
 | Exact-phrase leg (`ChunksRepository.keyword_search`, e.g. a statement-timeout backstop firing on a pathological term) errors | Not caught by `exact_phrase_chunk_search` or `run_exact_phrase_retrieval` — unlike the removed hybrid keyword leg, there is no per-leg fallback here; the exception propagates out of `stream_response` and is caught by the router's generic exception handler, surfacing as the standard `t("errors.system_busy_generic")` SSE error. |
+| Short-work ToC lookup (`resolve_short_work`) finds no ToC, no title match, or a too-long entry | Returns `None` — a pure additive miss, by design. `short_work_match` stays `None` and the turn falls straight through to the normal `phrase_intent.is_exact` / retrieval-agent branch, exactly as if the gate had never run. Never surfaced as an error. |
 | Vector search raises | Logged, `ctx.session.rollback()` attempted, then re-raised — the tool call fails. |
 | A tool raises inside the ADK loop | `_execute_and_record_tool` logs a warning, appends `{"ok": False, "error": ...}` to observations, and re-raises so ADK reports the failure to the model. Note that despite its name, `_dispatch_tool_with_retry` carries **no** retry decorator — `_log_retry` and `TRANSIENT_EXCEPTIONS` in `tools.py` are unused leftovers, and a tool exception is a single-attempt failure. |
 | `graph_entity_lookup` fails (Redis or Neo4j) | Logged as a warning inside `_run_search_chunks`; retrieval continues with text results only. |
@@ -617,7 +703,10 @@ flowchart TD
 | `gemini_agent_loop_model` (`system_configs`) | Unset; falls back to `rag_gemini_chat_model` | `ctx.agent_model` — the retrieval agent and the signal-extraction model. |
 | `rag_gemini_reranker_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rerank_context`. |
 | `rag_gemini_judge_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rag_eval_job` → `score_answer`. |
+| `toc_short_work_max_pages` (`system_configs`) | `"10"` (seeded) | `toc_lookup_service.resolve_short_work` — the maximum printed-page span a ToC entry may cover to still be treated as a lookup-able short work; also caps how much page content is fetched/quoted for a matched entry (beyond it, truncated with `rag.short_work_truncated_note` rather than dropped). Falls back to `10` on a missing/unparseable value. |
+| `rag_chat_cost_enabled` (`system_configs`) | `"true"` (seeded by `seed_system_configs()`, and inserted redundantly by migration `092_add_llm_cost_tracking_to_rag_evaluations.sql`'s own `ON CONFLICT DO NOTHING`) | Read once by `GET /api/config` (`services/backend/main.py`, not by `ChatOrchestrator`) and returned as `showChatCost` — a pure frontend display toggle for whether the chat UI renders token/cost info. Token/cost tracking and `rag_evaluations` persistence happen unconditionally regardless of this flag. |
 | `chat_limit_reader`, `chat_limit_editor` (`system_configs`) | `20` and `100` (rows present in migration `001_initial_baseline.sql`; **not** in `seeds.py`) | `ChatLimitService.get_limit_for_role` reads `f"chat_limit_{role}"`. Hardcoded fallbacks if absent: editor `100`, reader `20`, unknown role `10`. `ADMIN` returns `None` (unlimited) before any DB read. |
+| `MODEL_PRICING` (`app/llm/pricing.py`) | Static $/1M-token table for `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-pro`, `gemini-3.1-flash-lite`, `gemini-3.7-flash`, `gemini-embedding-2` | `estimate_cost_usd()` — priced from this table by model name (`models/` prefix stripped); a model name not in the table prices at the default chat model's rate. Not billing-grade — a best-effort trend/eval estimate, per the module's own docstring. |
 | `AGENT_MAX_STEPS`, `AGENT_ENOUGH_CHUNKS` (`rag/agent/config.py`) | `6`, `8` | Constants with no importers anywhere in the repo — dead code. The `agent_max_steps`/`agent_enough_chunks` `system_configs` keys that used to feed the equivalent (also-unread) `QueryContext` fields have been removed; the real ceiling on tool-call count is the prose "at most 6 tool calls" in `AGENT_SYSTEM_PROMPT`, which only the model enforces. |
 | `AGENT_MAX_CONTEXT_CHUNKS` (`rag/agent/config.py`) | `25` | The chunk cap `_grade_context` applies when `max_chunks` is omitted, and `rerank_context`'s fallback cap. |
 | `GRADE_RELATIVE_THRESHOLD` (`rag/agent/config.py`) | `0.85` | `_grade_context` keeps chunks scoring at or above `top_score × 0.85` within each `search_chunks` call. |
@@ -646,13 +735,13 @@ All chat routes are mounted at `/api/chat` (`services/backend/main.py`), `questi
 | Endpoint | Role required | Effect |
 |---|---|---|
 | `POST /api/chat/` | `Depends(require_reader)` (ADMIN, EDITOR, or READER) | Non-streaming chat. Enforces the daily limit (429), then unconditionally builds a `ChatOrchestrator` and calls `answer()`. Applies `fix_malformed_citations`, increments usage on success, returns `{answer, usage}`. Persists the conversation turn like the streaming endpoint does — this route used to skip conversation persistence entirely, before the consolidation. Maps `ValueError` → 404, Gemini 429/`RESOURCE_EXHAUSTED` → 429, anything else → 500 plus a `record_book_error(..., "chat")` entry. |
-| `POST /api/chat/stream` | `Depends(require_reader)` | SSE chat. Limit check emits an error event rather than a status code. Unconditionally builds a `ChatOrchestrator` and streams `stream_response()`; `req.exact_phrase` is forwarded on the DTO. Response headers `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no` (nginx buffering off). An exact-phrase "find pages with…" question emits a `{"type":"page_hits", "hits":[...]}` event instead of `chunk` events. Terminal event `{done, usage, contextBookIds, evalId, conversationId}` — every turn gets a `conversationId` now, including the first turn (a prior flag-gated design left first-turn stream requests without one). Non-`ValueError` failures also record a `record_book_error(..., "chat_stream")` entry (best-effort — a failure to record is itself only logged). |
+| `POST /api/chat/stream` | `Depends(require_reader)` | SSE chat. Limit check emits an error event rather than a status code. Unconditionally builds a `ChatOrchestrator` and streams `stream_response()`; `req.exact_phrase` is forwarded on the DTO. Response headers `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no` (nginx buffering off). An exact-phrase "find pages with…" question emits a `{"type":"page_hits", "hits":[...]}` event instead of `chunk` events; a resolved named-short-work lookup (see Overview) emits its verbatim-quoted answer as ordinary `chunk` events with no LLM call behind them. Terminal event `{done, usage, contextBookIds, evalId, conversationId, cost: {inputTokens, outputTokens, costUsd}}` — every turn gets a `conversationId` now, including the first turn (a prior flag-gated design left first-turn stream requests without one). Non-`ValueError` failures also record a `record_book_error(..., "chat_stream")` entry (best-effort — a failure to record is itself only logged). |
 | `GET /api/chat/usage` | `Depends(require_reader)` | `ChatUsageStatus` = `{usage, limit, has_reached_limit}` for the caller. |
 | `POST /api/chat/feedback` | `Depends(require_reader)` | Records `'positive'`/`'negative'` on `rag_evaluations.user_feedback`. Rejects other values with 400. **Loads the row and verifies `record.user_id == current_user.id` before mutating**, returning 404 otherwise — `eval_id` is a sequential integer, so without this check any reader could write feedback onto another user's turn. |
 | `GET /api/chat/recent-questions` | **None** — no auth dependency | Recent distinct first-turn questions for the public home-page rotator (`get_recent_standalone_questions`). Deliberately public. |
 | `POST /api/chat/conversations` | `Depends(require_reader)` | Creates an empty conversation owned by the caller; returns camelCase fields including `bookTitle`. |
 | `GET /api/chat/conversations` | `Depends(require_reader)` | Lists **only the caller's** conversations (`list_user_conversations(current_user.id, ...)`), filterable by `book_id` / `is_global`, paginated. |
-| `GET /api/chat/conversations/{conversation_id}/messages` | `Depends(require_reader)` | Message history. Returns 404 (`t("errors.conversation_not_found")`) when the conversation is missing **or** not owned by the caller. |
+| `GET /api/chat/conversations/{conversation_id}/messages` | `Depends(require_reader)` | Message history. Returns 404 (`t("errors.conversation_not_found")`) when the conversation is missing **or** not owned by the caller. Each `model` row also carries `cost` ({inputTokens, outputTokens, costUsd}, `null` when all-zero) and `feedback`, both read off the joined `RAGEvaluation` via `ConversationMessage.evaluation` (a `lazy="selectin"` relationship). |
 | `DELETE /api/chat/conversations/{conversation_id}` | `Depends(require_reader)` | Soft-deletes via `delete_conversation(conversation_id, current_user.id)` — the ownership check is inside the repository query, so a non-owner gets 404. |
 | `GET /api/questions/admin/questions` | `Depends(require_admin)` | Paginated, newest-first admin view of all `rag_evaluations` questions, optional text `query` filter. |
 | `PATCH /api/questions/admin/questions/{eval_id}/featured` | `Depends(require_admin)` | Sets/clears `show_on_homepage`; 404 when the row doesn't exist. |
@@ -677,8 +766,11 @@ All chat routes are mounted at `/api/chat` (`services/backend/main.py`), `questi
 
 Backend-core service/handler tests (`packages/backend-core/tests/app/services/`):
 
-- `test_adk_orchestrator.py` — the `ChatOrchestrator` suite: `test_chat_request_dto_immutability`, `test_build_agents`, `test_knowledge_graph_tool_not_offered`, `test_lookup_synonyms_tool_included`, `test_orchestrator_initialization`, `test_stream_response_builds_query_context_and_persists_turn`, `test_stream_response_reader_mode_sends_context_block_to_retrieval_agent`, `test_stream_response_yields_streaming_chunks_with_sse_run_config`, `test_stream_response_tolerates_analyze_query_signals_failure` (regression: `analyze_query_signals` raising must not fail the turn), `test_stream_response_enqueues_rag_eval_job_when_scoring_enabled`, `test_stream_response_skips_rag_eval_job_when_scoring_disabled`, `test_stream_response_uses_reranker_when_enabled`, `test_stream_response_uses_grade_context_when_reranker_disabled`, `test_stream_response_falls_back_to_grade_context_when_reranker_fails`, `test_stream_response_exact_phrase_uses_configured_rag_keyword_top_k`, `test_stream_response_page_finding_exact_phrase_yields_page_hits_and_skips_answer_agent`, `test_stream_response_non_page_finding_exact_phrase_still_synthesizes_answer`, `test_answer_concatenates_chunks_and_returns_done_metadata` (the non-streaming `answer()` wrapper), `test_answer_falls_back_to_page_hits_text_when_no_chunks` (regression: `answer()` must also accumulate text from `page_hits` events, not just `chunk` events).
+- `test_adk_orchestrator.py` — the `ChatOrchestrator` suite: `test_chat_request_dto_immutability`, `test_build_agents`, `test_knowledge_graph_tool_not_offered`, `test_lookup_synonyms_tool_included`, `test_orchestrator_initialization`, `test_stream_response_builds_query_context_and_persists_turn`, `test_stream_response_reader_mode_sends_context_block_to_retrieval_agent`, `test_stream_response_yields_streaming_chunks_with_sse_run_config`, `test_stream_response_tolerates_analyze_query_signals_failure` (regression: `analyze_query_signals` raising must not fail the turn), `test_stream_response_enqueues_rag_eval_job_when_scoring_enabled`, `test_stream_response_skips_rag_eval_job_when_scoring_disabled`, `test_stream_response_uses_reranker_when_enabled`, `test_stream_response_uses_grade_context_when_reranker_disabled`, `test_stream_response_falls_back_to_grade_context_when_reranker_fails`, `test_stream_response_exact_phrase_uses_configured_rag_keyword_top_k`, `test_stream_response_page_finding_exact_phrase_yields_page_hits_and_skips_answer_agent`, `test_stream_response_non_page_finding_exact_phrase_still_synthesizes_answer`, `test_answer_concatenates_chunks_and_returns_done_metadata` (the non-streaming `answer()` wrapper), `test_answer_falls_back_to_page_hits_text_when_no_chunks` (regression: `answer()` must also accumulate text from `page_hits` events, not just `chunk` events), `test_stream_response_short_work_lookup_hit_bypasses_retrieval_agent_and_answer_llm`, `test_stream_response_short_work_lookup_fires_even_when_catalog_first_already_matched_book` (regression for the production bug the short-work gate exists to fix — see Overview), `test_stream_response_short_work_lookup_miss_falls_through_to_exact_phrase`, `test_stream_response_unquoted_short_work_question_never_attempts_toc_lookup`.
 - `chat_exact_phrase_test.py` — `chat/exact_phrase.py` in isolation: `test_run_exact_phrase_retrieval_wraps_hits_as_search_chunks_observation`, `test_format_page_hits_shapes_payload`, `test_summarize_page_hits_as_text_no_hits`, `test_summarize_page_hits_as_text_with_hits`.
+- `short_work_intent_test.py` — `detect_short_work_intent`: single/double quoted-phrase title extraction, locate-verb gating, and the authorship-marker exclusion.
+- `toc_lookup_service_test.py` — `resolve_short_work`: title match via ToC, book-scoped vs. unscoped (fuzzy phrase) lookup, `toc_short_work_max_pages` rejection of long entries, the start-page heading-verification guard, and page-range/`content_page_offset` math.
+- `answer_prompts_test.py` — `chat/answer_prompts.py`'s `build_answer_instructions`: asserts it authorizes verbatim blockquoted reproduction of a work's full text and explicitly forbids a copyright-hedging refusal (`test_build_answer_instructions_authorizes_verbatim_reproduction_of_source_text` — regression for a production case where Gemini substituted a generic essay for the retrieved poem instead of quoting it), and that the unrelated `strict_no_answer` branch is unaffected.
 - `rag_phrase_intent_test.py` — `phrase_intent.detect_phrase_intent`: plain/quoted (straight, guillemet, curly) detection, multiple quoted phrases, the explicit `exact_phrase` flag, and page-finding phrase classification.
 - `rag_reranker_test.py` — 14 tests over `rerank_context`: ordering, dedup by `(book_id, page)`, no-chunk short-circuit, empty/zero-relevant handling and the `MIN_CHUNKS_AFTER_GRADING` floor, `RERANK_MAX_INPUT_CHUNKS` trimming, the `AGENT_MAX_CONTEXT_CHUNKS` cap, the integer-array `response_schema`, and every raise path (no JSON array, out-of-range index, malformed JSON, trailing commentary).
 - `rag_judge_test.py` — `score_answer` happy path, clamping, and malformed-output raises.
@@ -709,6 +801,6 @@ No dedicated test file exists for the conversation list/messages endpoints or fo
 - [OCR_DESIGN.md](OCR_DESIGN.md) — produces `pages.text`, read directly by `get_current_page` and by the dev-only fuzzy fallback in `vector_search`. Also the actual home of `POST /api/ai/ocr`.
 - [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) — the auto-correct pass that improves the text this stage retrieves; `check_word_spelling` reuses the same word/dictionary tables from the read side.
 - [DOCUMENT_DISCOVERY_DESIGN.md](DOCUMENT_DISCOVERY_DESIGN.md) — how a book enters the library in the first place.
-- [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) documents the Neo4j `Entity` graph, `entity_resolution_service`, and the `graph:alias:{alias}` Redis cache that `retrieval.graph_entity_lookup` reads via prefix enumeration (B1) before falling back to a Neo4j full-text fuzzy query on a miss (B3). Graph facts ride the existing `search_chunks` call as extra chunk-shaped results titled `Knowledge Graph`, capped by `rag_graph_top_k`; there is no separate graph tool exposed to the agent (`test_adk_orchestrator.py::test_knowledge_graph_tool_not_offered` asserts this). The exact-phrase leg does not query the graph either — it is keyword-only by design.
+- [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) documents the Neo4j `Entity` graph, `entity_resolution_service`, and the `graph:alias:{alias}` Redis cache that `retrieval.graph_entity_lookup` reads via prefix enumeration (B1) before falling back to a Neo4j full-text fuzzy query on a miss (B3). Graph facts ride the existing `search_chunks` call as extra chunk-shaped results titled with the Uyghur `t("rag.knowledge_graph_title", default="بىلىم گىرافى")` label (English "Knowledge Graph" only under the `en` locale), capped by `rag_graph_top_k`; there is no separate graph tool exposed to the agent (`test_adk_orchestrator.py::test_knowledge_graph_tool_not_offered` asserts this). The exact-phrase leg does not query the graph either — it is keyword-only by design.
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — the arq worker that runs `rag_eval_job`, plus shared job conventions.
 - [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md) — service topology, auth, and cross-cutting concerns.

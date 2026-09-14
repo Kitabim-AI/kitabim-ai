@@ -25,6 +25,9 @@ test('renders book title under the question for reader chat questions', async ()
       faithfulnessScore: 0.9,
       answerRelevanceScore: 0.85,
       contextPrecisionScore: 0.8,
+      inputTokens: 70000,
+      outputTokens: 3100,
+      costUsd: 0.0122,
     },
     {
       id: 2,
@@ -66,4 +69,7 @@ test('renders book title under the question for reader chat questions', async ()
 
   // Global question text rendered
   expect(screen.getByText('ئۇيغۇرلار ھەققىدە سوئال')).toBeInTheDocument();
+
+  // Cost data displayed under answer quality
+  expect(screen.getByText(/جاۋاب تەننەرقى.*0\.0122.*73\.1K/)).toBeInTheDocument();
 });

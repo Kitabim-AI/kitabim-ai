@@ -214,6 +214,61 @@ async def test_vector_search_global_empty_results_retries_without_threshold(
 
 
 @pytest.mark.asyncio
+async def test_vector_search_empty_book_ids_list_broadens_to_global_scan(monkeypatch):
+    """An explicit empty book_ids list is the agent's documented "broaden to the
+    whole library" signal (agent/prompts.py: "broaden by calling search_chunks
+    with an empty book_ids list to search the entire library") after a scoped
+    search or book-discovery step came up empty. It must reach
+    similarity_search as an unscoped (book_ids=None) search, not be silently
+    short-circuited to zero results — that mismatch meant named short-work
+    (e.g. poem) title lookups could never fall back to a true library-wide
+    search once discovery had scoped to the wrong book(s)."""
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value=None)
+    mock_cache.set = AsyncMock()
+    monkeypatch.setattr("app.services.rag.retrieval.cache_service", mock_cache)
+
+    ctx = MagicMock()
+    ctx.session = MagicMock()
+    ctx.query_vector = [0.1, 0.2]
+    ctx.character_categories = []
+    ctx.is_global = True
+
+    captured = {}
+
+    async def fake_similarity_search(
+        query_embedding, book_ids, categories, limit, threshold
+    ):
+        captured["book_ids"] = book_ids
+        return [
+            {
+                "book_id": "b1",
+                "text": "b1 text",
+                "similarity": 0.9,
+                "page_number": 1,
+                "title": "Book A",
+                "volume": None,
+                "author": "Author A",
+            }
+        ]
+
+    with patch(
+        "app.db.repositories.chunks_repository.ChunksRepository"
+    ) as mock_cls, patch(
+        "app.db.repositories.system_configs_repository.SystemConfigsRepository"
+    ) as mock_config_cls:
+        mock_repo = mock_cls.return_value
+        mock_repo.similarity_search = AsyncMock(side_effect=fake_similarity_search)
+        mock_config_cls.return_value.get_value = AsyncMock(return_value="false")
+
+        results = await vector_search(ctx, book_ids=[])
+
+    assert captured["book_ids"] is None
+    assert len(results) == 1
+    assert results[0]["book_id"] == "b1"
+
+
+@pytest.mark.asyncio
 async def test_vector_search_multi_book_guarantees_per_book_quota(monkeypatch):
     """A question naming several books (e.g. "compare book A, B and C") must
     not let one book's chunks crowd out the others in a single global top-K

@@ -7,7 +7,7 @@ export interface ErrorEvent extends Omit<ErrorEventSchema, 'ts' | 'context'> {
 }
 
 export type ExtractionResultSchema = components['schemas']['ExtractionResult'];
-export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' | 'pipelineStep' | 'milestone'> {
+export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' | 'pipelineStep' | 'milestone' | 'llmSpellCheckStatus'> {
   status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'indexed' | 'error';
   pipelineStep?: 'ocr' | 'chunking' | 'embedding' | null;
   milestone?: 'idle' | 'running' | 'succeeded' | 'failed' | null;
@@ -15,6 +15,8 @@ export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' 
   content_page_number?: string | null;
   displayPageNumber?: string | null;
   display_page_number?: string | null;
+  llmSpellCheckStatus?: 'idle' | 'in_progress' | 'succeeded' | 'failed';
+  llmSpellCheckAt?: string | null;
 }
 
 export type BookSchema = components['schemas']['Book'];
@@ -62,6 +64,12 @@ export interface Message {
   feedback?: 'positive' | 'negative';
   /** Whether the message is a degraded/partial response due to a tool failure */
   partialResult?: boolean;
+  /** Estimated LLM token usage/cost for this turn, from the SSE done event. */
+  cost?: {
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  };
 }
 
 export interface Conversation {
@@ -84,6 +92,12 @@ export interface ConversationMessage {
   usedBookIds?: string[] | Record<string, unknown> | null;
   currentPage?: number | null;
   evalId?: number | null;
+  cost?: {
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  } | null;
+  feedback?: 'positive' | 'negative' | null;
   createdAt: string;
 }
 

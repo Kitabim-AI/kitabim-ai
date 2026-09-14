@@ -1,3 +1,4 @@
+import { useAuth } from '@/src/hooks/useAuth';
 import { useBooks } from '@/src/hooks/useBooks';
 import { PersistenceService } from '@/src/services/persistenceService';
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -12,6 +13,7 @@ vi.mock('@/src/services/persistenceService', () => ({
 vi.mock('@/src/hooks/useAuth', () => ({
   useAuth: vi.fn(() => ({
     isAuthenticated: false,
+    isLoading: false,
   })),
 }));
 
@@ -21,6 +23,10 @@ vi.mock('@/src/services/authService', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(useAuth).mockReturnValue({
+    isAuthenticated: false,
+    isLoading: false,
+  } as any);
 });
 
 test('useBooks uses the configured collection page size for shelf views', async () => {
@@ -109,4 +115,36 @@ test('useBooks handles loadMoreShelf', async () => {
 
   expect(result.current.books).toHaveLength(80);
   expect(result.current.hasMoreShelf).toBe(false);
+});
+
+test('useBooks defers fetching until auth is resolved and avoids double fetch', async () => {
+  const mockResponse = {
+    books: [{ id: 'b1', title: 'Book 1', status: 'ready' }],
+    total: 1,
+    totalReady: 1,
+  };
+  vi.mocked(PersistenceService.getGlobalLibrary).mockResolvedValue(mockResponse as any);
+
+  // Initially on page load, auth is loading
+  let currentAuth = { isAuthenticated: false, isLoading: true };
+  vi.mocked(useAuth).mockImplementation(() => currentAuth as any);
+
+  const { result, rerender } = renderHook(() => useBooks('library', '', 10, 1));
+
+  // Hook should be loading and have 0 books, and should NOT have called getGlobalLibrary yet
+  expect(result.current.isLoading).toBe(true);
+  expect(result.current.books).toHaveLength(0);
+  expect(PersistenceService.getGlobalLibrary).not.toHaveBeenCalled();
+
+  // Auth finishes silent refresh: user is restored
+  currentAuth = { isAuthenticated: true, isLoading: false };
+  rerender();
+
+  await waitFor(() => {
+    expect(result.current.books).toHaveLength(1);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  // Must only have fetched once, not twice
+  expect(PersistenceService.getGlobalLibrary).toHaveBeenCalledTimes(1);
 });

@@ -134,6 +134,7 @@ async def rerank_context(
             response_mime_type="application/json",
             response_schema=list[int],
         ),
+        stage="reranker",
     )
 
     start = res_text.find("[")

@@ -32,6 +32,8 @@
 kitabim-ai/
 ├── apps/
 │   └── frontend/            # React 19 + Vite + TypeScript SPA
+├── clients/
+│   └── kitabim-ocr/          # Standalone local OCR client (currently Surya OCR; not deployed, not containerized)
 ├── packages/
 │   ├── backend-core/        # Shared Python: models, repos, LLM clients, services
 │   └── shared/               # Generated OpenAPI TypeScript types (npm workspace)
@@ -68,13 +70,15 @@ packages/backend-core/app/
 │   ├── prompts.py             # Base prompt templates
 │   └── providers.py           # LLM/storage provider protocols
 ├── db/
-│   ├── models.py               # SQLAlchemy ORM models (30 tables)
+│   ├── models.py               # SQLAlchemy ORM models (31 tables)
 │   ├── session.py               # Async engine/session factory, init/close hooks
 │   ├── seeds.py                   # Default system_configs seeding
 │   └── repositories/               # 17 repository modules, ~one per table, incl. graph_repository.py (Neo4j)
 │                                      and conversation_repository.py (Conversation/ConversationMessage);
-│                                      batch_ocr_jobs/batch_embedding_jobs/pipeline_events are queried inline
-│                                      from their owning service instead of through a dedicated repository
+│                                      batch_ocr_jobs/batch_embedding_jobs/batch_history_extraction_jobs/
+│                                      batch_llm_spell_check_jobs/pipeline_events are queried inline from
+│                                      their owning service (or books_repository.py, for the batch job tables)
+│                                      instead of through a dedicated repository
 ├── llm/
 │   ├── models.py                # GeminiLLM/ProtectedLLM client, CircuitBreaker wiring, RedisRateLimiter
 │   └── chains.py                  # TextChain/StructuredChain .ainvoke()/.astream() wrappers
@@ -95,6 +99,12 @@ packages/backend-core/app/
 │   ├── history_fact_utils.py                          # Pure dedup/similarity helpers for extracted history facts (no I/O)
 │   ├── dictionary_staging_service.py                    # Reviews history_dictionary_staging candidates, publishes approvals
 │   ├── spell_check_service.py                             # Dictionary-based spell-check
+│   ├── llm_spell_check_service.py                           # On-demand, admin-triggered Gemini-based spell correction for
+│   │                                                           context-dependent real-word errors; shared by llm_spell_check_job
+│   │                                                           (live path) and batch_llm_spell_check_service (batch path)
+│   ├── batch_llm_spell_check_service.py                       # Gemini Batch API request formatting, submission, and result
+│   │                                                           polling for the on-demand LLM spell-check pass (feature-flagged),
+│   │                                                           mirrors batch_history_extraction_service.py
 │   ├── auto_correct_service.py                              # Bulk OCR auto-correction rule application
 │   ├── book_milestone_service.py                              # Milestone transition helpers
 │   ├── storage_service.py                                       # GCS / local filesystem storage abstraction
@@ -132,7 +142,7 @@ app/services/rag/
 └── agent/
     ├── prompts.py            # AGENT_SYSTEM_PROMPT for the retrieval agent
     ├── config.py               # AGENT_MAX_STEPS, grading thresholds, context-switch score threshold
-    ├── tools.py                  # 19 ADK-callable tool functions + dispatch-with-retry
+    ├── tools.py                  # 20 ADK-callable tool functions + dispatch-with-retry
     └── reranker.py               # rerank_context() — LLM reranker, called only from chat/orchestrator.py
 ```
 
@@ -145,7 +155,7 @@ app/services/chat/
 ├── history.py                   # Formats ConversationMessage rows into LLM-readable history text
 ├── answer_prompts.py              # build_answer_instructions() — citation/grammar prompt for the answer agent
 ├── answer_agent.py                   # build_answer_agent() — tools-less ADK Agent for answer synthesis
-├── retrieval_agent.py                   # ALL_TOOLS + build_retrieval_agent() — the one retrieval agent, all 19 tools
+├── retrieval_agent.py                   # ALL_TOOLS + build_retrieval_agent() — the one retrieval agent, all 20 tools
 ├── exact_phrase.py                         # run_exact_phrase_retrieval() + page-hit formatting for the keyword-only leg
 │                                              (Phase 1 of keyword-search-rework-plan.md), driven by rag/phrase_intent.py
 └── orchestrator.py                         # ChatOrchestrator — the pipeline itself, see below
@@ -186,11 +196,14 @@ The worker adds `services/worker/requirements.worker.txt` on top of these two fi
 services/worker/
 ├── worker.py                # ARQ WorkerSettings entrypoint (arq worker.WorkerSettings)
 ├── manual_scan.py             # CLI to trigger a scanner pass on demand
-├── jobs/                        # Per-unit-of-work executors (10)
+├── jobs/                        # Per-unit-of-work executors (11)
 │   ├── ocr_job.py                  # Renders a page, calls Gemini Vision (or submits a batch_ocr_job if ocr_batch_enabled)
 │   ├── chunking_job.py               # Cleans text, writes chunk rows
 │   ├── embedding_job.py                # Vectorizes chunks (synchronous path; batch path is submitted inline by embedding_scanner)
 │   ├── spell_check_job.py                # Flags likely OCR errors per page
+│   ├── llm_spell_check_job.py              # On-demand Gemini-based spell correction for admin-selected pages (or submits a
+│   │                                          batch_llm_spell_check_job if llm_spell_check_batch_enabled); not a pipeline
+│   │                                          stage — no PipelineEvent rows, no scanner-driven page claiming
 │   ├── auto_correct_job.py                 # Applies bulk auto-correction rules
 │   ├── summary_job.py                        # Generates + embeds a book summary
 │   ├── knowledge_graph_job.py                  # Extracts entities/relations, writes to Neo4j
@@ -199,13 +212,14 @@ services/worker/
 │   │                                                   batch_history_extraction_job if history_batch_enabled);
 │   │                                                   admin-triggered, not on a cron schedule
 │   └── rag_eval_job.py                             # Post-turn async judge scoring for rag_evaluations (enqueued by ChatOrchestrator, not a scanner)
-└── scanners/                             # Periodic pollers + the event-driven dispatcher (16)
+└── scanners/                             # Periodic pollers + the event-driven dispatcher (17)
     ├── ocr_scanner.py                        # Leases idle pages, enqueues ocr_job
     ├── batch_ocr_poller_scanner.py              # Polls in-flight batch_ocr_jobs, ingests results when Gemini finishes
     ├── chunking_scanner.py                        # Leases OCR'd pages, enqueues chunking_job
     ├── embedding_scanner.py                         # Leases chunked pages; dispatches embedding_job, or submits a batch_embedding_job inline if embed_batch_enabled
     ├── batch_embedding_poller_scanner.py               # Polls in-flight batch_embedding_jobs, writes vectors back when Gemini finishes
     ├── spell_check_scanner.py                            # Leases indexed pages, enqueues spell_check_job
+    ├── batch_llm_spell_check_poller_scanner.py             # Polls in-flight batch_llm_spell_check_jobs, applies corrections to pages.text when Gemini finishes
     ├── auto_correct_scanner.py                             # Enqueues auto_correct_job
     ├── summary_scanner.py                                    # Leases ready books, enqueues summary_job
     ├── graph_scanner.py                                        # Leases ready books, enqueues knowledge_graph_job (implemented but NOT wired into WorkerSettings.cron_jobs — see WORKER_DESIGN.md)
@@ -218,7 +232,7 @@ services/worker/
     └── maintenance_scanner.py                                            # Cleans up processed pipeline_events
 ```
 
-15 of these 16 scanners are wired into `WorkerSettings.cron_jobs` — `graph_scanner.py` is the one exception (see [WORKER_DESIGN.md](WORKER_DESIGN.md)). Each scanner uses a fresh `async with async_session_factory()` per page/batch it processes — no session is held or shared across pages within a run. `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` additionally take a Redis `MultiPageLock` (namespaced per stage via a `prefix` argument) around their claimed page IDs as a second line of defense against double-processing.
+16 of these 17 scanners are wired into `WorkerSettings.cron_jobs` — `graph_scanner.py` is the one exception (see [WORKER_DESIGN.md](WORKER_DESIGN.md)). Each scanner uses a fresh `async with async_session_factory()` per page/batch it processes — no session is held or shared across pages within a run. `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` additionally take a Redis `MultiPageLock` (namespaced per stage via a `prefix` argument) around their claimed page IDs as a second line of defense against double-processing.
 
 ---
 
@@ -233,16 +247,21 @@ apps/frontend/src/
 │                                   Synonyms/English-Uyghur); per-tab result rendering lives in HomeSearchTabResults,
 │                                   LookupResultsList (dictionary/names/history/synonyms/en-ug), QuranResultsList,
 │                                   and SpellCheckResult
-│                        share/: ShareModal (whole-book share), ShareChatModal (single Q&A share — implemented,
-│                                 backed by a working `/api/share/qa` endpoint, but not currently rendered from
-│                                 any component; there is no "share this answer" entry point in the chat UI today)
+│                        share/: ShareModal (whole-book share), ShareChatModal (single Q&A share, backed by
+│                                 the `/api/share/qa` endpoint; rendered from ChatInterface.tsx behind a
+│                                 per-message share action — the chat UI's "share this answer" entry point),
+│                                 ShareSearchResultModal (shares a page's text or a selected quote, rendered
+│                                 from PageItem.tsx via useTextSelectionShare)
 ├── hooks/               # useAuth, useBookActions, useBooks, useChat, useContentSearch, useLookupSearch,
-│                            usePendingCorrections, useScrollStabilizer, useScrollToPage, useSpellCheck,
-│                            useSpellingCheck, useUyghurInput (12)
+│                            usePendingCorrections, useQuoteHighlight, useScrollStabilizer, useScrollToPage,
+│                            useSpellCheck, useSpellingCheck, useTextSelectionShare, useUyghurInput (14)
 │                            useScrollStabilizer: keeps the visible reader page stationary while
 │                            off-screen-above placeholders resolve to real content during ordinary
 │                            scrolling; useScrollToPage handles the equivalent for the initial
 │                            jump-to-page settle window
+│                            useTextSelectionShare: tracks in-page text selection to surface a "share this
+│                            quote" popover (reader only); useQuoteHighlight highlights a quoted passage in
+│                            the reader once navigated to from a chat citation — both used from PageItem.tsx
 ├── services/              # authService, contactService, geminiService, pdfService, persistenceService,
 │                             searchTabsService, userService (7)
 │                             geminiService.ts is legacy-named — despite the name, it calls the Kitabim backend
@@ -313,12 +332,12 @@ PDF rendering uses `pdf.js` loaded from a CDN `<script>` tag at runtime (`pdfSer
 | File | Purpose |
 |------|---------|
 | `packages/backend-core/app/core/config.py` | Env-backed `Settings` dataclass. Deliberately holds no AI model names — those live only in `system_configs`. |
-| `packages/backend-core/app/db/models.py` | All 30 SQLAlchemy ORM table definitions. |
+| `packages/backend-core/app/db/models.py` | All 31 SQLAlchemy ORM table definitions. |
 | `packages/backend-core/app/db/repositories/conversation_repository.py` | `ConversationRepository` — CRUD + soft-delete for `conversations`/`conversation_messages`, used only by `ChatOrchestrator`. |
 | `packages/backend-core/app/services/chat/orchestrator.py` | `ChatOrchestrator` — the only chat pipeline; `stream_response()` for `POST /api/chat/stream`, `answer()` for `POST /api/chat/`. |
-| `packages/backend-core/app/services/batch_ocr_service.py` / `batch_embedding_service.py` / `batch_history_extraction_service.py` | Gemini Batch API submission + polling for OCR, embeddings, and history-dictionary extraction, feature-flagged off by default. |
+| `packages/backend-core/app/services/batch_ocr_service.py` / `batch_embedding_service.py` / `batch_history_extraction_service.py` / `batch_llm_spell_check_service.py` | Gemini Batch API submission + polling for OCR, embeddings, history-dictionary extraction, and LLM spell-check, feature-flagged off by default. |
 | `packages/backend-core/app/db/seeds.py` | Default `system_configs` rows, including default model names and pipeline-tuning toggles. |
 | `packages/backend-core/app/llm/models.py` | `ProtectedLLM`/`GeminiEmbeddings` clients wrapping `google-genai`, with per-call-type `CircuitBreaker`s and `RedisRateLimiter`. |
-| `packages/backend-core/app/services/rag/agent/tools.py` | The 19 ADK-callable tool functions used by the retrieval agent. |
+| `packages/backend-core/app/services/rag/agent/tools.py` | The 20 ADK-callable tool functions used by the retrieval agent. |
 | `services/backend/main.py` | FastAPI app factory — router registration, CORS, rate limiting, `/health`. |
 | `services/worker/worker.py` | ARQ `WorkerSettings` entrypoint wiring scanners and jobs into the worker process. |

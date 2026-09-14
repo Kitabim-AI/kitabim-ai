@@ -46,6 +46,12 @@ class ExtractionResult(BaseModel):
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     milestone: Optional[str] = None  # DB: milestone, API: milestone
     is_toc: bool = False  # API: isToc
+    llm_spell_check_status: str = (
+        "idle"  # DB: llm_spell_check_status, API: llmSpellCheckStatus
+    )
+    llm_spell_check_at: Optional[datetime] = (
+        None  # DB: llm_spell_check_at, API: llmSpellCheckAt
+    )
 
 
 class PageTocUpdate(BaseModel):
@@ -54,6 +60,16 @@ class PageTocUpdate(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     is_toc: bool  # API: isToc
+
+
+class OcrPageInput(BaseModel):
+    """One page's pre-OCR'd content, for POST /books/upload-ocrd."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    page_number: int  # API: pageNumber
+    text: str
+    is_toc: bool = False  # API: isToc
 
 
 class Book(BaseModel):
@@ -227,6 +243,9 @@ class RagQuestionAdmin(BaseModel):
     faithfulness_score: Optional[float] = None
     answer_relevance_score: Optional[float] = None
     context_precision_score: Optional[float] = None
+    input_tokens: Optional[int] = 0
+    output_tokens: Optional[int] = 0
+    cost_usd: Optional[float] = 0.0
 
 
 class RagQuestionsPage(BaseModel):

@@ -23,7 +23,7 @@ Kitabim.ai is a monorepo platform for OCR digitization, editorial curation, and 
 | [OCR_DESIGN.md](OCR_DESIGN.md) | Gemini Vision OCR, soft-skip retries, table-of-contents detection, batch OCR mode |
 | [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md) | Recursive character splitting, chunk upsert strategy, TOC page handling |
 | [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) | Gemini embedding generation, pgvector storage, batch embedding mode |
-| [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) | Spellcheck + auto-correct — independent quality layer, dictionary-based corrections |
+| [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) | Spellcheck + auto-correct + admin-triggered LLM spell correction — three independent quality layers |
 | [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) | Book-level summary generation + embedding for RAG book routing |
 | [CHAT_RAG_DESIGN.md](CHAT_RAG_DESIGN.md) | `ChatOrchestrator` — retrieval, Google ADK agent tools, reranking, judge scoring, tool reference |
 | [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) | Entity/relationship extraction and entity resolution into Neo4j (GraphRAG) |

@@ -46,6 +46,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const contextBookIdsRef = useRef<string[]>([]);
   const pendingEvalIdRef = useRef<number | null>(null);
+  const pendingCostRef = useRef<Message['cost']>(undefined);
   const streamUpdateTimerRef = useRef<number | null>(null);
 
   const scheduleStreamingUpdate = useCallback(() => {
@@ -191,6 +192,8 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
               role: m.role,
               text: m.content,
               evalId: m.evalId ?? undefined,
+              cost: m.cost ?? undefined,
+              feedback: m.feedback ?? undefined,
             }));
             setChatMessages(formatted);
           } else {
@@ -229,6 +232,8 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         role: m.role,
         text: m.content,
         evalId: m.evalId ?? undefined,
+        cost: m.cost ?? undefined,
+        feedback: m.feedback ?? undefined,
       }));
       setChatMessages(formatted);
     } finally {
@@ -328,11 +333,14 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
             const finalMessage = streamingMessageRef.current;
             const evalId = pendingEvalIdRef.current ?? undefined;
             pendingEvalIdRef.current = null;
+            const cost = pendingCostRef.current;
+            pendingCostRef.current = undefined;
             setChatMessages(prev => [...prev, {
               role: 'model',
               text: finalMessage,
               characterId: selectedCharacterId,
               evalId,
+              cost,
               partialResult: hasToolFailureRef.current
             }]);
             streamingMessageRef.current = '';
@@ -363,6 +371,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
           onAgentEvent: handleAgentEvent,
           onEvalId: (evalId: number) => { pendingEvalIdRef.current = evalId; },
           onConversationId: (convId: string) => { setConversationId(convId); },
+          onCostUpdate: (cost) => { pendingCostRef.current = cost; },
         },
       );
     } catch (err: any) {
@@ -386,6 +395,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     setChatMessages([]);
     contextBookIdsRef.current = [];
     pendingEvalIdRef.current = null;
+    pendingCostRef.current = undefined;
   };
 
   const submitFeedback = async (messageIndex: number, feedback: 'positive' | 'negative') => {

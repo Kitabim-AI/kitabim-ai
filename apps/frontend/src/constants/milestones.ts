@@ -44,6 +44,7 @@ export const REPROCESS_STEP = {
   CHUNKING: 'chunking',
   EMBEDDING: 'embedding',
   SPELL_CHECK: 'spell-check',
+  LLM_SPELL_CHECK: 'llm-spell-check',
   GRAPH: 'graph',
   SUMMARY: 'summary',
   HISTORY: 'history',

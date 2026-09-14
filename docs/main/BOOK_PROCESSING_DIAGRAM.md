@@ -1,6 +1,6 @@
 # Book Processing Pipeline Diagram
 
-Visual companion to [WORKER_DESIGN.md](WORKER_DESIGN.md). Gemini API calls are synchronous/real-time by default. OCR, embedding, and history dictionary extraction can each optionally run through the Gemini Batch API instead (`ocr_batch_enabled` / `embed_batch_enabled` / `history_batch_enabled`, all `false` by default) — see [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the OCR/embedding batch-mode diagrams.
+Visual companion to [WORKER_DESIGN.md](WORKER_DESIGN.md). Gemini API calls are synchronous/real-time by default. OCR, embedding, history dictionary extraction, and the on-demand LLM spell check can each independently run through the Gemini Batch API instead (`ocr_batch_enabled`, default `true`; `embed_batch_enabled` / `history_batch_enabled` / `llm_spell_check_batch_enabled`, all default `false`) — see [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the OCR/embedding batch-mode diagrams.
 
 ---
 
@@ -80,6 +80,15 @@ flowchart TD
     J_HX -->|"Stage candidate terms + facts<br/>(or submit batch job when<br/>history_batch_enabled)"| HXQ[(history_dictionary_staging)]
     S_HXP["Batch History Poller Scanner<br/>every 1 min"] -.->|Poll batch_history_extraction_jobs| J_HX
 
+    %% LLM spell check — a second, admin-trigger-only spell-check mechanism,
+    %% independent of both the milestone pipeline and the dictionary-based
+    %% Quality Layer below (own pages.llm_spell_check_status column)
+    subgraph LlmSpellCheck ["LLM Spell Check — admin-trigger only, independent of the milestone pipeline and of the dictionary-based Quality Layer (own llm_spell_check_status column; no scanner claims idle work for it; not reset by Stale Watchdog)"]
+        S_LSC["Admin: POST /{id}/reprocess/llm-spell-check (book)<br/>or /{id}/pages/{n}/llm-spell-check (single page, always live)"] -->|Enqueue directly| J_LSC[LLM Spell Check Job]
+    end
+    J_LSC -->|"Apply Gemini correction to pages.text<br/>(book-wide trigger only: submit batch job<br/>when llm_spell_check_batch_enabled)"| PG
+    S_LSCP["Batch LLM Spell Check Poller Scanner<br/>every 1 min"] -.->|Poll batch_llm_spell_check_jobs| J_LSC
+
     %% Monitoring
     Watchdog["Stale Watchdog<br/>every 30 min, heartbeat-aware"] -.->|"Reset in_progress<br/>(dead worker: 2 min; alive: 30 min)"| Pipeline
     Watchdog -.->|"Reset in_progress"| SpellCheck
@@ -93,7 +102,7 @@ flowchart TD
     classDef errStage fill:#ffcccb,stroke:#d32f2f,stroke-width:2px
 
     class InitDB,Ready stage
-    class J_OCR,J_CH,J_EM,J_SC,J_SUM,J_KG,J_AC,J_GR,J_HX job
+    class J_OCR,J_CH,J_EM,J_SC,J_SUM,J_KG,J_AC,J_GR,J_HX,J_LSC job
     class OB,ED event
     class PD driver
     class PG,N4J,GQ,HXQ db
@@ -107,17 +116,19 @@ flowchart TD
 
 > **History dictionary extraction note:** `history_extraction_job` is **manual-trigger-only** and, unlike knowledge-graph extraction, has no backfill scanner at all — only an admin action (`POST /api/admin/books/{book_id}/extract-history`) enqueues it, gated by `history_extraction_enabled` (`true` by default). It stages candidate terms into `history_dictionary_staging` for admin review/approval (`/history-dictionary/staging/*` endpoints) rather than writing directly to the live `history_dictionary` table. It does not read or write any page/book milestone column, so it has no dependency on OCR/chunking/embedding completing and can run at any time after a book has pages with text. `batch_history_poller_scanner` (every 1 min, no-op unless `history_batch_enabled` has been used) polls the Gemini Batch API path the same way the OCR/embedding poller scanners do.
 
+> **LLM spell check note:** `llm_spell_check_job` is a second, independent spell-check mechanism alongside the dictionary-based `spell_check_job`/`auto_correct_job` pair in the Quality Layer below — a context-aware Gemini correction pass for real-word errors a dictionary lookup can't catch. It is **manual-trigger-only**, via `POST /{book_id}/reprocess/llm-spell-check` (whole book) or `POST /{book_id}/pages/{page_num}/llm-spell-check` (single page; always live, ignores `llm_spell_check_batch_enabled`) — both admin-only. It tracks status on its own `pages.llm_spell_check_status`/`llm_spell_check_at` columns, entirely separate from the four milestone columns: no `PipelineEvent`, no `retry_count`, no book-level rollup, and — unlike `ocr`/`chunking`/`embedding`/`spell_check_milestone` — **not** reset by Stale Watchdog if a run gets stuck `in_progress`. It never gates chunking or book readiness. `batch_llm_spell_check_poller_scanner` (every 1 min, no-op unless `llm_spell_check_batch_enabled` has been used) polls the Gemini Batch API path for the book-wide trigger the same way the OCR/embedding/history poller scanners do.
+
 ---
 
 ## Batch OCR & Batch Embedding (optional)
 
-Both feature-flagged off by default. When enabled, they replace the interactive-API branch of `OCR Job`/`Embedding Scanner` with an async submit-then-poll cycle against the Gemini Batch API. See [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) for the batch-OCR diagram and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the batch-embedding diagram. History dictionary extraction has an analogous batch mode (`history_batch_enabled`) — see [HistoryExtractionJob](WORKER_DESIGN.md#historyextractionjob--batchhistorypollerscanner) in WORKER_DESIGN.md.
+Batch OCR (`ocr_batch_enabled`) is `true` by default; batch embedding (`embed_batch_enabled`) is `false` by default. When enabled, they replace the interactive-API branch of `OCR Job`/`Embedding Scanner` with an async submit-then-poll cycle against the Gemini Batch API. See [OCR_DESIGN.md](OCR_DESIGN.md#data-flow) for the batch-OCR diagram and [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#data-flow) for the batch-embedding diagram. History dictionary extraction and the on-demand LLM spell check each have an analogous batch mode (`history_batch_enabled`, `llm_spell_check_batch_enabled`, both `false` by default) — see [HistoryExtractionJob](WORKER_DESIGN.md#historyextractionjob--batchhistorypollerscanner) and [LLMSpellCheckJob](WORKER_DESIGN.md#llmspellcheckjob--batchllmspellcheckpollerscanner) in WORKER_DESIGN.md.
 
 ---
 
 ## Admin Recovery Actions
 
-Actions available to admins/editors on a book for recovering from a stuck or failed pipeline state. All of them work by resetting milestone columns and letting the existing scanners pick the pages back up — none of them run processing synchronously except "Update Page Text".
+Actions available to admins/editors on a book for recovering from a stuck or failed pipeline state. Most of them work by resetting milestone columns and letting the existing scanners pick the pages back up — none of them run processing synchronously except "Update Page Text". The two LLM spell-check actions are the exception: they trigger a fresh Gemini correction directly (there is no milestone for a scanner to pick back up) and are listed here only because they are the equivalent on-demand admin actions for that feature.
 
 | Endpoint | Role required | Effect |
 |---|---|---|
@@ -127,6 +138,8 @@ Actions available to admins/editors on a book for recovering from a stuck or fai
 | `POST /api/books/{book_id}/reprocess/spell-check` | editor | Resets `spell_check_milestone` to `idle` and `retry_count=0`. No text, chunks, or vectors are touched. |
 | `POST /api/books/{book_id}/reprocess/graph` | admin | Requires a `{"scope": "fiction" \| "nonfiction"}` body (validated at the schema level and again in the job). Sets `graph_milestone='in_progress'` then enqueues `knowledge_graph_job` directly (bypasses `graph_scanner`); rolls the milestone back to `idle` if the enqueue fails. Returns `400` if `kg_enabled != 'true'`. |
 | `POST /api/books/{book_id}/reprocess/summary` | admin | Deletes the existing `book_summaries` row and enqueues `summary_job`. |
+| `POST /api/books/{book_id}/reprocess/llm-spell-check` | admin | On-demand Gemini-based LLM spell correction for every page not already `llm_spell_check_status='in_progress'`. Costs real Gemini API calls, hence admin-only. Live path by default; submits a `batch_llm_spell_check_jobs` row instead when `llm_spell_check_batch_enabled`. Independent of the milestone pipeline — touches only `pages.llm_spell_check_status`/`llm_spell_check_at`, never `ocr`/`chunking`/`embedding`/`spell_check_milestone` or `status`. |
+| `POST /api/books/{book_id}/pages/{page_num}/llm-spell-check` | admin | Same on-demand LLM correction for a single page. Always uses the live path regardless of `llm_spell_check_batch_enabled`. Returns `409` if that page is already `llm_spell_check_status='in_progress'`. |
 | `POST /api/books/{book_id}/retry-failed` | editor | Resets every `failed`/`error` milestone on the book back to `idle`, resets `retry_count=0`, sets `status='pending'` — the standard way to un-stick a book that landed in `status='error'`. |
 | `POST /api/books/{book_id}/pages/{page_num}/reset` | editor | Resets a single page's `status`, text, and all milestones so OCR reprocesses it from scratch. |
 | `POST /api/books/{book_id}/pages/{page_num}/update` | editor | Manual text edit — see [Manual Page Update](#manual-page-update) below. |
@@ -206,6 +219,8 @@ flowchart TD
 | `succeeded` | Step complete for this page (OCR may reach this via a soft-skip with empty text) |
 | `failed` | Job raised an exception on this attempt; retried automatically while `retry_count` remains under the configured max |
 
+Note: `pages.llm_spell_check_status` uses the same four string values but is a **separate, independent column** for the on-demand LLM spell-check feature (see [LLM Spell Check note](#full-pipeline) above) — it does not participate in `retry_count`, book-level rollups, or Stale Watchdog recovery.
+
 ### Manual Page Update
 
 `POST /api/books/{book_id}/pages/{page_num}/update` — editor saves text changes in the reader/admin UI:
@@ -222,12 +237,13 @@ flowchart TD
 
 | Component | Role |
 |---|---|
-| **ARQ Worker** | Executes the 10 registered jobs and 15 scheduled scanners (of 16 total; `graph_scanner` unscheduled) via the Redis-backed queue |
+| **ARQ Worker** | Executes the 11 registered jobs and 16 scheduled scanners (of 17 total; `graph_scanner` unscheduled) via the Redis-backed queue |
 | **Pipeline Driver** | Initializes new pages, resets retryable failures, computes book `ready`/`error`, auto-enqueues `summary_job` |
 | **Scanners** | Poll for eligible `idle` pages/books, enforce their own upstream dependency, dispatch jobs |
 | **Event Dispatcher** | Polls `pipeline_events` and immediately dispatches the next job, bypassing the 1-minute cron cadence |
-| **Stale Watchdog** | Recovers `in_progress` pages/books using Redis worker-heartbeat state, not just a flat timeout |
-| **MultiPageLock** | Redis-backed per-page lock (1‑hour expiry, namespaced per pipeline stage) used by `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` to prevent double-processing of a claimed page |
-| **Batch pollers** | `batch_ocr_poller_scanner` / `batch_embedding_poller_scanner` / `batch_history_poller_scanner` — poll Gemini Batch API jobs and ingest results when the corresponding batch mode is enabled |
+| **Stale Watchdog** | Recovers `in_progress` pages/books using Redis worker-heartbeat state, not just a flat timeout. Covers `ocr`/`chunking`/`embedding`/`spell_check_milestone` only — `pages.llm_spell_check_status` is not covered |
+| **MultiPageLock** | Redis-backed per-page lock (1‑hour expiry, namespaced per pipeline stage) used by `ocr_job`, `chunking_job`, `embedding_job`, and `spell_check_job` to prevent double-processing of a claimed page. `llm_spell_check_job` does **not** use it — its only guard is the triggering endpoint's `in_progress` pre-check |
+| **Batch pollers** | `batch_ocr_poller_scanner` / `batch_embedding_poller_scanner` / `batch_history_poller_scanner` / `batch_llm_spell_check_poller_scanner` — poll Gemini Batch API jobs and ingest results when the corresponding batch mode is enabled |
 | **Graph resolution queue** | Postgres `graph_resolution_queue` — the handoff between graph extraction and entity resolution. `graph_resolution_scanner` claims rows every 5 min (`FOR UPDATE SKIP LOCKED`, oldest generation first) and dispatches one `graph_resolution_job` per scope; see [KNOWLEDGE_GRAPH_DESIGN.md](KNOWLEDGE_GRAPH_DESIGN.md) |
 | **History dictionary staging** | Postgres `history_dictionary_staging` — admin-reviewed candidate terms produced by `history_extraction_job`, published to `history_dictionary` on approval; admin-trigger only, no scanner claims idle work for it |
+| **LLM spell check** | A second, admin-trigger-only spell-check mechanism (context-aware Gemini correction) alongside the dictionary-based Quality Layer in the Full Pipeline diagram above; tracked on `pages.llm_spell_check_status`/`llm_spell_check_at`, with no scanner claiming idle work for it and no book-level rollup |

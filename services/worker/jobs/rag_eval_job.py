@@ -9,6 +9,7 @@ import logging
 from app.db import session as db_session
 from app.db.repositories.rag_evaluations_repository import RAGEvaluationsRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
+from app.llm.pricing import estimate_cost_usd
 from app.services.rag.judge import score_answer
 from app.utils.observability import log_json
 
@@ -39,11 +40,18 @@ async def rag_eval_job(ctx: dict, eval_id: int) -> None:
         )
 
         try:
+            usage: dict = {}
             scores = await score_answer(
                 question=row.question,
                 answer=row.answer or "",
                 context=row.retrieved_context or "",
                 model=model,
+                usage_out=usage,
+            )
+            judge_cost_usd = estimate_cost_usd(
+                model,
+                usage.get("input_tokens", 0),
+                usage.get("output_tokens", 0),
             )
             await repo.update_one(
                 eval_id,
@@ -51,6 +59,7 @@ async def rag_eval_job(ctx: dict, eval_id: int) -> None:
                 answer_relevance_score=scores.answer_relevance,
                 context_precision_score=scores.context_precision,
                 eval_status="completed",
+                judge_cost_usd=judge_cost_usd,
             )
             await session.commit()
             log_json(logger, logging.INFO, "rag_eval_job completed", eval_id=eval_id)

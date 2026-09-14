@@ -16,7 +16,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNotification } from '../../context/NotificationContext';
 import { useAppContext } from '../../context/AppContext';
-import { useAuth, useIsEditor } from '../../hooks/useAuth';
+import { useAuth, useIsEditor, useIsAdmin } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { ChatInterface } from '../chat/ChatInterface';
@@ -54,7 +54,9 @@ export const ReaderView: React.FC = () => {
 
   const { t } = useI18n();
   const isEditor = useIsEditor();
+  const isAdmin = useIsAdmin();
   const { isAuthenticated, user } = useAuth();
+  const isGuest = !isAuthenticated;
   const isGuestOrReader = !isAuthenticated || (user?.role === 'reader');
   const usesArabicReaderFont = (selectedBook.categories || []).some(
     (category) => normalizeReaderCategory(category) === 'ئەرەبچە'
@@ -172,9 +174,14 @@ export const ReaderView: React.FC = () => {
 
   useEffect(() => {
     if (currentPage !== null) {
-      setPageInput(currentPage.toString());
+      if (isGuest && currentPage > 20) {
+        setCurrentPage(20);
+        setPageInput('20');
+      } else {
+        setPageInput(currentPage.toString());
+      }
     }
-  }, [currentPage]);
+  }, [currentPage, isGuest, setCurrentPage]);
 
   // When editing ends, scroll back to the page that was being edited.
   useEffect(() => {
@@ -388,7 +395,7 @@ export const ReaderView: React.FC = () => {
         try {
           const success = await bookActions.handleSaveBookRow(selectedBook.id, {
             contentPageOffset: newOffset
-          });
+          }, { silent: true });
           if (success) {
             addNotification(
               t('reader.setStartPageSuccess', { page: pageNumber, offset: newOffset }) ||
@@ -406,6 +413,23 @@ export const ReaderView: React.FC = () => {
   const contentPageOffset = selectedBook.contentPageOffset ?? (selectedBook as any).content_page_offset ?? 0;
 
   const handleTocPageClick = useCallback((targetPage: number) => {
+    if (isGuest && targetPage > 20) {
+      addNotification(t('reader.guestLimitNotification'), 'info');
+      const safeTarget = 20;
+      setCurrentPage(safeTarget);
+      setPageInput(safeTarget.toString());
+      const el = pageRefs.current.get(safeTarget);
+      const container = mainScrollRef.current;
+      if (el && container) {
+        const containerTop = container.getBoundingClientRect().top;
+        const elTop = el.getBoundingClientRect().top;
+        container.scrollTo({
+          top: container.scrollTop + (elTop - containerTop) - 24,
+          behavior: 'smooth'
+        });
+      }
+      return;
+    }
     setCurrentPage(targetPage);
     setPageInput(targetPage.toString());
     const el = pageRefs.current.get(targetPage);
@@ -418,7 +442,7 @@ export const ReaderView: React.FC = () => {
         behavior: 'smooth'
       });
     }
-  }, [setCurrentPage]);
+  }, [setCurrentPage, isGuest, addNotification, t]);
 
   const [isDownloading, setIsDownloading] = useState(false);
   const handleDownload = async () => {
@@ -591,7 +615,7 @@ export const ReaderView: React.FC = () => {
           </div>
 
           {/* Reading Canvas */}
-          <div ref={mainScrollRef} dir="rtl" className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col`}>
+          <div ref={mainScrollRef} dir="rtl" style={{ overflowAnchor: 'none' }} className={`flex-grow overflow-y-auto custom-scrollbar paper-background ${isEditing ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col`}>
             {isEditing ? (
               <div className="h-full relative w-full max-w-4xl mx-auto">
                 {isFetchingContent && <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#0369a1] dark:text-[#38bdf8] animate-spin" /></div>}
@@ -630,6 +654,7 @@ export const ReaderView: React.FC = () => {
                 }}
                 onSetStartPage={isEditor ? (pageNum) => handleSetStartPage(pageNum) : undefined}
                 onToggleToc={isEditor ? (pageNum, nextIsToc) => bookActions.handleToggleToc(selectedBook.id, pageNum, nextIsToc) : undefined}
+                onLlmSpellCheck={isAdmin ? (pageNum) => bookActions.handleLlmSpellCheckPage(selectedBook.id, pageNum) : undefined}
                 onTempTextChange={setTempPageText}
                 onSave={(pageNum, text) => {
                   handleUpdatePage(selectedBook.id, pageNum, text);
@@ -670,6 +695,7 @@ export const ReaderView: React.FC = () => {
                         onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
                         onSetStartPage={isEditor ? () => handleSetStartPage(page.pageNumber) : undefined}
                         onToggleToc={isEditor ? (nextIsToc) => bookActions.handleToggleToc(selectedBook.id, page.pageNumber, nextIsToc) : undefined}
+                        onLlmSpellCheck={isAdmin ? () => bookActions.handleLlmSpellCheckPage(selectedBook.id, page.pageNumber) : undefined}
                         tempText={tempPageText}
                         onTempTextChange={setTempPageText}
                         onSave={() => {

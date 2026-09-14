@@ -19,6 +19,7 @@ vi.mock('@/src/context/NotificationContext', () => ({
 vi.mock('@/src/hooks/useAuth', () => ({
   useAuth: vi.fn(),
   useIsEditor: vi.fn(),
+  useIsAdmin: vi.fn(),
 }));
 
 vi.mock('@/src/services/persistenceService', () => ({
@@ -157,6 +158,7 @@ beforeEach(() => {
     user: { role: 'editor' },
   } as any);
   vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
+  vi.mocked(AuthModule.useIsAdmin).mockReturnValue(false);
 });
 
 test('ReaderView renders book title, virtual scroll by default, and controls', () => {

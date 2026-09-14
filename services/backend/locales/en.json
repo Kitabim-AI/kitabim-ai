@@ -21,6 +21,7 @@
     "cover_not_found": "Cover image not found",
     "unauthorized_access": "Unauthorized access",
     "feature_restricted": "This feature is restricted to registered users only",
+    "guest_page_limit_reached": "Guest users can only read the first 20 pages. Please sign in or register to read the full book.",
     "daily_limit_reached": "Sorry, you have reached your daily chat limit. Please try again tomorrow.",
     "system_busy": "Sorry, the system is currently busy. Please try again in a moment.",
     "system_busy_generic": "The system is currently busy, please try again in a moment.",
@@ -28,6 +29,8 @@
     "config_already_exists": "Config key '{key}' already exists",
     "book_title_not_found": "Book with title '{title}' not found",
     "invalid_file_type": "Invalid file type. Allowed: {allowed}",
+    "invalid_pages_payload": "Invalid pages payload: must be a JSON array of {{pageNumber, text, isToc}}",
+    "pages_count_mismatch": "Pages array must cover every page from 1 to {total} exactly once (got {count} entries for a {total}-page PDF)",
     "image_process_failed": "Failed to process image: {error}",
     "spell_check_failed": "Spell check failed: {error}",
     "page_not_found_with_num": "Page {page_num} not found",
@@ -47,6 +50,8 @@
     "queue_unavailable": "Processing queue is temporarily unavailable. Please try again in a moment.",
     "graph_enqueue_failed": "Failed to enqueue Knowledge Graph job. Please try again.",
     "summary_enqueue_failed": "Failed to enqueue Summary job. Please try again.",
+    "llm_spell_check_enqueue_failed": "Failed to start LLM spell check. Please try again.",
+    "llm_spell_check_already_running": "LLM spell check is already running for this page.",
     "staging_candidate_not_found": "Staging candidate not found or already processed",
     "staging_fact_not_found": "Fact not found on this staging candidate",
     "staging_conflicts_unresolved": "This term has unresolved fact conflicts. Resolve them before approving.",
@@ -81,6 +86,8 @@
     "exact_phrase_page_hits_header": "Found {count} exact match(es):",
     "exact_phrase_page_hit_line": "{title} — page {page}",
     "exact_phrase_page_hit_line_no_page": "{title}",
-    "knowledge_graph_title": "Knowledge Graph"
+    "knowledge_graph_title": "Knowledge Graph",
+    "short_work_intro": "The full text of the poem «{title}» is as follows:",
+    "short_work_truncated_note": "(Content truncated; the rest continues in the book.)"
   }
 }

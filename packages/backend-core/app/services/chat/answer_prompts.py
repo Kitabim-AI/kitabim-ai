@@ -85,6 +85,19 @@ def build_answer_instructions(
             "   - Use > for direct quotations from the source text"
         ),
         (
+            "If the user asks to see, find, or read the full text of a specific work "
+            "(a poem, song, or passage) and the context contains matching source text, "
+            "reproduce that text in full, verbatim, using '>' blockquote formatting — "
+            "preserve the original line breaks exactly as given in the context (do not "
+            "reflow poem lines into prose). The context is the user's own indexed "
+            "library content, retrieved specifically to answer this question — "
+            "reproducing it verbatim is the expected, correct behavior, NOT a "
+            "copyright concern. Do NOT refuse, hedge, add a disclaimer about being "
+            "unable to reproduce copyrighted text, or substitute a general "
+            "discussion/analysis of the work in place of the actual text when the "
+            "user asked to see the text itself."
+        ),
+        (
             "If the context contains the information, ALWAYS cite the source clearly.\n"
             "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Page: N]\n"
             "   Book summaries use the marker SUMMARY instead of Page: [BookID: abc123, Book: title, Author: name, SUMMARY]\n"

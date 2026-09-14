@@ -37,6 +37,7 @@ export function useScrollToPage({
 }: UseScrollToPageOptions) {
   const isScrollingRef = useRef(false);
   const lastKeyRef = useRef<string | null>(null);
+  const isProgrammaticScrollRef = useRef(false);
 
   const getPageElementRef = useRef(getPageElement);
   getPageElementRef.current = getPageElement;
@@ -47,9 +48,11 @@ export function useScrollToPage({
 
   useEffect(() => {
     if (lastKeyRef.current === targetKey) return;
+    const isExplicitJump = targetKey.startsWith('toc-jump:') || targetKey.startsWith('edit-exit:');
     // If we've already completed initial mount and the target matches where the user
     // is currently centered (e.g. from passive manual scrolling), do not trigger an auto-scroll snap.
     if (
+      !isExplicitJump &&
       lastKeyRef.current !== null &&
       currentCenterPageRef.current !== undefined &&
       targetPage === currentCenterPageRef.current
@@ -63,29 +66,67 @@ export function useScrollToPage({
     let quietTimer: ReturnType<typeof setTimeout>;
     let attempts = 0;
     let resizeObserver: ResizeObserver | null = null;
+    let userInputContainer: HTMLElement | null = null;
 
     const alignToTarget = (el: Element) => {
       const container = containerRef.current;
       if (!container) return;
       const containerTop = container.getBoundingClientRect().top;
       const elTop = el.getBoundingClientRect().top;
+      const newTop = container.scrollTop + (elTop - containerTop) - topOffset;
+      isProgrammaticScrollRef.current = true;
       container.scrollTo?.({
-        top: container.scrollTop + (elTop - containerTop) - topOffset,
+        top: newTop,
         behavior: 'instant',
       });
+      requestAnimationFrame(() => {
+        isProgrammaticScrollRef.current = false;
+      });
+    };
+
+    // Any user scroll/interaction stops settling immediately — keeping the jumped-to
+    // page pinned or adjusted stops being helpful and fights the user the moment they move.
+    const SCROLL_KEYS = new Set([
+      'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ',
+    ]);
+    const handleUserScrollInput = () => stopSettling();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(e.key)) stopSettling();
+    };
+    const handleUserScroll = () => {
+      if (!isProgrammaticScrollRef.current) {
+        stopSettling();
+      }
+    };
+
+    const detachUserInputListeners = () => {
+      if (userInputContainer) {
+        userInputContainer.removeEventListener('scroll', handleUserScroll);
+        userInputContainer.removeEventListener('wheel', handleUserScrollInput);
+        userInputContainer.removeEventListener('touchmove', handleUserScrollInput);
+        userInputContainer.removeEventListener('keydown', handleKeyDown);
+        userInputContainer = null;
+      }
+      window.removeEventListener('wheel', handleUserScrollInput);
+      window.removeEventListener('touchmove', handleUserScrollInput);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('pointerdown', handleUserScrollInput);
     };
 
     const stopSettling = () => {
       resizeObserver?.disconnect();
       resizeObserver = null;
       clearTimeout(quietTimer);
+      detachUserInputListeners();
       isScrollingRef.current = false;
     };
 
     // Pages up to the target render as placeholders until their content fetch
     // resolves, which can land just after this jump and change their height —
     // silently pushing the target out of view. Re-align whenever one of them
-    // actually resizes, and stop once nothing has changed for a quiet period.
+    // actually resizes, and stop once nothing has changed for a quiet period
+    // OR the moment the user actually tries to scroll themselves, whichever
+    // comes first.
     const watchForShifts = (el: Element) => {
       const container = containerRef.current;
       if (!container) return;
@@ -103,6 +144,17 @@ export function useScrollToPage({
       });
 
       quietTimer = setTimeout(stopSettling, SETTLE_QUIET_MS);
+
+      userInputContainer = container;
+      container.addEventListener('scroll', handleUserScroll, { passive: true });
+      container.addEventListener('wheel', handleUserScrollInput, { passive: true });
+      container.addEventListener('touchmove', handleUserScrollInput, { passive: true });
+      container.addEventListener('keydown', handleKeyDown);
+
+      window.addEventListener('wheel', handleUserScrollInput, { passive: true });
+      window.addEventListener('touchmove', handleUserScrollInput, { passive: true });
+      window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('pointerdown', handleUserScrollInput, { passive: true });
     };
 
     const tryFind = () => {
