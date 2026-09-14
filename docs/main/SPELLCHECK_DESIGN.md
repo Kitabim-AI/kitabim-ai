@@ -1,6 +1,12 @@
-# Spellcheck + Auto-Correct — Design
+# Spellcheck, Auto-Correct & LLM Spell Correction — Design
 
 See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) for the cross-stage diagram this stage's Data Flow is scoped from. Prior stages: [OCR_DESIGN.md](OCR_DESIGN.md), [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md), [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md). Next stage: [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md).
+
+This doc covers **three** distinct text-quality mechanisms that all end up writing `pages.text`, in order of introduction:
+
+1. **Dictionary-based spellcheck** (`SpellCheckScanner`/`SpellCheckJob`) — automatic, pipeline-scanner-driven, detects unknown words.
+2. **Auto-correct** (`AutoCorrectScanner`/`AutoCorrectJob`) — automatic, batch-applies admin-curated corrections to spellcheck's findings.
+3. **LLM spell correction** (`llm_spell_check_job` / `batch_llm_spell_check_service`) — **on-demand, admin-triggered only**, added later (migrations 090/091) to catch context-dependent real-word errors the first two structurally cannot. See [LLM Spell Correction](#llm-spell-correction-on-demand-layer) below.
 
 ## Overview
 
@@ -12,6 +18,8 @@ Spellcheck and auto-correct are two cooperating stages that form an independent 
 - **Auto-correct is the batch mechanism that both rewrites text for open issues and re-opens chunking/embedding.** `apply_auto_corrections_to_page` (`auto_correct_service.py`) finds a page's open/processing `page_spell_issues` that match an active `auto_correct_rules` entry, rewrites `page.text` end-to-start (to preserve character offsets), marks those issues `corrected`, and sets `chunking_milestone = 'idle'`, `embedding_milestone = 'idle'`, `is_indexed = false` on the page — this is exactly why `ChunkingScanner`/`EmbeddingScanner` do **not** exclude `book.status = 'ready'` books (see [CHUNKING_DESIGN.md](CHUNKING_DESIGN.md#overview) / [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md#overview)): a `ready` book's page can be silently reopened for re-chunking/re-embedding by auto-correct at any time.
 - **Spellcheck's exhaustion never affects `book.status`.** `PipelineDriver` (`services/worker/scanners/pipeline_driver.py`) computes book-ready/book-error purely from `ocr_milestone`/`chunking_milestone`/`embedding_milestone` (its `terminal_case`/`success_case`/`failed_case` SQL expressions never reference `spell_check_milestone`). `spell_check_milestone` is, however, included in `PipelineDriver`'s separate Reset step: a page with `spell_check_milestone` in `('failed', 'error')` and `retry_count < ocr_max_retry_count` is reset to `idle` (same shared `retry_count` counter and the same `~Book.status.in_(('ready','error'))` reset-eligibility gate used for OCR/chunking/embedding) — so spellcheck does get automatic retries, it just never determines whether the book itself is ready or errored.
 - **`auto_correct_rules` also feeds the OCR prompt, independent of the auto-correct pipeline described here.** `AutoCorrectRulesRepository.get_frequent_corrections_block()` formats all active rules into the `{frequent_corrections}` placeholder of `OCR_PROMPT` (`ocr_service.py`), cached under `cache_config.KEY_OCR_FREQUENT_CORRECTIONS` and invalidated by every rule create/update/delete. This is a second, independent consumer of the same rules table — not part of the spellcheck/auto-correct job flow — see [OCR_DESIGN.md](OCR_DESIGN.md).
+- **LLM spell correction is a third, fully independent layer — not a rename or successor of the above.** Added in migrations `090`/`091` (2026-09-08), it runs neither before nor after the dictionary-based stages, is never dispatched by a scanner, and does not read or write `spell_check_milestone`, `page_spell_issues`, or `auto_correct_rules` at all. It has its own status column (`pages.llm_spell_check_status`) and is triggered exclusively by an admin action (per-page or per-book), never automatically. It exists to catch **context-dependent real-word errors** — a valid Uyghur word substituted for a different valid word that breaks the sentence's meaning — which the dictionary-based `find_unknown_words` check structurally cannot catch (both words are "known"). See [LLM Spell Correction](#llm-spell-correction-on-demand-layer) for the full design.
+- **The three layers are uncoordinated and can race.** All three write `page.text` and none locks against the others: `run_spell_check_for_page`'s inline rule pass, `apply_auto_corrections_to_page`, and the LLM job's text overwrite can all touch the same page's text with no mutual exclusion. This was an accepted, low-probability trade-off for the LLM layer specifically (each of the three is triggered independently — automatically for the first two, manually for the third).
 - **"Dictionary" is two different tables — a naming trap worth calling out.** The table spellcheck actually checks for "is this word known" is `words` (SQLAlchemy model `Word`, `unnest(...) NOT EXISTS (SELECT 1 FROM words WHERE word = w)` in `spell_check_service.find_unknown_words`). The `dictionary` table (model `Dictionary`, columns `word`/`definition`/`audio`) is an unrelated word-definitions table used only by `DictionaryRepository`/`dictionary_router.py` for RAG/UI lookups — it plays no role in spellcheck's unknown-word detection. Migration `058_rename_dictionary_to_words_and_create_new_dictionary.sql` is the origin of this split: it renamed the original spellcheck word list from `dictionary` to `words`, then created a brand-new `dictionary` table for definitions. The spell-check editor UI's "add to dictionary" action (`is_dictionary_addition` in `POST /{book_id}/pages/{page_num}/spell-check/apply`) inserts into `words`, not `dictionary`, despite the name. One exception to "`dictionary_router.py` plays no role in spellcheck": `GET /api/dictionary/check-spelling` (`DictionaryRepository.check_word_spelling`) queries the `words` table directly — it's a public word-known/suggestions lookup for the home search box's "Spell Check" tab and the `check_word_spelling` chat tool, not part of the page-scanning pipeline described in this doc, but it does share the `words` table.
 
 ## Feature Flags
@@ -20,6 +28,7 @@ Spellcheck and auto-correct are two cooperating stages that form an independent 
 |---|---|---|
 | `spell_check_enabled` (`system_configs`) | `"true"` — present as a seed row in `seed_system_configs()` (`packages/backend-core/app/db/seeds.py`), which runs on every backend/worker startup and inserts the row whenever it's absent; also present in the `001_initial_baseline.sql` data dump. The code-level fallback passed to `config_repo.get_value("spell_check_enabled", "false")` in both `spell_check_scanner.py` and `chunking_scanner.py`/`event_dispatcher.py` is `"false"`, but that path is only reached if the row was never seeded. | `SpellCheckScanner` — returns immediately if not `"true"`. Also read by `ChunkingScanner`/`EventDispatcher` to decide whether to add the `spell_check_milestone` eligibility gate (see Overview). |
 | `auto_correct_enabled` (`system_configs`) | `"true"` — present as a data row in `001_initial_baseline.sql` (`auto_correct_enabled true Enable automatic spell check corrections`), but **not** one of the keys `seed_system_configs()` re-inserts on startup. The code fallback in `auto_correct_scanner.py` (`config_repo.get_value("auto_correct_enabled", "false")`) is `"false"`. In any environment seeded from the baseline migration the effective default is enabled; an environment where that row was deleted and never restored would have auto-correct silently off. | `AutoCorrectScanner` — returns immediately (before even querying for candidate pages) if not `"true"`. |
+| `llm_spell_check_batch_enabled` (`system_configs`) | `"false"` — opt-in, seeded by both migration `091` (`INSERT ... ON CONFLICT DO NOTHING`) and `seed_system_configs()`'s `defaults` list (dual-seed convention). | `POST /{book_id}/reprocess/llm-spell-check` — when `"true"`, the per-book trigger submits a Gemini Batch API job (`submit_batch_llm_spell_check`) instead of enqueuing the live worker job. Ignored entirely by the per-page trigger, which always uses the live path. Also gates `batch_llm_spell_check_poller_scanner`, which returns immediately if not `"true"`. |
 
 ## Schema
 
@@ -36,6 +45,8 @@ Spellcheck and auto-correct are two cooperating stages that form an independent 
 | `worker_id` / `claimed_at` | `varchar(255)` / `timestamptz`, nullable | Set by `SpellCheckScanner` at claim time (`spell_check_milestone → in_progress`), overwritten by `SpellCheckJob` with the executing worker's ID once it starts. |
 | `pipeline_step` | `varchar(20)`, nullable | Set to `"spell_check"` on the owning `Book` by `SpellCheckScanner` when it claims pages for that book; reset to `"ready"` by `SpellCheckJob` once the book has no more `idle`/`in_progress` spell-check pages. |
 | `milestone` | `varchar(20)`, nullable | Legacy pre-v2 pipeline column. No current job (`ocr_job.py`, `chunking_job.py`, `embedding_job.py`, `spell_check_job.py`) ever sets this to `"succeeded"` — the only writer left is `stale_watchdog_scanner.py`'s legacy `in_progress → idle` reset. Two of this stage's own endpoints (`POST /{book_id}/spell-check/trigger` and `POST /{book_id}/pages/{page_num}/spell-check/trigger`) still gate on `Page.milestone == 'succeeded'`; see API Endpoints for the practical consequence. |
+| `llm_spell_check_status` | `varchar(20)`, default `"idle"`, **not nullable** (`migration 090`) | `idle \| in_progress \| succeeded \| failed`. Belongs to the independent LLM spell correction layer (see [LLM Spell Correction](#llm-spell-correction-on-demand-layer)) — set to `in_progress` by the two trigger endpoints, to `succeeded`/`failed` by `PagesRepository.set_llm_spell_check_status` from `llm_spell_check_job`/the batch poller. Unlike `spell_check_milestone`, this column is `NOT NULL` at the schema level and is never read by `PipelineDriver`, `ChunkingScanner`, or any scanner. |
+| `llm_spell_check_at` | `timestamptz`, nullable (`migration 090`) | Set by `set_llm_spell_check_status` only when the status transitions to a terminal value (`succeeded`/`failed`) — not on the `in_progress` transition. Displayed in the admin/reader UI. |
 
 ### `books` table (columns this stage reads/writes)
 
@@ -80,6 +91,24 @@ Spellcheck and auto-correct are two cooperating stages that form an independent 
 | `created_at` / `updated_at` | `timestamptz` | Row bookkeeping; `updated_at` has `onupdate=func.now()`. |
 | `created_by` | `varchar(36)`, FK → `users.id` (`ondelete=SET NULL`), nullable | The editor/admin who created the rule (via API or via an "is_auto_correction" spell-check apply). |
 
+### `batch_llm_spell_check_jobs` table (LLM spell correction batch path only — migration `091`)
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | `integer`, PK | Autoincrement. |
+| `gemini_batch_id` | `varchar(255)`, unique, not null | The Gemini Batch API job name (`client.batches.create(...).name`), e.g. `batches/...`. Polled by `batch_llm_spell_check_poller_scanner`. |
+| `book_id` | `varchar(64)`, FK → `books.id` (`ondelete=CASCADE`), indexed, not null | Owning book. |
+| `page_ids` | `integer[]`, not null | Exactly which pages this batch job covers — same convention as `batch_ocr_jobs`/`batch_embedding_jobs`/`batch_history_extraction_jobs`. |
+| `status` | `varchar(20)`, default `"submitting"` | `submitting \| running \| succeeded \| failed` (app-level values, no DB `CHECK`). Set to `running` once the poller observes a Gemini `RUNNING` state; `succeeded`/`failed` are terminal, set by the poller. |
+| `gcs_input_uri` / `gcs_output_uri` | `text`, nullable | Audit copy of the submitted JSONL (`gcs_input_uri`, written at submit time) and, when available, the batch's GCS output location (`gcs_output_uri`, written at completion). |
+| `total_batches` | `integer`, default `1` | Reserved for splitting one book's pages across multiple Gemini Batch files; unused in v1 — a single book's page-text volume fits in one file. |
+| `model_name` | `varchar(100)`, nullable | The `gemini_llm_spell_check_model` value in effect at submission time, snapshotted onto the job row. |
+| `error` | `text`, nullable | Set to `"Gemini Batch job ended with state {STATE}"` on a `FAILED`/`CANCELLED`/`EXPIRED` terminal state. |
+| `submitted_at` / `completed_at` | `timestamptz`, nullable | Set at submission and at terminal-state observation, respectively. |
+| `created_at` / `updated_at` | `timestamptz` | Row bookkeeping. |
+
+Two `system_configs` rows are also seeded by migration `091` (and mirrored in `seed_system_configs()`'s `defaults` list): `llm_spell_check_batch_enabled` (`"false"`) and `gemini_llm_spell_check_model` (`"gemini-3.1-flash-lite"`) — see Feature Flags and Configuration Reference.
+
 ## Architecture
 
 | File | Purpose |
@@ -97,9 +126,15 @@ Spellcheck and auto-correct are two cooperating stages that form an independent 
 | `services/backend/api/endpoints/dictionary_router.py` | Read-only search/list/stats over the `dictionary` (definitions) table — unrelated to spellcheck's own `words` table; see Overview. |
 | `services/worker/scanners/stale_watchdog_scanner.py` | Resets pages stuck `spell_check_milestone = 'in_progress'` back to `idle` (heartbeat-aware, same as OCR/chunking/embedding). |
 | `services/worker/scanners/pipeline_driver.py` | Resets `spell_check_milestone` `failed → idle` when `retry_count < ocr_max_retry_count` (same shared budget as the mandatory steps); never includes `spell_check_milestone` in its book-ready/book-error computation. |
-| `services/backend/api/endpoints/books_router.py` | Hosts `POST /{book_id}/reprocess/spell-check`. |
+| `services/backend/api/endpoints/books_router.py` | Hosts `POST /{book_id}/reprocess/spell-check` (dictionary-based) and, separately, the two LLM spell correction trigger endpoints — see [LLM Spell Correction](#llm-spell-correction-on-demand-layer). |
+| `packages/backend-core/app/services/llm_spell_check_service.py` | LLM spell correction's shared core (live path): `build_correction_prompt`, `correct_page_text` (one `generate_content` call via `build_text_llm`), `_validate_correction` (guardrail, also imported by the batch service). |
+| `services/worker/jobs/llm_spell_check_job.py` | `llm_spell_check_job` — the live-path worker job; per-page session, semaphore-bounded, no scanner/claiming involved (`page_ids` passed in directly by the triggering endpoint). |
+| `packages/backend-core/app/services/batch_llm_spell_check_service.py` | `submit_batch_llm_spell_check` (JSONL build + GCS/Gemini Files upload + `batches.create`) and `poll_and_process_batch_llm_spell_check_jobs` (polling + result ingestion), both used by the batch path. |
+| `services/worker/scanners/batch_llm_spell_check_poller_scanner.py` | `run_batch_llm_spell_check_poller_scanner` — thin flag-gated cron wrapper around `poll_and_process_batch_llm_spell_check_jobs`. |
 
 ## Data Flow
+
+This diagram covers the two **automatic** stages only (dictionary-based spellcheck and auto-correct). The LLM spell correction layer is admin-triggered, not scanner-driven, and has its own diagram — see [LLM Spell Correction](#llm-spell-correction-on-demand-layer).
 
 ```mermaid
 flowchart TD
@@ -357,6 +392,11 @@ Unlike `EXHAUSTED` in the OCR/chunking/embedding state machines, `SC_TERMINAL` i
 | `apply_auto_corrections_to_page` raises inside `AutoCorrectJob` | Emits `auto_correct_failed` (duration_ms, error) and commits that event — but **no page milestone is set to `failed`**; the page's `page_spell_issues` rows remain `status='processing'` (not reverted to `open`) until `cleanup_stale_auto_corrections`'s 15-minute stale-claim sweep reverts them on `AutoCorrectScanner`'s next invocation. |
 | `AutoCorrectScanner` finds candidate issues but zero active `auto_correct_rules` at job-start time (race: rules deactivated between `find_pages_with_auto_correctable_issues`'s claim and `AutoCorrectJob`'s rule fetch) | `AutoCorrectJob` logs a warning and returns immediately — the claimed `page_spell_issues` stay `status='processing'` until the stale-claim sweep reverts them. |
 | `POST /{book_id}/spell-check/trigger` or `POST /{book_id}/pages/{page_num}/spell-check/trigger` | Both gate on the legacy `Page.milestone` column (`== PAGE_MILESTONE_SUCCEEDED`), which no current pipeline job writes (see Schema). In practice this means both endpoints return their "no OCR-complete pages" / "Page has not completed OCR/embedding pipeline yet" `400` for pages processed under the current decoupled pipeline, regardless of actual `ocr_milestone`/`embedding_milestone` state — a page would need `Page.milestone` to have been set to `"succeeded"` by pre-v2 code for either endpoint to succeed. `POST /{book_id}/reprocess/spell-check`, which gates on nothing but book existence and resets `spell_check_milestone` directly, is unaffected by this and is the working way to re-queue spellcheck today. |
+| `correct_page_text` (LLM live path) raises (Gemini timeout/rate-limit/API error, or `_validate_correction`'s guardrail rejecting empty/wildly-length-deviated output) | Caught per-page in `llm_spell_check_job`; page's `llm_spell_check_status` set to `failed` (`llm_spell_check_at` recorded), logged via `log_json` (WARNING). No automatic retry, no `retry_count` bookkeeping — the admin re-triggers manually. A failing page does not block sibling pages in the same `asyncio.gather` batch. |
+| A batch-path result line fails `_validate_correction` or fails to parse (`poll_and_process_batch_llm_spell_check_jobs`) | That page is left out of `succeeded_page_ids`; after the loop, every `job.page_ids` entry not in that set is explicitly set to `llm_spell_check_status='failed'`. Parse/validation exceptions are caught per-line (`session.rollback()`), so one bad line doesn't stop the rest of the batch's lines from being applied. |
+| `POST /{book_id}/reprocess/llm-spell-check` or the per-page trigger fails to enqueue (live) or submit (batch: `client.batches.create`/file upload) | The endpoint rolls the affected page(s)' `llm_spell_check_status` back to `idle`, logs the error, and returns `500` (`t("errors.llm_spell_check_enqueue_failed")`) — mirrors `reprocess_graph`'s rollback pattern. |
+| Gemini Batch job reaches `FAILED`/`CANCELLED`/`EXPIRED` | `batch_llm_spell_check_poller_scanner`'s poll function sets the `BatchLlmSpellCheckJob.status='failed'` (with `error`, `completed_at`) and resets every page in `job.page_ids` to `llm_spell_check_status='failed'`, so the admin can re-trigger either path. No local timeout is enforced — the scanner relies entirely on Gemini's own terminal batch states. |
+| Per-page LLM trigger called while the page is already `llm_spell_check_status='in_progress'` | `409` (`t("errors.llm_spell_check_already_running")`) — not re-enqueued. The per-book trigger instead silently skips `in_progress` pages (no error) when building its `page_ids` list. |
 
 ## Configuration Reference
 
@@ -371,6 +411,9 @@ Unlike `EXHAUSTED` in the OCR/chunking/embedding state machines, `SC_TERMINAL` i
 | `MAX_PARALLEL_AUTO_CORRECT` (env, `settings.max_parallel_auto_correct`) | `10` | `auto_correct_job` — concurrent `apply_auto_corrections_to_page` calls per job invocation. |
 | `cleanup_stale_auto_corrections`'s `timeout_minutes` | `15` (hardcoded Python default; not read from `system_configs` or env) | `auto_correct_scanner` — always called with no explicit argument, so this is a fixed, non-configurable timeout. |
 | `ocr_max_retry_count` (`system_configs`) | `10` (seeded/baseline; code fallback in `pipeline_driver.py` is `3`) | `PipelineDriver` — the same shared pipeline-level retry budget used by OCR/chunking/embedding also governs when a `spell_check_milestone='failed'` page is reset to `idle`. There is no spell-check-specific retry-count key. |
+| `llm_spell_check_batch_enabled` (`system_configs`) | `"false"` | `POST /{book_id}/reprocess/llm-spell-check` — see Feature Flags. |
+| `gemini_llm_spell_check_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded by migration `091` and `seed_system_configs()`) | `correct_page_text` (live path) and `submit_batch_llm_spell_check`/the batch poller (batch path) — single source of truth for the model used by both LLM spell correction paths; runtime-overridable from the system-configs admin panel, matching `gemini_ocr_model`/`gemini_embedding_model`'s pattern. Never hardcoded in either path. |
+| `MAX_PARALLEL_LLM_SPELL_CHECK` (env, `settings.max_parallel_llm_spell_check`) | `6` | `llm_spell_check_job` — concurrent `correct_page_text` (Gemini) calls per job invocation, bounding live-path API concurrency the same way `MAX_PARALLEL_SPELL_CHECK` bounds the dictionary-based job. Not used by the batch path (Gemini's Batch API manages its own concurrency). |
 
 ## API Endpoints
 
@@ -392,13 +435,17 @@ Unlike `EXHAUSTED` in the OCR/chunking/embedding state machines, `SC_TERMINAL` i
 | `DELETE /api/auto-correct-rules/{word}` | `Depends(require_editor)` | Deletes the rule. Invalidates the cache. |
 | `GET /api/dictionary/search`, `GET /api/dictionary/stats`, `GET /api/dictionary/letter-groups`, `GET /api/dictionary` | **None — no auth dependency at all** | Read-only search/stats/list over the `dictionary` (definitions/audio) table. Registered with no `Depends(require_editor)`/`Depends(get_current_user)` on any handler and no router-level `dependencies=[...]`, so these four endpoints are publicly reachable. As covered in Overview, this table is unrelated to spellcheck's own unknown-word detection (`words` table) — despite the name, `dictionary_router.py` has no role in the spellcheck/auto-correct pipeline described in this doc. |
 | `GET /api/dictionary/check-spelling` | **None — no auth dependency at all** | `DictionaryRepository.check_word_spelling` — is-known/suggestions lookup against the `words` table (not `dictionary`), for the home search box's "Spell Check" tab and the `check_word_spelling` chat tool. Also public, but unlike the four endpoints above, it does read the same `words` table this doc's pipeline uses for unknown-word detection. |
+| `POST /api/books/{book_id}/reprocess/llm-spell-check` | `Depends(require_admin)` (**ADMIN only** — not `require_editor`, unlike every other mutating endpoint in this doc) | Triggers LLM spell correction for every page on the book not currently `llm_spell_check_status='in_progress'`. Branches on `llm_spell_check_batch_enabled`: submits a Gemini Batch job (`submit_batch_llm_spell_check`) if `"true"`, otherwise bulk-sets pages `in_progress` and enqueues `llm_spell_check_job` directly via `redis_pool.enqueue_job` (`_job_id=f"llm_spell_check:book:{book_id}"`). Rolls affected pages back to `idle` and returns `500` on enqueue/submit failure. See [LLM Spell Correction](#llm-spell-correction-on-demand-layer). |
+| `POST /api/books/{book_id}/pages/{page_num}/llm-spell-check` | `Depends(require_admin)` | Triggers LLM spell correction for one page — always the live path, regardless of `llm_spell_check_batch_enabled` (mirrors the embedding pipeline's reactive per-chunk dispatch always staying interactive). `409` if the page is already `in_progress`. Same rollback-on-enqueue-failure behavior. |
 
-Every mutating spellcheck/auto-correct-rules endpoint requires `require_editor` (ADMIN or EDITOR); only the read-only `dictionary`/`check-spelling` endpoints are unauthenticated.
+Every mutating dictionary-based spellcheck/auto-correct-rules endpoint requires `require_editor` (ADMIN or EDITOR); only the read-only `dictionary`/`check-spelling` endpoints are unauthenticated. The two LLM spell correction endpoints are the exception — they require `require_admin` specifically, since each trigger costs real Gemini API calls (same reasoning as `reprocess_graph`/`reprocess_summary`).
 
 ## Security Considerations
 
 - **Admin-writable content flows into an LLM prompt.** `auto_correct_rules` (editable via `POST`/`PATCH`/`DELETE /api/auto-correct-rules`, `require_editor`) feeds `AutoCorrectRulesRepository.get_frequent_corrections_block()`, which is interpolated into `OCR_PROMPT`'s `{frequent_corrections}` placeholder (see [OCR_DESIGN.md](OCR_DESIGN.md)) — an editor's rule text reaches a live Gemini Vision call on every subsequent OCR run, not just this stage's own auto-correct pass.
 - **Five `dictionary_router.py` endpoints are unauthenticated.** `GET /api/dictionary/search`, `/stats`, `/letter-groups`, the bare `/dictionary` listing, and `/dictionary/check-spelling` (see API Endpoints) carry no auth dependency at all and are publicly reachable. The first four only expose the read-only `dictionary` definitions table; `check-spelling` is the exception — it's a read-only lookup, but against spellcheck's own `words` table — none of the five have any access control.
+- **LLM spell correction endpoints are gated tighter than the rest of this doc's mutating endpoints.** Both `POST .../reprocess/llm-spell-check` and `POST .../pages/{page_num}/llm-spell-check` require `require_admin`, not `require_editor` — a deliberate divergence, since each trigger is a real (billed) Gemini API call, same reasoning already applied to `reprocess_graph`/`reprocess_summary`.
+- **The LLM correction pass has a cheap output guardrail but no semantic/dictionary validation.** `_validate_correction` (`llm_spell_check_service.py`, shared by the live and batch paths) only rejects empty output or output whose length deviates >~30% from the original page — a defense against catastrophic model failures (truncation, garbling), not against a plausible-looking but wrong correction. Changed words are never checked against the `words` table before being written to `pages.text`; this is an explicit v1 scope decision (see the design spec's Future Enhancements), not an oversight.
 
 ## Testing
 
@@ -415,6 +462,120 @@ Every mutating spellcheck/auto-correct-rules endpoint requires `require_editor` 
 - `services/worker/tests/scanners/chunking_scanner_test.py` and `services/worker/tests/scanners/event_dispatcher_test.py` — cover the *chunking-side* half of the cross-stage gate described in Overview: `test_chunking_scanner_requires_spell_check_done_when_enabled`, `test_chunking_scanner_omits_spell_check_filter_when_disabled`, `test_event_dispatcher_ocr_succeeded_does_not_trigger_chunking_when_spell_check_enabled`, `test_event_dispatcher_spell_check_done_triggers_chunking_when_enabled` (parametrized over `spell_check_succeeded`/`spell_check_failed`).
 - `services/backend/tests/api/endpoints/dictionary_router_test.py` — `test_check_spelling_known_word`, `test_check_spelling_unknown_word_returns_suggestions` (the `words`-table lookup path used by `check-spelling`), plus `test_delete_dictionary_entry`/`_not_found` (the one `require_admin`-gated route in this file, not one of the five unauthenticated endpoints in Security Considerations). Does not cover the four unauthenticated `dictionary`-table read endpoints (`search`/`stats`/`letter-groups`/bare listing) with HTTP-client tests.
 - No dedicated test file was found for `auto_correct_rules_router.py`, or for `books_router.py`'s `/reprocess/spell-check` route specifically (`books_router_test.py` references `spell_check_milestone` only as fixture data, not as a test of the reprocess endpoint itself).
+- `packages/backend-core/tests/app/services/llm_spell_check_service_test.py` — `build_correction_prompt` includes/delimits prev/next context and tolerates missing context; `_validate_correction` rejects empty/whitespace-only output and large length deviations, accepts small ones; `correct_page_text` reads the model id from `SystemConfigsRepository` (not hardcoded) and raises on empty model output.
+- `packages/backend-core/tests/app/services/batch_llm_spell_check_service_test.py` — `submit_batch_llm_spell_check` builds correct `custom_id`→`page_id` JSONL lines and creates the `BatchLlmSpellCheckJob` row; `poll_and_process_batch_llm_spell_check_jobs` applies corrections and commits per page on a `SUCCEEDED` batch, and resets all of a job's pages to `failed` on a `FAILED` batch.
+- `services/worker/tests/jobs/llm_spell_check_job_test.py` — status transitions `succeeded`/`failed`; a failing page doesn't block sibling pages in the same `asyncio.gather` batch; concurrency bounded by `settings.max_parallel_llm_spell_check`.
+- `services/worker/tests/scanners/batch_llm_spell_check_poller_scanner_test.py` — no-op when `llm_spell_check_batch_enabled` is off; delegates to `poll_and_process_batch_llm_spell_check_jobs` otherwise.
+- `services/backend/tests/api/endpoints/books_router_test.py` — `test_reprocess_llm_spell_check_live_path_enqueues_job`, `test_reprocess_llm_spell_check_batch_path_submits_batch`, `test_reprocess_llm_spell_check_book_not_found`, `test_trigger_llm_spell_check_page_enqueues_and_returns_started`, `test_trigger_llm_spell_check_page_409_when_already_running` (both endpoints' branch/auth/rollback behavior).
+- `packages/backend-core/tests/app/db/books_repository_test.py` — `test_get_with_page_stats_ready_book_does_not_assume_llm_spell_check_done` / `test_get_batch_stats_llm_spell_check_never_assumed_done_for_ready_books`: confirm the `llm_spell_check` `{done, failed, active}` stats are always computed by scanning `pages` and are **not** short-circuited to 100% for `status='ready'` books, unlike every other step's stats.
+- Frontend: `apps/frontend/src/tests/components/reader/PageItem.test.tsx`, `.../admin/AdminView.test.tsx`, `.../hooks/useBookActions.test.tsx`, `.../services/persistenceService.test.ts` cover the admin-gated per-page trigger button, the three-state book-row icon, and the new `PersistenceService`/`useBookActions` wiring.
+
+## LLM Spell Correction (On-Demand Layer)
+
+Added in migrations `090`/`091` (2026-09-08; design spec: `docs/superpowers/specs/2026-09-05-llm-spell-correction-design.md`, implementation plan: `docs/superpowers/plans/2026-09-08-llm-spell-correction-implementation.md`). This is **not a pipeline stage** — it writes no `PipelineEvent` rows, is absent from `PIPELINE_ORDER`/`PAGE_MILESTONE_ATTR_BY_STEP` in `app/core/pipeline.py`, never touches `retry_count`, and is invoked exclusively by an admin action, never by a scanner. Its schema (`pages.llm_spell_check_status`/`llm_spell_check_at`, `batch_llm_spell_check_jobs`) is documented above under Schema; its files are listed above under Architecture.
+
+**Why it exists:** the dictionary-based stage's `find_unknown_words` can only flag a token that isn't a real word at all. It structurally cannot catch a context-dependent real-word error — an OCR or typing mistake that happens to produce a *different, valid* Uyghur word that breaks the sentence's meaning. Judging that requires reading the surrounding sentence, which is exactly what `LLM_SPELL_CHECK_PROMPT` (`app/core/prompts.py`) asks Gemini to do: correct only context-dependent word substitutions, leave everything else (including genuine misspellings — the dictionary stage's job) untouched, and return the full corrected page text with no commentary/wrapper. The prompt is given the target page plus its immediate previous/next page text as read-only context.
+
+**Live vs. batch — two paths, one shared core.** `build_correction_prompt`/`correct_page_text`/`_validate_correction` (`llm_spell_check_service.py`) are shared by both:
+- **Live path**: `llm_spell_check_job` makes one `correct_page_text` call per page (via `build_text_llm`, so it goes through the shared circuit breaker/rate limiter — not a raw `genai.Client` call), bounded by `asyncio.Semaphore(settings.max_parallel_llm_spell_check)`. Always used for the per-page trigger; used for the per-book trigger when `llm_spell_check_batch_enabled` is `false` (the default).
+- **Batch path**: `submit_batch_llm_spell_check` builds one JSONL request per page (`custom_id` = page id) via the same `build_correction_prompt`, uploads it to GCS (audit copy) and the Gemini Files API, and submits a Gemini Batch API job — mirroring `batch_history_extraction_service.py`. `batch_llm_spell_check_poller_scanner` (cron, same ~1-minute cadence as the other batch pollers, flag-gated) calls `poll_and_process_batch_llm_spell_check_jobs`, which applies each completed result to `pages.text` and **commits per page** (not once at the end), so a mid-loop scanner-tick eviction can't roll back already-applied corrections. Only ever used for the per-book trigger, and only when the flag is `true` — the per-page trigger always ignores the flag and uses the live path.
+
+### Data Flow
+
+```mermaid
+flowchart TD
+    subgraph LLMTrigger ["Admin-triggered — no scanner, no automatic dispatch"]
+        ADMIN_PAGE(["Admin: per-page trigger<br/>POST .../pages/{n}/llm-spell-check"])
+        ADMIN_BOOK(["Admin: per-book trigger<br/>POST .../reprocess/llm-spell-check"])
+        FLAG_CHECK{"llm_spell_check_batch_enabled?<br/>(per-book only —<br/>per-page always live)"}
+    end
+
+    subgraph LiveLLM ["Live path"]
+        LIVE_SET["pages.llm_spell_check_status = in_progress"]
+        LIVE_ENQ["enqueue llm_spell_check_job(page_ids)"]
+        LIVE_RUN["llm_spell_check_job:<br/>semaphore(max_parallel_llm_spell_check)<br/>correct_page_text per page (build_text_llm)"]
+        LIVE_VALIDATE{"_validate_correction:<br/>non-empty, length within ~30%?"}
+        LIVE_OK["page.text = corrected<br/>llm_spell_check_status = succeeded<br/>llm_spell_check_at = now"]
+        LIVE_FAIL["llm_spell_check_status = failed<br/>(no retry_count, no auto-retry)"]
+    end
+
+    subgraph BatchLLM ["Batch path (per-book only)"]
+        BATCH_SUBMIT["submit_batch_llm_spell_check:<br/>build JSONL (1 req/page),<br/>upload to GCS + Gemini Files,<br/>batches.create"]
+        BATCH_JOB[("batch_llm_spell_check_jobs<br/>status=submitting")]
+        BATCH_SET["pages.llm_spell_check_status = in_progress"]
+        BATCH_POLL["batch_llm_spell_check_poller_scanner<br/>(cron, flag-gated):<br/>poll_and_process_batch_llm_spell_check_jobs"]
+        BATCH_STATE{"Gemini batch state?"}
+        BATCH_APPLY["Per result line:<br/>_validate_correction, page.text = corrected,<br/>llm_spell_check_status = succeeded<br/>(commit per page)"]
+        BATCH_TERM_FAIL["job.status = failed;<br/>all job.page_ids -> llm_spell_check_status = failed"]
+    end
+
+    ADMIN_PAGE --> LIVE_SET
+    ADMIN_BOOK --> FLAG_CHECK
+    FLAG_CHECK -- "false (default)" --> LIVE_SET
+    FLAG_CHECK -- "true" --> BATCH_SET
+
+    LIVE_SET --> LIVE_ENQ --> LIVE_RUN --> LIVE_VALIDATE
+    LIVE_VALIDATE -- "pass" --> LIVE_OK
+    LIVE_VALIDATE -- "fail / exception" --> LIVE_FAIL
+
+    BATCH_SET --> BATCH_SUBMIT --> BATCH_JOB
+    BATCH_JOB --> BATCH_POLL --> BATCH_STATE
+    BATCH_STATE -- SUCCEEDED --> BATCH_APPLY
+    BATCH_STATE -- "FAILED / CANCELLED / EXPIRED" --> BATCH_TERM_FAIL
+    BATCH_STATE -- "RUNNING (poll again next tick)" --> BATCH_POLL
+
+    LIVE_OK -.->|"no chunking/embedding reset —<br/>see Known Limitations"| NOPROP(["chunking_milestone/embedding_milestone<br/>UNCHANGED"])
+    BATCH_APPLY -.->|"same — no propagation"| NOPROP
+
+    classDef idle fill:#e9edc9,stroke:#606c38
+    classDef active fill:#fff3cd,stroke:#856404
+    classDef done fill:#d4f1f4,stroke:#189ab4
+    classDef fail fill:#ffcccb,stroke:#d32f2f
+
+    class ADMIN_PAGE,ADMIN_BOOK,FLAG_CHECK idle
+    class LIVE_SET,LIVE_ENQ,LIVE_RUN,LIVE_VALIDATE,BATCH_SUBMIT,BATCH_SET,BATCH_POLL,BATCH_STATE active
+    class LIVE_OK,BATCH_JOB,BATCH_APPLY,NOPROP done
+    class LIVE_FAIL,BATCH_TERM_FAIL fail
+```
+
+### State Machine — `pages.llm_spell_check_status`
+
+```mermaid
+flowchart TD
+    L_IDLE["llm_spell_check_status / idle"]
+    L_IP["llm_spell_check_status / in_progress"]
+    L_OK["llm_spell_check_status / succeeded"]
+    L_FAIL["llm_spell_check_status / failed"]
+
+    L_IDLE -->|"Admin trigger (per-page, or per-book<br/>where status != in_progress)"| L_IP
+    L_IP -->|"live: correct_page_text succeeds,<br/>or batch: result line validates"| L_OK
+    L_IP -->|"live: exception/guardrail rejection,<br/>or batch: terminal FAILED/CANCELLED/EXPIRED,<br/>or batch: result line fails to parse/validate"| L_FAIL
+    L_OK -->|"Admin re-triggers (no automatic re-check)"| L_IP
+    L_FAIL -->|"Admin re-triggers manually<br/>(no PipelineDriver reset — not pipeline-tracked)"| L_IP
+
+    classDef idle fill:#e9edc9,stroke:#606c38
+    classDef active fill:#fff3cd,stroke:#856404
+    classDef done fill:#d4f1f4,stroke:#189ab4
+    classDef fail fill:#ffcccb,stroke:#d32f2f
+
+    class L_IDLE idle
+    class L_IP active
+    class L_OK done
+    class L_FAIL fail
+```
+
+Unlike `spell_check_milestone`, there is no `retry_count` participation and no `PipelineDriver`/`StaleWatchdog` involvement at all — a page stuck `in_progress` (e.g. a crashed worker mid-run) stays `in_progress` indefinitely until an admin re-triggers it; nothing resets it automatically.
+
+### Known Limitations
+
+- **No downstream propagation.** Correcting `pages.text` does not reset `chunking_milestone`/`embedding_milestone`/`is_indexed` — unlike `apply_auto_corrections_to_page`. A book that's already been chunked/embedded keeps stale chunks/embeddings until an admin separately triggers "Reprocess Chunking". Intentional v1 scope, not an oversight.
+- **No coordination with the dictionary-based stage** (or with itself across live/batch): see Overview's "uncoordinated and can race" bullet.
+- **No dictionary validation of the model's output** — `_validate_correction` is a length/emptiness guardrail only, not a per-word check against `words`. Deferred to a future enhancement.
+- **Batch completion time is unpredictable** — Gemini's Batch API gives no turnaround guarantee; a page can sit `in_progress` far longer under the batch path than the live path would take, in exchange for the Batch API's cost discount (same accepted trade-off already made for OCR/embedding batch paths).
+
+### Frontend (brief — this doc is backend/pipeline-focused)
+
+The admin book-management table (`AdminView.tsx`) shows a third-state icon (done/partial/not-started, driven by `pipeline_stats.llm_spell_check` `{done, failed, active}` against `total_pages` — computed by `BooksRepository.get_with_page_stats`/`get_batch_stats`) alongside the existing OCR/chunking/embedding/dictionary-spellcheck/graph icons. The reader view (`PageItem.tsx`) exposes an admin-gated per-page trigger button (disabled while `llmSpellCheckStatus === 'in_progress'`), and the admin `ActionMenu.tsx` exposes the equivalent per-book action, both wired through `useBookActions.ts`'s `handleLlmSpellCheckPage`/`handleReprocessStep` and `persistenceService.ts`'s `reprocessLlmSpellCheck`/`triggerLlmSpellCheckPage`. Unlike the OCR reprocess flow, triggering LLM spell correction does **not** blank the page's text while running — the pre-correction text stays visible with a spinner, since it remains valid content during the check.
 
 ## Related Docs
 
@@ -424,3 +585,5 @@ Every mutating spellcheck/auto-correct-rules endpoint requires `require_editor` 
 - [WORKER_DESIGN.md](WORKER_DESIGN.md) — full pipeline, `PipelineDriver`, `MultiPageLock`, `StaleWatchdog`, `BookMilestoneService`, and the shared milestone/state-machine conventions.
 - [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) — cross-stage diagram; this doc's Data Flow is the spellcheck/auto-correct slice of its "Full Pipeline" diagram's `SpellCheck`/`AutoCorrect` subgraphs.
 - [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md) covers `summary_job`, which `PipelineDriver` enqueues once a book's mandatory pipeline is fully terminal — independent of, and not gated by, this stage.
+- [OCR_DESIGN.md](OCR_DESIGN.md#batch_ocr_jobs-table-batch-mode-only) also documents the `batch_ocr_jobs`/poller-scanner pattern that `batch_llm_spell_check_jobs`/`batch_llm_spell_check_poller_scanner` mirror for the LLM spell correction layer's batch path.
+- `docs/superpowers/specs/2026-09-05-llm-spell-correction-design.md` and `docs/superpowers/plans/2026-09-08-llm-spell-correction-implementation.md` — the original design spec and implementation plan for [LLM Spell Correction](#llm-spell-correction-on-demand-layer); the shipped code follows both closely, with the one documented deviation that the live path uses `build_text_llm`/`ProtectedLLM` instead of a raw `genai.Client` call, per the project's circuit-breaker convention for single-shot LLM calls.

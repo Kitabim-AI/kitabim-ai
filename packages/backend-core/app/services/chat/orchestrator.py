@@ -431,14 +431,17 @@ class ChatOrchestrator:
                         max_llm_calls=agent_max_llm_calls,
                     ),
                 ):
-                    if getattr(event, "usage_metadata", None) is not None:
-                        ctx.cost_tracker.add(
-                            stage="retrieval_agent",
-                            model=agent_model,
-                            input_tokens=event.usage_metadata.prompt_token_count or 0,
-                            output_tokens=event.usage_metadata.candidates_token_count
-                            or 0,
-                        )
+                    usage = getattr(event, "usage_metadata", None)
+                    if usage is not None:
+                        inp = getattr(usage, "prompt_token_count", 0) or 0
+                        out = getattr(usage, "candidates_token_count", 0) or 0
+                        if isinstance(inp, int) and isinstance(out, int):
+                            ctx.cost_tracker.add(
+                                stage="retrieval_agent",
+                                model=agent_model,
+                                input_tokens=inp,
+                                output_tokens=out,
+                            )
 
                     if not event.partial and event.content and event.content.parts:
                         for part in event.content.parts:
@@ -604,13 +607,17 @@ class ChatOrchestrator:
                 new_message=content,
                 run_config=RunConfig(streaming_mode=StreamingMode.SSE),
             ):
-                if getattr(event, "usage_metadata", None) is not None:
-                    ctx.cost_tracker.add(
-                        stage="answer_agent",
-                        model=chat_model,
-                        input_tokens=event.usage_metadata.prompt_token_count or 0,
-                        output_tokens=event.usage_metadata.candidates_token_count or 0,
-                    )
+                usage = getattr(event, "usage_metadata", None)
+                if usage is not None:
+                    inp = getattr(usage, "prompt_token_count", 0) or 0
+                    out = getattr(usage, "candidates_token_count", 0) or 0
+                    if isinstance(inp, int) and isinstance(out, int):
+                        ctx.cost_tracker.add(
+                            stage="answer_agent",
+                            model=chat_model,
+                            input_tokens=inp,
+                            output_tokens=out,
+                        )
 
                 if event.partial and event.content and event.content.parts:
                     for part in event.content.parts:

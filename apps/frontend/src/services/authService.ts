@@ -9,12 +9,14 @@ const SESSION_TOKEN_KEY = 'kitabim_access_token_session';
 // App ID configured via build config or environment variable at build/runtime.
 let _appClientId = APP_CLIENT_ID || (import.meta as any).env?.VITE_SECURITY_APP_ID || '';
 let _configPromise: Promise<void> | null = null;
+let _configLoaded = false;
 
 const DEFAULT_COLLECTION_PAGE_SIZE = 40;
 let _collectionPageSize = DEFAULT_COLLECTION_PAGE_SIZE;
 let _showChatCost = true;
 
 export async function initAppConfig(): Promise<void> {
+  if (_configLoaded) return;
   if (!_configPromise) {
     _configPromise = (async () => {
       try {
@@ -29,6 +31,7 @@ export async function initAppConfig(): Promise<void> {
             typeof data.showChatCost === 'boolean'
               ? data.showChatCost
               : true;
+          _configLoaded = true;
         }
       } catch {
         // Non-fatal — defaults used

@@ -5,7 +5,7 @@ import { getCollectionPageSize } from '../services/authService';
 import { useAuth } from './useAuth';
 
 export const useBooks = (view: string, searchQuery: string, pageSize: number, page: number, category?: string) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [books, setBooks] = useState<Book[]>([]);
   const [totalBooks, setTotalBooks] = useState(0);
   const [totalReady, setTotalReady] = useState(0);
@@ -84,6 +84,12 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
       return;
     }
 
+    // Defer fetching until auth state is resolved to avoid an initial guest fetch
+    // followed by a refetch (causing a double refresh/flicker) once the session is restored.
+    if (authLoading) {
+      return;
+    }
+
     if (!isManualRefresh && currentParams === lastParamsRef.current) {
       return;
     }
@@ -136,7 +142,7 @@ export const useBooks = (view: string, searchQuery: string, pageSize: number, pa
         setIsLoading(false);
       }
     }
-  }, [view, isShelfView, groupByWork, page, pageSize, searchQuery, sortConfig, category, COLLECTION_PAGE_SIZE, isAuthenticated]);
+  }, [view, isShelfView, groupByWork, page, pageSize, searchQuery, sortConfig, category, COLLECTION_PAGE_SIZE, isAuthenticated, authLoading]);
 
   useEffect(() => {
     fetchBooks();

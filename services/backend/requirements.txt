@@ -8,7 +8,7 @@ numpy
 httpx
 aiohttp
 pillow
-google-adk[gcp]==2.5.0
+google-adk[gcp]==2.9.0
 pandas
 rouge-score
 tabulate
