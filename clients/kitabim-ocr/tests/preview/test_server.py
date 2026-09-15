@@ -68,7 +68,11 @@ def test_redo_pages_reruns_ocr_on_selected_pages_only(tmp_path: Path):
         patch("preview.server.fitz.open") as mock_fitz_open,
     ):
         mock_doc = mock_fitz_open.return_value
-        mock_doc.load_page.return_value = "fake-fitz-page"
+        mock_doc.__len__.return_value = 2
+        mock_page = MagicMock()
+        mock_page.rect.width = 400
+        mock_page.rect.height = 600
+        mock_doc.load_page.return_value = mock_page
 
         response = client.post("/api/pages/redo", json={"pageNumbers": [2]})
 
@@ -135,7 +139,11 @@ def test_redo_pages_uses_the_workdirs_shared_save_lock(tmp_path: Path):
         patch("preview.server.fitz.open") as mock_fitz_open,
     ):
         mock_doc = mock_fitz_open.return_value
-        mock_doc.load_page.return_value = "fake-fitz-page"
+        mock_doc.__len__.return_value = 2
+        mock_page = MagicMock()
+        mock_page.rect.width = 400
+        mock_page.rect.height = 600
+        mock_doc.load_page.return_value = mock_page
 
         response = client.post("/api/pages/redo", json={"pageNumbers": [1, 2]})
 
@@ -162,7 +170,11 @@ def test_redo_pages_flags_failed_page_instead_of_crashing(tmp_path: Path):
         patch("preview.server.fitz.open") as mock_fitz_open,
     ):
         mock_doc = mock_fitz_open.return_value
-        mock_doc.load_page.return_value = "fake-fitz-page"
+        mock_doc.__len__.return_value = 2
+        mock_page = MagicMock()
+        mock_page.rect.width = 400
+        mock_page.rect.height = 600
+        mock_doc.load_page.return_value = mock_page
 
         response = client.post("/api/pages/redo", json={"pageNumbers": [2]})
 

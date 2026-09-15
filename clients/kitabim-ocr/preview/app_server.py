@@ -23,6 +23,7 @@ from engine.config import (
     get_configured_page_timeout,
     resolve_concurrency,
 )
+from engine.page_layout import count_logical_pages, resolve_logical_page
 from engine.queue import BookQueueManager
 from engine.recognize import (
     LowConfidenceOcrError,
@@ -2574,8 +2575,8 @@ RENDER_ZOOM = 1.5
 def render_page_png(
     doc: "fitz.Document", page_number: int, zoom: float = RENDER_ZOOM
 ) -> bytes:
-    page = doc.load_page(page_number - 1)
-    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+    page, clip = resolve_logical_page(doc, page_number)
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=clip)
     return pix.tobytes("png")
 
 
@@ -2619,7 +2620,7 @@ def _create_upload_workdir(
     pdf_bytes: bytes, work_root: Path, filename: Optional[str] = None
 ) -> OcrWorkDir:
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    total_pages = len(doc)
+    total_pages = count_logical_pages(doc)
 
     out_dir = work_root / f"upload-{int(time.time() * 1000)}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2687,7 +2688,7 @@ async def _run_ocr_background(
                     )
                     workdir.save()
 
-                fitz_page = doc.load_page(page_number - 1)
+                fitz_page, clip = resolve_logical_page(doc, page_number)
                 img_path = workdir.image_path(page_number)
                 if not img_path.exists():
                     try:
@@ -2701,6 +2702,7 @@ async def _run_ocr_background(
                         predictor,
                         max_parallel_pages=target_concurrency,
                         timeout=get_configured_page_timeout(),
+                        clip=clip,
                     )
                     with workdir.save_lock:
                         existing = workdir._pages.get(page_number)

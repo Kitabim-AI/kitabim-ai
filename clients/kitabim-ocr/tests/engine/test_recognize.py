@@ -592,6 +592,13 @@ def test_get_adaptive_page_zoom():
     mock_page_err.rect = None
     assert svc.get_adaptive_page_zoom(mock_page_err, base_zoom=3.0) == 3.0
 
+    # width_override (one half of a split spread page) takes precedence
+    # over page.rect.width, e.g. an 830pt-wide spread split in half (415pt)
+    # should scale up even though the full page width (830pt) would not.
+    mock_page.rect.width = 830.0
+    zoom = svc.get_adaptive_page_zoom(mock_page, base_zoom=3.0, width_override=415.0)
+    assert zoom > 3.0
+
 
 def test_get_block_bbox():
     # Polygon with 4 points

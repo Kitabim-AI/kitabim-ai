@@ -88,6 +88,7 @@ def get_adaptive_page_zoom(
     page: fitz.Page,
     base_zoom: float = DEFAULT_OCR_PAGE_ZOOM_FACTOR,
     min_target_width_px: float = 1500.0,
+    width_override: float | None = None,
 ) -> float:
     """Calculate adaptive rendering zoom based on PDF page dimensions.
 
@@ -95,10 +96,16 @@ def get_adaptive_page_zoom(
     dots at standard 2.0-2.5x zooms because pixel density is too low for Surya
     to reliably distinguish 1 dot from 3 dots. This adapts the zoom so the page
     width reaches at least `min_target_width_px`, clamped to [2.0, 4.0].
+
+    `width_override` is used when OCR-ing one half of a two-up spread page,
+    whose effective width is half of `page.rect.width`.
     """
     try:
-        rect = page.rect
-        width = float(rect.width)
+        width = (
+            float(width_override)
+            if width_override is not None
+            else float(page.rect.width)
+        )
         if width > 0 and width < 500.0:
             target_zoom = min_target_width_px / width
             return max(base_zoom, min(4.0, target_zoom))
@@ -671,6 +678,7 @@ async def ocr_page(
     max_parallel_pages: int = DEFAULT_MAX_PARALLEL_PAGES,
     min_confidence: float = 0.3,
     max_retries: int | None = None,
+    clip: fitz.Rect | None = None,
 ) -> str:
     if isinstance(recognition_predictor, SavitrPredictor):
         executor = _get_savitr_executor()
@@ -684,13 +692,15 @@ async def ocr_page(
     )
     total_attempts = max(1, max_retries) if max_retries is not None else OCR_MAX_RETRIES
     base_zoom = OCR_PAGE_ZOOM_FACTOR
-    adaptive_zoom = get_adaptive_page_zoom(page, base_zoom)
+    adaptive_zoom = get_adaptive_page_zoom(
+        page, base_zoom, width_override=clip.width if clip is not None else None
+    )
 
     last_exc: Exception | None = None
     for attempt in range(total_attempts):
         zoom = adaptive_zoom + (attempt * 0.5)
         try:
-            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=clip)
             if is_page_blank(pix):
                 return ""
 

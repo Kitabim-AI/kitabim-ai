@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from engine.config import get_configured_engine, resolve_concurrency
+from engine.page_layout import resolve_logical_page
 from engine.recognize import (
     LowConfidenceOcrError,
     get_recognition_predictor,
@@ -725,8 +726,8 @@ RENDER_ZOOM = 1.5
 def render_page_png(
     doc: "fitz.Document", page_number: int, zoom: float = RENDER_ZOOM
 ) -> bytes:
-    page = doc.load_page(page_number - 1)
-    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+    page, clip = resolve_logical_page(doc, page_number)
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=clip)
     return pix.tobytes("png")
 
 
@@ -785,10 +786,13 @@ async def redo_pages_response(
 
     async def redo_one(page_number: int):
         async with sem:
-            fitz_page = doc.load_page(page_number - 1)
+            fitz_page, clip = resolve_logical_page(doc, page_number)
             try:
                 text = await ocr_page(
-                    fitz_page, predictor, max_parallel_pages=target_concurrency
+                    fitz_page,
+                    predictor,
+                    max_parallel_pages=target_concurrency,
+                    clip=clip,
                 )
                 with workdir.save_lock:
                     try:
