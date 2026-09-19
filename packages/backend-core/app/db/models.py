@@ -409,7 +409,9 @@ class BatchHistoryExtractionJob(Base):
         Integer, default=5, server_default="5"
     )
     model_name: Mapped[str] = mapped_column(
-        String(100), default="gemini-2.5-flash", server_default="gemini-2.5-flash"
+        String(100),
+        default="gemini-3.5-flash-lite",
+        server_default="gemini-3.5-flash-lite",
     )
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 

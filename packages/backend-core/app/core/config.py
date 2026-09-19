@@ -49,7 +49,7 @@ class Settings:
         os.getenv("MAX_COVER_UPLOAD_BYTES", str(5 * 1024 * 1024))
     )
     max_book_upload_bytes: int = int(
-        os.getenv("MAX_BOOK_UPLOAD_BYTES", str(200 * 1024 * 1024))
+        os.getenv("MAX_BOOK_UPLOAD_BYTES", str(500 * 1024 * 1024))
     )
     max_cover_image_pixels: int = int(os.getenv("MAX_COVER_IMAGE_PIXELS", "25000000"))
 

@@ -85,7 +85,7 @@ class HistoryExtractionService:
         config = res.scalar_one_or_none()
         if config and config.value.strip():
             return config.value.strip()
-        return "gemini-2.5-flash"
+        return "gemini-3.5-flash-lite"
 
     async def _get_system_config_batch_size(self) -> int:
         """Fetch the dynamic history extraction batch size from system_config."""

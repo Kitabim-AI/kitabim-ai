@@ -8,6 +8,7 @@ from app.llm.models import GeminiEmbeddings, disabled_thinking_config
     [
         ("gemini-2.0-flash", {"thinking_budget": 0}),
         ("gemini-2.5-flash", {"thinking_budget": 0}),
+        ("gemini-3.5-flash-lite", {"thinking_budget": 0}),
         ("gemini-3.7-flash", {"thinking_level": "MEDIUM"}),
         ("gemini-3.5-flash", {"thinking_budget": 0}),
         ("gemini-3.6-flash", {"thinking_level": "LOW"}),
