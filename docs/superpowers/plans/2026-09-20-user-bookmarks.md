@@ -2080,7 +2080,7 @@ Add to `PageItemProps`:
 
 ```typescript
   bookmarks?: Bookmark[];
-  onCreateBookmark?: (pageNumber: number, name: string, quoteText?: string) => Promise<void>;
+  onCreateBookmark?: (pageNumber: number, name: string, quoteText?: string) => Promise<unknown>;
   onRenameBookmark?: (id: string, name: string) => Promise<void>;
   onDeleteBookmark?: (id: string) => Promise<void>;
 ```
@@ -2191,7 +2191,7 @@ In `apps/frontend/src/components/reader/VirtualScrollReader.tsx`, add to `Virtua
 
 ```typescript
   bookmarks?: any[];
-  onCreateBookmark?: (pageNumber: number, name: string, quoteText?: string) => Promise<void>;
+  onCreateBookmark?: (pageNumber: number, name: string, quoteText?: string) => Promise<unknown>;
   onRenameBookmark?: (id: string, name: string) => Promise<void>;
   onDeleteBookmark?: (id: string) => Promise<void>;
 ```
@@ -3547,9 +3547,11 @@ git commit -m "feat(auth): add Continue Reading and Bookmarks shortcuts to profi
 
 ## Final Verification
 
-- [ ] Run the full backend test suite: `cd packages/backend-core && python -m pytest` and `cd services/backend && python -m pytest`. Expected: all PASS, no regressions in existing suites.
-- [ ] Run the full frontend test suite: `cd apps/frontend && npx vitest run`. Expected: all PASS.
-- [ ] Manual end-to-end pass (signed-in user): read partway into a book, close it, reopen from Library "All Books" — confirm it resumes at the right page. Bookmark a whole page and a selected passage; confirm both appear (correct name/snippet) in the per-book drawer, the Library "Bookmarks" tab, and the profile-menu shortcut path; rename and delete from both places. Confirm the "Continue Reading" tab and its profile-menu shortcut show the right book/page and that its search box filters instantly.
-- [ ] Manual guest pass: confirm tapping either bookmark control shows the inline sign-in prompt and creates nothing; confirm the Library "Continue Reading" and "Bookmarks" tabs show `GuestAuthWall` instead of fetching.
-- [ ] Visual check in both RTL layout and dark mode: bookmark icons, the name-prompt popover, the drawer, and both new Library tabs.
-- [ ] Flag the `ug.json` additions (Tasks 3, 7, 8, 9, 10, 11) to a native Uyghur speaker for review before this branch ships, per Global Constraints.
+- [x] Run the full backend test suite: `cd packages/backend-core && python -m pytest` and `cd services/backend && python -m pytest`. **Result:** `packages/backend-core`: 703 passed, 3 pre-existing failures in `tests/app/llm/models_test.py` (confirmed pre-existing via a temporary `git worktree` at the pre-session baseline commit `9946686` — unrelated to this feature, a `MagicMock` vs `int` comparison bug in `app/llm/models.py`). `services/backend`: 124 passed, 3 pre-existing failures in `books_router_toc_test.py`/`main_config_test.py` (also confirmed pre-existing against the same baseline). No regressions.
+- [x] Run the full frontend test suite: `cd apps/frontend && npx vitest run`. **Result:** 313 passed, 14 pre-existing failures across `App.test.tsx`, `AdminView.test.tsx`, `Navbar.test.tsx`, `BookCard.test.tsx`, `SpellCheckPanel.test.tsx` — all confirmed pre-existing against the same baseline worktree, none touch bookmark code. No regressions.
+- [x] Type-check the frontend: `cd apps/frontend && npx tsc --noEmit`. This caught a real regression not visible to vitest: `onCreateBookmark`'s declared type (`Promise<void>`) didn't match what `useBookmarks().create` actually returns (`Promise<Bookmark>`), flagged at both `ReaderView.tsx` render sites. Fixed by widening the prop type in `PageItem.tsx` and `VirtualScrollReader.tsx` to `Promise<unknown>` (callers only await it, never use the resolved value). After the fix, exactly the 22 pre-existing baseline `tsc` errors remain, none bookmark-related.
+- [x] Backend smoke test: rebuilt the backend container (`./deploy/local/rebuild-and-restart.sh backend`), confirmed all 7 endpoints appear in `/openapi.json` under `/api/bookmarks/*`, and confirmed `PUT /api/bookmarks/progress/{book_id}` returns `403` without a bearer token (auth gating verified end-to-end, not just mocked in tests).
+- [ ] Manual end-to-end pass (signed-in user) in a real browser: read partway into a book, close it, reopen from Library "All Books" — confirm it resumes at the right page. Bookmark a whole page and a selected passage; confirm both appear (correct name/snippet) in the per-book drawer, the Library "Bookmarks" tab, and the profile-menu shortcut path; rename and delete from both places. Confirm the "Continue Reading" tab and its profile-menu shortcut show the right book/page and that its search box filters instantly. **Not run** — this execution session has no browser/display available; only automated checks (tests, tsc, curl-level API smoke test) above were run. A human should complete this pass before merging.
+- [ ] Manual guest pass in a real browser: confirm tapping either bookmark control shows the inline sign-in prompt and creates nothing; confirm the Library "Continue Reading" and "Bookmarks" tabs show `GuestAuthWall` instead of fetching. **Not run**, same reason as above.
+- [ ] Visual check in both RTL layout and dark mode: bookmark icons, the name-prompt popover, the drawer, and both new Library tabs. **Not run**, same reason as above.
+- [ ] Flag the `ug.json` additions (Tasks 3, 7, 8, 9, 10, 11) to a native Uyghur speaker for review before this branch ships, per Global Constraints. **Not done** — needs a human reviewer.
