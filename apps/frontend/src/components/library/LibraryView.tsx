@@ -4,6 +4,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
+import { BookmarksTab } from './BookmarksTab';
 import { ContinueReadingTab } from './ContinueReadingTab';
 
 export const LibraryView: React.FC = () => {
@@ -140,6 +141,12 @@ export const LibraryView: React.FC = () => {
 
       {activeTab === 'continue-reading' && (
         <ContinueReadingTab onOpenBook={(bookId) => bookActions.openReader({ id: bookId })} />
+      )}
+
+      {activeTab === 'bookmarks' && (
+        <BookmarksTab
+          onOpenBookmark={(bookId, pageNumber) => bookActions.openReader({ id: bookId }, pageNumber)}
+        />
       )}
     </div>
   );

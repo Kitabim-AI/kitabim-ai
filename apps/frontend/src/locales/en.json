@@ -199,6 +199,10 @@
     "continueReading": {
       "searchPlaceholder": "Search your books...",
       "empty": "You haven't started reading anything yet"
+    },
+    "bookmarksTab": {
+      "searchPlaceholder": "Search your bookmarks...",
+      "empty": "You haven't saved any bookmarks yet"
     }
   },
   "bookCard": {
