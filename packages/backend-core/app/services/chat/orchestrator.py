@@ -8,7 +8,7 @@ from typing import Any, AsyncIterator, Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from google.adk.agents.invocation_context import LlmCallsLimitExceededError
-from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.adk.agents.run_config import GetSessionConfig, RunConfig, StreamingMode
 from google.adk.runners import InMemoryRunner, Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -21,6 +21,7 @@ from app.db.repositories.books_repository import BooksRepository
 from app.db.repositories.conversation_repository import ConversationRepository
 from app.db.repositories.rag_evaluations_repository import RAGEvaluationsRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
+from app.llm.pricing import get_model_pricing_from_repo
 from app.services.rag.llm_resources import llm_resources
 from app.services.chat.answer_agent import build_answer_agent
 from app.services.chat.context import ChatRequestDTO
@@ -53,6 +54,17 @@ _EXACT_PHRASE_DEFAULT_LIMIT = 10
 # missing or unparsable — see seeds.py for why this sits above the prompt's
 # own 6/10 tool-call budget.
 _AGENT_MAX_LLM_CALLS_DEFAULT = 12
+
+# Fallback defaults when the rag_*_session_recent_events system_config rows
+# are missing or unparsable. Bound how many prior ADK session events (tool
+# calls/responses, prior turns' text) are replayed into each new LLM call —
+# without this, google-adk's Agent.include_contents="default" replays the
+# *entire* persistent conv_id-keyed session on every turn, growing prompt
+# tokens roughly per-turn without limit. The retrieval agent produces many
+# events per turn (tool call + response pairs), so it gets a larger window
+# than the tool-less answer agent.
+_AGENT_SESSION_RECENT_EVENTS_DEFAULT = 50
+_ANSWER_SESSION_RECENT_EVENTS_DEFAULT = 12
 
 
 logger = logging.getLogger("app.services.chat.orchestrator")
@@ -100,6 +112,70 @@ def _format_short_work_answer(match: ShortWorkMatch) -> str:
     return "\n\n".join(parts)
 
 
+def _resolve_catalog_shortcut(signals: dict) -> Optional[dict]:
+    """Deterministic "author_of" / "books_by" catalog gate.
+
+    Stage 1.5 (analyze_query_signals) already runs an LLM classification that
+    generalizes across however the question is phrased, and — for these two
+    subtypes — already calls find_books_by_title / get_books_by_author to
+    resolve the concrete book/author rows. Rather than re-detecting intent
+    from question text (which would need its own brittle phrasing rules),
+    this only branches on that already-computed, structured result: when it's
+    a single unambiguous match, the retrieval Agent + Answer Agent (each a
+    full LLM turn carrying the whole tool schema/system prompt) are pure
+    overhead for what's already a resolved DB lookup.
+
+    Anything not cleanly resolved (no match, ambiguous title, composite
+    question) returns None so the caller falls through to the normal
+    retrieval-agent path unchanged.
+    """
+    if signals.get("is_composite"):
+        return None
+
+    subtype = signals.get("catalog_subtype")
+    if subtype == "author_of":
+        books = signals.get("matched_books") or []
+        # find_books_by_title returns one row per volume, so a multi-volume
+        # match is still unambiguous as long as every row is the same title.
+        titles = {b.get("title") for b in books if b.get("title")}
+        if signals.get("has_title") and len(titles) == 1 and books[0].get("author"):
+            return {"subtype": "author_of", "book": books[0]}
+        return None
+
+    if subtype == "books_by":
+        books = signals.get("matched_author_books") or []
+        if signals.get("has_author") and books and books[0].get("author"):
+            return {"subtype": "books_by", "books": books}
+        return None
+
+    return None
+
+
+def _format_catalog_answer(match: dict) -> str:
+    """Format a resolved catalog shortcut match as the final answer directly
+    -- no LLM call, mirroring _format_short_work_answer above."""
+    if match["subtype"] == "author_of":
+        book = match["book"]
+        title = book.get("title") or ""
+        author = book.get("author") or ""
+        answer = t("rag.author_of_book", title=title, author=author)
+        citation = f"**مەنبە:** {title} ({author})"
+        return f"{answer}\n\n{citation}"
+
+    books = match["books"]
+    author = books[0].get("author") or ""
+    lines = [t("rag.books_by_author_header", author=author)]
+    for b in books:
+        title = b.get("title") or ""
+        line = f"- «{title}»"
+        if b.get("volume") is not None:
+            line += f" ({t('rag.volume_label', volume=b['volume'])})"
+        if b.get("total_pages"):
+            line += t("rag.pages_suffix", pages=b["total_pages"])
+        lines.append(line)
+    return "\n".join(lines)
+
+
 class ChatOrchestrator:
     """Orchestrator managing two-agent ADK execution pipeline and session persistence"""
 
@@ -115,7 +191,7 @@ class ChatOrchestrator:
         self,
         request_dto: ChatRequestDTO,
         db_session: AsyncSession,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3.5-flash-lite",
     ) -> AsyncIterator[Union[str, dict]]:
         """Execute two-agent ADK pipeline and stream SSE events to client"""
         start_time = time.time()
@@ -177,6 +253,7 @@ class ChatOrchestrator:
             settings, "embed_gemini_model", "text-embedding-004"
         )
         embeddings = llm_resources.get_embeddings(embedding_model)
+        pricing_map, fallback_price = await get_model_pricing_from_repo(configs_repo)
 
         # 1. Build QueryContext for tool backward-compatibility & pre-processing
         ctx = QueryContext(
@@ -198,6 +275,7 @@ class ChatOrchestrator:
             start_ts=time.monotonic(),
             agent_model=agent_model,
         )
+        ctx.cost_tracker.set_pricing(pricing_map, fallback_price)
         set_current_query_context(ctx)
 
         # 2. Phrase-intent gate (keyword-search-rework-plan.md Phase 1):
@@ -253,6 +331,7 @@ class ChatOrchestrator:
         # by catalog-first when scoping the lookup below.
         short_work_intent = detect_short_work_intent(request_dto.question)
         short_work_match = None
+        catalog_match: Optional[dict] = None
         if short_work_intent.applies and short_work_intent.title:
             scoped_book_id = (
                 ctx.context_book_ids[0] if len(ctx.context_book_ids) == 1 else None
@@ -355,147 +434,173 @@ class ChatOrchestrator:
             intent = signals.get("intent", "open")
             yield {"type": "planning", "intent": intent}
 
-            agent_max_llm_calls_str = await configs_repo.get_value(
-                "rag_agent_max_llm_calls", str(_AGENT_MAX_LLM_CALLS_DEFAULT)
-            )
-            try:
-                agent_max_llm_calls = int(agent_max_llm_calls_str)
-            except (TypeError, ValueError):
-                agent_max_llm_calls = _AGENT_MAX_LLM_CALLS_DEFAULT
+            # 2c. Catalog shortcut (author_of / books_by): Stage 1.5 above
+            # already resolved the book/author row(s) via a real DB lookup --
+            # skip the retrieval Agent + Answer Agent entirely for a clean,
+            # unambiguous hit (see _resolve_catalog_shortcut).
+            catalog_match = _resolve_catalog_shortcut(signals)
 
-            # 3. Retrieval Agent Execution
-            retrieval_agent = build_retrieval_agent(
-                model=agent_model,
-                intent_signals=signals,
-            )
+            if catalog_match is None:
+                agent_max_llm_calls_str = await configs_repo.get_value(
+                    "rag_agent_max_llm_calls", str(_AGENT_MAX_LLM_CALLS_DEFAULT)
+                )
+                try:
+                    agent_max_llm_calls = int(agent_max_llm_calls_str)
+                except (TypeError, ValueError):
+                    agent_max_llm_calls = _AGENT_MAX_LLM_CALLS_DEFAULT
 
-            # Runner configuration
-            if self.session_service:
-                runner = Runner(
-                    agent=retrieval_agent,
-                    app_name="kitabim-retrieval",
-                    session_service=self.session_service,
-                    auto_create_session=True,
+                agent_session_recent_events_str = await configs_repo.get_value(
+                    "rag_agent_session_recent_events",
+                    str(_AGENT_SESSION_RECENT_EVENTS_DEFAULT),
                 )
-                adk_session = await self.session_service.get_session(
-                    app_name="kitabim-retrieval",
-                    user_id=request_dto.user_id,
-                    session_id=conv_id,
+                try:
+                    agent_session_recent_events = int(agent_session_recent_events_str)
+                except (TypeError, ValueError):
+                    agent_session_recent_events = _AGENT_SESSION_RECENT_EVENTS_DEFAULT
+
+                # 3. Retrieval Agent Execution
+                retrieval_agent = build_retrieval_agent(
+                    model=agent_model,
+                    intent_signals=signals,
                 )
-                if adk_session is None:
-                    adk_session = await self.session_service.create_session(
+
+                # Runner configuration
+                if self.session_service:
+                    runner = Runner(
+                        agent=retrieval_agent,
+                        app_name="kitabim-retrieval",
+                        session_service=self.session_service,
+                        auto_create_session=True,
+                    )
+                    adk_session = await self.session_service.get_session(
                         app_name="kitabim-retrieval",
                         user_id=request_dto.user_id,
                         session_id=conv_id,
                     )
-            else:
-                session_service = InMemorySessionService()
-                adk_session = await session_service.create_session(
-                    app_name="kitabim-retrieval",
-                    user_id=request_dto.user_id,
-                    session_id=conv_id,
-                )
-                runner = Runner(
-                    agent=retrieval_agent,
-                    app_name="kitabim-retrieval",
-                    session_service=session_service,
-                    auto_create_session=True,
-                )
-
-            adk_session.state["query_context"] = ctx
-            adk_session.state["observations"] = []
-
-            # AGENT_SYSTEM_PROMPT's routing rules (current book_id, current_page,
-            # chat history availability, prior response book IDs) all key off an
-            # explicit [Context] block in the user turn — without it the retrieval
-            # agent can't tell it's in reader mode and falls back to book-discovery
-            # tools it doesn't need.
-            retrieval_content = types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(
-                        text=await _build_human_message(ctx, request_dto.question)
+                    if adk_session is None:
+                        adk_session = await self.session_service.create_session(
+                            app_name="kitabim-retrieval",
+                            user_id=request_dto.user_id,
+                            session_id=conv_id,
+                        )
+                else:
+                    session_service = InMemorySessionService()
+                    adk_session = await session_service.create_session(
+                        app_name="kitabim-retrieval",
+                        user_id=request_dto.user_id,
+                        session_id=conv_id,
                     )
-                ],
-            )
+                    runner = Runner(
+                        agent=retrieval_agent,
+                        app_name="kitabim-retrieval",
+                        session_service=session_service,
+                        auto_create_session=True,
+                    )
 
-            pending_calls: dict[str, str] = {}
+                adk_session.state["query_context"] = ctx
+                adk_session.state["observations"] = []
 
-            try:
-                async for event in runner.run_async(
-                    user_id=request_dto.user_id,
-                    session_id=conv_id,
-                    new_message=retrieval_content,
-                    run_config=RunConfig(
-                        streaming_mode=StreamingMode.SSE,
-                        max_llm_calls=agent_max_llm_calls,
-                    ),
-                ):
-                    usage = getattr(event, "usage_metadata", None)
-                    if usage is not None:
-                        inp = getattr(usage, "prompt_token_count", 0) or 0
-                        out = getattr(usage, "candidates_token_count", 0) or 0
-                        if isinstance(inp, int) and isinstance(out, int):
-                            ctx.cost_tracker.add(
-                                stage="retrieval_agent",
-                                model=agent_model,
-                                input_tokens=inp,
-                                output_tokens=out,
-                            )
-
-                    if not event.partial and event.content and event.content.parts:
-                        for part in event.content.parts:
-                            if part.function_call:
-                                call_id = (
-                                    getattr(part.function_call, "id", None)
-                                    or part.function_call.name
-                                )
-                                pending_calls[call_id] = part.function_call.name
-                                yield {
-                                    "type": "tool_call",
-                                    "tool": part.function_call.name,
-                                    "name": part.function_call.name,
-                                }
-                            elif part.text:
-                                yield {"type": "agent_thinking", "text": part.text}
-
-                    function_responses = event.get_function_responses()
-                    if function_responses:
-                        for fr in function_responses:
-                            response_data = fr.response or {}
-                            call_id = getattr(fr, "id", None) or fr.name
-                            tool_name = pending_calls.pop(call_id, fr.name)
-                            observations.append(
-                                {
-                                    "tool": tool_name,
-                                    "result": response_data,
-                                }
-                            )
-                            found = (
-                                response_data.get("found_count", 0)
-                                if isinstance(response_data, dict)
-                                else 0
-                            )
-                            yield {
-                                "type": "tool_result",
-                                "tool": tool_name,
-                                "found": found,
-                            }
-            except LlmCallsLimitExceededError:
-                # The retrieval agent kept calling tools past its configured
-                # budget (rag_agent_max_llm_calls) — e.g. retrying a dictionary
-                # lookup under alternate spellings instead of stopping on a
-                # miss. Proceed to grading/synthesis with whatever evidence
-                # was gathered so far rather than failing the whole turn.
-                log_json(
-                    logger,
-                    logging.WARNING,
-                    "Retrieval agent exceeded rag_agent_max_llm_calls; "
-                    "proceeding with observations gathered so far",
-                    conversation_id=conv_id,
-                    max_llm_calls=agent_max_llm_calls,
-                    observations_count=len(observations),
+                # AGENT_SYSTEM_PROMPT's routing rules (current book_id, current_page,
+                # chat history availability, prior response book IDs) all key off an
+                # explicit [Context] block in the user turn — without it the retrieval
+                # agent can't tell it's in reader mode and falls back to book-discovery
+                # tools it doesn't need.
+                retrieval_content = types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_text(
+                            text=await _build_human_message(ctx, request_dto.question)
+                        )
+                    ],
                 )
+
+                pending_calls: dict[str, str] = {}
+
+                try:
+                    async for event in runner.run_async(
+                        user_id=request_dto.user_id,
+                        session_id=conv_id,
+                        new_message=retrieval_content,
+                        run_config=RunConfig(
+                            streaming_mode=StreamingMode.SSE,
+                            max_llm_calls=agent_max_llm_calls,
+                            get_session_config=GetSessionConfig(
+                                num_recent_events=agent_session_recent_events
+                            ),
+                        ),
+                    ):
+                        # ADK's StreamingResponseAggregator yields one partial=True
+                        # event per raw streaming chunk (each carrying that chunk's
+                        # own cumulative usage_metadata snapshot), then a single
+                        # partial=False event with the complete call's final totals.
+                        # Recording every event double/N-counts one real LLM call's
+                        # usage as many entries — only the final, non-partial event
+                        # reflects the call's true, complete usage.
+                        usage = getattr(event, "usage_metadata", None)
+                        if usage is not None and not event.partial:
+                            inp = getattr(usage, "prompt_token_count", 0) or 0
+                            out = getattr(usage, "candidates_token_count", 0) or 0
+                            if isinstance(inp, int) and isinstance(out, int):
+                                ctx.cost_tracker.add(
+                                    stage="retrieval_agent",
+                                    model=agent_model,
+                                    input_tokens=inp,
+                                    output_tokens=out,
+                                )
+
+                        if not event.partial and event.content and event.content.parts:
+                            for part in event.content.parts:
+                                if part.function_call:
+                                    call_id = (
+                                        getattr(part.function_call, "id", None)
+                                        or part.function_call.name
+                                    )
+                                    pending_calls[call_id] = part.function_call.name
+                                    yield {
+                                        "type": "tool_call",
+                                        "tool": part.function_call.name,
+                                        "name": part.function_call.name,
+                                    }
+                                elif part.text:
+                                    yield {"type": "agent_thinking", "text": part.text}
+
+                        function_responses = event.get_function_responses()
+                        if function_responses:
+                            for fr in function_responses:
+                                response_data = fr.response or {}
+                                call_id = getattr(fr, "id", None) or fr.name
+                                tool_name = pending_calls.pop(call_id, fr.name)
+                                observations.append(
+                                    {
+                                        "tool": tool_name,
+                                        "result": response_data,
+                                    }
+                                )
+                                found = (
+                                    response_data.get("found_count", 0)
+                                    if isinstance(response_data, dict)
+                                    else 0
+                                )
+                                yield {
+                                    "type": "tool_result",
+                                    "tool": tool_name,
+                                    "found": found,
+                                }
+                except LlmCallsLimitExceededError:
+                    # The retrieval agent kept calling tools past its configured
+                    # budget (rag_agent_max_llm_calls) — e.g. retrying a dictionary
+                    # lookup under alternate spellings instead of stopping on a
+                    # miss. Proceed to grading/synthesis with whatever evidence
+                    # was gathered so far rather than failing the whole turn.
+                    log_json(
+                        logger,
+                        logging.WARNING,
+                        "Retrieval agent exceeded rag_agent_max_llm_calls; "
+                        "proceeding with observations gathered so far",
+                        conversation_id=conv_id,
+                        max_llm_calls=agent_max_llm_calls,
+                        observations_count=len(observations),
+                    )
 
         content = types.Content(
             role="user", parts=[types.Part.from_text(text=request_dto.question)]
@@ -509,10 +614,14 @@ class ChatOrchestrator:
         # pointless LLM call, and synthesizing "an answer" from it through
         # the Answer Agent risks the model refusing/hedging on reproducing
         # the poem verbatim instead of just returning it (see the direct
-        # short_work_match formatting below).
+        # short_work_match formatting below). A resolved catalog_match skips
+        # the same stages because it's already a complete, correct DB lookup
+        # (title/author) — there's nothing left for either agent to add.
         skip_answer_synthesis = (
-            phrase_intent.is_exact and phrase_intent.is_page_finding
-        ) or short_work_match is not None
+            (phrase_intent.is_exact and phrase_intent.is_page_finding)
+            or short_work_match is not None
+            or catalog_match is not None
+        )
 
         # 4. Context Grading
         used_book_ids = _extract_used_book_ids(observations)
@@ -572,6 +681,9 @@ class ChatOrchestrator:
         if short_work_match is not None:
             accumulated_text = _format_short_work_answer(short_work_match)
             yield {"type": "chunk", "text": accumulated_text}
+        elif catalog_match is not None:
+            accumulated_text = _format_catalog_answer(catalog_match)
+            yield {"type": "chunk", "text": accumulated_text}
         elif skip_answer_synthesis:
             page_hits = format_page_hits(hits)
             accumulated_text = summarize_page_hits_as_text(
@@ -586,6 +698,15 @@ class ChatOrchestrator:
                 is_global=request_dto.is_global,
                 has_categories=bool(ctx.character_categories),
             )
+
+            answer_session_recent_events_str = await configs_repo.get_value(
+                "rag_answer_session_recent_events",
+                str(_ANSWER_SESSION_RECENT_EVENTS_DEFAULT),
+            )
+            try:
+                answer_session_recent_events = int(answer_session_recent_events_str)
+            except (TypeError, ValueError):
+                answer_session_recent_events = _ANSWER_SESSION_RECENT_EVENTS_DEFAULT
 
             if self.session_service:
                 answer_runner = Runner(
@@ -605,10 +726,18 @@ class ChatOrchestrator:
                 user_id=request_dto.user_id,
                 session_id=conv_id,
                 new_message=content,
-                run_config=RunConfig(streaming_mode=StreamingMode.SSE),
+                run_config=RunConfig(
+                    streaming_mode=StreamingMode.SSE,
+                    get_session_config=GetSessionConfig(
+                        num_recent_events=answer_session_recent_events
+                    ),
+                ),
             ):
+                # See the matching comment on the retrieval agent's usage
+                # recording above: only the final, non-partial event carries
+                # this call's true, complete usage_metadata.
                 usage = getattr(event, "usage_metadata", None)
-                if usage is not None:
+                if usage is not None and not event.partial:
                     inp = getattr(usage, "prompt_token_count", 0) or 0
                     out = getattr(usage, "candidates_token_count", 0) or 0
                     if isinstance(inp, int) and isinstance(out, int):
@@ -723,7 +852,7 @@ class ChatOrchestrator:
         self,
         request_dto: ChatRequestDTO,
         db_session: AsyncSession,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3.5-flash-lite",
     ) -> dict:
         """Non-streaming convenience wrapper: drains stream_response and
         returns the concatenated answer text plus the done-event metadata."""

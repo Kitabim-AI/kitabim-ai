@@ -29,13 +29,7 @@ class KitabimClient:
         self.config_path = config_path
         self.provider = provider
         self._app_id = (
-            app_id
-            if app_id is not None
-            else (
-                os.environ.get("KITABIM_APP_ID")
-                or os.environ.get("SECURITY_APP_ID")
-                or ""
-            )
+            app_id if app_id is not None else (os.environ.get("SECURITY_APP_ID") or "")
         )
 
     def _headers(self) -> dict:

@@ -381,6 +381,9 @@ The assistant detects when a message contains multiple distinct questions and de
 **REQ-CHAT-008: Named Short-Work Lookup**
 A question asking to find, show, or give the full text of a specific named short work (a poem or song) quoted by title is answered deterministically: the title is matched against the relevant book's table of contents and the exact printed pages are returned, bypassing the general retrieval agent so the answer isn't dependent on the agent choosing to search for it. This shortcut only applies to a table-of-contents entry spanning a short page range; the maximum span is an administrator-configurable system setting, so unusually long entries fall back to normal retrieval.
 
+**REQ-CHAT-009: Direct Author/Catalog Lookup**
+A question that unambiguously asks who wrote a specific book, or which books a specific author has in the library, is answered directly from the catalog rather than by running the full retrieval agent and a separate answer-synthesis step — the question can be phrased in any of the ways a user would naturally ask it, not a fixed set of wordings, since the underlying classification is intent-based rather than keyword-based. Any question the system cannot resolve to a single title (or a specific author with at least one matching book) — including one asking about authorship as only part of a larger question — falls back to the general retrieval agent instead of guessing.
+
 ---
 
 ### 3.9 Spell Check & Correction

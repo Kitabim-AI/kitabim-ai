@@ -13,6 +13,6 @@ from app.services.chat.retrieval_agent import build_retrieval_agent
 # Override by setting AGENT_MODEL env var before running `adk web`.
 import os
 
-_model = os.environ.get("AGENT_MODEL", "gemini-2.5-flash")
+_model = os.environ.get("AGENT_MODEL", "gemini-3.5-flash-lite")
 
 root_agent = build_retrieval_agent(_model)

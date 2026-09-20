@@ -43,7 +43,9 @@ async def test_call_llm_extraction_handles_bare_list_response():
         "app.llm.models.generate_text",
         new=AsyncMock(return_value='[{"term": "x", "facts": []}]'),
     ):
-        entities = await service._call_llm_extraction("page text", "gemini-2.5-flash")
+        entities = await service._call_llm_extraction(
+            "page text", "gemini-3.5-flash-lite"
+        )
     assert entities == [{"term": "x", "facts": []}]
 
 
@@ -63,7 +65,7 @@ async def test_merge_facts_tier1_deterministic_duplicate_merges_citation():
     citation_base = {"book_id": "book-1", "book_title": "T", "volume": None}
 
     result = await service._merge_facts(
-        "سۇلتان سەئىدخان", existing, candidates, citation_base, "gemini-2.5-flash"
+        "سۇلتان سەئىدخان", existing, candidates, citation_base, "gemini-3.5-flash-lite"
     )
 
     assert len(result) == 1
@@ -97,7 +99,11 @@ async def test_merge_facts_reuses_cached_embeddings_for_existing_facts():
         service, "_classify_facts", new=AsyncMock(return_value=[])
     ):
         result = await service._merge_facts(
-            "سۇلتان سەئىدخان", existing, candidates, citation_base, "gemini-2.5-flash"
+            "سۇلتان سەئىدخان",
+            existing,
+            candidates,
+            citation_base,
+            "gemini-3.5-flash-lite",
         )
 
     mock_embed.assert_called_once_with(["قوشۇمچە پاكىت."])
@@ -117,7 +123,7 @@ async def test_merge_facts_no_existing_facts_appends_as_new_without_embedding_or
         service, "_classify_facts", new=AsyncMock()
     ) as mock_classify:
         result = await service._merge_facts(
-            "سۇلتان سەئىدخان", [], candidates, citation_base, "gemini-2.5-flash"
+            "سۇلتان سەئىدخان", [], candidates, citation_base, "gemini-3.5-flash-lite"
         )
 
     mock_embed.assert_not_called()
@@ -146,7 +152,11 @@ async def test_merge_facts_tier2_low_similarity_appends_as_new_without_llm():
         service, "_embed_facts", new=AsyncMock(return_value=[[1.0, 0.0], [0.0, 1.0]])
     ), patch.object(service, "_classify_facts", new=AsyncMock()) as mock_classify:
         result = await service._merge_facts(
-            "سۇلتان سەئىدخان", existing, candidates, citation_base, "gemini-2.5-flash"
+            "سۇلتان سەئىدخان",
+            existing,
+            candidates,
+            citation_base,
+            "gemini-3.5-flash-lite",
         )
 
     mock_classify.assert_not_called()
@@ -187,7 +197,11 @@ async def test_merge_facts_tier3_duplicate_decision_merges_citation():
         ),
     ):
         result = await service._merge_facts(
-            "سۇلتان سەئىدخان", existing, candidates, citation_base, "gemini-2.5-flash"
+            "سۇلتان سەئىدخان",
+            existing,
+            candidates,
+            citation_base,
+            "gemini-3.5-flash-lite",
         )
 
     assert len(result) == 1
@@ -226,7 +240,11 @@ async def test_merge_facts_tier3_conflict_decision_flags_both_facts():
         ),
     ):
         result = await service._merge_facts(
-            "سۇلتان سەئىدخان", existing, candidates, citation_base, "gemini-2.5-flash"
+            "سۇلتان سەئىدخان",
+            existing,
+            candidates,
+            citation_base,
+            "gemini-3.5-flash-lite",
         )
 
     assert len(result) == 2
@@ -254,7 +272,11 @@ async def test_merge_facts_tier3_failure_falls_back_to_new():
         service, "_embed_facts", new=AsyncMock(return_value=[[1.0, 0.0], [0.9, 0.1]])
     ), patch.object(service, "_classify_facts", new=AsyncMock(return_value=[])):
         result = await service._merge_facts(
-            "سۇلتان سەئىدخان", existing, candidates, citation_base, "gemini-2.5-flash"
+            "سۇلتان سەئىدخان",
+            existing,
+            candidates,
+            citation_base,
+            "gemini-3.5-flash-lite",
         )
 
     assert len(result) == 2
@@ -295,7 +317,11 @@ async def test_merge_facts_embedding_failure_routes_all_unresolved_to_classifica
         ),
     ) as mock_classify:
         result = await service._merge_facts(
-            "سۇلتان سەئىدخان", existing, candidates, citation_base, "gemini-2.5-flash"
+            "سۇلتان سەئىدخان",
+            existing,
+            candidates,
+            citation_base,
+            "gemini-3.5-flash-lite",
         )
 
     mock_classify.assert_called_once()
@@ -319,7 +345,7 @@ async def test_synthesize_definition_returns_text_from_llm():
         new=AsyncMock(return_value='{"definition": "ياركەند خانلىقىنىڭ خانى [40]."}'),
     ):
         definition = await service._synthesize_definition(
-            "سۇلتان سەئىدخان", facts, "gemini-2.5-flash"
+            "سۇلتان سەئىدخان", facts, "gemini-3.5-flash-lite"
         )
     assert definition == "ياركەند خانلىقىنىڭ خانى [40]."
 
@@ -350,7 +376,7 @@ async def test_synthesize_definition_excludes_non_active_facts():
         return '{"definition": "synthesized"}'
 
     with patch("app.llm.models.generate_text", new=fake_generate_text):
-        await service._synthesize_definition("Term", facts, "gemini-2.5-flash")
+        await service._synthesize_definition("Term", facts, "gemini-3.5-flash-lite")
 
     assert "conflicting fact" not in captured_prompt["value"]
     assert "active fact" in captured_prompt["value"]
@@ -374,7 +400,7 @@ async def test_synthesize_definition_raises_on_empty_result():
         "app.llm.models.generate_text", new=AsyncMock(return_value='{"definition": ""}')
     ):
         with pytest.raises(HistoryFactSynthesisError):
-            await service._synthesize_definition("Term", facts, "gemini-2.5-flash")
+            await service._synthesize_definition("Term", facts, "gemini-3.5-flash-lite")
 
 
 @pytest.mark.asyncio
@@ -396,7 +422,7 @@ async def test_synthesize_definition_raises_on_llm_failure():
         new=AsyncMock(side_effect=RuntimeError("timeout")),
     ):
         with pytest.raises(HistoryFactSynthesisError):
-            await service._synthesize_definition("Term", facts, "gemini-2.5-flash")
+            await service._synthesize_definition("Term", facts, "gemini-3.5-flash-lite")
 
 
 @pytest.mark.asyncio
@@ -426,7 +452,7 @@ async def test_stage_entity_skips_non_ai_generated_records():
         book_title="Test Book",
         volume=1,
         entity=entity,
-        model_name="gemini-2.5-flash",
+        model_name="gemini-3.5-flash-lite",
     )
 
     assert staged_item is None
@@ -467,7 +493,7 @@ async def test_stage_entity_new_term_creates_staging_with_merged_facts():
         book_title="Test Book",
         volume=1,
         entity=entity,
-        model_name="gemini-2.5-flash",
+        model_name="gemini-3.5-flash-lite",
     )
 
     assert staged_item is not None
@@ -519,7 +545,7 @@ async def test_stage_entity_enrichment_bootstraps_legacy_facts_from_live_definit
             book_title="Test Book",
             volume=1,
             entity=entity,
-            model_name="gemini-2.5-flash",
+            model_name="gemini-3.5-flash-lite",
         )
 
     assert staged_item is not None
@@ -582,7 +608,7 @@ async def test_stage_entity_updates_existing_staging_in_place():
             book_title="Title",
             volume=1,
             entity=entity,
-            model_name="gemini-2.5-flash",
+            model_name="gemini-3.5-flash-lite",
         )
 
     assert staged_item is not None

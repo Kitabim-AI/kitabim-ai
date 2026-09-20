@@ -45,7 +45,7 @@ async def test_orchestrator_catalog_first_phrase_suppression():
         new=AsyncMock(),
     ), patch(
         "app.services.chat.orchestrator.SystemConfigsRepository.get_value",
-        new=AsyncMock(return_value="gemini-2.5-flash"),
+        new=AsyncMock(return_value="gemini-3.5-flash-lite"),
     ), patch(
         "app.services.chat.orchestrator.find_books_by_title_in_question",
         new=AsyncMock(return_value=mock_books),

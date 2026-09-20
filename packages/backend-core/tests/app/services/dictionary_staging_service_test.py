@@ -54,7 +54,7 @@ async def test_approve_staging_term_skips_updating_non_ai_entry():
         new=AsyncMock(return_value="synthesized definition"),
     ), patch(
         "app.services.history_extraction_service.HistoryExtractionService._get_system_config_model",
-        new=AsyncMock(return_value="gemini-2.5-flash"),
+        new=AsyncMock(return_value="gemini-3.5-flash-lite"),
     ):
         res = await service.approve_staging_term(1)
 
@@ -140,7 +140,7 @@ async def test_approve_staging_term_synthesizes_and_publishes_facts():
         new=AsyncMock(return_value="synthesized definition"),
     ), patch(
         "app.services.history_extraction_service.HistoryExtractionService._get_system_config_model",
-        new=AsyncMock(return_value="gemini-2.5-flash"),
+        new=AsyncMock(return_value="gemini-3.5-flash-lite"),
     ):
         result = await service.approve_staging_term(1)
 
@@ -176,7 +176,7 @@ async def test_approve_staging_term_propagates_synthesis_failure():
         new=AsyncMock(side_effect=HistoryFactSynthesisError("boom")),
     ), patch(
         "app.services.history_extraction_service.HistoryExtractionService._get_system_config_model",
-        new=AsyncMock(return_value="gemini-2.5-flash"),
+        new=AsyncMock(return_value="gemini-3.5-flash-lite"),
     ):
         with pytest.raises(HistoryFactSynthesisError):
             await service.approve_staging_term(1)
@@ -298,7 +298,7 @@ async def test_synthesize_definition_updates_cached_definition():
         new=AsyncMock(return_value="preview text"),
     ), patch(
         "app.services.history_extraction_service.HistoryExtractionService._get_system_config_model",
-        new=AsyncMock(return_value="gemini-2.5-flash"),
+        new=AsyncMock(return_value="gemini-3.5-flash-lite"),
     ):
         definition = await service.synthesize_definition(1)
 

@@ -575,6 +575,7 @@
       "actions": "Actions",
       "empty": "No configurations found",
       "emptyDescription": "Create your first system configuration to get started",
+      "invalidJson": "Invalid JSON format: {{error}}",
       "circuitBreaker": {
         "title": "Circuit Breaker Status",
         "overallStatus": "Overall Status",

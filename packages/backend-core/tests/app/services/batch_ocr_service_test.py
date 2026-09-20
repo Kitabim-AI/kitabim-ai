@@ -50,7 +50,7 @@ async def test_submit_batch_ocr_job():
             "book_123",
             [mock_page],
             mock_doc,
-            "gemini-2.5-flash",
+            "gemini-3.5-flash-lite",
         )
 
         assert batch_job.book_id == "book_123"
@@ -60,7 +60,7 @@ async def test_submit_batch_ocr_job():
         mock_storage.upload_bytes.assert_called_once()
         mock_genai_client.files.upload.assert_called_once()
         mock_genai_client.batches.create.assert_called_once_with(
-            model="gemini-2.5-flash", src="files/abc123"
+            model="gemini-3.5-flash-lite", src="files/abc123"
         )
 
         jsonl_content = mock_storage.upload_bytes.call_args.args[0]

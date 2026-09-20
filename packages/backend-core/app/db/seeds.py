@@ -194,7 +194,7 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "history_gemini_model",
-            "value": "gemini-2.5-flash",
+            "value": "gemini-3.5-flash-lite",
             "description": "Gemini model used for structured Uyghur history dictionary term extraction and factual synthesis.",
         },
         {
@@ -268,6 +268,16 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Hard ceiling on ADK LLM calls per retrieval-agent run (google.adk.RunConfig.max_llm_calls), enforced by the ADK runner itself. AGENT_SYSTEM_PROMPT already asks the model to stop within 6 tool calls (10 for multi-sub-question turns), but that's prose the model can ignore; this is the code-enforced backstop. Set above the prompt's own budget (tool calls + 1 final no-tool-call round) so it only catches genuine runaway loops, not normal completions. When the limit is hit mid-run, the orchestrator logs a warning and proceeds to answer synthesis with whatever evidence was gathered so far, rather than failing the turn.",
         },
         {
+            "key": "rag_agent_session_recent_events",
+            "value": "50",
+            "description": "Caps how many recent events (tool calls/responses, prior turns' text) from the retrieval agent's persistent per-conversation ADK session are replayed into each new LLM call (google.adk.RunConfig.get_session_config.num_recent_events). Without this, google-adk's Agent.include_contents='default' replays the entire conv_id-keyed session on every turn, growing prompt tokens roughly per-turn with no bound. 50 covers roughly the last 2-4 turns depending on tool-call count.",
+        },
+        {
+            "key": "rag_answer_session_recent_events",
+            "value": "12",
+            "description": "Same purpose as rag_agent_session_recent_events but for the answer agent's session, which has no tools so produces far fewer events per turn — 12 covers roughly the last several turns of question/answer text.",
+        },
+        {
             "key": "sys_collection_page_size",
             "value": "40",
             "description": "Batch size for infinite-scroll pagination on the library shelves and home search results.",
@@ -276,6 +286,11 @@ async def seed_system_configs(session: AsyncSession):
             "key": "sys_content_search_snippet_max_chars",
             "value": "500",
             "description": "Maximum character length of content search result snippets displayed in the Home 'Content' search tab.",
+        },
+        {
+            "key": "sys_llm_model_pricing",
+            "value": '{"gemini-2.5-flash": {"input": 0.30, "output": 2.50}, "gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40}, "gemini-2.5-pro": {"input": 1.25, "output": 10.00}, "gemini-3.1-flash-lite": {"input": 0.10, "output": 0.40}, "gemini-3.5-flash-lite": {"input": 0.10, "output": 0.40}, "gemini-3.7-flash": {"input": 0.30, "output": 2.50}, "gemini-embedding-2": {"input": 0.15, "output": 0.0}, "_fallback": {"input": 0.30, "output": 2.50}}',
+            "description": "JSON dictionary of Gemini model pricing (USD per 1M tokens) for input and output tokens.",
         },
     ]
 

@@ -189,20 +189,7 @@ def test_headers_includes_app_id_when_provided(tmp_path: Path):
     assert headers["X-Kitabim-App-Id"] == "custom-app-id"
 
 
-def test_headers_reads_app_id_from_env(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("KITABIM_APP_ID", "env-app-id-456")
-    client = KitabimClient(
-        base_url="http://localhost:8000", config_path=tmp_path / "token.json"
-    )
-    with patch("kitabim_client.api.get_valid_token", return_value="tok123"):
-        headers = client._headers()
-
-    assert headers["Authorization"] == "Bearer tok123"
-    assert headers["X-Kitabim-App-Id"] == "env-app-id-456"
-
-
 def test_headers_reads_security_app_id_from_env(tmp_path: Path, monkeypatch):
-    monkeypatch.delenv("KITABIM_APP_ID", raising=False)
     monkeypatch.setenv("SECURITY_APP_ID", "sec-app-id-789")
     client = KitabimClient(
         base_url="http://localhost:8000", config_path=tmp_path / "token.json"
