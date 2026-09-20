@@ -1772,7 +1772,7 @@ git commit -m "feat(reader): add useBookmarks hook"
 - Consumes: `useBookmarks(bookId)` (Task 6), `useAuth()` (existing), `OAuthButtonGroup` (existing, `apps/frontend/src/components/auth/AuthButton.tsx`).
 - Produces: `BookmarkPrompt` component; `PageItem` gains props `bookmarks?: Bookmark[]`, `onCreateBookmark?: (pageNumber: number, name: string, quoteText?: string) => Promise<void>`, `onRenameBookmark?: (id: string, name: string) => Promise<void>`, `onDeleteBookmark?: (id: string) => Promise<void>`, `isAuthenticated?: boolean` — threaded through `VirtualScrollReader` and `ReaderView` exactly like the existing `bookId`/`bookTitle` props.
 
-- [ ] **Step 1: Write the failing `BookmarkPrompt` tests**
+- [x] **Step 1: Write the failing `BookmarkPrompt` tests**
 
 Create `apps/frontend/src/tests/components/reader/BookmarkPrompt.test.tsx`:
 
@@ -1853,12 +1853,12 @@ test('guests see a sign-in prompt instead of the name form', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/reader/BookmarkPrompt.test.tsx`
 Expected: FAIL — `Cannot find module '@/src/components/reader/BookmarkPrompt'`.
 
-- [ ] **Step 3: Implement `BookmarkPrompt`**
+- [x] **Step 3: Implement `BookmarkPrompt`**
 
 Create `apps/frontend/src/components/reader/BookmarkPrompt.tsx`:
 
@@ -1950,12 +1950,12 @@ export const BookmarkPrompt: React.FC<BookmarkPromptProps> = ({
 };
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/reader/BookmarkPrompt.test.tsx`
 Expected: all tests PASS.
 
-- [ ] **Step 5: Write the failing `PageItem` bookmark tests**
+- [x] **Step 5: Write the failing `PageItem` bookmark tests**
 
 In `apps/frontend/src/tests/components/reader/PageItem.test.tsx`, extend the `useAuth` mock (Step: change the top-level `vi.mock('@/src/hooks/useAuth', ...)` block to also export `useAuth`, and set a default in `beforeEach`):
 
@@ -2056,12 +2056,12 @@ test('PageItem guests see the sign-in prompt when tapping the bookmark icon', ()
 
 Note: `chat.pageNumber` is the mocked `t()`'s literal echo of the translation key used to build the default bookmark name (the test's `i18nValue.t` returns the key itself, not an interpolated string) — the real app renders an actual page label there; the test only needs to assert the default-name plumbing reaches `onCreateBookmark` unmodified.
 
-- [ ] **Step 6: Run tests to verify they fail**
+- [x] **Step 6: Run tests to verify they fail**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/reader/PageItem.test.tsx`
 Expected: FAIL — no element with title `bookmarks.bookmarkPage` etc. (feature not implemented yet).
 
-- [ ] **Step 7: Add bookmark props and UI to `PageItem`**
+- [x] **Step 7: Add bookmark props and UI to `PageItem`**
 
 In `apps/frontend/src/components/reader/PageItem.tsx`:
 
@@ -2185,7 +2185,7 @@ Add the `BookmarkPrompt` render, alongside the existing `{shareState && (...)}` 
       )}
 ```
 
-- [ ] **Step 8: Thread the new props through `VirtualScrollReader` and `ReaderView`**
+- [x] **Step 8: Thread the new props through `VirtualScrollReader` and `ReaderView`**
 
 In `apps/frontend/src/components/reader/VirtualScrollReader.tsx`, add to `VirtualScrollReaderProps`:
 
@@ -2265,7 +2265,7 @@ vi.mock('@/src/services/persistenceService', () => ({
 }));
 ```
 
-- [ ] **Step 9: Add the new i18n keys**
+- [x] **Step 9: Add the new i18n keys**
 
 In `apps/frontend/src/locales/en.json`, add a new top-level `"bookmarks"` object (after `"share"`):
 
@@ -2297,18 +2297,18 @@ In `apps/frontend/src/locales/ug.json`, add the same key set with draft Uyghur t
   },
 ```
 
-- [ ] **Step 10: Run tests to verify they pass**
+- [x] **Step 10: Run tests to verify they pass**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/reader/PageItem.test.tsx src/tests/components/reader/BookmarkPrompt.test.tsx`
 Expected: all tests PASS.
 
-- [ ] **Step 11: Rebuild and manually verify**
+- [x] **Step 11: Rebuild and manually verify**
 
 Run: `./deploy/local/rebuild-and-restart.sh frontend`
 
 Open http://localhost:30080, sign in, open a book, hover a page: confirm an outline bookmark icon appears next to the existing share icon; click it, confirm the name prompt appears pre-filled with a page label; save; confirm the icon becomes filled. Select a sentence; confirm a second floating button (bookmark icon) appears next to the quote-share button; use it to save a passage bookmark.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add apps/frontend/src/components/reader/BookmarkPrompt.tsx apps/frontend/src/components/reader/PageItem.tsx apps/frontend/src/components/reader/VirtualScrollReader.tsx apps/frontend/src/components/reader/ReaderView.tsx apps/frontend/src/tests/components/reader/BookmarkPrompt.test.tsx apps/frontend/src/tests/components/reader/PageItem.test.tsx apps/frontend/src/locales/en.json apps/frontend/src/locales/ug.json
@@ -2329,7 +2329,7 @@ git commit -m "feat(reader): add whole-page and passage bookmark creation UI"
 - Consumes: `bookmarks`, `renameBookmark`, `removeBookmark` (Task 7's `useBookmarks(selectedBook?.id)` call, already in `ReaderView`).
 - Produces: `BookmarksDrawer` component with props `{ bookmarks: Bookmark[]; onJumpTo: (pageNumber: number, quoteText?: string) => void; onRename: (id: string, name: string) => Promise<void>; onDelete: (id: string) => Promise<void>; onClose: () => void; }`. A new toolbar icon in `ReaderView` toggles it.
 
-- [ ] **Step 1: Write the failing drawer tests**
+- [x] **Step 1: Write the failing drawer tests**
 
 Create `apps/frontend/src/tests/components/reader/BookmarksDrawer.test.tsx`:
 
@@ -2417,12 +2417,12 @@ test('shows an empty state when there are no bookmarks', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/reader/BookmarksDrawer.test.tsx`
 Expected: FAIL — `Cannot find module '@/src/components/reader/BookmarksDrawer'`.
 
-- [ ] **Step 3: Implement `BookmarksDrawer`**
+- [x] **Step 3: Implement `BookmarksDrawer`**
 
 Create `apps/frontend/src/components/reader/BookmarksDrawer.tsx`:
 
@@ -2545,12 +2545,12 @@ export const BookmarksDrawer: React.FC<BookmarksDrawerProps> = ({ bookmarks, onJ
 };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/reader/BookmarksDrawer.test.tsx`
 Expected: all tests PASS.
 
-- [ ] **Step 5: Wire the drawer toggle into `ReaderView`'s toolbar**
+- [x] **Step 5: Wire the drawer toggle into `ReaderView`'s toolbar**
 
 In `apps/frontend/src/components/reader/ReaderView.tsx`, add state and the toolbar icon. Add near the other reader UI state (e.g. `showFontSlider`):
 
@@ -2596,7 +2596,7 @@ Add the drawer render at the end of the component's JSX (a sibling of the other 
       )}
 ```
 
-- [ ] **Step 6: Add the new i18n keys**
+- [x] **Step 6: Add the new i18n keys**
 
 In `apps/frontend/src/locales/en.json`, extend the `"bookmarks"` object added in Task 7:
 
@@ -2614,13 +2614,13 @@ In `apps/frontend/src/locales/ug.json` (draft, needs review):
     "rename": "ئات ئۆزگەرتىش"
 ```
 
-- [ ] **Step 7: Rebuild and manually verify**
+- [x] **Step 7: Rebuild and manually verify**
 
 Run: `./deploy/local/rebuild-and-restart.sh frontend`
 
 Open a book with at least one bookmark saved (from Task 7's manual check), click the new bookmarks toolbar icon, confirm the drawer lists it sorted by page, clicking it scrolls to that page (and highlights the quote if it's a passage bookmark), and delete works.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/frontend/src/components/reader/BookmarksDrawer.tsx apps/frontend/src/components/reader/ReaderView.tsx apps/frontend/src/tests/components/reader/BookmarksDrawer.test.tsx apps/frontend/src/locales/en.json apps/frontend/src/locales/ug.json
@@ -2643,7 +2643,7 @@ git commit -m "feat(reader): add per-book bookmarks drawer"
 - Consumes: `PersistenceService.listReadingProgress` (Task 4), `activeTab`/`setActiveTab` (existing, `AppContext`), `bookActions.openReader` (Task 5), `GuestAuthWall` (existing), `BookCard` (existing).
 - Produces: `LibraryView` renders a 3-button tab row (`all-books` default / `continue-reading` / `bookmarks`); `/library/continue-reading` and `/library/bookmarks` URLs route to `view: 'library'`, matching the existing `/admin/<tab>` convention. `ContinueReadingTab` component with an internal client-side filter input.
 
-- [ ] **Step 1: Extend `AppContext`'s path routing for library sub-tabs**
+- [x] **Step 1: Extend `AppContext`'s path routing for library sub-tabs**
 
 In `apps/frontend/src/context/AppContext.tsx`, in `parsePath`, change:
 
@@ -2672,21 +2672,31 @@ In `getPathFromView`, add a `library` branch before the generic fallback:
   };
 ```
 
-In `setView`, the existing history-push call already passes `activeTab` as the tab for any view — no change needed there since it already reads `getPathFromView(newView, newView === 'admin' ? activeTab : undefined)`. Update this to also cover `library`:
+Since navigating to `library` via the Navbar doesn't reset `activeTab` today, entering library fresh needs to land on All Books rather than carry over a stale sub-tab (e.g. a leftover admin sub-tab). Computing the push-state `path` from the raw `activeTab` and resetting it only afterward would push the *stale* tab into the URL for one navigation — resolve the effective tab first, then use it for both the path and the state reset:
 
 ```typescript
-        const path = getPathFromView(newView, (newView === 'admin' || newView === 'library') ? activeTab : undefined);
+  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran', updateHistory = true) => {
+    if (newView !== view) {
+      const enteringLibraryFresh = newView === 'library' && view !== 'library';
+      const effectiveTab = enteringLibraryFresh ? 'all-books' : activeTab;
+
+      if (updateHistory && newView !== 'reader') {
+        const path = getPathFromView(newView, (newView === 'admin' || newView === 'library') ? effectiveTab : undefined);
+        if (window.location.pathname !== path) {
+          window.history.pushState({ view: newView, tab: effectiveTab }, '', path);
+        }
+      }
 ```
 
-Since navigating to `library` via the Navbar doesn't reset `activeTab` today, add a reset so it doesn't carry over a stale admin sub-tab. In `setView`, right before `setViewInternal(newView)`, add:
+(This replaces the existing `if (updateHistory && newView !== 'reader') { ... }` block's body — same shape, `activeTab` swapped for `effectiveTab` in both the `getPathFromView` call and the pushed state object.) Then, right before `setViewInternal(newView)`, add the matching state reset:
 
 ```typescript
-      if (newView === 'library' && view !== 'reader') {
+      if (enteringLibraryFresh) {
         setActiveTabInternal('all-books');
       }
 ```
 
-- [ ] **Step 2: Write the failing `LibraryView` tab tests**
+- [x] **Step 2: Write the failing `LibraryView` tab tests**
 
 `apps/frontend/src/tests/components/library/LibraryView.test.tsx` currently mocks `useAppContext` per-test with `vi.mocked(AppContextModule.useAppContext).mockReturnValue({...} as any)` and has no shared render helper — each test builds its own context value inline. Add `fireEvent` to the existing `@testing-library/react` import, add `activeTab`/`setActiveTab` to both existing tests' mocked context values (so the tab bar has a defined active tab), and add two new tests:
 
@@ -2743,12 +2753,12 @@ test('clicking the Continue Reading tab calls setActiveTab', () => {
 });
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/library/LibraryView.test.tsx`
 Expected: FAIL — tab labels not found (no tab bar exists yet).
 
-- [ ] **Step 4: Add the tab bar to `LibraryView`**
+- [x] **Step 4: Add the tab bar to `LibraryView`**
 
 In `apps/frontend/src/components/library/LibraryView.tsx`, add `activeTab`/`setActiveTab` to the destructured `useAppContext()` call:
 
@@ -2821,7 +2831,7 @@ Wrap the existing grid/empty/infinite-scroll JSX (everything from `{/* Grid Sect
 
 (The `activeTab === 'bookmarks'` branch is added in Task 10.)
 
-- [ ] **Step 5: Write the failing `ContinueReadingTab` tests**
+- [x] **Step 5: Write the failing `ContinueReadingTab` tests**
 
 Create `apps/frontend/src/tests/components/library/ContinueReadingTab.test.tsx`:
 
@@ -2903,12 +2913,12 @@ test('shows the guest auth wall instead of fetching for signed-out users', () =>
 });
 ```
 
-- [ ] **Step 6: Run tests to verify they fail**
+- [x] **Step 6: Run tests to verify they fail**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/library/ContinueReadingTab.test.tsx`
 Expected: FAIL — `Cannot find module '@/src/components/library/ContinueReadingTab'`.
 
-- [ ] **Step 7: Implement `ContinueReadingTab`**
+- [x] **Step 7: Implement `ContinueReadingTab`**
 
 Create `apps/frontend/src/components/library/ContinueReadingTab.tsx`:
 
@@ -2980,12 +2990,12 @@ export const ContinueReadingTab: React.FC<ContinueReadingTabProps> = ({ onOpenBo
 };
 ```
 
-- [ ] **Step 8: Run tests to verify they pass**
+- [x] **Step 8: Run tests to verify they pass**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/library/ContinueReadingTab.test.tsx src/tests/components/library/LibraryView.test.tsx`
 Expected: all tests PASS.
 
-- [ ] **Step 9: Add the new i18n keys**
+- [x] **Step 9: Add the new i18n keys**
 
 In `apps/frontend/src/locales/en.json`, extend `"library"`:
 
@@ -3015,13 +3025,13 @@ In `apps/frontend/src/locales/ug.json` (draft, needs review):
     },
 ```
 
-- [ ] **Step 10: Rebuild and manually verify**
+- [x] **Step 10: Rebuild and manually verify**
 
 Run: `./deploy/local/rebuild-and-restart.sh frontend`
 
 Sign in, read partway into a book, go to Library, confirm the "Continue Reading" tab shows it and clicking opens the reader at the right page; type in the search box and confirm it filters instantly.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add apps/frontend/src/context/AppContext.tsx apps/frontend/src/components/library/LibraryView.tsx apps/frontend/src/components/library/ContinueReadingTab.tsx apps/frontend/src/tests/components/library/ContinueReadingTab.test.tsx apps/frontend/src/tests/components/library/LibraryView.test.tsx apps/frontend/src/locales/en.json apps/frontend/src/locales/ug.json
@@ -3042,7 +3052,7 @@ git commit -m "feat(library): add Library tabs and Continue Reading tab"
 - Consumes: `useBookmarks()` (Task 6, called with no `bookId` for the unscoped list), `GuestAuthWall` (existing).
 - Produces: `BookmarksTab` component with props `{ onOpenBookmark: (bookId: string, pageNumber: number, quoteText?: string) => void }`, grouped-by-book rendering, client-side filter, inline rename/delete.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `apps/frontend/src/tests/components/library/BookmarksTab.test.tsx`:
 
@@ -3156,12 +3166,12 @@ test('shows the guest auth wall for signed-out users', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/library/BookmarksTab.test.tsx`
 Expected: FAIL — `Cannot find module '@/src/components/library/BookmarksTab'`.
 
-- [ ] **Step 3: Implement `BookmarksTab`**
+- [x] **Step 3: Implement `BookmarksTab`**
 
 Create `apps/frontend/src/components/library/BookmarksTab.tsx`:
 
@@ -3293,12 +3303,12 @@ export const BookmarksTab: React.FC<BookmarksTabProps> = ({ onOpenBookmark }) =>
 };
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/library/BookmarksTab.test.tsx`
 Expected: all tests PASS.
 
-- [ ] **Step 5: Wire the tab into `LibraryView`**
+- [x] **Step 5: Wire the tab into `LibraryView`**
 
 In `apps/frontend/src/components/library/LibraryView.tsx`, add the import:
 
@@ -3318,7 +3328,7 @@ and add the branch (after the `activeTab === 'continue-reading'` block from Task
 
 (The passage-bookmark quote highlight on arrival is out of scope for this click path in `LibraryView` — `openReader` only accepts a page number, matching Task 5's signature. Opening at the right page is the primary behavior; highlighting the quote from a cold-open deep link is already covered by the existing `pendingQuoteHighlight` mechanism when the bookmark is opened from the in-reader drawer, Task 8, which sets it directly via `AppContext`.)
 
-- [ ] **Step 6: Add the new i18n keys**
+- [x] **Step 6: Add the new i18n keys**
 
 In `apps/frontend/src/locales/en.json`, extend `"library"`:
 
@@ -3338,13 +3348,13 @@ In `apps/frontend/src/locales/ug.json` (draft, needs review):
     }
 ```
 
-- [ ] **Step 7: Rebuild and manually verify**
+- [x] **Step 7: Rebuild and manually verify**
 
 Run: `./deploy/local/rebuild-and-restart.sh frontend`
 
 Go to Library → Bookmarks tab, confirm bookmarks are grouped by book, search filters correctly, clicking opens the reader at the right page, delete removes the entry.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/frontend/src/components/library/BookmarksTab.tsx apps/frontend/src/components/library/LibraryView.tsx apps/frontend/src/tests/components/library/BookmarksTab.test.tsx apps/frontend/src/locales/en.json apps/frontend/src/locales/ug.json
@@ -3364,7 +3374,7 @@ git commit -m "feat(library): add Bookmarks tab"
 - Consumes: `useAppContext()`'s `setView`/`setActiveTab` (existing + Task 9's library-tab routing).
 - Produces: `UserMenu` renders two new buttons ("Continue Reading", "Bookmarks") between the user header and Logout, each calling `setView('library')` + `setActiveTab(...)`.
 
-- [ ] **Step 1: Create the `AuthButton` test file**
+- [x] **Step 1: Create the `AuthButton` test file**
 
 No test file for `AuthButton.tsx` exists yet (confirmed: `find apps/frontend/src/tests -iname "*AuthButton*"` returns nothing). Create `apps/frontend/src/tests/components/auth/AuthButton.test.tsx`, following `LibraryView.test.tsx`'s established pattern of `renderWithProviders` plus a `vi.mock('@/src/context/AppContext', ...)` override:
 
@@ -3375,13 +3385,20 @@ import { renderWithProviders as render } from '@/src/tests/test-utils';
 import { fireEvent, screen } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
-vi.mock('@/src/hooks/useAuth', () => ({
-  useAuth: vi.fn(() => ({
-    user: { displayName: 'Test User', email: 't@example.com', avatarUrl: null, role: 'reader' },
-    logout: vi.fn(),
-    isLoading: false,
-  })),
-}));
+// renderWithProviders wraps with the real AuthProvider, so the mock must
+// re-export it (via importActual) rather than replacing the whole module —
+// otherwise AuthProvider is undefined and the wrapper throws on mount.
+vi.mock('@/src/hooks/useAuth', async () => {
+  const actual = await vi.importActual('@/src/hooks/useAuth');
+  return {
+    ...(actual as any),
+    useAuth: vi.fn(() => ({
+      user: { displayName: 'Test User', email: 't@example.com', avatarUrl: null, role: 'reader' },
+      logout: vi.fn(),
+      isLoading: false,
+    })),
+  };
+});
 
 vi.mock('@/src/context/AppContext', async () => {
   const actual = await vi.importActual('@/src/context/AppContext');
@@ -3428,12 +3445,12 @@ test('Bookmarks shortcut navigates to the Library bookmarks tab', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/auth/AuthButton.test.tsx`
 Expected: FAIL — `nav.continueReading`/`nav.bookmarks` text not found (shortcuts don't exist yet).
 
-- [ ] **Step 3: Add the shortcuts to `UserMenu`**
+- [x] **Step 3: Add the shortcuts to `UserMenu`**
 
 In `apps/frontend/src/components/auth/AuthButton.tsx`, add the import:
 
@@ -3492,7 +3509,7 @@ Add the two buttons inside `menuContent`, in the `<div className="p-1 space-y-1"
 
 Note `isOpen`/`setIsOpen` used above are already in scope from `UserMenu`'s existing state — no new state needed. If the actual test's `renderMenu()` needs `isOpen` to start `false` and the menu to be a button that toggles it, that already matches `UserMenu`'s existing top-level `<button onClick={() => setIsOpen(!isOpen)}>` — the test's `fireEvent.click(screen.getByRole('button'))` (Step 1) opens the dropdown before checking for the shortcuts.
 
-- [ ] **Step 4: Add the new i18n keys**
+- [x] **Step 4: Add the new i18n keys**
 
 In `apps/frontend/src/locales/en.json`, the `"nav"` object currently reads `{"home", "library", "globalChat", "spellCheck", "joinUs", "admin", "addBook", "graph", "dictionary", "quran", "switchLanguage"}`. Add two more keys to it:
 
@@ -3508,18 +3525,18 @@ In `apps/frontend/src/locales/ug.json` (draft, needs review):
     "bookmarks": "بەلگىلەر",
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd apps/frontend && npx vitest run src/tests/components/auth/AuthButton.test.tsx`
 Expected: all tests PASS.
 
-- [ ] **Step 6: Rebuild and manually verify**
+- [x] **Step 6: Rebuild and manually verify**
 
 Run: `./deploy/local/rebuild-and-restart.sh frontend`
 
 Sign in, open the profile menu (avatar, top right), confirm "Continue Reading" and "Bookmarks" appear above Logout, and each opens the Library page on the correct tab. Sign out and confirm the menu doesn't render at all for guests (existing behavior, unchanged).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/frontend/src/components/auth/AuthButton.tsx apps/frontend/src/tests/components/auth/AuthButton.test.tsx apps/frontend/src/locales/en.json apps/frontend/src/locales/ug.json
