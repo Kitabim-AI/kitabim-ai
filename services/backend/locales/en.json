@@ -16,6 +16,7 @@
     "user_not_found_inactive": "User not found or inactive",
     "refresh_token_expired": "Refresh token has expired",
     "book_not_found": "Book not found",
+    "bookmark_not_found": "Bookmark not found",
     "conversation_not_found": "Conversation not found",
     "page_not_found": "Page not found",
     "cover_not_found": "Cover image not found",
