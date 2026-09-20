@@ -190,7 +190,16 @@
       "message": "باشقا ھالقىلىق سۆز بىلەن قايتا ئىزدەپ باقسىڭىز."
     },
     "loadingMore": "تېخىمۇ كۆپ كىتاب بايقالدى...",
-    "searchPlaceholder": "كىتاب ئىزدەش..."
+    "searchPlaceholder": "كىتاب ئىزدەش...",
+    "tabs": {
+      "allBooks": "بارلىق كىتابلار",
+      "continueReading": "ئوقۇشنى داۋاملاشتۇرۇش",
+      "bookmarks": "بەلگىلەر"
+    },
+    "continueReading": {
+      "searchPlaceholder": "كىتابلىرىڭىزنى ئىزدەڭ...",
+      "empty": "سىز تېخى ھېچقانداق كىتاب ئوقۇشنى باشلىمىدىڭىز"
+    }
   },
   "bookCard": {
     "public": "ئاشكارا",

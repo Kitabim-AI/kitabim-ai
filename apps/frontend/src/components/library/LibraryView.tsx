@@ -4,6 +4,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
+import { ContinueReadingTab } from './ContinueReadingTab';
 
 export const LibraryView: React.FC = () => {
   const {
@@ -14,7 +15,9 @@ export const LibraryView: React.FC = () => {
     hasMoreShelf: hasMore,
     bookActions,
     loaderRef,
-    loadMoreShelf: loadMore
+    loadMoreShelf: loadMore,
+    activeTab,
+    setActiveTab,
   } = useAppContext();
 
   const { t } = useI18n();
@@ -61,54 +64,83 @@ export const LibraryView: React.FC = () => {
         </header>
       </div>
 
-      {/* Grid Section */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
-        {books.map(book => (
-          <BookCard
-            key={book.id}
-            book={book}
-            onClick={bookActions.openReader}
-          />
+      {/* Tab Bar */}
+      <div className="flex items-center gap-2 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 pb-0">
+        {([
+          { key: 'all-books', label: t('library.tabs.allBooks') },
+          { key: 'continue-reading', label: t('library.tabs.continueReading') },
+          { key: 'bookmarks', label: t('library.tabs.bookmarks') },
+        ] as const).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`px-4 py-2.5 text-sm font-bold rounded-t-xl transition-all ${
+              (activeTab === key || (key === 'all-books' && activeTab !== 'continue-reading' && activeTab !== 'bookmarks'))
+                ? 'bg-white dark:bg-slate-900 text-[#0369a1] dark:text-[#38bdf8] border border-b-0 border-[#0369a1]/10 dark:border-[#38bdf8]/10'
+                : 'text-slate-400 dark:text-slate-500 hover:text-[#0369a1] dark:hover:text-[#38bdf8]'
+            }`}
+          >
+            {label}
+          </button>
         ))}
+      </div>
 
-        {isInitialLoading && books.length === 0 && (
-          <div className="col-span-full py-40 w-full flex flex-col items-center justify-center">
-            <div className="relative mb-6">
-              <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] dark:border-t-[#38bdf8] rounded-full animate-spin"></div>
-              <div className="absolute inset-0 flex items-center justify-center text-[#0369a1] dark:text-[#38bdf8]">
-                <LibraryBig className="w-8 h-8 animate-pulse" />
+      {(activeTab !== 'continue-reading' && activeTab !== 'bookmarks') && (
+        <>
+          {/* Grid Section */}
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
+            {books.map(book => (
+              <BookCard
+                key={book.id}
+                book={book}
+                onClick={bookActions.openReader}
+              />
+            ))}
+
+            {isInitialLoading && books.length === 0 && (
+              <div className="col-span-full py-40 w-full flex flex-col items-center justify-center">
+                <div className="relative mb-6">
+                  <div className="w-16 h-16 border-4 border-[#0369a1]/10 border-t-[#0369a1] dark:border-t-[#38bdf8] rounded-full animate-spin"></div>
+                  <div className="absolute inset-0 flex items-center justify-center text-[#0369a1] dark:text-[#38bdf8]">
+                    <LibraryBig className="w-8 h-8 animate-pulse" />
+                  </div>
+                </div>
+                <h3 className="text-xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('common.loading')}</h3>
               </div>
-            </div>
-            <h3 className="text-xl font-normal text-[#1a1a1a] dark:text-slate-100">{t('common.loading')}</h3>
-          </div>
-        )}
+            )}
 
-        {books.length === 0 && !isInitialLoading && !isLoadingMore && (
-          <div className="col-span-full py-40 w-full flex flex-col items-center justify-center glass-panel rounded-[48px]">
-            <div className="p-10 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 rounded-[48px] mb-8 relative">
-              <LibraryBig className="w-24 h-24 text-[#0369a1] dark:text-[#38bdf8]" strokeWidth={1.5} />
-            </div>
-            <h4 className="text-xl sm:text-2xl md:text-3xl font-black text-[#1a1a1a] dark:text-slate-100 mb-4">{t('library.empty.title')}</h4>
-            <p className="text-[#94a3b8] dark:text-slate-400 font-bold text-base sm:text-lg max-w-md text-center">{t('library.empty.message')}</p>
+            {books.length === 0 && !isInitialLoading && !isLoadingMore && (
+              <div className="col-span-full py-40 w-full flex flex-col items-center justify-center glass-panel rounded-[48px]">
+                <div className="p-10 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 rounded-[48px] mb-8 relative">
+                  <LibraryBig className="w-24 h-24 text-[#0369a1] dark:text-[#38bdf8]" strokeWidth={1.5} />
+                </div>
+                <h4 className="text-xl sm:text-2xl md:text-3xl font-black text-[#1a1a1a] dark:text-slate-100 mb-4">{t('library.empty.title')}</h4>
+                <p className="text-[#94a3b8] dark:text-slate-400 font-bold text-base sm:text-lg max-w-md text-center">{t('library.empty.message')}</p>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Infinite Scroll Trigger */}
-      <div ref={loaderRef as any} className="h-64 flex flex-col items-center justify-center gap-6">
-        {isLoadingMore && !isInitialLoading ? (
-          <div className="flex flex-col items-center gap-5 animate-fade-in">
-            <div className="w-12 h-12 border-4 border-[#0369a1]/10 border-t-[#0369a1] dark:border-t-[#38bdf8] rounded-full animate-spin"></div>
-            <span className="text-xs font-black text-[#0369a1] dark:text-[#38bdf8] uppercase animate-pulse">{t('common.loadingMore')}</span>
+          {/* Infinite Scroll Trigger */}
+          <div ref={loaderRef as any} className="h-64 flex flex-col items-center justify-center gap-6">
+            {isLoadingMore && !isInitialLoading ? (
+              <div className="flex flex-col items-center gap-5 animate-fade-in">
+                <div className="w-12 h-12 border-4 border-[#0369a1]/10 border-t-[#0369a1] dark:border-t-[#38bdf8] rounded-full animate-spin"></div>
+                <span className="text-xs font-black text-[#0369a1] dark:text-[#38bdf8] uppercase animate-pulse">{t('common.loadingMore')}</span>
+              </div>
+            ) : !hasMore && books.length > 0 && (
+              <div className="flex flex-col items-center gap-4 opacity-30">
+                <div className="w-16 h-[1px] bg-[#94a3b8] dark:bg-slate-700" />
+                <p className="text-xs font-black text-[#94a3b8] dark:text-slate-500 uppercase">{t('common.endOfList')}</p>
+                <div className="w-16 h-[2px] bg-[#94a3b8] dark:bg-slate-700" />
+              </div>
+            )}
           </div>
-        ) : !hasMore && books.length > 0 && (
-          <div className="flex flex-col items-center gap-4 opacity-30">
-            <div className="w-16 h-[1px] bg-[#94a3b8] dark:bg-slate-700" />
-            <p className="text-xs font-black text-[#94a3b8] dark:text-slate-500 uppercase">{t('common.endOfList')}</p>
-            <div className="w-16 h-[2px] bg-[#94a3b8] dark:bg-slate-700" />
-          </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {activeTab === 'continue-reading' && (
+        <ContinueReadingTab onOpenBook={(bookId) => bookActions.openReader({ id: bookId })} />
+      )}
     </div>
   );
 };

@@ -79,7 +79,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let pageNumber: number | undefined;
     let quote: string | undefined;
 
-    if (viewPortion === 'library') view = 'library';
+    if (viewPortion === 'library') {
+      view = 'library';
+      tab = parts[1] || 'all-books';
+    }
     else if (viewPortion === 'admin') {
       view = 'admin';
       tab = parts[1] || 'books';
@@ -117,15 +120,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (v === 'home') return '/';
     if (v === 'global-chat') return '/chat';
     if (v === 'admin' && t && t !== 'books') return `/admin/${t}`;
+    if (v === 'library' && t && t !== 'all-books') return `/library/${t}`;
     return `/${v}`;
   };
 
   const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran', updateHistory = true) => {
     if (newView !== view) {
+      // Entering library fresh from elsewhere should always land on All Books,
+      // not carry over a stale sub-tab (e.g. an admin sub-tab) left in `activeTab`.
+      const enteringLibraryFresh = newView === 'library' && view !== 'library';
+      const effectiveTab = enteringLibraryFresh ? 'all-books' : activeTab;
+
       if (updateHistory && newView !== 'reader') {
-        const path = getPathFromView(newView, newView === 'admin' ? activeTab : undefined);
+        const path = getPathFromView(newView, (newView === 'admin' || newView === 'library') ? effectiveTab : undefined);
         if (window.location.pathname !== path) {
-          window.history.pushState({ view: newView, tab: activeTab }, '', path);
+          window.history.pushState({ view: newView, tab: effectiveTab }, '', path);
         }
       }
 
@@ -140,6 +149,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setSelectedCategory('');
         setHomeActiveTab(DEFAULT_SEARCH_TAB);
         setHomeSearchText('');
+      }
+
+      if (enteringLibraryFresh) {
+        setActiveTabInternal('all-books');
       }
 
       if (view !== 'reader' && view !== 'global-chat') {

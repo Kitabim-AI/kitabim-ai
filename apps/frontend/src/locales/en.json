@@ -190,7 +190,16 @@
       "message": "Try searching with different keywords or categories."
     },
     "loadingMore": "Loading more books...",
-    "searchPlaceholder": "Search books..."
+    "searchPlaceholder": "Search books...",
+    "tabs": {
+      "allBooks": "All Books",
+      "continueReading": "Continue Reading",
+      "bookmarks": "Bookmarks"
+    },
+    "continueReading": {
+      "searchPlaceholder": "Search your books...",
+      "empty": "You haven't started reading anything yet"
+    }
   },
   "bookCard": {
     "public": "Public",

@@ -2,7 +2,7 @@ import { LibraryView } from '@/src/components/library/LibraryView';
 import * as AppContextModule from '@/src/context/AppContext';
 import { renderWithProviders as render } from '@/src/tests/test-utils';
 import { Book } from '@shared/types';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 
 vi.mock('@/src/components/common/ProverbDisplay', () => ({
@@ -31,6 +31,8 @@ test('LibraryView renders books and header', () => {
     hasMoreShelf: false,
     loaderRef: { current: null },
     bookActions: {},
+    activeTab: 'all-books',
+    setActiveTab: vi.fn(),
   } as any);
 
   render(<LibraryView />);
@@ -48,9 +50,51 @@ test('LibraryView shows empty state', () => {
     hasMoreShelf: false,
     loaderRef: { current: null },
     bookActions: {},
+    activeTab: 'all-books',
+    setActiveTab: vi.fn(),
   } as any);
 
   render(<LibraryView />);
 
   expect(screen.getByText('library.empty.title')).toBeInTheDocument();
+});
+
+test('renders the 3 library tabs and defaults to All Books', () => {
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    sortedBooks: mockBooks,
+    totalReady: 2,
+    isLoading: false,
+    isLoadingMoreShelf: false,
+    hasMoreShelf: false,
+    loaderRef: { current: null },
+    bookActions: {},
+    activeTab: 'all-books',
+    setActiveTab: vi.fn(),
+  } as any);
+
+  render(<LibraryView />);
+
+  expect(screen.getByText('library.tabs.allBooks')).toBeInTheDocument();
+  expect(screen.getByText('library.tabs.continueReading')).toBeInTheDocument();
+  expect(screen.getByText('library.tabs.bookmarks')).toBeInTheDocument();
+});
+
+test('clicking the Continue Reading tab calls setActiveTab', () => {
+  const setActiveTab = vi.fn();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    sortedBooks: mockBooks,
+    totalReady: 2,
+    isLoading: false,
+    isLoadingMoreShelf: false,
+    hasMoreShelf: false,
+    loaderRef: { current: null },
+    bookActions: {},
+    activeTab: 'all-books',
+    setActiveTab,
+  } as any);
+
+  render(<LibraryView />);
+  fireEvent.click(screen.getByText('library.tabs.continueReading'));
+
+  expect(setActiveTab).toHaveBeenCalledWith('continue-reading');
 });
