@@ -1,13 +1,15 @@
-import { BookmarkCheck, Edit3, ListTree, ListX, Loader2, RotateCcw, Save, Share2, Sparkles } from 'lucide-react';
+import { Bookmark as BookmarkIcon, BookmarkCheck as BookmarkFilledIcon, Edit3, ListTree, ListX, Loader2, RotateCcw, Save, Share2, Sparkles } from 'lucide-react';
+import { Bookmark } from '@shared/types';
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { useIsEditor } from '../../hooks/useAuth';
+import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useQuoteHighlight } from '../../hooks/useQuoteHighlight';
 import { useTextSelectionShare } from '../../hooks/useTextSelectionShare';
 import { useI18n } from '../../i18n/I18nContext';
 import { cleanShareText } from '../../utils/shareText';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ShareSearchResultModal } from '../share/ShareSearchResultModal';
+import { BookmarkPrompt } from './BookmarkPrompt';
 
 import { normalizeArabic } from '../../utils/quranUtils';
 
@@ -40,19 +42,31 @@ interface PageItemProps {
   bookAuthor?: string;
   highlightQuote?: string;
   onHighlightApplied?: () => void;
+
+  bookmarks?: Bookmark[];
+  onCreateBookmark?: (pageNumber: number, name: string, quoteText?: string) => Promise<void>;
+  onRenameBookmark?: (id: string, name: string) => Promise<void>;
+  onDeleteBookmark?: (id: string) => Promise<void>;
 }
 
 export const PageItem: React.FC<PageItemProps> = React.memo(({
   page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc, onLlmSpellCheck,
   tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick,
   bookId, bookTitle, bookAuthor, highlightQuote, onHighlightApplied,
+  bookmarks = [], onCreateBookmark, onRenameBookmark, onDeleteBookmark,
 }) => {
   const { t } = useI18n();
+  const { isAuthenticated } = useAuth();
   const isEditor = useIsEditor();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [shareState, setShareState] = React.useState<{ content: string; quote?: string } | null>(null);
+  const [bookmarkPrompt, setBookmarkPrompt] = React.useState<{
+    top: number; left: number; mode: 'create' | 'edit'; defaultName: string; quoteText?: string; existing?: Bookmark;
+  } | null>(null);
+
+  const pageBookmark = bookmarks.find(b => b.pageNumber === page.pageNumber && !b.quoteText);
 
   const textSelection = useTextSelectionShare(contentRef, isActive);
 
@@ -115,7 +129,7 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
                   className="flex items-center justify-center sm:justify-start gap-1.5 h-8 w-8 sm:w-auto sm:px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-lg text-xs font-bold uppercase"
                   title={t('reader.setStartPageTitle') || "Mark this physical page as Content Page 1"}
                 >
-                  <BookmarkCheck size={14} />
+                  <BookmarkFilledIcon size={14} />
                   <span className="hidden sm:inline">{t('reader.setPageOne') || "Mark as Page 1"}</span>
                 </button>
               )}
@@ -146,6 +160,25 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
           )}
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={(e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              if (pageBookmark) {
+                setBookmarkPrompt({ top: rect.bottom + 8, left: rect.left, mode: 'edit', defaultName: pageBookmark.name, existing: pageBookmark });
+              } else {
+                setBookmarkPrompt({
+                  top: rect.bottom + 8,
+                  left: rect.left,
+                  mode: 'create',
+                  defaultName: t('chat.pageNumber', { page: page.displayPageNumber || page.display_page_number || page.pageNumber }),
+                });
+              }
+            }}
+            title={pageBookmark ? t('bookmarks.editBookmarkTitle') : t('bookmarks.bookmarkPage')}
+            className={`flex items-center justify-center h-8 w-8 rounded-lg transition-all ${pageBookmark ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950' : 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950'} ${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}
+          >
+            {pageBookmark ? <BookmarkFilledIcon size={14} /> : <BookmarkIcon size={14} />}
+          </button>
           <button
             onClick={() => setShareState({ content: cleanShareText(page.text || '') })}
             title={t('share.sharePage')}
@@ -227,6 +260,53 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
           <Share2 size={16} />
         </button>,
         document.body
+      )}
+
+      {textSelection && createPortal(
+        <button
+          onClick={() => {
+            setBookmarkPrompt({
+              top: textSelection.top - 44,
+              left: textSelection.left + 48,
+              mode: 'create',
+              defaultName: textSelection.text.slice(0, 40),
+              quoteText: textSelection.text,
+            });
+            window.getSelection()?.removeAllRanges();
+          }}
+          title={t('bookmarks.bookmarkQuote')}
+          style={{
+            position: 'fixed',
+            top: textSelection.top - 44,
+            left: textSelection.left + 48,
+            transform: 'translateX(-50%)',
+          }}
+          className="z-[250] flex items-center justify-center h-9 w-9 rounded-full bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-lg"
+        >
+          <BookmarkIcon size={16} />
+        </button>,
+        document.body
+      )}
+
+      {bookmarkPrompt && (
+        <BookmarkPrompt
+          top={bookmarkPrompt.top}
+          left={bookmarkPrompt.left}
+          mode={bookmarkPrompt.mode}
+          defaultName={bookmarkPrompt.defaultName}
+          isAuthenticated={isAuthenticated}
+          onSave={async (name) => {
+            if (bookmarkPrompt.mode === 'edit' && bookmarkPrompt.existing) {
+              await onRenameBookmark?.(bookmarkPrompt.existing.id, name);
+            } else {
+              await onCreateBookmark?.(page.pageNumber, name, bookmarkPrompt.quoteText);
+            }
+          }}
+          onDelete={bookmarkPrompt.mode === 'edit' && bookmarkPrompt.existing
+            ? async () => { await onDeleteBookmark?.(bookmarkPrompt.existing!.id); }
+            : undefined}
+          onClose={() => setBookmarkPrompt(null)}
+        />
       )}
 
       {shareState && (

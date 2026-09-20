@@ -39,6 +39,10 @@ interface VirtualScrollReaderProps {
   selectedBookPages?: any[];
   contentPageOffset?: number;
   onTocPageClick?: (targetPage: number) => void;
+  bookmarks?: any[];
+  onCreateBookmark?: (pageNumber: number, name: string, quoteText?: string) => Promise<void>;
+  onRenameBookmark?: (id: string, name: string) => Promise<void>;
+  onDeleteBookmark?: (id: string) => Promise<void>;
 }
 
 const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
@@ -70,6 +74,10 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   selectedBookPages = [],
   contentPageOffset,
   onTocPageClick,
+  bookmarks = [],
+  onCreateBookmark,
+  onRenameBookmark,
+  onDeleteBookmark,
 }) => {
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
@@ -438,6 +446,10 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   isFullscreen={isFullscreen}
                   contentPageOffset={contentPageOffset}
                   onTocPageClick={handleTocPageClick}
+                  bookmarks={bookmarks}
+                  onCreateBookmark={onCreateBookmark}
+                  onRenameBookmark={onRenameBookmark}
+                  onDeleteBookmark={onDeleteBookmark}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center min-h-[400px] bg-white/30 dark:bg-slate-900/30 rounded-[32px] border border-dashed border-[#0369a1]/10 dark:border-[#38bdf8]/10">

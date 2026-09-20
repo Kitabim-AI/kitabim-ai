@@ -1044,6 +1044,16 @@
     "textCopied": "Text Copied!",
     "pasteHint": "Full text copied — press Cmd+V / Ctrl+V in post window to paste full content"
   },
+  "bookmarks": {
+    "bookmarkPage": "Bookmark this page",
+    "editBookmarkTitle": "Edit bookmark",
+    "bookmarkQuote": "Bookmark this passage",
+    "newBookmark": "New bookmark",
+    "editBookmark": "Edit bookmark",
+    "save": "Save",
+    "delete": "Delete",
+    "signInToSave": "Sign in to save bookmarks"
+  },
   "graph": {
     "title": "Knowledge Graph",
     "subtitle": "Interactive visualization of entities and relations extracted from digitized books",

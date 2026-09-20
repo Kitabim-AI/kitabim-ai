@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom';
 import { useNotification } from '../../context/NotificationContext';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth, useIsEditor, useIsAdmin } from '../../hooks/useAuth';
+import { useBookmarks } from '../../hooks/useBookmarks';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
 import { ChatInterface } from '../chat/ChatInterface';
@@ -56,6 +57,7 @@ export const ReaderView: React.FC = () => {
   const isEditor = useIsEditor();
   const isAdmin = useIsAdmin();
   const { isAuthenticated, user } = useAuth();
+  const { bookmarks, create: createBookmark, rename: renameBookmark, remove: removeBookmark } = useBookmarks(selectedBook.id);
   const isGuest = !isAuthenticated;
   const isGuestOrReader = !isAuthenticated || (user?.role === 'reader');
   const usesArabicReaderFont = (selectedBook.categories || []).some(
@@ -664,6 +666,10 @@ export const ReaderView: React.FC = () => {
                 selectedBookPages={selectedBook.pages}
                 contentPageOffset={contentPageOffset}
                 onTocPageClick={handleTocPageClick}
+                bookmarks={bookmarks}
+                onCreateBookmark={createBookmark}
+                onRenameBookmark={renameBookmark}
+                onDeleteBookmark={removeBookmark}
               />
             ) : (
               <div className={`w-full mx-auto transition-all duration-300 ${isSidebarCollapsed ? 'max-w-6xl' : 'max-w-4xl'} ${editingPageNum !== null ? 'h-full flex flex-col' : 'space-y-4 pb-40'}`}>
@@ -711,6 +717,10 @@ export const ReaderView: React.FC = () => {
                         isFullscreen={isFullscreen}
                         contentPageOffset={contentPageOffset}
                         onTocPageClick={handleTocPageClick}
+                        bookmarks={bookmarks}
+                        onCreateBookmark={createBookmark}
+                        onRenameBookmark={renameBookmark}
+                        onDeleteBookmark={removeBookmark}
                       />
                     </div>
                   ))}

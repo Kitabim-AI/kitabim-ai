@@ -50,6 +50,7 @@ const renderPageItem = (props: Partial<React.ComponentProps<typeof PageItem>> = 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
+  vi.mocked(AuthModule.useAuth).mockReturnValue({ isAuthenticated: true } as any);
   HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal('open', vi.fn());
   Object.assign(navigator, {
@@ -210,5 +211,72 @@ test('PageItem disables LLM spell check button while llmSpellCheckStatus is in_p
 
   const button = screen.getByTitle('reader.llmSpellCheckTitle');
   expect(button).toBeDisabled();
+});
+
+test('PageItem shows an outline bookmark icon for readers when the page has no bookmark', () => {
+  renderPageItem({ page: { ...mockPage, pageNumber: 5 }, bookmarks: [] });
+  expect(screen.getByTitle('bookmarks.bookmarkPage')).toBeInTheDocument();
+});
+
+test('PageItem shows a filled bookmark icon when the page already has a whole-page bookmark', () => {
+  renderPageItem({
+    page: { ...mockPage, pageNumber: 5 },
+    bookmarks: [{ id: 'bm1', bookId: 'book-1', bookTitle: 'B', pageNumber: 5, name: 'N', quoteText: null, createdAt: 'now' }],
+  });
+  expect(screen.getByTitle('bookmarks.editBookmarkTitle')).toBeInTheDocument();
+});
+
+test('PageItem bookmark icon is visible for non-editor readers (unlike the editor toolbar)', () => {
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(false);
+  renderPageItem({ page: { ...mockPage, pageNumber: 5 }, bookmarks: [] });
+  expect(screen.getByTitle('bookmarks.bookmarkPage')).toBeInTheDocument();
+});
+
+test('PageItem clicking the bookmark icon opens the create-bookmark prompt', () => {
+  renderPageItem({ page: { ...mockPage, pageNumber: 5 }, bookmarks: [] });
+  fireEvent.click(screen.getByTitle('bookmarks.bookmarkPage'));
+  expect(screen.getByText('bookmarks.newBookmark')).toBeInTheDocument();
+});
+
+test('PageItem saving the create-bookmark prompt calls onCreateBookmark with the page number', async () => {
+  const onCreateBookmark = vi.fn().mockResolvedValue(undefined);
+  renderPageItem({ page: { ...mockPage, pageNumber: 5 }, bookmarks: [], onCreateBookmark });
+
+  fireEvent.click(screen.getByTitle('bookmarks.bookmarkPage'));
+  fireEvent.click(screen.getByText('bookmarks.save'));
+
+  expect(onCreateBookmark).toHaveBeenCalledWith(5, 'chat.pageNumber', undefined);
+});
+
+test('PageItem shows a bookmark button near a text selection, alongside share', () => {
+  renderPageItem({
+    page: { ...mockPage, text: 'Hello world example text', pageNumber: 5 },
+    bookId: 'book-1',
+    bookmarks: [],
+  });
+
+  const contentParagraph = screen.getByText(/Hello world example text/);
+  const textNode = contentParagraph.firstChild!;
+  const range = document.createRange();
+  range.setStart(textNode, 6);
+  range.setEnd(textNode, 11);
+  const selection = window.getSelection()!;
+  selection.removeAllRanges();
+  selection.addRange(range);
+  fireEvent(document, new Event('selectionchange'));
+
+  expect(screen.getByTitle('share.shareQuote')).toBeInTheDocument();
+  expect(screen.getByTitle('bookmarks.bookmarkQuote')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByTitle('bookmarks.bookmarkQuote'));
+  expect(screen.getByText('bookmarks.newBookmark')).toBeInTheDocument();
+});
+
+test('PageItem guests see the sign-in prompt when tapping the bookmark icon', () => {
+  vi.mocked(AuthModule.useAuth).mockReturnValue({ isAuthenticated: false } as any);
+  renderPageItem({ page: { ...mockPage, pageNumber: 5 }, bookmarks: [] });
+
+  fireEvent.click(screen.getByTitle('bookmarks.bookmarkPage'));
+  expect(screen.getByText('bookmarks.signInToSave')).toBeInTheDocument();
 });
 
