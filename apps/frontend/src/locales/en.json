@@ -1052,7 +1052,10 @@
     "editBookmark": "Edit bookmark",
     "save": "Save",
     "delete": "Delete",
-    "signInToSave": "Sign in to save bookmarks"
+    "rename": "Rename",
+    "signInToSave": "Sign in to save bookmarks",
+    "drawerTitle": "Bookmarks in this book",
+    "emptyForBook": "No bookmarks in this book yet"
   },
   "graph": {
     "title": "Knowledge Graph",

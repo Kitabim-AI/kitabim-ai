@@ -1,5 +1,6 @@
 import {
   ALargeSmall,
+  Bookmark as BookmarkIcon,
   BookOpen,
   Bot,
   Download,
@@ -20,6 +21,7 @@ import { useAuth, useIsEditor, useIsAdmin } from '../../hooks/useAuth';
 import { useBookmarks } from '../../hooks/useBookmarks';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
+import { BookmarksDrawer } from './BookmarksDrawer';
 import { ChatInterface } from '../chat/ChatInterface';
 import { ShareModal } from '../share/ShareModal';
 import { GlassPanel } from '../ui/GlassPanel';
@@ -94,6 +96,7 @@ export const ReaderView: React.FC = () => {
   const [hasMorePages, setHasMorePages] = useState(true);
   const [isFetchingContent, setIsFetchingContent] = useState(false);
   const [mobileTab, setMobileTab] = useState<'reader' | 'chat'>('reader');
+  const [showBookmarksDrawer, setShowBookmarksDrawer] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showFontSlider, setShowFontSlider] = useState(false);
   const [sliderPos, setSliderPos] = useState({ top: 0, left: 0 });
@@ -559,6 +562,14 @@ export const ReaderView: React.FC = () => {
                 </button>
               )}
 
+              <button
+                onClick={() => setShowBookmarksDrawer(true)}
+                title={t('bookmarks.drawerTitle')}
+                className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
+              >
+                <BookmarkIcon size={18} className="sm:w-5 sm:h-5" />
+              </button>
+
               <div className="relative flex items-center">
                 <button
                   ref={fontButtonRef}
@@ -839,6 +850,20 @@ export const ReaderView: React.FC = () => {
             {mobileTab === 'reader' ? <Bot size={38} strokeWidth={2} /> : <BookOpen size={38} strokeWidth={2} />}
           </button>,
           document.body
+        )}
+
+        {showBookmarksDrawer && (
+          <BookmarksDrawer
+            bookmarks={bookmarks}
+            onRename={renameBookmark}
+            onDelete={removeBookmark}
+            onJumpTo={(pageNumber, quoteText) => {
+              setCurrentPage(pageNumber);
+              if (quoteText) setPendingQuoteHighlight(quoteText);
+              setShowBookmarksDrawer(false);
+            }}
+            onClose={() => setShowBookmarksDrawer(false)}
+          />
         )}
       </div>
     </>
