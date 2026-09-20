@@ -105,7 +105,9 @@
     "graph": "Knowledge Graph",
     "dictionary": "Dictionary",
     "quran": "Quran",
-    "switchLanguage": "Switch Language"
+    "switchLanguage": "Switch Language",
+    "continueReading": "Continue Reading",
+    "bookmarks": "Bookmarks"
   },
   "theme": {
     "selector": "Theme Selector",

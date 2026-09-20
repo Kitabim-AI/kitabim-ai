@@ -106,7 +106,9 @@
     "graph": "بىلىم گىرافى",
     "dictionary": "لۇغەت",
     "quran": "قۇرئان كەرىم",
-    "switchLanguage": "تىل ئالماشتۇرۇش"
+    "switchLanguage": "تىل ئالماشتۇرۇش",
+    "continueReading": "ئوقۇشنى داۋاملاشتۇرۇش",
+    "bookmarks": "بەلگىلەر"
   },
   "theme": {
     "selector": "تېما تاللىغۇچ",
