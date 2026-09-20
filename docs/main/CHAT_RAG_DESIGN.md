@@ -10,9 +10,10 @@ Chat / RAG retrieval is the only *read* stage of the pipeline: it consumes the a
 
 Key characteristics:
 
-- **Retrieval is tool-driven, not hand-routed.** `ChatOrchestrator` builds a `QueryContext` (`rag/context.py`) and drives all 20 ADK tools (`rag/agent/tools.py`, listed via `ALL_TOOLS` in `chat/retrieval_agent.py`) over shared primitives (`rag/retrieval.py`: `embed_query`, `vector_search`, `find_books_by_title_in_question`, `graph_entity_lookup`), using `AGENT_SYSTEM_PROMPT` (`rag/agent/prompts.py`). A single-shot structured LLM call (`analyze_query_signals`, `chat/query_signals.py`) extracts pre-processing signals (intent, catalog/dictionary/Quran subtype hints, resolved book/author matches) before the retrieval agent runs; only `signals["intent"]` is read directly by the orchestrator today — the rest of the extracted signal dict feeds the retrieval agent's system-prompt hints (see `build_retrieval_agent`).
+- **Retrieval is tool-driven, not hand-routed.** `ChatOrchestrator` builds a `QueryContext` (`rag/context.py`) and drives all 20 ADK tools (`rag/agent/tools.py`, listed via `ALL_TOOLS` in `chat/retrieval_agent.py`) over shared primitives (`rag/retrieval.py`: `embed_query`, `vector_search`, `find_books_by_title_in_question`, `graph_entity_lookup`), using `AGENT_SYSTEM_PROMPT` (`rag/agent/prompts.py`). A single-shot structured LLM call (`analyze_query_signals`, `chat/query_signals.py`) extracts pre-processing signals (intent, catalog/dictionary/Quran subtype hints, resolved book/author matches) before the retrieval agent runs. `signals["intent"]` is read directly for the `planning` SSE event, and `_resolve_catalog_shortcut()` reads `catalog_subtype`/`has_title`/`has_author`/`matched_books`/`matched_author_books`/`is_composite` directly to decide whether to skip the retrieval agent entirely (see the catalog-shortcut bullet below) — the rest of the extracted signal dict feeds the retrieval agent's system-prompt hints (see `build_retrieval_agent`).
 - **Exact-phrase questions bypass the retrieval agent — unless the quoted text is actually a catalog book title.** `phrase_intent.detect_phrase_intent()` classifies a quoted phrase (`"..."` / `«...»` / `"..."`) or the explicit `ChatRequest.exact_phrase` flag as exact-phrase intent. Before honoring that intent, `ChatOrchestrator` runs a **catalog-first check**: when the phrase came from quotes (not the explicit flag) and the question isn't page-finding, it calls `find_books_by_title_in_question` directly; a match scopes the turn to those book(s) (`ctx.context_book_ids`) and flips `phrase_intent.is_exact` back to `False`, so the turn is routed through the normal retrieval agent (vector + graph) instead. Only when no book title matches — or the explicit `exact_phrase` flag/page-finding phrasing was used — does `ChatOrchestrator` answer from the keyword-only leg (`chat/exact_phrase.py` → `retrieval.exact_phrase_chunk_search` → `ChunksRepository.keyword_search`'s `phraseto_tsquery` match) instead. Vector search itself (`vector_search` in `retrieval.py`) is vector-only; there is no hybrid vector+keyword fusion (removed along with `rag_hybrid_search_enabled` — see Feature Flags). The retrieval agent does have its own separate lexical-assist tool, `search_keyword_phrase` (→ `agent_keyword_search` in `retrieval.py`), which it may call *alongside* `search_chunks` (never as a fusion within it) when a question names a distinguishing proper noun/date/term vector similarity might blur — see the Agent Tools table.
 - **A named short-work (poem/song) title also bypasses both agents — deterministically, via the book's own table of contents.** On every turn (not gated on `phrase_intent.is_exact`), `detect_short_work_intent()` (`rag/short_work_intent.py`) looks for a quoted title next to a "find/show/give the full text of" locate verb — one quoted span is the candidate title, or the second of two quoted spans for the "«book» ناملىق ئەسەردىكى «work»" shape (the first span is presumed already resolved as a book title by the catalog-first check above). A match is then resolved against the scoped book's OCR'd ToC by `resolve_short_work()` (`rag/toc_lookup_service.py`), which walks `Page.is_toc` pages, matches the title exactly, and only accepts entries short enough to be a "work" rather than a chapter (`toc_short_work_max_pages`, default 10 printed pages) — verifying the resolved start page actually contains the matched heading before returning it. A resolved `ShortWorkMatch` short-circuits `ChatOrchestrator.stream_response()` completely: it skips the retrieval agent, the exact-phrase leg, grading/reranking, *and* the answer agent — `_format_short_work_answer()` builds the final answer directly from the ToC-resolved page text (block-quoted verbatim) plus a deterministic citation, with **no LLM call in the loop at all**, because Gemini's own reluctance to reproduce a full poem/song verbatim proved resistant to prompting it to do so. A miss at any stage (no ToC, no title match, entry too long) is a pure no-op — the turn falls through to the normal `phrase_intent.is_exact` / retrieval-agent path unaffected.
+- **A clean author/book-catalog lookup also bypasses both agents — deterministically, reusing the signal-extraction call's own tool results.** `analyze_query_signals`'s single-shot classification already calls `find_books_by_title` / `get_books_by_author` when it detects `catalog_subtype` `"author_of"` / `"books_by"`, returning `matched_books` / `matched_author_books` alongside the classification. `_resolve_catalog_shortcut()` (`orchestrator.py`) checks that already-computed result for a clean, non-composite match — for `"author_of"`, every matched row (one per volume on a multi-volume title) must share the same book title; for `"books_by"`, at least one matched book must carry a resolved author name — and on a match, `_format_catalog_answer()` templates the final answer directly (`t("rag.author_of_book")` or `t("rag.books_by_author_header")` plus a per-book `volume_label`/`pages_suffix` line) with **no LLM call at all**, folding into the same `skip_answer_synthesis` short-circuit the short-work gate uses: the retrieval agent, reranking/grading, and the answer agent are all skipped. This exists purely to cut cost/latency for a query the retrieval agent could already answer via its own `get_book_author`/`get_books_by_author` tools, but only after paying for two full LLM turns (the agent loop plus the answer agent) on top of the signal-extraction call that already had the data. Anything not cleanly resolved — multiple distinct matched titles, no match, or a composite question — falls straight through to the normal retrieval-agent path, unaffected.
 - **The judge is opt-in per turn, not per pipeline.** Every turn writes a `rag_evaluations` row; `rag_judge_scoring_enabled` decides whether that row is `eval_status='queued'` (and `rag_eval_job` gets enqueued) or `'skipped'`.
 - **Every turn's LLM token usage is tracked for cost estimation.** `QueryContext.cost_tracker` (a `CostTracker`, `app/llm/cost_tracker.py`) accumulates a `CostEntry` (stage, model, input/output tokens) from every Gemini call the turn makes — query-signal extraction, the retrieval agent's ADK run, the reranker, the answer agent's ADK run, and an estimated per-call cost for embeddings (which carry no `usage_metadata`, so `GeminiEmbeddings.aembed_query` estimates `len(text)//4` input tokens). `ProtectedLLM.ainvoke`/`.astream` (`app/llm/models.py`) auto-attribute usage to the active turn's `CostTracker` via the same `get_current_query_context()` ContextVar the retrieval tools use. Cost is priced from a static table (`app/llm/pricing.py`'s `MODEL_PRICING`, $/1M tokens, falling back to the default chat model's rate for an unrecognized model) and totalled via `cost_tracker.as_dict()` into `rag_evaluations.input_tokens` / `output_tokens` / `cost_usd` at turn-persistence time — see Schema. The async judge call (`rag_eval_job`, off the request path, outside any `QueryContext`) reports its own usage back through an explicit `usage_out` dict parameter instead, backfilled into `rag_evaluations.judge_cost_usd`.
 - **Book summaries drive book routing, not answer content.** `search_books_by_summary` / `get_book_summary` (see [SUMMARY_DESIGN.md](SUMMARY_DESIGN.md)) narrow *which* books to search before `search_chunks` runs; chunk passages remain the citable evidence.
@@ -102,7 +103,7 @@ This stage **writes** four tables and **reads** the artifacts of every prior sta
 | File | Purpose |
 |---|---|
 | `services/backend/api/endpoints/chat_router.py` | All chat HTTP surface: builds a `ChatOrchestrator` per request (unconditionally — no flag, no branch) for both `POST /api/chat/` (via `answer()`) and `POST /api/chat/stream` (via `stream_response()`); SSE framing; per-request daily-limit enforcement; conversation and feedback endpoints. |
-| `packages/backend-core/app/services/chat/orchestrator.py` | `ChatOrchestrator.stream_response()` — conversation get-or-create, phrase-intent/catalog-first/short-work gates, signal pre-processing, retrieval agent run, rerank/grade, answer agent run, citation fix, eval insert (now including token/cost totals) + `rag_eval_job` enqueue, turn persistence. `_format_short_work_answer()` renders a resolved `ShortWorkMatch` as the final answer with no LLM call. `ChatOrchestrator.answer()` — non-streaming wrapper that drains `stream_response()` and returns `{answer, conversation_id, used_book_ids, eval_id}` (cost is dropped in this wrapper — only the streaming `done` event carries `cost`), used by `POST /api/chat/`. |
+| `packages/backend-core/app/services/chat/orchestrator.py` | `ChatOrchestrator.stream_response()` — conversation get-or-create, phrase-intent/catalog-first/short-work/catalog-shortcut gates, signal pre-processing, retrieval agent run, rerank/grade, answer agent run, citation fix, eval insert (now including token/cost totals) + `rag_eval_job` enqueue, turn persistence. `_format_short_work_answer()` renders a resolved `ShortWorkMatch` as the final answer with no LLM call. `_resolve_catalog_shortcut()` / `_format_catalog_answer()` do the same for a clean `author_of`/`books_by` catalog signal from `analyze_query_signals` — see Overview. `ChatOrchestrator.answer()` — non-streaming wrapper that drains `stream_response()` and returns `{answer, conversation_id, used_book_ids, eval_id}` (cost is dropped in this wrapper — only the streaming `done` event carries `cost`), used by `POST /api/chat/`. |
 | `packages/backend-core/app/services/chat/context.py` | `ChatRequestDTO` (frozen dataclass the router builds from `ChatRequest`, now including `exact_phrase: bool = False`) and `ToolDependencies`. |
 | `packages/backend-core/app/services/chat/context_grading.py` | `_build_human_message()`, `_grade_context()`, `_extract_used_book_ids()` — context formatting/grading helpers imported by `orchestrator.py`. |
 | `packages/backend-core/app/services/chat/query_signals.py` | `analyze_query_signals()` — the single-shot structured-JSON signal-extraction LLM call, plus `repair_json_unescaped_quotes()`; imported by `orchestrator.py`. Records its own token usage onto `ctx.cost_tracker` under `stage="query_signals"`. |
@@ -127,7 +128,7 @@ This stage **writes** four tables and **reads** the artifacts of every prior sta
 | `packages/backend-core/app/services/rag/llm_resources.py` | Cached `get_embeddings` / `get_rag_chain` / `get_rewrite_chain` factories. |
 | `packages/backend-core/app/services/rag/keywords.py`, `utils.py` | Uyghur keyword/pronoun lists and `normalize_uyghur` / `format_chat_history` / `fuzzy_token_similar` / `is_islam_or_quran_query`. |
 | `packages/backend-core/app/llm/cost_tracker.py` | `CostTracker` (a list of `CostEntry(stage, model, input_tokens, output_tokens, estimated)`) — the per-turn token/cost accumulator attached to `QueryContext.cost_tracker`. `.add()` is a no-op for a zero-token call; `.as_dict()` returns the totals `orchestrator.py` writes into `rag_evaluations`. |
-| `packages/backend-core/app/llm/pricing.py` | Static Gemini `MODEL_PRICING` table ($ per 1M tokens, by model name) + `estimate_cost_usd(model, input_tokens, output_tokens)`. An unrecognized model name prices at the default chat model's rate rather than showing as free. Update this table when a `system_configs` model key changes. |
+| `packages/backend-core/app/llm/pricing.py` | Gemini pricing module + `estimate_cost_usd(model, input_tokens, output_tokens)`. Configured dynamically via `system_configs` key `sys_llm_model_pricing` (with Redis cache) and falls back to `DEFAULT_MODEL_PRICING` / `_FALLBACK_PRICE` ($ per 1M tokens) if unconfigured or unparseable. |
 | `packages/backend-core/app/llm/models.py` | `ProtectedLLM.ainvoke()` / `.astream()` — the shared Gemini call wrapper (circuit breaker, timeout, retry). Also `_record_usage()`, called after every call: reads `response.usage_metadata`, attributes it to the active turn's `CostTracker` via `get_current_query_context()` when one exists, and/or writes it into a caller-supplied `usage_out` dict (for callers like `rag_eval_job` that run outside a turn's `QueryContext`). `GeminiEmbeddings.aembed_query` estimates embedding cost the same way (`len(text)//4` input tokens, `estimated=True`), since Gemini's `embedContent` response carries no `usage_metadata`. |
 | `packages/backend-core/app/services/chat_limit_service.py` | `ChatLimitService` singleton — per-role daily limits, Redis+Postgres usage counters (atomic Lua `INCR`+`EXPIRE`). |
 | `packages/backend-core/app/db/repositories/conversation_repository.py` | `create_conversation`, `get_conversation`, `list_user_conversations`, `add_message`, `get_conversation_messages` (full history, oldest-first — what the messages endpoint serves), `get_recent_messages` (the last N turns the orchestrator feeds to signal extraction), `save_turn`, `update_title`, `delete_conversation` (soft). |
@@ -203,6 +204,8 @@ flowchart TD
         PAGEQ{"phrase_intent.is_page_finding?"}
         PAGEHITS["format_page_hits →<br/>{type:page_hits} SSE event;<br/>summarize_page_hits_as_text<br/>— no answer-agent call"]
         SIG["analyze_query_signals<br/>(chat/query_signals.py) → planning<br/>(records query_signals cost)"]
+        CATGATE{"_resolve_catalog_shortcut:<br/>author_of/books_by signal +<br/>unambiguous matched_books/<br/>matched_author_books?"}
+        CATANS["_format_catalog_answer:<br/>title/author templated from<br/>signals — NO LLM call"]
         RETR["KitabimRetrievalAgent<br/>ADK Runner (SSE) over 20 tools<br/>→ tool_call / tool_result / agent_thinking<br/>(records retrieval_agent cost)"]
         RERANK{"rag_reranker_enabled?"}
         RR["rerank_context<br/>(LLM, max_chunks = rag_vector_top_k;<br/>records reranker cost)"]
@@ -236,7 +239,9 @@ flowchart TD
     SWGATE -- "Match: is_exact → false,<br/>scope to matched book" --> SWANS --> PERSIST
     SWGATE -- No match --> PBRANCH
     PBRANCH -- Yes --> EXACT
-    PBRANCH -- No --> SIG --> RETR --> RERANK
+    PBRANCH -- No --> SIG --> CATGATE
+    CATGATE -- Match --> CATANS --> PERSIST
+    CATGATE -- "No match" --> RETR --> RERANK
     EXACT --> PAGEQ
     PAGEQ -- Yes --> PAGEHITS --> PERSIST
     PAGEQ -- No --> RERANK
@@ -259,9 +264,9 @@ flowchart TD
     classDef done fill:#d4f1f4,stroke:#189ab4
     classDef fail fill:#ffcccb,stroke:#d32f2f
 
-    class Q,LIMIT,EP,PGATE,CATFIRST,SWGATE,PBRANCH,PAGEQ,RERANK,JUDGE idle
+    class Q,LIMIT,EP,PGATE,CATFIRST,SWGATE,PBRANCH,PAGEQ,RERANK,JUDGE,CATGATE idle
     class OCTX,SIG,RETR,EXACT,RR,GC1,ANSA,ENQ,TOOLS,VS,WORKER,INC active
-    class CONV,PERSIST,PAGEHITS,SWANS,DATA,OUT done
+    class CONV,PERSIST,PAGEHITS,SWANS,CATANS,DATA,OUT done
     class L429 fail
 ```
 
@@ -304,7 +309,7 @@ flowchart TD
    return {"answer", "usage"}.
 ```
 
-**`ChatOrchestrator.stream_response(request_dto, db_session, model_name="gemini-2.5-flash")`:**
+**`ChatOrchestrator.stream_response(request_dto, db_session, model_name="gemini-3.5-flash-lite")`:**
 
 ```
 0. conv = get_conversation(conversation_id) if provided. IF None:
@@ -408,6 +413,24 @@ flowchart TD
       read directly here — the full signal dict (including
       is_composite/sub_questions, which nothing consumes) is passed on to
       build_retrieval_agent below for its prompt hints.
+   a2. catalog_match = _resolve_catalog_shortcut(signals) — a deterministic
+      gate reusing signals already computed by step a's own tool calls
+      (find_books_by_title / get_books_by_author), NOT a re-detection of
+      intent from question text. Returns a match dict ONLY when: NOT
+      signals["is_composite"], AND EITHER catalog_subtype=="author_of"
+      WITH has_title AND every row in matched_books sharing the same
+      title (find_books_by_title returns one row per volume, so a
+      multi-volume book is still unambiguous) AND that row has a
+      non-empty author; OR catalog_subtype=="books_by" WITH has_author
+      AND matched_author_books non-empty AND the first row has a
+      non-empty author. Anything else (no match, ambiguous/multiple
+      distinct titles, composite question) returns None and step b below
+      runs exactly as before.
+      IF catalog_match is not None: skip building/running the retrieval
+      agent entirely (steps b-c below do not run) — proceed straight to
+      step 8, which also skips grading/reranking/the answer agent for
+      this case.
+      ELSE:
    b. retrieval_agent = build_retrieval_agent(agent_model, signals).
       Runner: the app-level ADK DatabaseSessionService when present
       (session id = conv_id, created if absent), else a fresh
@@ -424,11 +447,18 @@ flowchart TD
    phrase_intent.is_page_finding (a "find pages with…" / "which pages
    mention…" / "show me where" style question — see
    phrase_intent._PAGE_FINDING_MARKERS)) OR short_work_match is not None
+   OR catalog_match is not None
    — a resolved short-work match skips grading/reranking/the answer agent
    for a different reason than page-finding: the text is already
    known-correct (deterministically resolved via the ToC), so reranking
    it is a pointless LLM call, and the Answer Agent risks refusing/
    hedging on reproducing a poem verbatim instead of just returning it.
+   A resolved catalog_match skips the same stages for yet another reason:
+   it's already a complete, correct title/author DB lookup — there is
+   nothing left for either agent to add, and no content passages exist
+   to grade or rerank in the first place (observations stays empty for
+   this branch, since neither analyze_query_signals nor the retrieval
+   agent produced a search_chunks-shaped result).
 9. used_book_ids = _extract_used_book_ids(observations).
    IF skip_answer_synthesis: graded_context, before_count, after_count =
    "", 0, 0 (grading/reranking is skipped entirely). ELSE: rag_top_k =
@@ -448,6 +478,13 @@ flowchart TD
     toc_short_work_max_pages + a deterministic
     [citation](ref:book_id:pages) footer. yield
     {"type":"chunk","text":accumulated_text} — again, NO LLM call.
+    ELIF catalog_match is not None: accumulated_text =
+    _format_catalog_answer(catalog_match) — t("rag.author_of_book",
+    title=..., author=...) plus a "**مەنبە:** title (author)" citation
+    line for "author_of"; or t("rag.books_by_author_header", author=...)
+    plus one bullet line per matched book ("- «title» (N-توم)، M بەت")
+    for "books_by". yield {"type":"chunk","text":accumulated_text} —
+    again, NO LLM call.
     ELIF skip_answer_synthesis (the page-finding case): page_hits =
     format_page_hits(hits); yield {"type":"page_hits","hits":page_hits};
     accumulated_text = summarize_page_hits_as_text(hits, phrase=", ".join(
@@ -460,8 +497,8 @@ flowchart TD
     "answer_agent" cost onto ctx.cost_tracker); fall back to non-partial
     parts if no partial events arrived. yield answer_end either way.
 11. fixed_text = fix_malformed_citations(accumulated_text) — a no-op on
-    page-hit and short-work text, neither of which carries LLM-emitted
-    citations to fix (the short-work citation is already well-formed).
+    page-hit, short-work, and catalog-shortcut text, none of which carry
+    LLM-emitted citations to fix (each is already well-formed).
 12. cost = ctx.cost_tracker.as_dict() — {input_tokens, output_tokens,
     cost_usd} totalled across every stage that recorded usage this turn
     (query_signals, retrieval_agent, reranker, answer_agent, and
@@ -667,7 +704,7 @@ flowchart TD
 | Scenario | Behavior |
 |---|---|
 | User is over their daily limit | `POST /api/chat/` raises `HTTPException(429, t("errors.daily_limit_reached"))`. `POST /api/chat/stream` returns HTTP 200 with a single SSE `{"error": ...}` event instead — the frontend must read the error out of the stream body, not the status code. |
-| `rag_gemini_chat_model` or `embed_gemini_model` unset in `system_configs` | `ChatOrchestrator` does not raise: it falls back to the `model_name` argument (`"gemini-2.5-flash"`) and to `"text-embedding-004"` for embeddings. |
+| `rag_gemini_chat_model` or `embed_gemini_model` unset in `system_configs` | `ChatOrchestrator` does not raise: it falls back to the `model_name` argument (`"gemini-3.5-flash-lite"`) and to `"text-embedding-004"` for embeddings. |
 | Book not found (non-global request) | `ChatOrchestrator` does not validate `book_id` — `BooksRepository.get(book_id)` returning `None` just leaves `ctx.book = None`, and downstream code (e.g. `_build_human_message`) already guards on `ctx.book` truthiness, so the turn proceeds without a book-context block rather than erroring with a 404. |
 | Gemini returns 429 / `RESOURCE_EXHAUSTED` | `POST /api/chat/` maps it to `HTTPException(429, t("errors.system_busy"))` before the generic 500 branch. `/stream` has no such special case — every non-`ValueError` becomes the generic `t("errors.system_busy_generic")` SSE error, followed by a `record_book_error(..., "chat_stream")` attempt. |
 | `analyze_query_signals` fails (any exception, including exceeding 3 model turns without final JSON — `ValueError("Too many tool call iterations in query analysis")` — or a `json.JSONDecodeError`) | `ChatOrchestrator` wraps the call in a try/except: logs a warning and proceeds with `signals={}` (so `intent` falls back to `"open"` and `build_retrieval_agent` gets no signal hints) rather than propagating — the turn still completes. Covered by `test_stream_response_tolerates_analyze_query_signals_failure`. |
@@ -676,6 +713,7 @@ flowchart TD
 | Vector search with the strict threshold returns nothing | Automatically retried with `threshold=0.0` (same scope and shape). |
 | Exact-phrase leg (`ChunksRepository.keyword_search`, e.g. a statement-timeout backstop firing on a pathological term) errors | Not caught by `exact_phrase_chunk_search` or `run_exact_phrase_retrieval` — unlike the removed hybrid keyword leg, there is no per-leg fallback here; the exception propagates out of `stream_response` and is caught by the router's generic exception handler, surfacing as the standard `t("errors.system_busy_generic")` SSE error. |
 | Short-work ToC lookup (`resolve_short_work`) finds no ToC, no title match, or a too-long entry | Returns `None` — a pure additive miss, by design. `short_work_match` stays `None` and the turn falls straight through to the normal `phrase_intent.is_exact` / retrieval-agent branch, exactly as if the gate had never run. Never surfaced as an error. |
+| `_resolve_catalog_shortcut` sees an ambiguous or unresolved `author_of`/`books_by` signal (multiple distinct matched titles, no match, or a composite question) | Returns `None` — a pure additive miss, same design as the short-work gate. `catalog_match` stays `None` and the turn falls straight through to the normal retrieval-agent path (which still has `get_book_author`/`get_books_by_author` available as ordinary tools), exactly as if the gate had never run. Never surfaced as an error. |
 | Vector search raises | Logged, `ctx.session.rollback()` attempted, then re-raised — the tool call fails. |
 | A tool raises inside the ADK loop | `_execute_and_record_tool` logs a warning, appends `{"ok": False, "error": ...}` to observations, and re-raises so ADK reports the failure to the model. Note that despite its name, `_dispatch_tool_with_retry` carries **no** retry decorator — `_log_retry` and `TRANSIENT_EXCEPTIONS` in `tools.py` are unused leftovers, and a tool exception is a single-attempt failure. |
 | `graph_entity_lookup` fails (Redis or Neo4j) | Logged as a warning inside `_run_search_chunks`; retrieval continues with text results only. |
@@ -698,7 +736,7 @@ flowchart TD
 | `settings.summary_top_k` (env `SUMMARY_TOP_K`) | `5` | Defined in `config.py`; `_run_search_books_by_summary` hardcodes `limit=30` instead and does not read it. |
 | `settings.cache_ttl_rag_query` (env `CACHE_TTL_RAG_QUERY`) | `3600` (seconds) | TTL for the L1 embedding cache, the L2 search cache, and the L0 rewrite cache. |
 | `settings.cache_ttl_summary_search` (env `CACHE_TTL_SUMMARY_SEARCH`) | `1800` | Only referenced as `cache_config.TTL_SUMMARY_SEARCH`; no code sets a value under `KEY_RAG_SUMMARY_SEARCH`, so summary searches are uncached (see Cache Layers). |
-| `rag_gemini_chat_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded by `seed_system_configs()`) | Answer synthesis chain / `KitabimAnswerAgent`. `ChatOrchestrator` falls back to its `model_name` argument (`"gemini-2.5-flash"`) if the key is unset — never raises. |
+| `rag_gemini_chat_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded by `seed_system_configs()`) | Answer synthesis chain / `KitabimAnswerAgent`. `ChatOrchestrator` falls back to its `model_name` argument (`"gemini-3.5-flash-lite"`) if the key is unset — never raises. |
 | `embed_gemini_model` (`system_configs`) | `"gemini-embedding-2"` (seeded by `seed_system_configs()`; see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md)) | `embed_query` — must match the model that embedded `chunks` and `book_summaries`. `ChatOrchestrator` falls back to `"text-embedding-004"` if the key is unset (its `getattr(settings, "embed_gemini_model", ...)` lookup never resolves — `Settings` is a frozen dataclass with no such field, by design: model names are `system_configs`-only). Never raises. |
 | `gemini_agent_loop_model` (`system_configs`) | Unset; falls back to `rag_gemini_chat_model` | `ctx.agent_model` — the retrieval agent and the signal-extraction model. |
 | `rag_gemini_reranker_model` (`system_configs`) | `"gemini-3.1-flash-lite"` (seeded, and repeated as the code default) | `rerank_context`. |
@@ -706,7 +744,7 @@ flowchart TD
 | `toc_short_work_max_pages` (`system_configs`) | `"10"` (seeded) | `toc_lookup_service.resolve_short_work` — the maximum printed-page span a ToC entry may cover to still be treated as a lookup-able short work; also caps how much page content is fetched/quoted for a matched entry (beyond it, truncated with `rag.short_work_truncated_note` rather than dropped). Falls back to `10` on a missing/unparseable value. |
 | `rag_chat_cost_enabled` (`system_configs`) | `"true"` (seeded by `seed_system_configs()`, and inserted redundantly by migration `092_add_llm_cost_tracking_to_rag_evaluations.sql`'s own `ON CONFLICT DO NOTHING`) | Read once by `GET /api/config` (`services/backend/main.py`, not by `ChatOrchestrator`) and returned as `showChatCost` — a pure frontend display toggle for whether the chat UI renders token/cost info. Token/cost tracking and `rag_evaluations` persistence happen unconditionally regardless of this flag. |
 | `chat_limit_reader`, `chat_limit_editor` (`system_configs`) | `20` and `100` (rows present in migration `001_initial_baseline.sql`; **not** in `seeds.py`) | `ChatLimitService.get_limit_for_role` reads `f"chat_limit_{role}"`. Hardcoded fallbacks if absent: editor `100`, reader `20`, unknown role `10`. `ADMIN` returns `None` (unlimited) before any DB read. |
-| `MODEL_PRICING` (`app/llm/pricing.py`) | Static $/1M-token table for `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-pro`, `gemini-3.1-flash-lite`, `gemini-3.7-flash`, `gemini-embedding-2` | `estimate_cost_usd()` — priced from this table by model name (`models/` prefix stripped); a model name not in the table prices at the default chat model's rate. Not billing-grade — a best-effort trend/eval estimate, per the module's own docstring. |
+| `sys_llm_model_pricing` (`system_configs`) | JSON dictionary mapping model names to `{"input": float, "output": float}` rates per 1M tokens (seeded by `seed_system_configs()` and migration `094_seed_model_pricing_system_config.sql`). Falls back to `DEFAULT_MODEL_PRICING` and `_FALLBACK_PRICE` in `app/llm/pricing.py`. | `estimate_cost_usd()` — dynamically loaded via `get_model_pricing_from_repo()`, cached in Redis. Strips `models/` prefix. Allows runtime rate updates without redeployment. |
 | `AGENT_MAX_STEPS`, `AGENT_ENOUGH_CHUNKS` (`rag/agent/config.py`) | `6`, `8` | Constants with no importers anywhere in the repo — dead code. The `agent_max_steps`/`agent_enough_chunks` `system_configs` keys that used to feed the equivalent (also-unread) `QueryContext` fields have been removed; the real ceiling on tool-call count is the prose "at most 6 tool calls" in `AGENT_SYSTEM_PROMPT`, which only the model enforces. |
 | `AGENT_MAX_CONTEXT_CHUNKS` (`rag/agent/config.py`) | `25` | The chunk cap `_grade_context` applies when `max_chunks` is omitted, and `rerank_context`'s fallback cap. |
 | `GRADE_RELATIVE_THRESHOLD` (`rag/agent/config.py`) | `0.85` | `_grade_context` keeps chunks scoring at or above `top_score × 0.85` within each `search_chunks` call. |
@@ -766,7 +804,7 @@ All chat routes are mounted at `/api/chat` (`services/backend/main.py`), `questi
 
 Backend-core service/handler tests (`packages/backend-core/tests/app/services/`):
 
-- `test_adk_orchestrator.py` — the `ChatOrchestrator` suite: `test_chat_request_dto_immutability`, `test_build_agents`, `test_knowledge_graph_tool_not_offered`, `test_lookup_synonyms_tool_included`, `test_orchestrator_initialization`, `test_stream_response_builds_query_context_and_persists_turn`, `test_stream_response_reader_mode_sends_context_block_to_retrieval_agent`, `test_stream_response_yields_streaming_chunks_with_sse_run_config`, `test_stream_response_tolerates_analyze_query_signals_failure` (regression: `analyze_query_signals` raising must not fail the turn), `test_stream_response_enqueues_rag_eval_job_when_scoring_enabled`, `test_stream_response_skips_rag_eval_job_when_scoring_disabled`, `test_stream_response_uses_reranker_when_enabled`, `test_stream_response_uses_grade_context_when_reranker_disabled`, `test_stream_response_falls_back_to_grade_context_when_reranker_fails`, `test_stream_response_exact_phrase_uses_configured_rag_keyword_top_k`, `test_stream_response_page_finding_exact_phrase_yields_page_hits_and_skips_answer_agent`, `test_stream_response_non_page_finding_exact_phrase_still_synthesizes_answer`, `test_answer_concatenates_chunks_and_returns_done_metadata` (the non-streaming `answer()` wrapper), `test_answer_falls_back_to_page_hits_text_when_no_chunks` (regression: `answer()` must also accumulate text from `page_hits` events, not just `chunk` events), `test_stream_response_short_work_lookup_hit_bypasses_retrieval_agent_and_answer_llm`, `test_stream_response_short_work_lookup_fires_even_when_catalog_first_already_matched_book` (regression for the production bug the short-work gate exists to fix — see Overview), `test_stream_response_short_work_lookup_miss_falls_through_to_exact_phrase`, `test_stream_response_unquoted_short_work_question_never_attempts_toc_lookup`.
+- `test_adk_orchestrator.py` — the `ChatOrchestrator` suite: `test_chat_request_dto_immutability`, `test_build_agents`, `test_knowledge_graph_tool_not_offered`, `test_lookup_synonyms_tool_included`, `test_orchestrator_initialization`, `test_stream_response_builds_query_context_and_persists_turn`, `test_stream_response_reader_mode_sends_context_block_to_retrieval_agent`, `test_stream_response_yields_streaming_chunks_with_sse_run_config`, `test_stream_response_tolerates_analyze_query_signals_failure` (regression: `analyze_query_signals` raising must not fail the turn), `test_stream_response_enqueues_rag_eval_job_when_scoring_enabled`, `test_stream_response_skips_rag_eval_job_when_scoring_disabled`, `test_stream_response_uses_reranker_when_enabled`, `test_stream_response_uses_grade_context_when_reranker_disabled`, `test_stream_response_falls_back_to_grade_context_when_reranker_fails`, `test_stream_response_exact_phrase_uses_configured_rag_keyword_top_k`, `test_stream_response_page_finding_exact_phrase_yields_page_hits_and_skips_answer_agent`, `test_stream_response_non_page_finding_exact_phrase_still_synthesizes_answer`, `test_answer_concatenates_chunks_and_returns_done_metadata` (the non-streaming `answer()` wrapper), `test_answer_falls_back_to_page_hits_text_when_no_chunks` (regression: `answer()` must also accumulate text from `page_hits` events, not just `chunk` events), `test_stream_response_short_work_lookup_hit_bypasses_retrieval_agent_and_answer_llm`, `test_stream_response_short_work_lookup_fires_even_when_catalog_first_already_matched_book` (regression for the production bug the short-work gate exists to fix — see Overview), `test_stream_response_short_work_lookup_miss_falls_through_to_exact_phrase`, `test_stream_response_unquoted_short_work_question_never_attempts_toc_lookup`. Catalog-shortcut coverage (`_resolve_catalog_shortcut` / `_format_catalog_answer`, pure-function): single-match, multi-volume-same-title, ambiguous-titles, no-match, missing-author, and composite-question cases for both `author_of` and `books_by`, plus formatting tests for each subtype's output text. Integration: `test_stream_response_catalog_author_of_shortcut_skips_agents`, `test_stream_response_catalog_books_by_shortcut_skips_agents` (assert the retrieval agent and answer agent `Runner`s are never invoked — a call would raise `AssertionError` via the mock), `test_stream_response_catalog_ambiguous_falls_back_to_retrieval_agent` (asserts `build_retrieval_agent` IS called when the matched titles are ambiguous).
 - `chat_exact_phrase_test.py` — `chat/exact_phrase.py` in isolation: `test_run_exact_phrase_retrieval_wraps_hits_as_search_chunks_observation`, `test_format_page_hits_shapes_payload`, `test_summarize_page_hits_as_text_no_hits`, `test_summarize_page_hits_as_text_with_hits`.
 - `short_work_intent_test.py` — `detect_short_work_intent`: single/double quoted-phrase title extraction, locate-verb gating, and the authorship-marker exclusion.
 - `toc_lookup_service_test.py` — `resolve_short_work`: title match via ToC, book-scoped vs. unscoped (fuzzy phrase) lookup, `toc_short_work_max_pages` rejection of long entries, the start-page heading-verification guard, and page-range/`content_page_offset` math.

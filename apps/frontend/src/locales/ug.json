@@ -578,6 +578,7 @@
       "actions": "مەشغۇلات",
       "empty": "سەپلىمە تېپىلمىدى",
       "emptyDescription": "تۇنجى سەپلىمىڭىزنى قۇرۇڭ",
+      "invalidJson": "JSON فورماتى خاتا: {{error}}",
       "circuitBreaker": {
         "title": "LLM ئۇلانما ھالىتى",
         "overallStatus": "نۆۋەتتىكى ھالىتى",

@@ -75,6 +75,23 @@ function getFeatureGroupForKey(key: string): FeatureGroupInfo {
   return FEATURE_GROUPS.find(g => g.id === 'sys') || FEATURE_GROUPS[0];
 }
 
+function isJsonConfig(key: string, value: string): boolean {
+  if (key === 'sys_llm_model_pricing') return true;
+  const trimmed = value.trim();
+  return (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  );
+}
+
+function tryFormatJson(value: string): string {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
 export function SystemConfigPanel() {
   const { t } = useI18n();
   const isAdmin = useIsAdmin();
@@ -192,6 +209,17 @@ export function SystemConfigPanel() {
   const handleCreate = async () => {
     if (!newKey.trim() || !newValue.trim()) return;
 
+    let valueToSave = newValue.trim();
+    if (isJsonConfig(newKey.trim(), valueToSave)) {
+      try {
+        const parsed = JSON.parse(valueToSave);
+        valueToSave = JSON.stringify(parsed);
+      } catch (e: any) {
+        alert(t('admin.systemConfig.invalidJson', { error: e?.message || 'syntax error' }));
+        return;
+      }
+    }
+
     try {
       const response = await authFetch('/api/system-configs/', {
         method: 'POST',
@@ -200,7 +228,7 @@ export function SystemConfigPanel() {
         },
         body: JSON.stringify({
           key: newKey.trim(),
-          value: newValue.trim(),
+          value: valueToSave,
           description: newDescription.trim() || null,
         }),
       });
@@ -218,6 +246,17 @@ export function SystemConfigPanel() {
   };
 
   const handleUpdate = async (key: string) => {
+    let valueToSave = editValue.trim();
+    if (isJsonConfig(key, valueToSave)) {
+      try {
+        const parsed = JSON.parse(valueToSave);
+        valueToSave = JSON.stringify(parsed);
+      } catch (e: any) {
+        alert(t('admin.systemConfig.invalidJson', { error: e?.message || 'syntax error' }));
+        return;
+      }
+    }
+
     try {
       const response = await authFetch(`/api/system-configs/${key}`, {
         method: 'PUT',
@@ -225,7 +264,7 @@ export function SystemConfigPanel() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          value: editValue.trim(),
+          value: valueToSave,
           description: editDescription.trim() || null,
         }),
       });
@@ -242,7 +281,11 @@ export function SystemConfigPanel() {
 
   const startEdit = (config: SystemConfig) => {
     setEditingKey(config.key);
-    setEditValue(config.value);
+    if (isJsonConfig(config.key, config.value)) {
+      setEditValue(tryFormatJson(config.value));
+    } else {
+      setEditValue(config.value);
+    }
     setEditDescription(config.description || '');
   };
 
@@ -636,18 +679,35 @@ export function SystemConfigPanel() {
                     </td>
                       <td className="px-3 md:px-6 py-4 md:py-6">
                         {editingKey === config.key ? (
-                          <input
-                            type="text"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none text-left text-base"
-                            dir="ltr"
-                            data-latin="true"
-                          />
+                          isJsonConfig(config.key, editValue) ? (
+                            <textarea
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              rows={8}
+                              className="w-full px-3 py-2 border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none text-left font-mono text-xs md:text-sm custom-scrollbar"
+                              dir="ltr"
+                              data-latin="true"
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-full px-2 md:px-3 py-1.5 md:py-2 border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none text-left text-base"
+                              dir="ltr"
+                              data-latin="true"
+                            />
+                          )
                         ) : (
-                          <span className="font-normal text-[#1a1a1a] dark:text-slate-100 text-sm md:text-base break-all">
-                            {formatDisplayValue(config.key, config.value)}
-                          </span>
+                          isJsonConfig(config.key, config.value) ? (
+                            <pre className="font-mono text-xs bg-slate-100/70 dark:bg-slate-800/70 p-2 rounded-lg max-h-28 overflow-y-auto custom-scrollbar text-slate-700 dark:text-slate-300 break-all whitespace-pre-wrap">
+                              {tryFormatJson(config.value)}
+                            </pre>
+                          ) : (
+                            <span className="font-normal text-[#1a1a1a] dark:text-slate-100 text-sm md:text-base break-all">
+                              {formatDisplayValue(config.key, config.value)}
+                            </span>
+                          )
                         )}
                       </td>
                       <td className="hidden lg:table-cell px-3 md:px-6 py-4 md:py-6">

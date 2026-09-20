@@ -43,7 +43,7 @@ class LLMResources:
 
     def warmup(
         self,
-        default_model: str = "gemini-2.5-flash",
+        default_model: str = "gemini-3.5-flash-lite",
         embedding_model: str = "text-embedding-004",
     ) -> None:
         """Pre-instantiate LLM chains and embedding providers at server boot time."""

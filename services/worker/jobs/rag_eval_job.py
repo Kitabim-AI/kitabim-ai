@@ -9,7 +9,7 @@ import logging
 from app.db import session as db_session
 from app.db.repositories.rag_evaluations_repository import RAGEvaluationsRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
-from app.llm.pricing import estimate_cost_usd
+from app.llm.pricing import estimate_cost_usd, get_model_pricing_from_repo
 from app.services.rag.judge import score_answer
 from app.utils.observability import log_json
 
@@ -38,6 +38,7 @@ async def rag_eval_job(ctx: dict, eval_id: int) -> None:
         model = await config_repo.get_value(
             "rag_gemini_judge_model", "gemini-3.1-flash-lite"
         )
+        pricing_map, fallback_price = await get_model_pricing_from_repo(config_repo)
 
         try:
             usage: dict = {}
@@ -52,6 +53,8 @@ async def rag_eval_job(ctx: dict, eval_id: int) -> None:
                 model,
                 usage.get("input_tokens", 0),
                 usage.get("output_tokens", 0),
+                pricing_map=pricing_map,
+                fallback_price=fallback_price,
             )
             await repo.update_one(
                 eval_id,

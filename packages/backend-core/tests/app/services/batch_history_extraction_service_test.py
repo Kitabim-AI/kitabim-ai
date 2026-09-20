@@ -33,7 +33,7 @@ async def test_submit_batch_history_extraction_job():
         "app.services.batch_history_extraction_service._get_genai_client"
     ) as mock_get_client, patch(
         "app.services.batch_history_extraction_service._get_extraction_model",
-        return_value="gemini-2.5-flash",
+        return_value="gemini-3.5-flash-lite",
     ):
         mock_client = MagicMock()
         mock_file = MagicMock()
@@ -70,7 +70,7 @@ async def test_poll_and_process_batch_history_jobs():
         book_id="book-123",
         status="submitted",
         min_significance=5,
-        model_name="gemini-2.5-flash",
+        model_name="gemini-3.5-flash-lite",
     )
 
     mock_active_res = MagicMock()
@@ -159,7 +159,7 @@ async def test_poll_and_process_batch_history_jobs_handles_bare_list_entities():
         book_id="book-123",
         status="submitted",
         min_significance=5,
-        model_name="gemini-2.5-flash",
+        model_name="gemini-3.5-flash-lite",
     )
 
     mock_active_res = MagicMock()

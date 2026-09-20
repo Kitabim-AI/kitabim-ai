@@ -221,7 +221,7 @@ Because `llm_spell_check_status` is not covered by `StaleWatchdog`, a page can b
 Unlike every other job described above, `history_extraction_job` has **no scanner that claims idle work for it** — it is admin-triggered only. `POST /api/admin/books/{book_id}/extract-history` (admin-only, `admin_history_dictionary_router.py`) enqueues the job directly with a `min_significance` threshold; it 400s if `history_extraction_enabled` isn't `"true"`.
 
 The job either:
-- runs Gemini extraction inline over the book's pages in sliding windows of `history_batch_size` pages (default 15, `history_gemini_model` default `gemini-2.5-flash`) and stages candidate terms + facts into `history_dictionary_staging`, or
+- runs Gemini extraction inline over the book's pages in sliding windows of `history_batch_size` pages (default 15, `history_gemini_model` default `gemini-3.5-flash-lite`) and stages candidate terms + facts into `history_dictionary_staging`, or
 - when `history_batch_enabled` is `"true"`, submits a row to `batch_history_extraction_jobs` via the Gemini Batch API instead (mirrors the OCR/embedding batch-mode pattern).
 
 `batch_history_poller_scanner` (every 1 min) polls in-flight `batch_history_extraction_jobs` and ingests completed results the same way `batch_ocr_poller_scanner`/`batch_embedding_poller_scanner` do for their stages — but note there is currently no timeout config analogous to `ocr_batch_timeout_hours`/`embed_batch_timeout_hours` for stuck batch history jobs. Staged candidates are reviewed and approved/rejected by an admin via the `/history-dictionary/staging` endpoints before publishing to the live `history_dictionary` table.
@@ -365,7 +365,7 @@ All batch sizes, concurrency limits, and model names below are `system_configs` 
 | `ocr_batch_timeout_hours` / `embed_batch_timeout_hours` | `24` | Poller scanners — wall-clock timeout before marking a stuck batch job's pages failed |
 | `embed_batch_max_retry_count` | `3` | `batch_embedding_service` (poller scanner) — per-chunk retry budget before giving up. Batch OCR has no equivalent dedicated key — `batch_ocr_service` reuses `ocr_max_retry_count` (default `10`) as its per-page retry budget instead |
 | `history_extraction_enabled` | `true` | `history_extraction_job` — pipeline-level feature flag; also gates `POST /api/admin/books/{book_id}/extract-history` |
-| `history_gemini_model` | `gemini-2.5-flash` | `history_extraction_job` / `batch_history_extraction_service` — Gemini model used for term extraction and factual synthesis |
+| `history_gemini_model` | `gemini-3.5-flash-lite` | `history_extraction_job` / `batch_history_extraction_service` — Gemini model used for term extraction and factual synthesis |
 | `history_batch_size` | `15` | `history_extraction_service` / `batch_history_extraction_service` — pages per sliding-window/batch extraction request |
 | `history_batch_enabled` | `false` | `history_extraction_job` — routes extraction through the Gemini Batch API instead of inline; unlike batch OCR/embedding, there is no dedicated `*_timeout_hours` or `*_max_retry_count` key for stuck batch history jobs |
 | `llm_spell_check_batch_enabled` | `false` | The book-wide `POST /{book_id}/reprocess/llm-spell-check` endpoint — routes it through the Gemini Batch API instead of live calls; also gates whether `batch_llm_spell_check_poller_scanner` finds anything to poll. Like batch history, there is no dedicated `*_timeout_hours`/`*_max_retry_count` key for a stuck batch LLM-spell-check job. Does not affect the single-page endpoint, which always uses the live path |

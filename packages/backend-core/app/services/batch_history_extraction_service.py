@@ -37,8 +37,8 @@ def _get_genai_client() -> genai.Client:
 
 async def _get_extraction_model(session: AsyncSession) -> str:
     config_repo = SystemConfigsRepository(session)
-    val = await config_repo.get_value("history_gemini_model", "gemini-2.5-flash")
-    model = val.strip() if val else "gemini-2.5-flash"
+    val = await config_repo.get_value("history_gemini_model", "gemini-3.5-flash-lite")
+    model = val.strip() if val else "gemini-3.5-flash-lite"
     return model.replace("models/", "", 1) if model.startswith("models/") else model
 
 
