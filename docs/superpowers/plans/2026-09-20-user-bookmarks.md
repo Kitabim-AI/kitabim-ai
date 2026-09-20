@@ -77,7 +77,7 @@
 **Interfaces:**
 - Produces: tables `reading_progress(id, user_id, book_id, page_number, updated_at)` unique on `(user_id, book_id)`, and `bookmarks(id, user_id, book_id, page_number, name, quote_text, created_at)`. Task 2's ORM models map onto these exactly.
 
-- [ ] **Step 1: Write migration 095 (reading_progress)**
+- [x] **Step 1: Write migration 095 (reading_progress)**
 
 ```sql
 -- Migration 095: Add reading_progress table (silent per-user, per-book resume position)
@@ -93,14 +93,14 @@ CREATE TABLE IF NOT EXISTS reading_progress (
 CREATE INDEX IF NOT EXISTS idx_reading_progress_user_updated ON reading_progress (user_id, updated_at DESC);
 ```
 
-- [ ] **Step 2: Write rollback 095**
+- [x] **Step 2: Write rollback 095**
 
 ```sql
 -- Rollback Migration 095: Drop reading_progress table
 DROP TABLE IF EXISTS reading_progress;
 ```
 
-- [ ] **Step 3: Write migration 096 (bookmarks)**
+- [x] **Step 3: Write migration 096 (bookmarks)**
 
 ```sql
 -- Migration 096: Add bookmarks table (named whole-page or passage bookmarks)
@@ -118,14 +118,14 @@ CREATE INDEX IF NOT EXISTS idx_bookmarks_user_book ON bookmarks (user_id, book_i
 CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks (user_id);
 ```
 
-- [ ] **Step 4: Write rollback 096**
+- [x] **Step 4: Write rollback 096**
 
 ```sql
 -- Rollback Migration 096: Drop bookmarks table
 DROP TABLE IF EXISTS bookmarks;
 ```
 
-- [ ] **Step 5: Apply both migrations to the local dev database**
+- [x] **Step 5: Apply both migrations to the local dev database**
 
 Run (per `packages/backend-core/migrations/README.md`'s documented apply method — the same one used for every prior numbered migration in this directory):
 
@@ -143,7 +143,7 @@ psql "$DATABASE_URL" -c "\d reading_progress" -c "\d bookmarks"
 
 Expected: both tables listed with the columns above.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/backend-core/migrations/095_create_reading_progress.sql packages/backend-core/migrations/095_rollback_create_reading_progress.sql packages/backend-core/migrations/096_create_bookmarks.sql packages/backend-core/migrations/096_rollback_create_bookmarks.sql
@@ -173,7 +173,7 @@ git commit -m "feat(db): add reading_progress and bookmarks tables"
   - `BookmarksRepository.rename(bookmark_id: str, user_id: str, name: str) -> Optional[Bookmark]`
   - `BookmarksRepository.delete(bookmark_id: str, user_id: str) -> bool`
 
-- [ ] **Step 1: Add `ReadingProgress` and `Bookmark` ORM models**
+- [x] **Step 1: Add `ReadingProgress` and `Bookmark` ORM models**
 
 Add to `packages/backend-core/app/db/models.py`, immediately after the `ConversationMessage` class (the nearest existing example of a per-user, UUID-keyed, `func.now()`-defaulted table):
 
@@ -238,7 +238,7 @@ grep -n "^from sqlalchemy import\|UniqueConstraint" packages/backend-core/app/db
 
 If `UniqueConstraint` isn't already imported, add it to that import line.
 
-- [ ] **Step 2: Write the failing repository tests**
+- [x] **Step 2: Write the failing repository tests**
 
 Create `packages/backend-core/tests/app/db/reading_progress_repository_test.py`:
 
@@ -416,12 +416,12 @@ async def test_delete_returns_false_when_not_owned_or_missing():
     assert result is False
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd packages/backend-core && python -m pytest tests/app/db/reading_progress_repository_test.py tests/app/db/bookmarks_repository_test.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'app.db.repositories.reading_progress_repository'` (and same for `bookmarks_repository`).
 
-- [ ] **Step 3: Implement `ReadingProgressRepository`**
+- [x] **Step 3: Implement `ReadingProgressRepository`**
 
 Create `packages/backend-core/app/db/repositories/reading_progress_repository.py`:
 
@@ -482,7 +482,7 @@ def get_reading_progress_repository(session: AsyncSession) -> ReadingProgressRep
     return ReadingProgressRepository(session)
 ```
 
-- [ ] **Step 4: Implement `BookmarksRepository`**
+- [x] **Step 4: Implement `BookmarksRepository`**
 
 Create `packages/backend-core/app/db/repositories/bookmarks_repository.py`:
 
@@ -568,12 +568,12 @@ def get_bookmarks_repository(session: AsyncSession) -> BookmarksRepository:
 
 Note: `rename`'s test mocks `session.execute` once for the `get()` lookup inside it — this matches because `get()` is the only `session.execute` call in that path.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd packages/backend-core && python -m pytest tests/app/db/reading_progress_repository_test.py tests/app/db/bookmarks_repository_test.py -v`
 Expected: all tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/backend-core/app/db/models.py packages/backend-core/app/db/repositories/reading_progress_repository.py packages/backend-core/app/db/repositories/bookmarks_repository.py packages/backend-core/tests/app/db/reading_progress_repository_test.py packages/backend-core/tests/app/db/bookmarks_repository_test.py
@@ -602,12 +602,13 @@ git commit -m "feat(db): add ReadingProgress/Bookmark models and repositories"
   - `PATCH /{bookmark_id}` body `{name: str}` → bookmark dict, 404 if not owned
   - `DELETE /{bookmark_id}` → `{"success": true}`, 404 if not owned
 
-- [ ] **Step 1: Write the failing router tests**
+- [x] **Step 1: Write the failing router tests**
 
 Create `services/backend/tests/api/endpoints/bookmarks_router_test.py`:
 
 ```python
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -645,7 +646,9 @@ async def test_upsert_progress_endpoint():
     from app.db.models import ReadingProgress
 
     session = AsyncMock()
-    with_repo = ReadingProgress(user_id="user-1", book_id="book-1", page_number=42)
+    with_repo = ReadingProgress(
+        user_id="user-1", book_id="book-1", page_number=42, updated_at=datetime.now(timezone.utc)
+    )
     with _mock_repo("api.endpoints.bookmarks_router.ReadingProgressRepository", "upsert", with_repo):
         response = await upsert_progress_endpoint(
             book_id="book-1",
@@ -679,7 +682,9 @@ async def test_list_progress_endpoint():
     from app.db.models import ReadingProgress, Book
 
     session = AsyncMock()
-    row = ReadingProgress(user_id="user-1", book_id="book-1", page_number=5)
+    row = ReadingProgress(
+        user_id="user-1", book_id="book-1", page_number=5, updated_at=datetime.now(timezone.utc)
+    )
     row.book = Book(id="book-1", title="My Book", content_hash="h")
     with _mock_repo("api.endpoints.bookmarks_router.ReadingProgressRepository", "list_recent", [row]):
         response = await list_progress_endpoint(current_user=make_user(), session=session)
@@ -696,7 +701,10 @@ async def test_create_bookmark_endpoint():
     from app.db.models import Bookmark, Book
 
     session = AsyncMock()
-    bookmark = Bookmark(id="bm1", user_id="user-1", book_id="book-1", page_number=3, name="My mark")
+    bookmark = Bookmark(
+        id="bm1", user_id="user-1", book_id="book-1", page_number=3, name="My mark",
+        created_at=datetime.now(timezone.utc),
+    )
     bookmark.book = Book(id="book-1", title="My Book", content_hash="h")
     with _mock_repo("api.endpoints.bookmarks_router.BookmarksRepository", "create", bookmark):
         response = await create_bookmark_endpoint(
@@ -718,11 +726,14 @@ async def test_list_bookmarks_endpoint_with_book_filter():
     from app.db.models import Bookmark, Book
 
     session = AsyncMock()
-    bookmark = Bookmark(id="bm1", user_id="user-1", book_id="book-1", page_number=3, name="My mark")
+    bookmark = Bookmark(
+        id="bm1", user_id="user-1", book_id="book-1", page_number=3, name="My mark",
+        created_at=datetime.now(timezone.utc),
+    )
     bookmark.book = Book(id="book-1", title="My Book", content_hash="h")
-    with _mock_repo("api.endpoints.bookmarks_router.BookmarksRepository", "list", [bookmark]) as mock_list:
+    with _mock_repo("api.endpoints.bookmarks_router.BookmarksRepository", "list", [bookmark]) as mock_repo_class:
         response = await list_bookmarks_endpoint(book_id="book-1", current_user=make_user(), session=session)
-        mock_list.assert_called_once_with(user_id="user-1", book_id="book-1")
+        mock_repo_class.return_value.list.assert_called_once_with(user_id="user-1", book_id="book-1")
 
     assert len(response["bookmarks"]) == 1
 
@@ -781,12 +792,12 @@ def _mock_repo(target_path: str, method_name: str, return_value):
     return patch(target_path, return_value=mock_instance)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd services/backend && python -m pytest tests/api/endpoints/bookmarks_router_test.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'api.endpoints.bookmarks_router'`.
 
-- [ ] **Step 3: Implement `bookmarks_router.py`**
+- [x] **Step 3: Implement `bookmarks_router.py`**
 
 Create `services/backend/api/endpoints/bookmarks_router.py`:
 
@@ -947,7 +958,7 @@ async def delete_bookmark_endpoint(
     return {"success": True}
 ```
 
-- [ ] **Step 4: Add the `bookmark_not_found` i18n key**
+- [x] **Step 4: Add the `bookmark_not_found` i18n key**
 
 In `services/backend/locales/en.json`, inside `"errors"`, add (alphabetically near `book_not_found`):
 
@@ -961,7 +972,7 @@ In `services/backend/locales/ug.json`, inside `"errors"`, add (draft — needs n
     "bookmark_not_found": "بەلگە تېپىلمىدى",
 ```
 
-- [ ] **Step 5: Register the router in `main.py`**
+- [x] **Step 5: Register the router in `main.py`**
 
 In `services/backend/main.py`, add `bookmarks_router` to the `from api.endpoints import (...)` block (alphabetical among the existing names):
 
@@ -1001,12 +1012,12 @@ app.include_router(books_router.router, prefix="/api/books", tags=["books"])
 app.include_router(bookmarks_router.router, prefix="/api/bookmarks", tags=["bookmarks"])
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `cd services/backend && python -m pytest tests/api/endpoints/bookmarks_router_test.py -v`
 Expected: all tests PASS.
 
-- [ ] **Step 7: Rebuild and smoke-test locally**
+- [x] **Step 7: Rebuild and smoke-test locally**
 
 Run: `./deploy/local/rebuild-and-restart.sh backend`
 
@@ -1020,7 +1031,7 @@ curl -s -X PUT http://localhost:30800/api/bookmarks/progress/<a-real-book-id> \
 
 Expected: `{"bookId": "...", "pageNumber": 3, "updatedAt": "..."}`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add services/backend/api/endpoints/bookmarks_router.py services/backend/tests/api/endpoints/bookmarks_router_test.py services/backend/main.py services/backend/locales/en.json services/backend/locales/ug.json
@@ -1048,7 +1059,7 @@ git commit -m "feat(api): add bookmarks and reading-progress endpoints"
   - `PersistenceService.renameBookmark(id: string, name: string): Promise<void>`
   - `PersistenceService.deleteBookmark(id: string): Promise<void>`
 
-- [ ] **Step 1: Add the shared types**
+- [x] **Step 1: Add the shared types**
 
 In `packages/shared/src/types.ts`, the file ends with an `export interface ChatRequest { ... }` block and no trailing `export default` — append these two new interfaces after it, at the end of the file:
 
@@ -1072,7 +1083,7 @@ export interface ReadingProgressEntry {
 }
 ```
 
-- [ ] **Step 2: Write the failing service tests**
+- [x] **Step 2: Write the failing service tests**
 
 Create `apps/frontend/src/tests/services/persistenceService.bookmarks.test.ts`:
 
@@ -1191,12 +1202,12 @@ test('deleteBookmark DELETEs the bookmark', async () => {
 });
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `cd apps/frontend && npx vitest run src/tests/services/persistenceService.bookmarks.test.ts`
 Expected: FAIL — `PersistenceService.saveReadingProgress is not a function` (and similarly for the other new methods).
 
-- [ ] **Step 4: Implement the `PersistenceService` methods**
+- [x] **Step 4: Implement the `PersistenceService` methods**
 
 In `apps/frontend/src/services/persistenceService.ts`, add near `setPageToc` (both are small book-scoped mutations):
 
@@ -1281,12 +1292,12 @@ Add the import at the top of the file:
 import { Book, PaginatedBooks, Bookmark, ReadingProgressEntry } from '@shared/types';
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `cd apps/frontend && npx vitest run src/tests/services/persistenceService.bookmarks.test.ts`
 Expected: all tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/shared/src/types.ts apps/frontend/src/services/persistenceService.ts apps/frontend/src/tests/services/persistenceService.bookmarks.test.ts
@@ -1307,7 +1318,7 @@ git commit -m "feat(frontend): add bookmark/progress types and service methods"
 - Consumes: `PersistenceService.saveReadingProgress`, `PersistenceService.getReadingProgress` (Task 4).
 - Produces: `useBookActions(...).openReader(book, initialPage?: number)` — when `initialPage` is omitted, resolves from saved progress (falls back to `1`). `AppContext` debounces a progress save whenever `currentPage`/`selectedBook` are set while in the reader.
 
-- [ ] **Step 1: Write the failing `openReader` resume tests**
+- [x] **Step 1: Write the failing `openReader` resume tests**
 
 In `apps/frontend/src/tests/hooks/useBookActions.test.tsx`, add `getReadingProgress` to the mocked `PersistenceService` (Step 1 of the existing `vi.mock` block):
 
@@ -1329,9 +1340,24 @@ vi.mock('@/src/services/persistenceService', () => ({
 }));
 ```
 
-Replace the existing `'useBookActions handles openReader'` test with three tests covering explicit page, resumed page, and no-saved-progress fallback:
+Update the existing `'useBookActions handles openReader'` test to also mock `getReadingProgress` resolving `null` (so it keeps asserting the page-1 default through the new resume path instead of the old unconditional default), then add three more tests covering explicit page, resumed page, and no-saved-progress fallback:
 
 ```typescript
+test('useBookActions handles openReader', async () => {
+  vi.mocked(PersistenceService.getBookById).mockResolvedValue(mockBook as any);
+  vi.mocked(PersistenceService.getReadingProgress).mockResolvedValue(null);
+  const { result, setSelectedBook, setView, setChatMessages, setCurrentPage } = createHook();
+
+  await act(async () => {
+    await result.current.openReader(mockBook);
+  });
+
+  expect(setSelectedBook).toHaveBeenCalledWith(mockBook);
+  expect(setChatMessages).toHaveBeenCalledWith([]);
+  expect(setView).toHaveBeenCalledWith('reader');
+  expect(setCurrentPage).toHaveBeenCalledWith(1);
+});
+
 test('useBookActions openReader uses an explicit initialPage without checking progress', async () => {
   vi.mocked(PersistenceService.getBookById).mockResolvedValue(mockBook as any);
   const { result, setCurrentPage } = createHook();
@@ -1370,12 +1396,12 @@ test('useBookActions openReader falls back to page 1 with no saved progress', as
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd apps/frontend && npx vitest run src/tests/hooks/useBookActions.test.tsx`
 Expected: FAIL — `PersistenceService.getReadingProgress` mock not called as expected (current `openReader` always defaults to `1` without checking progress); the "explicit initialPage" test also fails only if the current signature's default parameter interferes (it currently should pass since 7 is a real arg — but the `not.toHaveBeenCalled()` assertion also needs the implementation NOT to fetch when a page is given, which the current code already satisfies since it never calls `getReadingProgress` at all — verify this test's baseline behavior; the *resume* and *fallback* tests are the ones expected to fail).
 
-- [ ] **Step 3: Update `openReader` to resume from saved progress**
+- [x] **Step 3: Update `openReader` to resume from saved progress**
 
 In `apps/frontend/src/hooks/useBookActions.ts`, change the `openReader` signature and body:
 
@@ -1409,20 +1435,23 @@ In `apps/frontend/src/hooks/useBookActions.ts`, change the `openReader` signatur
   };
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd apps/frontend && npx vitest run src/tests/hooks/useBookActions.test.tsx`
 Expected: all tests PASS.
 
-- [ ] **Step 5: Write the failing `AppContext` debounced-save test**
+- [x] **Step 5: Write the failing `AppContext` debounced-save test**
 
 Create `apps/frontend/src/tests/context/AppContext.progress.test.tsx`:
 
 ```typescript
 import React from 'react';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { AppProvider, useAppContext } from '@/src/context/AppContext';
+import { AuthProvider } from '@/src/hooks/useAuth';
+import { I18nContext } from '@/src/i18n/I18nContext';
+import { NotificationProvider } from '@/src/context/NotificationContext';
 import { PersistenceService } from '@/src/services/persistenceService';
 
 vi.mock('@/src/services/persistenceService', () => ({
@@ -1444,7 +1473,24 @@ vi.mock('@/src/hooks/useChat', () => ({
   useChat: () => ({ setChatMessages: vi.fn(), selectedCharacterId: '', setSelectedCharacterId: vi.fn() }),
 }));
 
-const wrapper = ({ children }: { children: React.ReactNode }) => <AppProvider>{children}</AppProvider>;
+// AppProvider's useBookActions() calls useNotification(), which throws without
+// a NotificationProvider ancestor — mirror AppContext.test.tsx's full wrapper
+// rather than a bare AppProvider.
+const i18nMockValue = {
+  language: 'en' as const,
+  setLanguage: vi.fn(),
+  t: (key: string) => key,
+};
+
+const wrapper = ({ children }: { children: React.ReactNode }) => (
+  <NotificationProvider>
+    <AuthProvider>
+      <I18nContext.Provider value={i18nMockValue}>
+        <AppProvider>{children}</AppProvider>
+      </I18nContext.Provider>
+    </AuthProvider>
+  </NotificationProvider>
+);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -1489,12 +1535,12 @@ test('does not save progress when no book is selected', async () => {
 });
 ```
 
-- [ ] **Step 6: Run test to verify it fails**
+- [x] **Step 6: Run test to verify it fails**
 
 Run: `cd apps/frontend && npx vitest run src/tests/context/AppContext.progress.test.tsx`
 Expected: FAIL — `saveReadingProgress` never called (no debounced effect exists yet).
 
-- [ ] **Step 7: Add the debounced progress-save effect to `AppContext`**
+- [x] **Step 7: Add the debounced progress-save effect to `AppContext`**
 
 In `apps/frontend/src/context/AppContext.tsx`, add after the existing deep-link `useEffect` (the one calling `PersistenceService.getBookById(initialBookId)`):
 
@@ -1512,12 +1558,12 @@ In `apps/frontend/src/context/AppContext.tsx`, add after the existing deep-link 
   }, [selectedBook, currentPage]);
 ```
 
-- [ ] **Step 8: Run test to verify it passes**
+- [x] **Step 8: Run test to verify it passes**
 
 Run: `cd apps/frontend && npx vitest run src/tests/context/AppContext.progress.test.tsx`
 Expected: both tests PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add apps/frontend/src/context/AppContext.tsx apps/frontend/src/hooks/useBookActions.ts apps/frontend/src/tests/hooks/useBookActions.test.tsx apps/frontend/src/tests/context/AppContext.progress.test.tsx
@@ -1536,7 +1582,7 @@ git commit -m "feat(reader): silently save and resume reading progress"
 - Consumes: `PersistenceService.listBookmarks/createBookmark/renameBookmark/deleteBookmark` (Task 4), `useAuth()` (existing, for `isAuthenticated`).
 - Produces: `useBookmarks(bookId?: string): { bookmarks: Bookmark[]; isLoading: boolean; refresh: () => Promise<void>; create: (pageNumber: number, name: string, quoteText?: string) => Promise<Bookmark>; rename: (id: string, name: string) => Promise<void>; remove: (id: string) => Promise<void>; }`. Task 7 (PageItem icons) and Task 8 (drawer) call this with a `bookId`; Task 10 (Library Bookmarks tab) calls it with no argument.
 
-- [ ] **Step 1: Write the failing hook tests**
+- [x] **Step 1: Write the failing hook tests**
 
 Create `apps/frontend/src/tests/hooks/useBookmarks.test.tsx`:
 
@@ -1638,12 +1684,12 @@ test('remove drops the bookmark from state', async () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd apps/frontend && npx vitest run src/tests/hooks/useBookmarks.test.tsx`
 Expected: FAIL — `Cannot find module '@/src/hooks/useBookmarks'`.
 
-- [ ] **Step 3: Implement `useBookmarks`**
+- [x] **Step 3: Implement `useBookmarks`**
 
 Create `apps/frontend/src/hooks/useBookmarks.ts`:
 
@@ -1697,12 +1743,12 @@ export function useBookmarks(bookId?: string) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cd apps/frontend && npx vitest run src/tests/hooks/useBookmarks.test.tsx`
 Expected: all tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/frontend/src/hooks/useBookmarks.ts apps/frontend/src/tests/hooks/useBookmarks.test.tsx
@@ -1736,6 +1782,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { BookmarkPrompt } from '@/src/components/reader/BookmarkPrompt';
 import { I18nContext } from '@/src/i18n/I18nContext';
+
+// BookmarkPrompt's guest branch renders OAuthButtonGroup, which calls the
+// real useAuth() hook — mock it so this test doesn't need a real AuthProvider.
+vi.mock('@/src/hooks/useAuth', () => ({
+  useAuth: vi.fn(() => ({ loginWithGoogle: vi.fn(), loginWithFacebook: vi.fn(), isLoading: false })),
+}));
 
 const i18nValue = {
   language: 'en' as const,
@@ -2195,6 +2247,22 @@ Pass to the non-virtual-scroll `<PageItem>` render (next to `onTocPageClick={han
                         onCreateBookmark={createBookmark}
                         onRenameBookmark={renameBookmark}
                         onDeleteBookmark={removeBookmark}
+```
+
+`ReaderView` now calls `useBookmarks(selectedBook.id)` unconditionally on mount, which calls `PersistenceService.listBookmarks`. `apps/frontend/src/tests/components/reader/ReaderView.test.tsx`'s existing `vi.mock('@/src/services/persistenceService', ...)` predates this hook and only stubs `getBookContent`/`getBookPages`/`downloadBook` — since its `useAuth` mock already sets `isAuthenticated: true`, `useBookmarks`'s effect fires for real and throws `TypeError: PersistenceService.listBookmarks is not a function` as an unhandled rejection during every test in that file (tests still pass, but the rejections are real noise masking future failures). Fix by extending that mock:
+
+```typescript
+vi.mock('@/src/services/persistenceService', () => ({
+  PersistenceService: {
+    getBookContent: vi.fn(),
+    getBookPages: vi.fn(),
+    downloadBook: vi.fn(),
+    listBookmarks: vi.fn().mockResolvedValue([]),
+    createBookmark: vi.fn(),
+    renameBookmark: vi.fn(),
+    deleteBookmark: vi.fn(),
+  }
+}));
 ```
 
 - [ ] **Step 9: Add the new i18n keys**
