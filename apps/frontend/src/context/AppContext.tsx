@@ -203,6 +203,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   }, []);
 
+  // Silently persist reading progress a couple seconds after the centered
+  // page settles, so a normal scroll doesn't spam the API on every tick.
+  useEffect(() => {
+    if (!selectedBook || currentPage === null) return;
+    const bookId = selectedBook.id;
+    const pageNumber = currentPage;
+    const timeoutId = window.setTimeout(() => {
+      PersistenceService.saveReadingProgress(bookId, pageNumber);
+    }, 2000);
+    return () => window.clearTimeout(timeoutId);
+  }, [selectedBook, currentPage]);
+
   const [modal, setModal] = useState<{
     isOpen: boolean;
     title: string;

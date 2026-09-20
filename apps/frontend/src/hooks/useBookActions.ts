@@ -255,7 +255,7 @@ export const useBookActions = (
     }
   };
 
-  const openReader = async (book: Book | { id: string }, initialPage: number = 1) => {
+  const openReader = async (book: Book | { id: string }, initialPage?: number) => {
     setIsOpeningBook(true);
     try {
       const fullBook = await PersistenceService.getBookById(book.id);
@@ -264,10 +264,12 @@ export const useBookActions = (
       // Ensure pages is an array
       if (!fullBook.pages) fullBook.pages = [];
 
+      const resolvedPage = initialPage ?? (await PersistenceService.getReadingProgress(book.id)) ?? 1;
+
       setSelectedBook(fullBook);
       setChatMessages([]);
       setView('reader');
-      setCurrentPage(initialPage);
+      setCurrentPage(resolvedPage);
     } catch (err) {
       console.error("Error opening reader:", err);
       setModal({
