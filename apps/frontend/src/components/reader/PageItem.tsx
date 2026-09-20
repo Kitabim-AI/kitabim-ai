@@ -44,7 +44,7 @@ interface PageItemProps {
   onHighlightApplied?: () => void;
 
   bookmarks?: Bookmark[];
-  onCreateBookmark?: (pageNumber: number, name: string, quoteText?: string) => Promise<void>;
+  onCreateBookmark?: (pageNumber: number, name: string, quoteText?: string) => Promise<unknown>;
   onRenameBookmark?: (id: string, name: string) => Promise<void>;
   onDeleteBookmark?: (id: string) => Promise<void>;
 }
