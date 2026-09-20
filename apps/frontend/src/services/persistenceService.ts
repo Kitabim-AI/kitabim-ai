@@ -1,5 +1,5 @@
 
-import { Book, PaginatedBooks } from '@shared/types';
+import { Book, PaginatedBooks, Bookmark, ReadingProgressEntry } from '@shared/types';
 import { authFetch } from './authService';
 
 const API_BASE = '/api';
@@ -370,6 +370,79 @@ export const PersistenceService = {
     if (!response.ok) {
       throw new Error("Failed to reset page");
     }
+  },
+
+  async saveReadingProgress(bookId: string, pageNumber: number): Promise<void> {
+    try {
+      await authFetch(`${API_BASE}/bookmarks/progress/${bookId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page_number: pageNumber }),
+      });
+    } catch (error) {
+      console.error("Failed to save reading progress", error);
+    }
+  },
+
+  async getReadingProgress(bookId: string): Promise<number | null> {
+    try {
+      const response = await authFetch(`${API_BASE}/bookmarks/progress/${bookId}`);
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.pageNumber ?? null;
+    } catch (error) {
+      console.error("Failed to fetch reading progress", error);
+      return null;
+    }
+  },
+
+  async listReadingProgress(): Promise<ReadingProgressEntry[]> {
+    try {
+      const response = await authFetch(`${API_BASE}/bookmarks/progress`);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.items || [];
+    } catch (error) {
+      console.error("Failed to fetch reading progress list", error);
+      return [];
+    }
+  },
+
+  async createBookmark(bookId: string, pageNumber: number, name: string, quoteText?: string): Promise<Bookmark> {
+    const response = await authFetch(`${API_BASE}/bookmarks/${bookId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_number: pageNumber, name, quote_text: quoteText }),
+    });
+    if (!response.ok) throw new Error("Failed to create bookmark");
+    return response.json();
+  },
+
+  async listBookmarks(bookId?: string): Promise<Bookmark[]> {
+    try {
+      const url = bookId ? `${API_BASE}/bookmarks?book_id=${bookId}` : `${API_BASE}/bookmarks`;
+      const response = await authFetch(url);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.bookmarks || [];
+    } catch (error) {
+      console.error("Failed to fetch bookmarks", error);
+      return [];
+    }
+  },
+
+  async renameBookmark(id: string, name: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/bookmarks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!response.ok) throw new Error("Failed to rename bookmark");
+  },
+
+  async deleteBookmark(id: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/bookmarks/${id}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error("Failed to delete bookmark");
   },
 
   async setPageToc(bookId: string, pageNum: number, isToc: boolean): Promise<{ isToc: boolean; contentPageOffset?: number }> {
