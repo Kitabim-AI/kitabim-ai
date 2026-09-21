@@ -4,15 +4,16 @@ Dictionary Management API — search and list entries from the new definition di
 
 from __future__ import annotations
 
+import gzip
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.db.models import Dictionary
+from app.db.models import Dictionary, Word
 from app.db.repositories.dictionary_repository import DictionaryRepository
 from app.models.user import User
 from auth.dependencies import require_admin
@@ -145,3 +146,26 @@ async def delete_dictionary_entry(
         raise HTTPException(status_code=404, detail="Dictionary entry not found")
     await session.commit()
     return None
+
+
+@router.get("/dictionary/words-bundle")
+async def get_words_bundle(
+    session: AsyncSession = Depends(get_session),
+):
+    """Returns a gzip-compressed UTF-8 newline-delimited wordlist of all valid words.
+
+    Used by desktop OCR client to perform fast, offline de-hyphenation.
+    """
+    stmt = select(Word.word).order_by(Word.word)
+    res = await session.execute(stmt)
+    words = res.scalars().all()
+    payload = "\n".join(words).encode("utf-8")
+    compressed = gzip.compress(payload)
+    return Response(
+        content=compressed,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Encoding": "gzip",
+            "Cache-Control": "public, max-age=604800",
+        },
+    )

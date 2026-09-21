@@ -69,7 +69,11 @@ from auth.dependencies import (
     require_reader,
 )
 import logging
-from app.utils.text import generate_uyghur_regex, normalize_uyghur_chars
+from app.utils.text import (
+    dehyphenate_uyghur_text_async,
+    generate_uyghur_regex,
+    normalize_uyghur_chars,
+)
 from app.core.i18n import t
 from app.utils.observability import log_json
 from app.services.pdf_service import (
@@ -1845,12 +1849,18 @@ async def upload_pdf_ocrd(
     )
 
     pages_by_number = {p.page_number: p for p in pages_data}
-    session.add_all(
-        [
+    dehyphen_cache: dict[str, bool] = {}
+    pages_to_add = []
+    for n in range(1, page_count + 1):
+        raw_text = pages_by_number[n].text or ""
+        cleaned_text, _ = await dehyphenate_uyghur_text_async(
+            raw_text, session, word_cache=dehyphen_cache
+        )
+        pages_to_add.append(
             Page(
                 book_id=book_id,
                 page_number=n,
-                text=pages_by_number[n].text,
+                text=cleaned_text,
                 is_toc=pages_by_number[n].is_toc,
                 pipeline_step=PIPELINE_STEP_CHUNKING,
                 milestone=PAGE_MILESTONE_IDLE,
@@ -1860,9 +1870,8 @@ async def upload_pdf_ocrd(
                 embedding_milestone=PAGE_MILESTONE_IDLE,
                 spell_check_milestone=PAGE_MILESTONE_IDLE,
             )
-            for n in range(1, page_count + 1)
-        ]
-    )
+        )
+    session.add_all(pages_to_add)
 
     await session.commit()
 
@@ -2581,6 +2590,7 @@ async def update_page_text(
 
     new_text = normalize_markdown(payload.get("text", ""))
     new_text = normalize_uyghur_chars(new_text)
+    new_text, _ = await dehyphenate_uyghur_text_async(new_text, session)
 
     # 1. Update page text and status
     page = await pages_repo.find_one(book_id, page_num)
