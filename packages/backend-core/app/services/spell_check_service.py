@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Page, PageSpellIssue, AutoCorrectRule
 from app.services.cache_service import cache_service
-from app.utils.text import normalize_uyghur_chars
+from app.utils.text import dehyphenate_uyghur_text_async, normalize_uyghur_chars
 from sqlalchemy import select
 
 _DICT_CACHE_TTL = 86400  # 24 hours — dictionary words change rarely
@@ -501,8 +501,16 @@ async def run_spell_check_for_page(
     Does NOT commit — caller is responsible for committing.
     """
     raw_text = page.text or ""
+    text_changed = False
 
-    # S-NEW-AUTO: Fetch and apply global correction rules immediately
+    # 1. Global de-hyphenation rule: merge split hyphenated words if valid
+    if "-" in raw_text:
+        dehyphenated = await dehyphenate_uyghur_text_async(raw_text, session)
+        if dehyphenated != raw_text:
+            raw_text = dehyphenated
+            text_changed = True
+
+    # 2. S-NEW-AUTO: Fetch and apply global correction rules immediately
     # This prevents manual review of words we already have a solution for.
     rules_result = await session.execute(
         select(AutoCorrectRule.misspelled_word, AutoCorrectRule.corrected_word).where(
@@ -511,7 +519,6 @@ async def run_spell_check_for_page(
     )
     rules = {row.misspelled_word: row.corrected_word for row in rules_result.fetchall()}
 
-    text_changed = False
     if rules:
         # Check if any rules apply (quick check before heavy regex/loop)
         applied_rules = {w: c for w, c in rules.items() if w in raw_text}
@@ -537,19 +544,30 @@ async def run_spell_check_for_page(
                         raw_text = new_text
                         text_changed = True
 
+    update_values = {
+        "spell_check_milestone": "succeeded",
+        "last_updated": func.now(),
+    }
     if text_changed:
         page.text = raw_text
-        page.last_updated = func.now()
-        # The page will be updated in the DB when the caller commits.
+        page.chunking_milestone = "idle"
+        page.embedding_milestone = "idle"
+        page.is_indexed = False
+        update_values.update(
+            {
+                "text": raw_text,
+                "chunking_milestone": "idle",
+                "embedding_milestone": "idle",
+                "is_indexed": False,
+            }
+        )
 
     # Tokenize against the (possibly updated) raw_text
     tokens = tokenize(raw_text)
 
     if not tokens:
         await session.execute(
-            update(Page)
-            .where(Page.id == page.id)
-            .values(spell_check_milestone="succeeded", last_updated=func.now())
+            update(Page).where(Page.id == page.id).values(**update_values)
         )
         return 0
 
@@ -582,9 +600,7 @@ async def run_spell_check_for_page(
     session.add_all(issues)
 
     await session.execute(
-        update(Page)
-        .where(Page.id == page.id)
-        .values(spell_check_milestone="succeeded", last_updated=func.now())
+        update(Page).where(Page.id == page.id).values(**update_values)
     )
 
     return len(issues)
