@@ -117,92 +117,101 @@ async def main():
     async with db_session.async_session_factory() as session:
         valid_words = await load_all_words(session)
 
-        # Build candidate page query
-        query = (
-            select(Page.id, Page.book_id, Page.page_number, Page.text)
-            .where(
-                Page.text.like("%-%"),
-            )
-            .order_by(Page.book_id, Page.page_number)
-        )
-
+        # Get list of target books
         if args.book_id:
-            query = query.where(Page.book_id == args.book_id)
-        if args.limit:
-            query = query.limit(args.limit)
-
-        logger.info("Querying candidate pages containing '-'...")
-        result = await session.execute(query)
-        candidates = result.fetchall()
-        logger.info("Found %d candidate page(s) containing hyphens.", len(candidates))
-
-        pending_updates = 0
-
-        for page_id, book_id, page_number, raw_text in candidates:
-            scanned_pages += 1
-            if not raw_text:
-                continue
-
-            cleaned_text, repl_count = dehyphenate_uyghur_text(
-                raw_text, lambda w: w in valid_words
+            book_ids = [args.book_id]
+        else:
+            logger.info("Discovering books with candidate hyphenated pages...")
+            book_res = await session.execute(
+                text(
+                    "SELECT DISTINCT book_id FROM pages WHERE text LIKE '%-%' ORDER BY book_id"
+                )
             )
+            book_ids = [row[0] for row in book_res.fetchall()]
+            if args.limit:
+                book_ids = book_ids[: args.limit]
 
-            if repl_count > 0:
-                modified_pages += 1
-                total_replacements += repl_count
-                modified_book_ids.add(book_id)
+        logger.info("Found %d book(s) to process.", len(book_ids))
 
-                # Track word changes for reporting
-                for m in _DEHYPHEN_NL_RE.finditer(raw_text):
-                    p1, p2 = m.group(1), m.group(2)
-                    ch, cm = f"{p1}-{p2}", f"{p1}{p2}"
-                    if ch not in valid_words and cm in valid_words:
-                        word_change_counter[f"{ch} -> {cm}"] += 1
+        for idx, b_id in enumerate(book_ids, 1):
+            page_res = await session.execute(
+                select(Page.id, Page.page_number, Page.text)
+                .where(Page.book_id == b_id, Page.text.like("%-%"))
+                .order_by(Page.page_number)
+            )
+            pages = page_res.fetchall()
+            book_modified = 0
+            book_replacements = 0
 
-                for m in _DEHYPHEN_INLINE_RE.finditer(raw_text):
-                    p1, p2 = m.group(1), m.group(2)
-                    ch, cm = f"{p1}-{p2}", f"{p1}{p2}"
-                    if ch not in valid_words and cm in valid_words:
-                        word_change_counter[f"{ch} -> {cm}"] += 1
+            for page_id, page_number, raw_text in pages:
+                scanned_pages += 1
+                if not raw_text:
+                    continue
 
-                if args.verbose or modified_pages <= 5:
-                    logger.info(
-                        "Page %s (book: %s): %d de-hyphenation(s)",
-                        page_number,
-                        book_id,
-                        repl_count,
-                    )
+                cleaned_text, repl_count = dehyphenate_uyghur_text(
+                    raw_text, lambda w: w in valid_words
+                )
 
-                if not args.dry_run:
-                    # 1. Update page text and reset milestones
-                    await session.execute(
-                        update(Page)
-                        .where(Page.id == page_id)
-                        .values(
-                            text=cleaned_text,
-                            chunking_milestone="idle",
-                            embedding_milestone="idle",
-                            is_indexed=False,
-                            spell_check_milestone="idle",
-                            last_updated=func.now(),
-                        )
-                    )
-                    # 2. Delete stale spell check issues for this page
-                    await session.execute(
-                        delete(PageSpellIssue).where(PageSpellIssue.page_id == page_id)
-                    )
-                    pending_updates += 1
+                if repl_count > 0:
+                    book_modified += 1
+                    book_replacements += repl_count
+                    modified_pages += 1
+                    total_replacements += repl_count
+                    modified_book_ids.add(b_id)
 
-                    if pending_updates >= args.batch_size:
-                        await session.commit()
+                    # Track word changes for reporting
+                    for m in _DEHYPHEN_NL_RE.finditer(raw_text):
+                        p1, p2 = m.group(1), m.group(2)
+                        ch, cm = f"{p1}-{p2}", f"{p1}{p2}"
+                        if ch not in valid_words and cm in valid_words:
+                            word_change_counter[f"{ch} -> {cm}"] += 1
+
+                    for m in _DEHYPHEN_INLINE_RE.finditer(raw_text):
+                        p1, p2 = m.group(1), m.group(2)
+                        ch, cm = f"{p1}-{p2}", f"{p1}{p2}"
+                        if ch not in valid_words and cm in valid_words:
+                            word_change_counter[f"{ch} -> {cm}"] += 1
+
+                    if args.verbose:
                         logger.info(
-                            "Committed batch of %d modified pages.", pending_updates
+                            "Page %s (book: %s): %d de-hyphenation(s)",
+                            page_number,
+                            b_id,
+                            repl_count,
                         )
-                        pending_updates = 0
 
-        if not args.dry_run and pending_updates > 0:
-            await session.commit()
-            logger.info("Committed final batch of %d modified pages.", pending_updates)
+                    if not args.dry_run:
+                        await session.execute(
+                            update(Page)
+                            .where(Page.id == page_id)
+                            .values(
+                                text=cleaned_text,
+                                chunking_milestone="idle",
+                                embedding_milestone="idle",
+                                is_indexed=False,
+                                spell_check_milestone="idle",
+                                last_updated=func.now(),
+                            )
+                        )
+                        await session.execute(
+                            delete(PageSpellIssue).where(
+                                PageSpellIssue.page_id == page_id
+                            )
+                        )
+
+            if not args.dry_run and book_modified > 0:
+                await session.commit()
+
+            if book_modified > 0 or idx % 25 == 0 or idx == len(book_ids):
+                logger.info(
+                    "[%d/%d] Book %s: %d pages scanned, %d modified (%d words)",
+                    idx,
+                    len(book_ids),
+                    b_id,
+                    len(pages),
+                    book_modified,
+                    book_replacements,
+                )
 
     elapsed = time.perf_counter() - start_time
     print("\n" + "=" * 65)
