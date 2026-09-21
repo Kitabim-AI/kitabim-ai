@@ -2,6 +2,8 @@ from app.utils.text import (
     clean_known_poem_text,
     clean_uyghur_text,
     correct_uyghur_ocr_orthography,
+    dehyphenate_uyghur_text,
+    dehyphenate_uyghur_text_async,
     generate_uyghur_regex,
     is_degenerate_ocr_output,
     is_key_value_line,
@@ -341,3 +343,81 @@ def test_clean_known_poem_text_strips_ocr_markers_and_page_numbers():
 
 def test_clean_known_poem_text_empty_returns_empty():
     assert clean_known_poem_text("") == ""
+
+
+def test_dehyphenate_uyghur_text():
+    valid_words = {
+        "ئۇرۇقى",
+        "دورىلارنى",
+        "قاتارلىق",
+        "سوقۇپ",
+        "بولىدۇ",
+        "جەريانىدا",
+        "ئېلىمىز",
+        # Legitimate compound words in dictionary
+        "ئاز-ئازدىن",
+        "بىر-بىرىگە",
+        "غەم-ئەندىشە",
+    }
+
+    def validator(w: str) -> bool:
+        return w in valid_words
+
+    # 1. Inline hyphens (Target Category B)
+    text = "كاسىنە ئۇ-رۇقى ھەر بىرى 6 گرامدىن دو-رىلارنى بەرسۇن"
+    cleaned, count = dehyphenate_uyghur_text(text, validator)
+    assert cleaned == "كاسىنە ئۇرۇقى ھەر بىرى 6 گرامدىن دورىلارنى بەرسۇن"
+    assert count == 2
+
+    # 2. Line-break hyphens (Target Category B)
+    text_nl = (
+        "تارىخىي تەرەققىياتى جەر-\nيانىدا شەكىللەندۈرگەن، جۈملىدىن ئې-\nلىمىز تېبابىتى"
+    )
+    cleaned_nl, count_nl = dehyphenate_uyghur_text(text_nl, validator)
+    assert (
+        cleaned_nl
+        == "تارىخىي تەرەققىياتى جەريانىدا شەكىللەندۈرگەن، جۈملىدىن ئېلىمىز تېبابىتى"
+    )
+    assert count_nl == 2
+
+    # 3. Legitimate compound preservation (Category A)
+    text_comp = "تاماقنى ئاز-ئازدىن بېرىپ، بىر-بىرىگە يېقىنلاشتۇرۇش لازىم"
+    cleaned_comp, count_comp = dehyphenate_uyghur_text(text_comp, validator)
+    assert cleaned_comp == text_comp
+    assert count_comp == 0
+
+    # 4. Unknown / non-dictionary preservation (Category C)
+    text_unk = "ئاچچىق-تاتلىق ئانار سۈيى"
+    cleaned_unk, count_unk = dehyphenate_uyghur_text(text_unk, validator)
+    assert cleaned_unk == text_unk
+    assert count_unk == 0
+
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+
+
+@pytest.mark.asyncio
+async def test_dehyphenate_uyghur_text_async():
+    valid_db_words = {"ئۇرۇقى", "دورىلارنى"}
+
+    mock_session = AsyncMock()
+
+    def mock_execute(stmt, params):
+        batch = params["batch"]
+        matching = [[w] for w in batch if w in valid_db_words]
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = matching
+        return mock_result
+
+    mock_session.execute.side_effect = mock_execute
+
+    text = "كاسىنە ئۇ-رۇقى ۋە دو-رىلارنى تەييارلاڭ"
+    cache = {}
+    cleaned, count = await dehyphenate_uyghur_text_async(
+        text, mock_session, word_cache=cache
+    )
+    assert cleaned == "كاسىنە ئۇرۇقى ۋە دورىلارنى تەييارلاڭ"
+    assert count == 2
+    assert cache["ئۇرۇقى"] is True
+    assert cache["ئۇ-رۇقى"] is False

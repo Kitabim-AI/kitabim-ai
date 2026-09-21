@@ -1,6 +1,10 @@
 import re
 import unicodedata
 from collections import Counter
+from typing import Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # ── Arabic Presentation Forms Normalization ───────────────────────────────────
 # Pre-calculate mapping for performance. range(0xFB50, 0xFE00) and range(0xFE70, 0xFF00)
@@ -605,3 +609,115 @@ def extract_standalone_page_number(text: str) -> int | None:
                 return num
 
     return None
+
+
+# ── Uyghur Line-Break De-Hyphenation ──────────────────────────────────────────
+
+_UYGHUR_WORD_PATTERN = (
+    r"[\u0621-\u064A\u0671-\u06D5\u06EE-\u06EF\uFB50-\uFDFF\uFE70-\uFEFF]+"
+)
+_DEHYPHEN_NL_RE = re.compile(
+    rf"({_UYGHUR_WORD_PATTERN})[\t ]*[\-\u2010\u2011\u2012\u2013\u2014\u00ad][\t ]*[\r\n]+[\t ]*({_UYGHUR_WORD_PATTERN})"
+)
+_DEHYPHEN_INLINE_RE = re.compile(
+    rf"({_UYGHUR_WORD_PATTERN})[\-\u2010\u2011\u2012\u2013\u2014\u00ad]({_UYGHUR_WORD_PATTERN})"
+)
+_HYPHEN_CHARS = ("-", "\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u00ad")
+
+
+def dehyphenate_uyghur_text(
+    text: str,
+    is_valid_word: Callable[[str], bool],
+) -> tuple[str, int]:
+    """De-hyphenates line-broken words matching the global auto-correction condition:
+
+    Condition:
+    1. cand_hyphen (p1-p2) is NOT in the valid words dictionary (protects legitimate compounds like 'ئاز-ئازدىن').
+    2. cand_merged (p1p2) IS in the valid words dictionary.
+
+    Returns:
+        (cleaned_text, replacement_count)
+    """
+    if not text or not any(h in text for h in _HYPHEN_CHARS):
+        return text, 0
+
+    count = 0
+
+    def _replace_nl(match: re.Match) -> str:
+        nonlocal count
+        p1, p2 = match.group(1), match.group(2)
+        cand_hyphen = f"{p1}-{p2}"
+        cand_merged = f"{p1}{p2}"
+        if not is_valid_word(cand_hyphen) and is_valid_word(cand_merged):
+            count += 1
+            return cand_merged
+        return match.group(0)
+
+    # 1. First pass: line-break hyphens across newlines
+    text = _DEHYPHEN_NL_RE.sub(_replace_nl, text)
+
+    def _replace_inline(match: re.Match) -> str:
+        nonlocal count
+        p1, p2 = match.group(1), match.group(2)
+        cand_hyphen = f"{p1}-{p2}"
+        cand_merged = f"{p1}{p2}"
+        if not is_valid_word(cand_hyphen) and is_valid_word(cand_merged):
+            count += 1
+            return cand_merged
+        return match.group(0)
+
+    # 2. Second pass: inline hyphens
+    text = _DEHYPHEN_INLINE_RE.sub(_replace_inline, text)
+
+    return text, count
+
+
+async def dehyphenate_uyghur_text_async(
+    text: str,
+    session: "AsyncSession",
+    word_cache: Optional[dict[str, bool]] = None,
+) -> tuple[str, int]:
+    """Async database-backed version of dehyphenate_uyghur_text.
+
+    Extracts all candidate hyphenated words, batch queries the database 'words' table,
+    and applies corrections in a single pass.
+    """
+    if not text or not any(h in text for h in _HYPHEN_CHARS):
+        return text, 0
+
+    # Extract all candidate pairs
+    candidates: list[tuple[str, str]] = []
+    for m in _DEHYPHEN_NL_RE.finditer(text):
+        candidates.append((m.group(1), m.group(2)))
+    for m in _DEHYPHEN_INLINE_RE.finditer(text):
+        candidates.append((m.group(1), m.group(2)))
+
+    if not candidates:
+        return text, 0
+
+    needed_words = set()
+    for p1, p2 in candidates:
+        needed_words.add(f"{p1}-{p2}")
+        needed_words.add(f"{p1}{p2}")
+
+    # Check against cache or query database
+    lookup_cache = word_cache if word_cache is not None else {}
+    missing_words = [w for w in needed_words if w not in lookup_cache]
+
+    if missing_words:
+        from sqlalchemy import text as sa_text
+
+        for i in range(0, len(missing_words), 1000):
+            batch = missing_words[i : i + 1000]
+            result = await session.execute(
+                sa_text("SELECT word FROM words WHERE word = ANY(:batch)"),
+                {"batch": batch},
+            )
+            found = {row[0] for row in result.fetchall()}
+            for w in batch:
+                lookup_cache[w] = w in found
+
+    def validator(word: str) -> bool:
+        return lookup_cache.get(word, False)
+
+    return dehyphenate_uyghur_text(text, validator)
