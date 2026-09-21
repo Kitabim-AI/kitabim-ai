@@ -39,6 +39,8 @@ test('create mode pre-fills the default name and saves on confirm', async () => 
 
   const input = screen.getByRole('textbox') as HTMLInputElement;
   expect(input.value).toBe('Page 42');
+  expect(screen.getByText('bookmarks.bookmarkName')).toBeInTheDocument();
+  expect(input.placeholder).toBe('bookmarks.namePlaceholder');
 
   fireEvent.click(screen.getByText('bookmarks.save'));
   expect(onSave).toHaveBeenCalledWith('Page 42');

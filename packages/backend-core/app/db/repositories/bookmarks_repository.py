@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from sqlalchemy import select, delete as sql_delete
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Bookmark
@@ -35,12 +36,21 @@ class BookmarksRepository(BaseRepository[Bookmark]):
         )
         self.session.add(bookmark)
         await self.session.commit()
-        await self.session.refresh(bookmark)
-        return bookmark
+        stmt = (
+            select(Bookmark)
+            .options(selectinload(Bookmark.book))
+            .where(Bookmark.id == bookmark.id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
 
     async def list(self, user_id: str, book_id: Optional[str] = None) -> List[Bookmark]:
         """List this user's bookmarks, optionally scoped to one book"""
-        stmt = select(Bookmark).where(Bookmark.user_id == user_id)
+        stmt = (
+            select(Bookmark)
+            .options(selectinload(Bookmark.book))
+            .where(Bookmark.user_id == user_id)
+        )
         if book_id is not None:
             stmt = stmt.where(Bookmark.book_id == book_id).order_by(
                 Bookmark.page_number.asc()
@@ -52,8 +62,10 @@ class BookmarksRepository(BaseRepository[Bookmark]):
 
     async def get(self, bookmark_id: str, user_id: str) -> Optional[Bookmark]:
         """Fetch a bookmark by id, only if owned by this user"""
-        stmt = select(Bookmark).where(
-            Bookmark.id == bookmark_id, Bookmark.user_id == user_id
+        stmt = (
+            select(Bookmark)
+            .options(selectinload(Bookmark.book))
+            .where(Bookmark.id == bookmark_id, Bookmark.user_id == user_id)
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -67,8 +79,13 @@ class BookmarksRepository(BaseRepository[Bookmark]):
             return None
         bookmark.name = name
         await self.session.commit()
-        await self.session.refresh(bookmark)
-        return bookmark
+        stmt = (
+            select(Bookmark)
+            .options(selectinload(Bookmark.book))
+            .where(Bookmark.id == bookmark.id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
 
     async def delete(self, bookmark_id: str, user_id: str) -> bool:
         """Delete a bookmark if owned by this user. Returns True if a row was deleted"""

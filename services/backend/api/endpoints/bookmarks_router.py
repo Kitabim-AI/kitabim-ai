@@ -11,6 +11,7 @@ from app.db.session import get_session
 from app.db.repositories.reading_progress_repository import ReadingProgressRepository
 from app.db.repositories.bookmarks_repository import BookmarksRepository
 from app.models.user import User
+from app.services.storage_service import storage
 from auth.dependencies import require_reader
 
 router = APIRouter()
@@ -70,25 +71,39 @@ async def list_progress_endpoint(
     """List this user's books with saved progress, most recent first (Continue Reading tab)"""
     repo = ReadingProgressRepository(session)
     rows = await repo.list_recent(user_id=current_user.id, limit=limit)
-    return {
-        "items": [
+    items = []
+    for row in rows:
+        book = getattr(row, "book", None)
+        cover_url = None
+        if book and getattr(book, "cover_url", None):
+            public_url = storage.get_public_url(book.cover_url)
+            if public_url and getattr(book, "last_updated", None):
+                cover_url = f"{public_url}?v={int(book.last_updated.timestamp())}"
+            else:
+                cover_url = public_url
+        elif row.book_id:
+            cover_url = f"/api/covers/{row.book_id}.jpg"
+
+        items.append(
             {
                 "bookId": row.book_id,
-                "bookTitle": row.book.title if row.book else None,
-                "bookCoverUrl": row.book.cover_url if row.book else None,
+                "bookTitle": getattr(book, "title", None) if book else None,
+                "bookCoverUrl": cover_url,
                 "pageNumber": row.page_number,
                 "updatedAt": row.updated_at.isoformat(),
             }
-            for row in rows
-        ]
-    }
+        )
+    return {"items": items}
 
 
 def _serialize_bookmark(bookmark) -> dict:
+    book = getattr(bookmark, "book", None)
+    book_title = getattr(book, "title", None) if book else None
+
     return {
         "id": bookmark.id,
         "bookId": bookmark.book_id,
-        "bookTitle": bookmark.book.title if bookmark.book else None,
+        "bookTitle": book_title,
         "pageNumber": bookmark.page_number,
         "name": bookmark.name,
         "quoteText": bookmark.quote_text,
@@ -115,6 +130,7 @@ async def create_bookmark_endpoint(
     return _serialize_bookmark(bookmark)
 
 
+@router.get("", include_in_schema=False)
 @router.get("/")
 async def list_bookmarks_endpoint(
     book_id: Optional[str] = None,

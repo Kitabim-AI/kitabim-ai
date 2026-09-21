@@ -13,7 +13,8 @@ export const useBookActions = (
   setView: (view: any) => void,
   setModal: (modal: any) => void,
   setChatMessages: (messages: any[]) => void,
-  setCurrentPage: (page: number) => void
+  setCurrentPage: (page: number) => void,
+  setPendingQuoteHighlight?: (quote: string | null) => void
 ) => {
   const { addNotification } = useNotification();
   const { t } = useI18n();
@@ -255,7 +256,7 @@ export const useBookActions = (
     }
   };
 
-  const openReader = async (book: Book | { id: string }, initialPage?: number) => {
+  const openReader = async (book: Book | { id: string }, initialPage?: number, initialQuote?: string) => {
     setIsOpeningBook(true);
     try {
       const fullBook = await PersistenceService.getBookById(book.id);
@@ -270,6 +271,9 @@ export const useBookActions = (
       setChatMessages([]);
       setView('reader');
       setCurrentPage(resolvedPage);
+      if (initialQuote && setPendingQuoteHighlight) {
+        setPendingQuoteHighlight(initialQuote);
+      }
     } catch (err) {
       console.error("Error opening reader:", err);
       setModal({

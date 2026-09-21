@@ -116,3 +116,33 @@ test('deep link /books/<id> with no page number leaves currentPage untouched (no
   expect(result.current.currentPage).toBeNull();
   expect(result.current.pendingQuoteHighlight).toBeNull();
 });
+
+test('refreshing on /admin/all-books or invalid admin tab falls back to books', () => {
+  window.history.pushState({}, '', '/admin/all-books');
+  const { result } = renderHook(() => useAppContext(), { wrapper });
+
+  expect(result.current.view).toBe('admin');
+  expect(result.current.activeTab).toBe('books');
+});
+
+test('switching between library and admin updates activeTab properly', () => {
+  window.history.pushState({}, '', '/library');
+  const { result } = renderHook(() => useAppContext(), { wrapper });
+
+  expect(result.current.view).toBe('library');
+  expect(result.current.activeTab).toBe('all-books');
+
+  act(() => {
+    result.current.setView('admin');
+  });
+
+  expect(result.current.view).toBe('admin');
+  expect(result.current.activeTab).toBe('books');
+
+  act(() => {
+    result.current.setView('library');
+  });
+
+  expect(result.current.view).toBe('library');
+  expect(result.current.activeTab).toBe('all-books');
+});

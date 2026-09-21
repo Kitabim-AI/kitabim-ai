@@ -1,11 +1,10 @@
-import { BookOpen, LibraryBig, RefreshCw } from 'lucide-react';
-import React, { useEffect } from 'react';
+import { BookMarked, BookOpen, LibraryBig, RefreshCw } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
-import { ProverbDisplay } from '../common/ProverbDisplay';
 import { BookCard } from './BookCard';
-import { BookmarksTab } from './BookmarksTab';
-import { ContinueReadingTab } from './ContinueReadingTab';
+import { ReadingBookmarksTab } from './ReadingBookmarksTab';
 
 export const LibraryView: React.FC = () => {
   const {
@@ -22,6 +21,17 @@ export const LibraryView: React.FC = () => {
   } = useAppContext();
 
   const { t } = useI18n();
+  const { isAuthenticated } = useAuth();
+  const [readingBookmarksCount, setReadingBookmarksCount] = useState<number | null>(null);
+
+  const isReadingBookmarksActive =
+    isAuthenticated && activeTab === 'reading-bookmarks';
+
+  useEffect(() => {
+    if (!isAuthenticated && activeTab === 'reading-bookmarks') {
+      setActiveTab('all-books');
+    }
+  }, [isAuthenticated, activeTab, setActiveTab]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -37,56 +47,77 @@ export const LibraryView: React.FC = () => {
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, loadMore, loaderRef, isInitialLoading]);
 
+  const libraryTabs = [
+    { key: 'all-books' as const, label: t('library.tabs.allBooks'), icon: LibraryBig },
+    ...(isAuthenticated
+      ? [
+          {
+            key: 'reading-bookmarks' as const,
+            label: t('library.tabs.readingAndBookmarks') || 'ئوقۇۋاتقانلىرىم ۋە خەتكۈشلەر',
+            icon: BookMarked,
+          },
+        ]
+      : []),
+  ];
+
   return (
-    <div className="space-y-8 sm:space-y-10 md:space-y-12 px-4 sm:px-6 md:px-0 py-4 sm:py-6 md:py-8" dir="rtl">
-      {/* Header Section */}
-      <div className="pb-8 sm:pb-10 md:pb-12 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 relative">
-        <header className="space-y-3 sm:space-y-4">
-          <div className="flex items-center gap-3 sm:gap-4 group">
-            <div className="p-2 md:p-3 bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 rounded-xl shadow-lg shadow-[#0369a1]/20 dark:shadow-[#38bdf8]/10 icon-shake">
-              <LibraryBig size={20} className="md:w-6 md:h-6" strokeWidth={2.5} />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl sm:text-3xl font-black text-[#1a1a1a] dark:text-slate-100">{t('library.title')}</h2>
-                <div className="flex items-center gap-2 px-3 sm:px-5 py-1.5 sm:py-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-2xl border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-inner">
-                  <BookOpen size={14} className="sm:w-[18px] sm:h-[18px]" strokeWidth={2.5} />
-                  <span className="text-xs sm:text-sm font-normal uppercase">
-                    {isInitialLoading ? <RefreshCw size={12} className="animate-spin" /> : `${totalBooks} ${t('home.totalBooks')}`}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 mt-1 sm:mt-2">
-                <span className="w-6 sm:w-8 h-[2px] bg-[#0369a1] dark:bg-[#38bdf8] rounded-full" />
-                <ProverbDisplay size="sm" keywords={t('proverbs.library')} className="opacity-70 mt-[-2px]" />
-              </div>
-            </div>
+    <div className="space-y-6 sm:space-y-8 px-4 sm:px-6 md:px-0 py-4 sm:py-6" dir="rtl">
+      {/* Tab Bar with Count Badge */}
+      <div className="flex items-end justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-0">
+        <div className="flex items-end gap-1.5 overflow-x-auto [scrollbar-width:none]">
+          {libraryTabs.map(({ key, label, icon: Icon }) => {
+            const isSelected =
+              key === 'reading-bookmarks'
+                ? isReadingBookmarksActive
+                : !isReadingBookmarksActive;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold rounded-t-xl transition-all duration-200 active:scale-95 whitespace-nowrap cursor-pointer ${
+                  isSelected
+                    ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-sm'
+                    : 'bg-white/80 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-b-0 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:text-[#0369a1] dark:hover:text-[#38bdf8]'
+                }`}
+              >
+                <Icon size={16} strokeWidth={2.2} className="shrink-0" />
+                <span className="uyghur-text mt-[2px]">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Count Badge */}
+        {(!isReadingBookmarksActive || isAuthenticated) && (
+          <div className="mb-2 shrink-0 flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-2xl border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-sm">
+            {isReadingBookmarksActive ? (
+              <>
+                <BookMarked size={14} className="sm:w-4 sm:h-4" strokeWidth={2.5} />
+                <span className="text-xs sm:text-sm font-normal uppercase">
+                  {readingBookmarksCount === null ? (
+                    <RefreshCw size={12} className="animate-spin" />
+                  ) : (
+                    `${readingBookmarksCount} ${t('home.totalBooks')}`
+                  )}
+                </span>
+              </>
+            ) : (
+              <>
+                <BookOpen size={14} className="sm:w-4 sm:h-4" strokeWidth={2.5} />
+                <span className="text-xs sm:text-sm font-normal uppercase">
+                  {isInitialLoading ? (
+                    <RefreshCw size={12} className="animate-spin" />
+                  ) : (
+                    `${totalBooks} ${t('home.totalBooks')}`
+                  )}
+                </span>
+              </>
+            )}
           </div>
-        </header>
+        )}
       </div>
 
-      {/* Tab Bar */}
-      <div className="flex items-center gap-2 border-b border-[#0369a1]/10 dark:border-[#38bdf8]/10 pb-0">
-        {([
-          { key: 'all-books', label: t('library.tabs.allBooks') },
-          { key: 'continue-reading', label: t('library.tabs.continueReading') },
-          { key: 'bookmarks', label: t('library.tabs.bookmarks') },
-        ] as const).map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            className={`px-4 py-2.5 text-sm font-bold rounded-t-xl transition-all ${
-              (activeTab === key || (key === 'all-books' && activeTab !== 'continue-reading' && activeTab !== 'bookmarks'))
-                ? 'bg-white dark:bg-slate-900 text-[#0369a1] dark:text-[#38bdf8] border border-b-0 border-[#0369a1]/10 dark:border-[#38bdf8]/10'
-                : 'text-slate-400 dark:text-slate-500 hover:text-[#0369a1] dark:hover:text-[#38bdf8]'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {(activeTab !== 'continue-reading' && activeTab !== 'bookmarks') && (
+      {!isReadingBookmarksActive && (
         <>
           {/* Grid Section */}
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
@@ -121,7 +152,7 @@ export const LibraryView: React.FC = () => {
             )}
           </div>
 
-          {/* Infinite Scroll Trigger */}
+          {/* Infinite Scroll Trigger & State */}
           <div ref={loaderRef as any} className="h-64 flex flex-col items-center justify-center gap-6">
             {isLoadingMore && !isInitialLoading ? (
               <div className="flex flex-col items-center gap-5 animate-fade-in">
@@ -139,13 +170,13 @@ export const LibraryView: React.FC = () => {
         </>
       )}
 
-      {activeTab === 'continue-reading' && (
-        <ContinueReadingTab onOpenBook={(bookId) => bookActions.openReader({ id: bookId })} />
-      )}
-
-      {activeTab === 'bookmarks' && (
-        <BookmarksTab
-          onOpenBookmark={(bookId, pageNumber) => bookActions.openReader({ id: bookId }, pageNumber)}
+      {isReadingBookmarksActive && (
+        <ReadingBookmarksTab
+          onOpenBook={(bookId, pageNumber) => bookActions.openReader({ id: bookId }, pageNumber)}
+          onOpenBookmark={(bookId, pageNumber, quoteText) =>
+            bookActions.openReader({ id: bookId }, pageNumber, quoteText)
+          }
+          onCountChange={setReadingBookmarksCount}
         />
       )}
     </div>

@@ -32,6 +32,8 @@
     "pages": "بەت",
     "book": "كىتاب",
     "books": "كىتاب",
+    "bookmark": "خەتكۈش",
+    "bookmarks": "خەتكۈشلەر",
     "refresh": "يېڭىلاش",
     "total": "جەمئىي",
     "of": "دىن",
@@ -107,8 +109,7 @@
     "dictionary": "لۇغەت",
     "quran": "قۇرئان كەرىم",
     "switchLanguage": "تىل ئالماشتۇرۇش",
-    "continueReading": "ئوقۇشنى داۋاملاشتۇرۇش",
-    "bookmarks": "بەلگىلەر"
+    "bookmarks": "خەتكۈشلېرىم"
   },
   "theme": {
     "selector": "تېما تاللىغۇچ",
@@ -195,16 +196,16 @@
     "searchPlaceholder": "كىتاب ئىزدەش...",
     "tabs": {
       "allBooks": "بارلىق كىتابلار",
-      "continueReading": "ئوقۇشنى داۋاملاشتۇرۇش",
-      "bookmarks": "بەلگىلەر"
+      "readingAndBookmarks": "خەتكۈشلېرىم"
     },
-    "continueReading": {
-      "searchPlaceholder": "كىتابلىرىڭىزنى ئىزدەڭ...",
-      "empty": "سىز تېخى ھېچقانداق كىتاب ئوقۇشنى باشلىمىدىڭىز"
-    },
-    "bookmarksTab": {
-      "searchPlaceholder": "بەلگىلىرىڭىزنى ئىزدەڭ...",
-      "empty": "سىز تېخى ھېچقانداق بەلگە ساقلىمىدىڭىز"
+    "readingBookmarks": {
+      "searchPlaceholder": "خەتكۈشلېرىڭىزدىن ئىزدەڭ...",
+      "empty": "سىز تېخى ھېچقانداق خەتكۈش قويمىدىڭىز",
+      "noBookmarks": "بۇ كىتابقا خەتكۈش قويۇلمىغان",
+      "noBookmarksHint": "كىتابنى ئوقۇۋاتقاندا مەلوم بېتىگە ياكى مەزمۇنىغا خەتكۈش قويالايسىز",
+      "continueReading": "داۋاملىق ئوقۇش",
+      "lastRead": "ئەڭ ئاخىرقى ئوقۇلغىنى",
+      "bookmarksCount": "خەتكۈش"
     }
   },
   "bookCard": {
@@ -1080,17 +1081,19 @@
     "pasteHint": "تولۇق مەزمۇن كۆچۈرۈلدى — (Cmd+V / Ctrl+V) بىلەن تولۇق چاپلاپ ئېلان قىلالايسىز"
   },
   "bookmarks": {
-    "bookmarkPage": "بۇ بەتنى بەلگىلەش",
-    "editBookmarkTitle": "بەلگىنى تەھرىرلەش",
-    "bookmarkQuote": "بۇ ئىبارىنى بەلگىلەش",
-    "newBookmark": "يېڭى بەلگە",
-    "editBookmark": "بەلگىنى تەھرىرلەش",
+    "bookmarkPage": "بۇ بەتكە خەتكۈش قويۇش",
+    "editBookmarkTitle": "خەتكۈشنى تەھرىرلەش",
+    "bookmarkQuote": "بۇ ئىبارىگە خەتكۈش قويۇش",
+    "newBookmark": "يېڭى خەتكۈش",
+    "editBookmark": "خەتكۈشنى تەھرىرلەش",
     "save": "ساقلاش",
     "delete": "ئۆچۈرۈش",
     "rename": "ئات ئۆزگەرتىش",
     "signInToSave": "بەلگە ساقلاش ئۈچۈن كىرىڭ",
     "drawerTitle": "بۇ كىتابتىكى بەلگىلەر",
-    "emptyForBook": "بۇ كىتابتا تېخى بەلگە يوق"
+    "emptyForBook": "بۇ كىتابتا تېخى بەلگە يوق",
+    "bookmarkName": "خەتكۈش نامى",
+    "namePlaceholder": "خەتكۈش نامىنى كىرگۈزۈڭ..."
   },
   "graph": {
     "title": "بىلىم گىرافى",

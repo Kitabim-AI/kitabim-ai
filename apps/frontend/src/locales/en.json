@@ -31,6 +31,8 @@
     "pages": "Pages",
     "book": "Book",
     "books": "Books",
+    "bookmark": "Bookmark",
+    "bookmarks": "Bookmarks",
     "refresh": "Refresh",
     "total": "Total",
     "of": "of",
@@ -106,7 +108,6 @@
     "dictionary": "Dictionary",
     "quran": "Quran",
     "switchLanguage": "Switch Language",
-    "continueReading": "Continue Reading",
     "bookmarks": "Bookmarks"
   },
   "theme": {
@@ -195,16 +196,16 @@
     "searchPlaceholder": "Search books...",
     "tabs": {
       "allBooks": "All Books",
-      "continueReading": "Continue Reading",
-      "bookmarks": "Bookmarks"
+      "readingAndBookmarks": "Bookmarks"
     },
-    "continueReading": {
-      "searchPlaceholder": "Search your books...",
-      "empty": "You haven't started reading anything yet"
-    },
-    "bookmarksTab": {
+    "readingBookmarks": {
       "searchPlaceholder": "Search your bookmarks...",
-      "empty": "You haven't saved any bookmarks yet"
+      "empty": "You haven't saved any bookmarks yet",
+      "noBookmarks": "No bookmarks in this book yet",
+      "noBookmarksHint": "You can add whole-page or passage bookmarks while reading",
+      "continueReading": "Continue Reading",
+      "lastRead": "Last read",
+      "bookmarksCount": "bookmarks"
     }
   },
   "bookCard": {
@@ -1070,7 +1071,9 @@
     "rename": "Rename",
     "signInToSave": "Sign in to save bookmarks",
     "drawerTitle": "Bookmarks in this book",
-    "emptyForBook": "No bookmarks in this book yet"
+    "emptyForBook": "No bookmarks in this book yet",
+    "bookmarkName": "Bookmark Name",
+    "namePlaceholder": "Enter bookmark name..."
   },
   "graph": {
     "title": "Knowledge Graph",

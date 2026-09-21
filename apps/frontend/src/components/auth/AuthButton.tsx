@@ -1,4 +1,4 @@
-import { BookMarked, BookOpen, ChevronDown, Edit3, History, LogIn, LogOut, Shield } from 'lucide-react';
+import { BookMarked, BookOpen, ChevronDown, Edit3, LogIn, LogOut, Shield } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../hooks/useAuth';
@@ -235,23 +235,7 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
           onClick={() => {
             setIsOpen(false);
             setView('library');
-            setActiveTab('continue-reading');
-          }}
-          className="w-full flex items-center justify-between px-4 py-3 text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 rounded-2xl transition-all font-normal text-sm active:scale-95 group"
-          dir="rtl"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-xl group-hover:bg-[#0369a1] dark:group-hover:bg-[#38bdf8] group-hover:text-white dark:group-hover:text-slate-950 transition-all shadow-sm">
-              <History size={16} strokeWidth={2.5} />
-            </div>
-            <span className="group-hover:text-[#0369a1] dark:group-hover:text-[#38bdf8] transition-colors uyghur-text">{t('nav.continueReading')}</span>
-          </div>
-        </button>
-        <button
-          onClick={() => {
-            setIsOpen(false);
-            setView('library');
-            setActiveTab('bookmarks');
+            setActiveTab('reading-bookmarks');
           }}
           className="w-full flex items-center justify-between px-4 py-3 text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 rounded-2xl transition-all font-normal text-sm active:scale-95 group"
           dir="rtl"

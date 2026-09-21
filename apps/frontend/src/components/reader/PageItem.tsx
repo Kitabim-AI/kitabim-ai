@@ -160,25 +160,28 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
           )}
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={(e) => {
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              if (pageBookmark) {
-                setBookmarkPrompt({ top: rect.bottom + 8, left: rect.left, mode: 'edit', defaultName: pageBookmark.name, existing: pageBookmark });
-              } else {
-                setBookmarkPrompt({
-                  top: rect.bottom + 8,
-                  left: rect.left,
-                  mode: 'create',
-                  defaultName: t('chat.pageNumber', { page: page.displayPageNumber || page.display_page_number || page.pageNumber }),
-                });
-              }
-            }}
-            title={pageBookmark ? t('bookmarks.editBookmarkTitle') : t('bookmarks.bookmarkPage')}
-            className={`flex items-center justify-center h-8 w-8 rounded-lg transition-all ${pageBookmark ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950' : 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950'} ${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}
-          >
-            {pageBookmark ? <BookmarkFilledIcon size={14} /> : <BookmarkIcon size={14} />}
-          </button>
+          {isAuthenticated && (
+            <button
+              onClick={(e) => {
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                if (pageBookmark) {
+                  setBookmarkPrompt({ top: rect.bottom + 8, left: centerX, mode: 'edit', defaultName: pageBookmark.name, existing: pageBookmark });
+                } else {
+                  setBookmarkPrompt({
+                    top: rect.bottom + 8,
+                    left: centerX,
+                    mode: 'create',
+                    defaultName: t('chat.pageNumber', { page: page.displayPageNumber || page.display_page_number || page.pageNumber }),
+                  });
+                }
+              }}
+              title={pageBookmark ? t('bookmarks.editBookmarkTitle') : t('bookmarks.bookmarkPage')}
+              className={`flex items-center justify-center h-8 w-8 rounded-lg transition-all ${pageBookmark ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950' : 'bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950'} ${isActive ? 'opacity-100' : 'opacity-0'} sm:group-hover:opacity-100`}
+            >
+              {pageBookmark ? <BookmarkFilledIcon size={14} /> : <BookmarkIcon size={14} />}
+            </button>
+          )}
           <button
             onClick={() => setShareState({ content: cleanShareText(page.text || '') })}
             title={t('share.sharePage')}
@@ -262,7 +265,7 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
         document.body
       )}
 
-      {textSelection && createPortal(
+      {isAuthenticated && textSelection && createPortal(
         <button
           onClick={() => {
             setBookmarkPrompt({
@@ -294,6 +297,7 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
           left={bookmarkPrompt.left}
           mode={bookmarkPrompt.mode}
           defaultName={bookmarkPrompt.defaultName}
+          quoteText={bookmarkPrompt.quoteText}
           isAuthenticated={isAuthenticated}
           onSave={async (name) => {
             if (bookmarkPrompt.mode === 'edit' && bookmarkPrompt.existing) {

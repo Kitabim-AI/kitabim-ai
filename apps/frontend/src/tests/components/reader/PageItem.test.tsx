@@ -272,11 +272,26 @@ test('PageItem shows a bookmark button near a text selection, alongside share', 
   expect(screen.getByText('bookmarks.newBookmark')).toBeInTheDocument();
 });
 
-test('PageItem guests see the sign-in prompt when tapping the bookmark icon', () => {
+test('PageItem guests do not see the page bookmark button or quote bookmark button', () => {
   vi.mocked(AuthModule.useAuth).mockReturnValue({ isAuthenticated: false } as any);
-  renderPageItem({ page: { ...mockPage, pageNumber: 5 }, bookmarks: [] });
+  renderPageItem({
+    page: { ...mockPage, text: 'Hello world example text', pageNumber: 5 },
+    bookmarks: [],
+  });
 
-  fireEvent.click(screen.getByTitle('bookmarks.bookmarkPage'));
-  expect(screen.getByText('bookmarks.signInToSave')).toBeInTheDocument();
+  expect(screen.queryByTitle('bookmarks.bookmarkPage')).not.toBeInTheDocument();
+
+  const contentParagraph = screen.getByText(/Hello world example text/);
+  const textNode = contentParagraph.firstChild!;
+  const range = document.createRange();
+  range.setStart(textNode, 6);
+  range.setEnd(textNode, 11);
+  const selection = window.getSelection()!;
+  selection.removeAllRanges();
+  selection.addRange(range);
+  fireEvent(document, new Event('selectionchange'));
+
+  expect(screen.getByTitle('share.shareQuote')).toBeInTheDocument();
+  expect(screen.queryByTitle('bookmarks.bookmarkQuote')).not.toBeInTheDocument();
 });
 

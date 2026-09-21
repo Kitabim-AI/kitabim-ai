@@ -89,7 +89,9 @@ async def test_list_progress_endpoint():
         page_number=5,
         updated_at=datetime.now(timezone.utc),
     )
-    row.book = Book(id="book-1", title="My Book", content_hash="h")
+    row.book = Book(
+        id="book-1", title="My Book", content_hash="h", cover_url="covers/book-1.jpg"
+    )
     with _mock_repo(
         "api.endpoints.bookmarks_router.ReadingProgressRepository", "list_recent", [row]
     ):
@@ -99,6 +101,8 @@ async def test_list_progress_endpoint():
 
     assert response["items"][0]["bookId"] == "book-1"
     assert response["items"][0]["bookTitle"] == "My Book"
+    assert response["items"][0]["bookCoverUrl"] is not None
+    assert "covers/book-1.jpg" in response["items"][0]["bookCoverUrl"]
     assert response["items"][0]["pageNumber"] == 5
 
 

@@ -34,28 +34,19 @@ const renderMenu = () => {
 
 beforeEach(() => vi.clearAllMocks());
 
-test('shows Continue Reading and Bookmarks shortcuts for signed-in users', () => {
+test('shows Bookmarks shortcut for signed-in users', () => {
   renderMenu();
   fireEvent.click(screen.getByRole('button'));
 
-  expect(screen.getByText('nav.continueReading')).toBeInTheDocument();
+  expect(screen.queryByText('nav.continueReading')).not.toBeInTheDocument();
   expect(screen.getByText('nav.bookmarks')).toBeInTheDocument();
 });
 
-test('Continue Reading shortcut navigates to the Library continue-reading tab', () => {
-  const { setView, setActiveTab } = renderMenu();
-  fireEvent.click(screen.getByRole('button'));
-  fireEvent.click(screen.getByText('nav.continueReading'));
-
-  expect(setView).toHaveBeenCalledWith('library');
-  expect(setActiveTab).toHaveBeenCalledWith('continue-reading');
-});
-
-test('Bookmarks shortcut navigates to the Library bookmarks tab', () => {
+test('Bookmarks shortcut navigates to the Library reading-bookmarks tab', () => {
   const { setView, setActiveTab } = renderMenu();
   fireEvent.click(screen.getByRole('button'));
   fireEvent.click(screen.getByText('nav.bookmarks'));
 
   expect(setView).toHaveBeenCalledWith('library');
-  expect(setActiveTab).toHaveBeenCalledWith('bookmarks');
+  expect(setActiveTab).toHaveBeenCalledWith('reading-bookmarks');
 });

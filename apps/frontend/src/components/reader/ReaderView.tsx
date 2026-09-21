@@ -562,13 +562,15 @@ export const ReaderView: React.FC = () => {
                 </button>
               )}
 
-              <button
-                onClick={() => setShowBookmarksDrawer(true)}
-                title={t('bookmarks.drawerTitle')}
-                className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
-              >
-                <BookmarkIcon size={18} className="sm:w-5 sm:h-5" />
-              </button>
+              {!isGuest && (
+                <button
+                  onClick={() => setShowBookmarksDrawer(true)}
+                  title={t('bookmarks.drawerTitle')}
+                  className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
+                >
+                  <BookmarkIcon size={18} className="sm:w-5 sm:h-5" />
+                </button>
+              )}
 
               <div className="relative flex items-center">
                 <button
