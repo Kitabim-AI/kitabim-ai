@@ -40,6 +40,7 @@ from engine.config import (
     is_bleed_through_suppression_enabled,
     is_dot_enhancement_enabled,
 )
+from engine.dictionary import get_valid_words
 from engine.savitr_engine import SavitrPredictor
 from engine.text_cleanup import (
     clean_uyghur_text,
@@ -671,7 +672,16 @@ async def ocr_page(
     max_parallel_pages: int = DEFAULT_MAX_PARALLEL_PAGES,
     min_confidence: float = 0.3,
     max_retries: int | None = None,
+    valid_words: set[str] | None = None,
 ) -> str:
+    words_dict = valid_words
+    if words_dict is None:
+        try:
+            words_dict = get_valid_words()
+        except Exception as err:
+            logger.debug("Could not load dictionary words: %s", err)
+            words_dict = None
+
     if isinstance(recognition_predictor, SavitrPredictor):
         executor = _get_savitr_executor()
     else:
@@ -731,6 +741,21 @@ async def ocr_page(
                 )
 
             cleaned = clean_uyghur_text(markdown)
+            if words_dict and any(
+                h in cleaned
+                for h in (
+                    "-",
+                    "\u2010",
+                    "\u2011",
+                    "\u2012",
+                    "\u2013",
+                    "\u2014",
+                    "\u00ad",
+                )
+            ):
+                from engine.text_cleanup import dehyphenate_uyghur_text
+
+                cleaned, _ = dehyphenate_uyghur_text(cleaned, words_dict)
             if is_degenerate_ocr_output(cleaned):
                 raise LowConfidenceOcrError(
                     f"OCR output looks like a runaway repetition/reasoning-leak "

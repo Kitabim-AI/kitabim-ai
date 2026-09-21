@@ -6,6 +6,7 @@ source functions change - the source of truth is the main repo."""
 import re
 import unicodedata
 from collections import Counter
+from typing import Callable
 
 _PRES_FORM_MAP: dict[int, str] = {}
 for _cp in range(0xFB50, 0xFE00):
@@ -296,7 +297,76 @@ def is_metadata_or_key_value_block(lines: list[str]) -> bool:
     return kv_count >= 2 and (kv_count / total) >= 0.30
 
 
-def clean_uyghur_text(text: str) -> str:
+# ── Uyghur Line-Break De-Hyphenation ──────────────────────────────────────────
+
+_UYGHUR_WORD_PATTERN = (
+    r"[\u0621-\u064A\u0671-\u06D5\u06EE-\u06EF\uFB50-\uFDFF\uFE70-\uFEFF]+"
+)
+_DEHYPHEN_NL_RE = re.compile(
+    rf"({_UYGHUR_WORD_PATTERN})[\t ]*[\-\u2010\u2011\u2012\u2013\u2014\u00ad][\t ]*[\r\n]+[\t ]*({_UYGHUR_WORD_PATTERN})"
+)
+_DEHYPHEN_INLINE_RE = re.compile(
+    rf"({_UYGHUR_WORD_PATTERN})[\-\u2010\u2011\u2012\u2013\u2014\u00ad]({_UYGHUR_WORD_PATTERN})"
+)
+_HYPHEN_CHARS = ("-", "\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u00ad")
+
+
+def dehyphenate_uyghur_text(
+    text: str,
+    is_valid_word: Callable[[str], bool] | set[str],
+) -> tuple[str, int]:
+    """De-hyphenates line-broken words matching the global auto-correction condition:
+
+    Condition:
+    1. cand_hyphen (p1-p2) is NOT in the valid words dictionary (protects legitimate compounds like 'ئاز-ئازدىن').
+    2. cand_merged (p1p2) IS in the valid words dictionary.
+
+    Returns:
+        (cleaned_text, replacement_count)
+    """
+    if not text or not any(h in text for h in _HYPHEN_CHARS):
+        return text, 0
+
+    if isinstance(is_valid_word, (set, frozenset)):
+        valid_set = is_valid_word
+
+        def validator(w: str) -> bool:
+            return w in valid_set
+    else:
+        validator = is_valid_word
+
+    count = 0
+
+    def _replace_nl(match: re.Match) -> str:
+        nonlocal count
+        p1, p2 = match.group(1), match.group(2)
+        cand_hyphen = f"{p1}-{p2}"
+        cand_merged = f"{p1}{p2}"
+        if not validator(cand_hyphen) and validator(cand_merged):
+            count += 1
+            return cand_merged
+        return match.group(0)
+
+    # 1. First pass: line-break hyphens across newlines
+    text = _DEHYPHEN_NL_RE.sub(_replace_nl, text)
+
+    def _replace_inline(match: re.Match) -> str:
+        nonlocal count
+        p1, p2 = match.group(1), match.group(2)
+        cand_hyphen = f"{p1}-{p2}"
+        cand_merged = f"{p1}{p2}"
+        if not validator(cand_hyphen) and validator(cand_merged):
+            count += 1
+            return cand_merged
+        return match.group(0)
+
+    # 2. Second pass: inline hyphens
+    text = _DEHYPHEN_INLINE_RE.sub(_replace_inline, text)
+
+    return text, count
+
+
+def clean_uyghur_text(text: str, valid_words: set[str] | None = None) -> str:
     if not text:
         return ""
 
@@ -306,10 +376,14 @@ def clean_uyghur_text(text: str) -> str:
     # 2. Correct common OCR Arabic-bias orthographic substitutions
     text = correct_uyghur_ocr_orthography(text)
 
-    # 3. Strip OCR markers
+    # 3. De-hyphenate line-break split words if valid words dictionary is provided
+    if valid_words and any(h in text for h in _HYPHEN_CHARS):
+        text, _ = dehyphenate_uyghur_text(text, valid_words)
+
+    # 4. Strip OCR markers
     text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
 
-    # 4. Strip header and footer page numbers
+    # 5. Strip header and footer page numbers
     text = strip_page_numbers(text)
 
     # Lines are kept exactly as OCR'd within each block - never reflowed/
