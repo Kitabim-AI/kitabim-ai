@@ -23,6 +23,7 @@ def normalize_uyghur_chars(text: str) -> str:
     if not text:
         return ""
 
+    text = text.replace("\x00", "")
     text = "".join(_PRES_FORM_MAP.get(ord(c), c) for c in text)
 
     return (

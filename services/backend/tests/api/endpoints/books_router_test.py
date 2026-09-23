@@ -846,6 +846,53 @@ async def test_upload_ocrd_with_uploadfile_pages_on_success():
 
 
 @pytest.mark.asyncio
+async def test_upload_ocrd_sanitizes_null_bytes_in_page_text():
+    setup_paths()
+    from api.endpoints.books_router import upload_pdf_ocrd
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page()
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    mock_file = AsyncMock()
+    mock_file.filename = "my_book.pdf"
+    mock_file.read = AsyncMock(side_effect=[pdf_bytes, b""])
+
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+    mock_session = AsyncMock()
+
+    mock_repo = MagicMock()
+    mock_repo.find_by_hash = AsyncMock(return_value=None)
+    mock_repo.create = AsyncMock()
+
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.storage") as mock_storage,
+        patch("api.endpoints.books_router.cache_service") as mock_cache,
+    ):
+        mock_storage.upload_file = AsyncMock()
+        mock_cache.bump_namespace_version = AsyncMock()
+
+        result = await upload_pdf_ocrd(
+            file=mock_file,
+            pages='[{"pageNumber": 1, "text": "hello\\u0000world\\u0000", "isToc": false}]',
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert result["status"] == "uploaded"
+    added_pages = [call.args[0] for call in mock_session.add.call_args_list] + [
+        p for call in mock_session.add_all.call_args_list for p in call.args[0]
+    ]
+    assert len(added_pages) == 1
+    assert added_pages[0].text == "helloworld"
+    assert "\x00" not in added_pages[0].text
+
+
+@pytest.mark.asyncio
 async def test_reprocess_llm_spell_check_live_path_enqueues_job():
     setup_paths()
     from api.endpoints.books_router import reprocess_llm_spell_check  # type: ignore[import]

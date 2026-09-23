@@ -71,6 +71,11 @@ class OcrPageInput(BaseModel):
     text: str
     is_toc: bool = False  # API: isToc
 
+    @field_validator("text", mode="after")
+    @classmethod
+    def strip_null_bytes(cls, v: str) -> str:
+        return v.replace("\x00", "") if v else ""
+
 
 class Book(BaseModel):
     """

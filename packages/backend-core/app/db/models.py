@@ -25,7 +25,13 @@ from sqlalchemy import (
     Date,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+    validates,
+)
 from pgvector.sqlalchemy import Vector
 
 
@@ -135,6 +141,12 @@ class Book(Base):
         uselist=False,
     )
 
+    @validates("title", "author", "last_error")
+    def _validate_clean_strings(self, key: str, value: Optional[str]) -> Optional[str]:
+        if isinstance(value, str):
+            return value.replace("\x00", "")
+        return value
+
     # Constraints
     __table_args__ = (
         CheckConstraint(
@@ -235,6 +247,12 @@ class Page(Base):
         if offset > 0 and self.page_number > offset:
             return str(self.page_number - offset)
         return str(self.page_number)
+
+    @validates("text", "error")
+    def _validate_clean_strings(self, key: str, value: Optional[str]) -> Optional[str]:
+        if isinstance(value, str):
+            return value.replace("\x00", "")
+        return value
 
     __table_args__ = (
         UniqueConstraint(

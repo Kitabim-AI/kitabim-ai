@@ -54,7 +54,11 @@ class KitabimClient:
     ) -> dict:
         pages_json = json.dumps(
             [
-                {"pageNumber": p.page_number, "text": p.text, "isToc": p.is_toc}
+                {
+                    "pageNumber": p.page_number,
+                    "text": (p.text or "").replace("\x00", ""),
+                    "isToc": p.is_toc,
+                }
                 for p in pages
             ],
             ensure_ascii=False,
@@ -82,7 +86,7 @@ class KitabimClient:
         update_response = httpx.post(
             f"{self.base_url}/books/{book_id}/pages/{page.page_number}/update",
             headers=self._headers(),
-            json={"text": page.text},
+            json={"text": (page.text or "").replace("\x00", "")},
             timeout=60.0,
         )
         self._check(update_response)

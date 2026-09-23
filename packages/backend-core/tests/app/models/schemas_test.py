@@ -19,6 +19,11 @@ def test_ocr_page_input_is_toc_defaults_false():
     assert page.is_toc is False
 
 
+def test_ocr_page_input_strips_null_bytes():
+    page = OcrPageInput.model_validate({"pageNumber": 1, "text": "hello\x00world\x00"})
+    assert page.text == "helloworld"
+
+
 def test_chat_request_validation_valid():
     # Valid Uyghur question
     req = ChatRequest(book_id="book-abc", question="سوئال", history=[])

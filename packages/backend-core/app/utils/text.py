@@ -24,6 +24,9 @@ def normalize_uyghur_chars(text: str) -> str:
     if not text:
         return ""
 
+    # Strip null bytes (PostgreSQL cannot store 0x00 in UTF-8 text/varchar columns)
+    text = text.replace("\x00", "")
+
     # 1. Standardize presentation forms (ﻼ -> لا) BEFORE anything else
     # This is critical for search consistency but changes string length.
     text = "".join(_PRES_FORM_MAP.get(ord(c), c) for c in text)
@@ -638,7 +641,10 @@ def dehyphenate_uyghur_text(
     Returns:
         (cleaned_text, replacement_count)
     """
-    if not text or not any(h in text for h in _HYPHEN_CHARS):
+    if not text:
+        return "", 0
+    text = text.replace("\x00", "")
+    if not any(h in text for h in _HYPHEN_CHARS):
         return text, 0
 
     count = 0
@@ -682,7 +688,10 @@ async def dehyphenate_uyghur_text_async(
     Extracts all candidate hyphenated words, batch queries the database 'words' table,
     and applies corrections in a single pass.
     """
-    if not text or not any(h in text for h in _HYPHEN_CHARS):
+    if not text:
+        return "", 0
+    text = text.replace("\x00", "")
+    if not any(h in text for h in _HYPHEN_CHARS):
         return text, 0
 
     # Extract all candidate pairs

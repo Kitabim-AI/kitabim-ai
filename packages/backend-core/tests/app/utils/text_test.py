@@ -421,3 +421,16 @@ async def test_dehyphenate_uyghur_text_async():
     assert count == 2
     assert cache["ئۇرۇقى"] is True
     assert cache["ئۇ-رۇقى"] is False
+
+
+def test_normalize_uyghur_chars_strips_null_bytes():
+    assert normalize_uyghur_chars("سالام\x00دۇنيا\x00") == "سالامدۇنيا"
+
+
+def test_clean_uyghur_text_strips_null_bytes():
+    assert clean_uyghur_text("بۇ تېكىست\x00.\x00") == "بۇ تېكىست."
+
+
+def test_dehyphenate_uyghur_text_strips_null_bytes():
+    cleaned, count = dehyphenate_uyghur_text("سالام\x00دۇنيا", {"سالامدۇنيا"})
+    assert "\x00" not in cleaned

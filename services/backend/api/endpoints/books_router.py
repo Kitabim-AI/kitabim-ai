@@ -1692,7 +1692,7 @@ async def upload_pdf(
                 Page(
                     book_id=book_id,
                     page_number=i + 1,
-                    text=text,
+                    text=(text or "").replace("\x00", ""),
                     pipeline_step=PIPELINE_STEP_CHUNKING,
                     milestone=PAGE_MILESTONE_IDLE,
                     status="ocr_done",
@@ -1852,10 +1852,11 @@ async def upload_pdf_ocrd(
     dehyphen_cache: dict[str, bool] = {}
     pages_to_add = []
     for n in range(1, page_count + 1):
-        raw_text = pages_by_number[n].text or ""
+        raw_text = (pages_by_number[n].text or "").replace("\x00", "")
         cleaned_text, _ = await dehyphenate_uyghur_text_async(
             raw_text, session, word_cache=dehyphen_cache
         )
+        cleaned_text = cleaned_text.replace("\x00", "")
         pages_to_add.append(
             Page(
                 book_id=book_id,
