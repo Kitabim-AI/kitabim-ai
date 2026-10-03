@@ -4,7 +4,9 @@ import {
   BookOpen,
   Bot,
   ChevronDown,
+  Coins,
   Globe,
+  Heart,
   History,
   Loader2,
   LogIn,
@@ -39,6 +41,7 @@ import { ReferenceModal } from './ReferenceModal';
 const CHAR_INTERVAL = 55;   // ms per character
 const HOLD_AFTER_TYPED = 1800; // ms to hold the full phrase before switching
 const FADE_DURATION = 350;  // ms fade out
+const DONATE_URL = 'https://www.paypal.com/donate/?hosted_button_id=TKHXS8HCDUEJA';
 
 function TypingCarousel({ className, fontSize }: { className?: string; fontSize?: number }) {
   const { language } = useI18n();
@@ -348,49 +351,71 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       </div>
                     )}
                     {msg.role === 'model' && (!isChatting || idx < chatMessages.length - 1) && (
-                      <div className="w-full flex items-center justify-between mt-1 px-1">
-                        {showChatCost && msg.cost ? (
-                          <div className="text-[11px] text-slate-400 dark:text-slate-500 select-none px-1 uyghur-text">
-                            {formatAnswerCost(msg.cost.costUsd, msg.cost.inputTokens + msg.cost.outputTokens, t)}
-                          </div>
-                        ) : (
-                          <div />
-                        )}
-                        <div dir="ltr" className="flex items-center gap-0.5">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
-                              setShareMsg({
-                                question: userMsg?.text || '',
-                                answer: msg.text || '',
-                              });
-                            }}
-                            title={t('share.shareQA')}
-                            className="p-1.5 rounded-lg text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
-                          >
-                            <Share2 size={18} strokeWidth={2} />
-                          </button>
-                          {submitFeedback && (
-                            <>
-                              <button
-                                onClick={() => submitFeedback(idx, 'positive')}
-                                disabled={!!msg.feedback}
-                                title="جاۋاب ياقتى"
-                                className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
-                              >
-                                <ThumbsUp size={18} strokeWidth={2} />
-                              </button>
-                              <button
-                                onClick={() => submitFeedback(idx, 'negative')}
-                                disabled={!!msg.feedback}
-                                title="جاۋاب ياقمىدى"
-                                className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
-                              >
-                                <ThumbsDown size={18} strokeWidth={2} />
-                              </button>
-                            </>
+                      <div className="w-full flex items-center justify-between gap-1.5 sm:gap-2 mt-1.5 px-1">
+                        <div className="flex-1 flex items-center justify-start min-w-0">
+                          {showChatCost && msg.cost ? (
+                            <div
+                              title={t('chat.costTooltip') || 'سۈنئىي ئەقىل مودېلىنىڭ مۇشۇ جاۋابقا سەرپ قىلغان تەننەرقى'}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 dark:bg-amber-400/10 border border-amber-500/20 dark:border-amber-400/20 text-amber-800 dark:text-amber-300 text-[11px] sm:text-xs font-semibold select-none shadow-xs uyghur-text transition-all hover:bg-amber-500/15 dark:hover:bg-amber-400/15"
+                            >
+                              <Coins size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span>{formatAnswerCost(msg.cost.costUsd, msg.cost.inputTokens + msg.cost.outputTokens, t)}</span>
+                            </div>
+                          ) : (
+                            <div />
                           )}
+                        </div>
+
+                        <div className="flex items-center justify-center shrink-0">
+                          <a
+                            href={DONATE_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={t('chat.donateTooltip') || 'كىتابىم سىستېمىسىنى داۋاملىق ھەقسىز تەمىنلەشكە ياردەم بېرىڭ'}
+                            className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full text-[11px] sm:text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 hover:border-rose-300 dark:hover:border-rose-700 transition-all shadow-xs active:scale-95 group shrink-0"
+                          >
+                            <Heart size={12} className="text-rose-500 fill-rose-500 group-hover:scale-110 transition-transform shrink-0" />
+                            <span className="uyghur-text">{t('chat.donate') || t('app.footer.donate') || 'ئىئانە قىلىڭ'}</span>
+                          </a>
+                        </div>
+
+                        <div className="flex-1 flex items-center justify-end shrink-0">
+                          <div dir="ltr" className="flex items-center gap-0.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
+                                setShareMsg({
+                                  question: userMsg?.text || '',
+                                  answer: msg.text || '',
+                                });
+                              }}
+                              title={t('share.shareQA')}
+                              className="p-1.5 rounded-lg text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
+                            >
+                              <Share2 size={18} strokeWidth={2} />
+                            </button>
+                            {submitFeedback && (
+                              <>
+                                <button
+                                  onClick={() => submitFeedback(idx, 'positive')}
+                                  disabled={!!msg.feedback}
+                                  title="جاۋاب ياقتى"
+                                  className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
+                                >
+                                  <ThumbsUp size={18} strokeWidth={2} />
+                                </button>
+                                <button
+                                  onClick={() => submitFeedback(idx, 'negative')}
+                                  disabled={!!msg.feedback}
+                                  title="جاۋاب ياقمىدى"
+                                  className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
+                                >
+                                  <ThumbsDown size={18} strokeWidth={2} />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -817,49 +842,71 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 </div>
               )}
               {msg.role === 'model' && (!isChatting || idx < chatMessages.length - 1) && (
-                <div className="w-full flex items-center justify-between mt-1 px-1">
-                  {showChatCost && msg.cost ? (
-                    <div className="text-[11px] text-slate-400 dark:text-slate-500 select-none px-1 uyghur-text">
-                      {formatAnswerCost(msg.cost.costUsd, msg.cost.inputTokens + msg.cost.outputTokens, t)}
-                    </div>
-                  ) : (
-                    <div />
-                  )}
-                  <div dir="ltr" className="flex items-center gap-0.5">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
-                        setShareMsg({
-                          question: userMsg?.text || '',
-                          answer: msg.text || '',
-                        });
-                      }}
-                      title={t('share.shareQA')}
-                      className="p-1.5 rounded-lg text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
-                    >
-                      <Share2 size={18} strokeWidth={2} />
-                    </button>
-                    {submitFeedback && (
-                      <>
-                        <button
-                          onClick={() => submitFeedback(idx, 'positive')}
-                          disabled={!!msg.feedback}
-                          title="جاۋاب ياقتى"
-                          className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
-                        >
-                          <ThumbsUp size={18} strokeWidth={2} />
-                        </button>
-                        <button
-                          onClick={() => submitFeedback(idx, 'negative')}
-                          disabled={!!msg.feedback}
-                          title="جاۋاب ياقمىدى"
-                          className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
-                        >
-                          <ThumbsDown size={18} strokeWidth={2} />
-                        </button>
-                      </>
+                <div className="w-full flex items-center justify-between gap-1.5 sm:gap-2 mt-1.5 px-1">
+                  <div className="flex-1 flex items-center justify-start min-w-0">
+                    {showChatCost && msg.cost ? (
+                      <div
+                        title={t('chat.costTooltip') || 'سۈنئىي ئەقىل مودېلىنىڭ مۇشۇ جاۋابقا سەرپ قىلغان تەننەرقى'}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 dark:bg-amber-400/10 border border-amber-500/20 dark:border-amber-400/20 text-amber-800 dark:text-amber-300 text-[11px] sm:text-xs font-semibold select-none shadow-xs uyghur-text transition-all hover:bg-amber-500/15 dark:hover:bg-amber-400/15"
+                      >
+                        <Coins size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>{formatAnswerCost(msg.cost.costUsd, msg.cost.inputTokens + msg.cost.outputTokens, t)}</span>
+                      </div>
+                    ) : (
+                      <div />
                     )}
+                  </div>
+
+                  <div className="flex items-center justify-center shrink-0">
+                    <a
+                      href={DONATE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={t('chat.donateTooltip') || 'كىتابىم سىستېمىسىنى داۋاملىق ھەقسىز تەمىنلەشكە ياردەم بېرىڭ'}
+                      className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full text-[11px] sm:text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 hover:border-rose-300 dark:hover:border-rose-700 transition-all shadow-xs active:scale-95 group shrink-0"
+                    >
+                      <Heart size={12} className="text-rose-500 fill-rose-500 group-hover:scale-110 transition-transform shrink-0" />
+                      <span className="uyghur-text">{t('chat.donate') || t('app.footer.donate') || 'ئىئانە قىلىڭ'}</span>
+                    </a>
+                  </div>
+
+                  <div className="flex-1 flex items-center justify-end shrink-0">
+                    <div dir="ltr" className="flex items-center gap-0.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const userMsg = chatMessages.slice(0, idx).filter(m => m.role === 'user').pop();
+                          setShareMsg({
+                            question: userMsg?.text || '',
+                            answer: msg.text || '',
+                          });
+                        }}
+                        title={t('share.shareQA')}
+                        className="p-1.5 rounded-lg text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10 transition-all"
+                      >
+                        <Share2 size={18} strokeWidth={2} />
+                      </button>
+                      {submitFeedback && (
+                        <>
+                          <button
+                            onClick={() => submitFeedback(idx, 'positive')}
+                            disabled={!!msg.feedback}
+                            title="جاۋاب ياقتى"
+                            className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'positive' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-500/10'}`}
+                          >
+                            <ThumbsUp size={18} strokeWidth={2} />
+                          </button>
+                          <button
+                            onClick={() => submitFeedback(idx, 'negative')}
+                            disabled={!!msg.feedback}
+                            title="جاۋاب ياقمىدى"
+                            className={`p-1.5 rounded-lg transition-all disabled:cursor-default ${msg.feedback === 'negative' ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-slate-400 dark:text-slate-400 hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10'}`}
+                          >
+                            <ThumbsDown size={18} strokeWidth={2} />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
