@@ -66,6 +66,7 @@ OCR_PAGE_ZOOM_FACTOR = get_configured_zoom_factor(DEFAULT_OCR_PAGE_ZOOM_FACTOR)
 
 FOOTNOTE_LABELS = frozenset({"Footnote"})
 DISCARD_LABELS = frozenset({"PageHeader"})
+_PHANTOM_CHECK_LABELS = frozenset({"Text", "PageFooter"})
 
 
 class LowConfidenceOcrError(Exception):
@@ -402,14 +403,22 @@ def suppress_bleed_through(img: Image.Image) -> Image.Image:
     return Image.fromarray(adjusted)
 
 
-def _is_phantom_bleed_through_block(
-    block: Any,
-    image_gray: np.ndarray,
-) -> bool:
-    """Return True if the block contains no real dark ink strokes (faint ghost/paper)."""
+# A block is phantom bleed-through when its darkest strokes reach less than
+# this fraction of the page's typical ink contrast against the paper.
+_PHANTOM_RELATIVE_CONTRAST = 0.45
+# Blocks whose darkest strokes are within this many luminance levels of the
+# paper are treated as blank regardless of the page's ink level.
+_PHANTOM_MIN_CONTRAST = 25.0
+
+
+def _block_ink_contrast(
+    block: Any, image_gray: np.ndarray, paper_level: float
+) -> float | None:
+    """Return paper_level minus the block's 5th-percentile luminance (how dark its
+    darkest strokes are against the paper), or None if the block has no usable crop."""
     box = _get_block_bbox(block)
     if not box:
-        return False
+        return None
     try:
         bx0, bx1, by0, by1 = box
         h, w = image_gray.shape[:2]
@@ -419,20 +428,56 @@ def _is_phantom_bleed_through_block(
         y1 = max(0, min(h, int(by1)))
 
         if x1 <= x0 or y1 <= y0:
-            return False
+            return None
 
         crop = image_gray[y0:y1, x0:x1]
         if crop.size < 50:
-            return False
+            return None
 
-        p5 = float(np.percentile(crop, 5))
-        # Real ink has dark pixels (typically < 120, well below 155).
-        # Bleed-through or blank regions without real ink have p5 > 155.
-        if p5 > 155.0:
-            return True
+        return paper_level - float(np.percentile(crop, 5))
     except Exception:
-        pass
-    return False
+        return None
+
+
+def _page_paper_level(image_gray: np.ndarray) -> float:
+    return float(np.percentile(image_gray, 90))
+
+
+def _page_ink_contrast_reference(
+    blocks: list[Any], image_gray: np.ndarray, paper_level: float
+) -> float:
+    """Typical ink contrast on this page: the median block contrast, so a light
+    (faded) print run is judged against its own ink, not against dark print."""
+    contrasts = [
+        c
+        for b in blocks
+        if (c := _block_ink_contrast(b, image_gray, paper_level)) is not None
+    ]
+    if contrasts:
+        return float(np.median(contrasts))
+    return paper_level - float(np.percentile(image_gray, 0.5))
+
+
+def _is_phantom_bleed_through_block(
+    block: Any,
+    image_gray: np.ndarray,
+    ink_contrast_reference: float | None = None,
+) -> bool:
+    """Return True if the block's ink is far fainter than the page's real ink.
+
+    Thresholds adapt to the page: a heavily printed page drops faint show-through
+    from the verso, while a lightly printed page keeps its (uniformly light) text.
+    """
+    paper_level = _page_paper_level(image_gray)
+    contrast = _block_ink_contrast(block, image_gray, paper_level)
+    if contrast is None:
+        return False
+    if ink_contrast_reference is None:
+        ink_contrast_reference = paper_level - float(np.percentile(image_gray, 0.5))
+    threshold = max(
+        _PHANTOM_MIN_CONTRAST, _PHANTOM_RELATIVE_CONTRAST * ink_contrast_reference
+    )
+    return contrast < threshold
 
 
 def _get_block_bbox(block: Any) -> tuple[float, float, float, float] | None:
@@ -506,6 +551,16 @@ def _process_page_sync(
 
     valid_blocks: list[Any] = []
 
+    phantom_candidates = [
+        b
+        for b in result.blocks
+        if not (b.skipped or b.error or b.label in DISCARD_LABELS)
+        and b.label in _PHANTOM_CHECK_LABELS
+    ]
+    ink_contrast_reference = _page_ink_contrast_reference(
+        phantom_candidates, gray_arr, _page_paper_level(gray_arr)
+    )
+
     for block in sorted(result.blocks, key=lambda b: b.reading_order):
         if block.skipped or block.error or block.label in DISCARD_LABELS:
             continue
@@ -525,11 +580,8 @@ def _process_page_sync(
                 continue
 
         # Filter phantom bleed-through text blocks with no dark ink
-        if block.label not in FOOTNOTE_LABELS and getattr(block, "label", "") in (
-            "Text",
-            "PageFooter",
-        ):
-            if _is_phantom_bleed_through_block(block, gray_arr):
+        if block.label in _PHANTOM_CHECK_LABELS:
+            if _is_phantom_bleed_through_block(block, gray_arr, ink_contrast_reference):
                 logger.info(
                     "Discarding phantom bleed-through block %s (no dark ink)",
                     getattr(block, "reading_order", 0),
