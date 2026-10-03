@@ -306,7 +306,8 @@ async def get_books(
         json.dumps(
             cache_params_with_stats if includeStats else cache_params_no_stats,
             sort_keys=True,
-        ).encode()
+        ).encode(),
+        usedforsecurity=False,
     ).hexdigest()
     cache_key = cache_config.KEY_BOOKS_LIST.format(hash=f"{version}:{param_hash}")
 
@@ -325,7 +326,8 @@ async def get_books(
     ):
         # Try loading from metadata-only cache (excludeStats version)
         metadata_hash = hashlib.md5(
-            json.dumps(cache_params_no_stats, sort_keys=True).encode()
+            json.dumps(cache_params_no_stats, sort_keys=True).encode(),
+            usedforsecurity=False,
         ).hexdigest()
         metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(
             hash=f"{version}:{metadata_hash}"
@@ -697,7 +699,8 @@ async def get_books(
 
             # Cache metadata version (longer TTL since metadata is stable)
             metadata_hash = hashlib.md5(
-                json.dumps(cache_params_no_stats, sort_keys=True).encode()
+                json.dumps(cache_params_no_stats, sort_keys=True).encode(),
+                usedforsecurity=False,
             ).hexdigest()
             metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(
                 hash=f"{version}:{metadata_hash}"
@@ -759,7 +762,9 @@ async def get_random_proverb(
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
 
     # Cache Lookup for the LIST of proverbs for this keyword
-    keyword_hash = hashlib.md5((keyword or "default").encode()).hexdigest()[:8]
+    keyword_hash = hashlib.md5(
+        (keyword or "default").encode(), usedforsecurity=False
+    ).hexdigest()[:8]
     list_cache_key = f"proverbs:list:{keyword_hash}"
 
     proverbs_list = await cache_service.get(list_cache_key)
@@ -821,7 +826,8 @@ async def get_top_categories(
     cache_params = {"limit": limit, "sort": sort, "is_guest": current_user is None}
     version = await cache_service.get_namespace_version("category")
     param_hash = hashlib.md5(
-        json.dumps(cache_params, sort_keys=True).encode()
+        json.dumps(cache_params, sort_keys=True).encode(),
+        usedforsecurity=False,
     ).hexdigest()[:8]
     cache_key = cache_config.KEY_CATEGORY.format(
         type="top", params=f"{version}:{param_hash}"
@@ -883,7 +889,7 @@ async def suggest_books(
 
     # Cache Lookup
     # Limit to first 10 chars to increase hit rate, hash to prevent key injection
-    q_prefix = hashlib.md5(q[:10].encode()).hexdigest()[:8]
+    q_prefix = hashlib.md5(q[:10].encode(), usedforsecurity=False).hexdigest()[:8]
     user_role = current_user.role if current_user else "guest"
     cache_key = f"suggestions:{q_prefix}:{user_role}"
 

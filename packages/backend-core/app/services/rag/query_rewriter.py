@@ -31,7 +31,8 @@ class QueryRewriter:
 
         cache_key = cache_config.KEY_RAG_REWRITE.format(
             hash=hashlib.md5(
-                (history_str + "|" + ctx.question.strip()).encode()
+                (history_str + "|" + ctx.question.strip()).encode(),
+                usedforsecurity=False,
             ).hexdigest()
         )
 

@@ -14,7 +14,9 @@ def generate_key_from_args(*args, **kwargs) -> str:
     # Filter out sensitive or non-serializable objects if needed
     # For now, a simple JSON dump of args/kwargs (sorted)
     key_tuple = (args, sorted(kwargs.items()))
-    return hashlib.md5(json.dumps(key_tuple, default=str).encode()).hexdigest()
+    return hashlib.md5(
+        json.dumps(key_tuple, default=str).encode(), usedforsecurity=False
+    ).hexdigest()
 
 
 def cached(

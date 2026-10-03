@@ -56,7 +56,7 @@ async def run_gcs_discovery_scanner(ctx) -> None:
         # ── Download to compute hash and extract metadata ──────────────────────
         temp_path = (
             settings.data_dir
-            / f".v2_discovery_{os.getpid()}_{hashlib.md5(remote_path.encode()).hexdigest()}.pdf"
+            / f".v2_discovery_{os.getpid()}_{hashlib.md5(remote_path.encode(), usedforsecurity=False).hexdigest()}.pdf"
         )
         try:
             await storage.download_file(remote_path, temp_path)
@@ -74,7 +74,8 @@ async def run_gcs_discovery_scanner(ctx) -> None:
             )
 
             book_id = hashlib.md5(
-                f"{file_name}{datetime.now(timezone.utc)}".encode()
+                f"{file_name}{datetime.now(timezone.utc)}".encode(),
+                usedforsecurity=False,
             ).hexdigest()[:12]
 
             final_title = _pick_title(title_from_pdf, file_name)
