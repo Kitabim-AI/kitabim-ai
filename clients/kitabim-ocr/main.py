@@ -86,11 +86,19 @@ def cmd_setup_savitr(output_path: str | None = None, q_bits: int = 4) -> None:
     print(f"Savitr MLX model is ready at: {dest}")
 
 
+def cmd_setup_paddle() -> None:
+    print("Checking PaddleOCR Uyghur installation and downloading model weights...")
+    from engine.paddle_engine import PaddleEnginePredictor
+
+    _ = PaddleEnginePredictor()
+    print("PaddleOCR Uyghur engine is ready!")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kitabim OCR Desktop Client")
     parser.add_argument(
         "--engine",
-        choices=["surya", "savitr"],
+        choices=["surya", "savitr", "paddle"],
         default=None,
         help="OCR engine to use (default: configured in .env or 'surya')",
     )
@@ -98,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--concurrency",
         type=int,
         default=None,
-        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya)",
+        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya, max 2 for Paddle)",
     )
     sub = parser.add_subparsers(dest="command", required=False)
 
@@ -112,7 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     app_parser.add_argument(
         "--engine",
-        choices=["surya", "savitr"],
+        choices=["surya", "savitr", "paddle"],
         default=argparse.SUPPRESS,
         help="OCR engine to use (default: configured in .env or 'surya')",
     )
@@ -120,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--concurrency",
         type=int,
         default=argparse.SUPPRESS,
-        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya)",
+        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya, max 2 for Paddle)",
     )
 
     preview_parser = sub.add_parser(
@@ -146,6 +154,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--q-bits", type=int, default=4, help="Quantization bits (default: 4)"
     )
 
+    sub.add_parser(
+        "setup-paddle",
+        help="Initialize PaddleOCR and download Uyghur recognition model weights",
+    )
+
     return parser
 
 
@@ -165,6 +178,8 @@ def main() -> None:
         cmd_push(Path(args.workdir), args.base_url)
     elif command == "setup-savitr":
         cmd_setup_savitr(output_path=args.output, q_bits=args.q_bits)
+    elif command == "setup-paddle":
+        cmd_setup_paddle()
 
 
 if __name__ == "__main__":

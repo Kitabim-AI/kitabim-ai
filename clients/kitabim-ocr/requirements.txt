@@ -12,3 +12,6 @@ uvicorn
 httpx
 pytest
 pytest-asyncio
+paddlepaddle>=3.0.0
+paddleocr>=2.9.0
+python-bidi>=0.4.2

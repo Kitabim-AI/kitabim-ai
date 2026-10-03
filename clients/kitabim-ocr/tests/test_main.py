@@ -219,3 +219,23 @@ def test_cmd_setup_savitr_invokes_converter():
         main.cmd_setup_savitr(output_path="/custom/model", q_bits=4)
 
     mock_conv.assert_called_once_with(output_dir="/custom/model", q_bits=4)
+
+
+def test_build_parser_setup_paddle_command():
+    parser = main.build_parser()
+    args = parser.parse_args(["setup-paddle"])
+    assert args.command == "setup-paddle"
+
+
+def test_build_parser_paddle_engine():
+    parser = main.build_parser()
+    args = parser.parse_args(["app", "--engine", "paddle"])
+    assert args.command == "app"
+    assert args.engine == "paddle"
+
+
+def test_cmd_setup_paddle_invokes_predictor():
+    with patch("engine.paddle_engine.PaddleEnginePredictor") as mock_pred:
+        main.cmd_setup_paddle()
+
+    mock_pred.assert_called_once()

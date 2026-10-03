@@ -32,17 +32,24 @@ Then configure `KITABIM_OCR_ENGINE=savitr` in `.env` or pass `--engine savitr`.
 
 ## OCR Engine Selection
 
-You can choose between two OCR engines:
+You can choose between three OCR engines:
 - `surya` (default): Standard Surya OCR using PyTorch / MPS / CPU.
 - `savitr`: Apple Silicon MLX-accelerated Surya OCR runtime.
+- `paddle`: Baidu PaddleOCR multilingual Uyghur model (`lang='ug'`).
 
 Set the engine in `.env`:
 
-    KITABIM_OCR_ENGINE=surya   # or savitr
+    KITABIM_OCR_ENGINE=surya   # or savitr or paddle
 
 Or pass it via the CLI:
 
-    python main.py app --engine savitr
+    python main.py app --engine paddle
+
+You can also switch engines on the fly in the web UI header dropdown.
+
+To initialize PaddleOCR and download Uyghur recognition weights ahead of time:
+
+    python main.py setup-paddle
 
 Optional custom Savitr model weights path:
 
