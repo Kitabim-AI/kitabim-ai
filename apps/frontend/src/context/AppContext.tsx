@@ -63,7 +63,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const ADMIN_TABS = ['books', 'users', 'questions', 'rules', 'stats', 'contacts', 'config'] as const;
-export const LIBRARY_TABS = ['all-books', 'reading-bookmarks'] as const;
+export const LIBRARY_TABS = ['all-books', 'reading', 'bookmarks'] as const;
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const parsePath = (path: string): {
@@ -84,7 +84,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (viewPortion === 'library') {
       view = 'library';
-      tab = LIBRARY_TABS.includes(parts[1] as any) ? parts[1] : 'all-books';
+      const rawTab = parts[1] === 'reading-bookmarks' ? 'bookmarks' : parts[1];
+      tab = LIBRARY_TABS.includes(rawTab as any) ? rawTab : 'all-books';
     }
     else if (viewPortion === 'admin') {
       view = 'admin';

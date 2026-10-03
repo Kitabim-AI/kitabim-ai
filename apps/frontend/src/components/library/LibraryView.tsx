@@ -1,10 +1,11 @@
-import { BookMarked, BookOpen, LibraryBig, RefreshCw } from 'lucide-react';
+import { BookMarked, BookOpen, History, LibraryBig, RefreshCw } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
 import { BookCard } from './BookCard';
-import { ReadingBookmarksTab } from './ReadingBookmarksTab';
+import { ReadingHistoryTab } from './ReadingHistoryTab';
+import { BookmarksTab } from './BookmarksTab';
 
 export const LibraryView: React.FC = () => {
   const {
@@ -22,13 +23,15 @@ export const LibraryView: React.FC = () => {
 
   const { t } = useI18n();
   const { isAuthenticated } = useAuth();
-  const [readingBookmarksCount, setReadingBookmarksCount] = useState<number | null>(null);
+  const [readingCount, setReadingCount] = useState<number | null>(null);
+  const [bookmarksCount, setBookmarksCount] = useState<number | null>(null);
 
-  const isReadingBookmarksActive =
-    isAuthenticated && activeTab === 'reading-bookmarks';
+  const isReadingActive = isAuthenticated && activeTab === 'reading';
+  const isBookmarksActive = isAuthenticated && (activeTab === 'bookmarks' || activeTab === 'reading-bookmarks');
+  const isAllBooksActive = !isReadingActive && !isBookmarksActive;
 
   useEffect(() => {
-    if (!isAuthenticated && activeTab === 'reading-bookmarks') {
+    if (!isAuthenticated && (activeTab === 'reading' || activeTab === 'bookmarks' || activeTab === 'reading-bookmarks')) {
       setActiveTab('all-books');
     }
   }, [isAuthenticated, activeTab, setActiveTab]);
@@ -52,8 +55,13 @@ export const LibraryView: React.FC = () => {
     ...(isAuthenticated
       ? [
           {
-            key: 'reading-bookmarks' as const,
-            label: t('library.tabs.readingAndBookmarks') || 'ئوقۇۋاتقانلىرىم ۋە خەتكۈشلەر',
+            key: 'reading' as const,
+            label: t('library.tabs.reading'),
+            icon: History,
+          },
+          {
+            key: 'bookmarks' as const,
+            label: t('library.tabs.bookmarks'),
             icon: BookMarked,
           },
         ]
@@ -67,9 +75,12 @@ export const LibraryView: React.FC = () => {
         <div className="flex items-end gap-1.5 overflow-x-auto [scrollbar-width:none]">
           {libraryTabs.map(({ key, label, icon: Icon }) => {
             const isSelected =
-              key === 'reading-bookmarks'
-                ? isReadingBookmarksActive
-                : !isReadingBookmarksActive;
+              key === 'reading'
+                ? isReadingActive
+                : key === 'bookmarks'
+                ? isBookmarksActive
+                : isAllBooksActive;
+
             return (
               <button
                 key={key}
@@ -88,36 +99,45 @@ export const LibraryView: React.FC = () => {
         </div>
 
         {/* Count Badge */}
-        {(!isReadingBookmarksActive || isAuthenticated) && (
-          <div className="mb-2 shrink-0 flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-2xl border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-sm">
-            {isReadingBookmarksActive ? (
-              <>
-                <BookMarked size={14} className="sm:w-4 sm:h-4" strokeWidth={2.5} />
-                <span className="text-xs sm:text-sm font-normal uppercase">
-                  {readingBookmarksCount === null ? (
-                    <RefreshCw size={12} className="animate-spin" />
-                  ) : (
-                    `${readingBookmarksCount} ${t('home.totalBooks')}`
-                  )}
-                </span>
-              </>
-            ) : (
-              <>
-                <BookOpen size={14} className="sm:w-4 sm:h-4" strokeWidth={2.5} />
-                <span className="text-xs sm:text-sm font-normal uppercase">
-                  {isInitialLoading ? (
-                    <RefreshCw size={12} className="animate-spin" />
-                  ) : (
-                    `${totalBooks} ${t('home.totalBooks')}`
-                  )}
-                </span>
-              </>
-            )}
-          </div>
-        )}
+        <div className="mb-2 shrink-0 flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] rounded-2xl border border-[#0369a1]/10 dark:border-[#38bdf8]/10 shadow-sm">
+          {isReadingActive ? (
+            <>
+              <History size={14} className="sm:w-4 sm:h-4" strokeWidth={2.5} />
+              <span className="text-xs sm:text-sm font-normal uppercase">
+                {readingCount === null ? (
+                  <RefreshCw size={12} className="animate-spin" />
+                ) : (
+                  `${readingCount} ${t('home.totalBooks')}`
+                )}
+              </span>
+            </>
+          ) : isBookmarksActive ? (
+            <>
+              <BookMarked size={14} className="sm:w-4 sm:h-4" strokeWidth={2.5} />
+              <span className="text-xs sm:text-sm font-normal uppercase">
+                {bookmarksCount === null ? (
+                  <RefreshCw size={12} className="animate-spin" />
+                ) : (
+                  `${bookmarksCount} ${t('library.readingBookmarks.bookmarksCount')}`
+                )}
+              </span>
+            </>
+          ) : (
+            <>
+              <BookOpen size={14} className="sm:w-4 sm:h-4" strokeWidth={2.5} />
+              <span className="text-xs sm:text-sm font-normal uppercase">
+                {isInitialLoading ? (
+                  <RefreshCw size={12} className="animate-spin" />
+                ) : (
+                  `${totalBooks} ${t('home.totalBooks')}`
+                )}
+              </span>
+            </>
+          )}
+        </div>
       </div>
 
-      {!isReadingBookmarksActive && (
+      {isAllBooksActive && (
         <>
           {/* Grid Section */}
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-8 gap-y-8 sm:gap-y-12 justify-items-center">
@@ -170,15 +190,24 @@ export const LibraryView: React.FC = () => {
         </>
       )}
 
-      {isReadingBookmarksActive && (
-        <ReadingBookmarksTab
+      {isReadingActive && (
+        <ReadingHistoryTab
+          onOpenBook={(bookId, pageNumber) => bookActions.openReader({ id: bookId }, pageNumber)}
+          onCountChange={setReadingCount}
+          onBrowseBooks={() => setActiveTab('all-books')}
+        />
+      )}
+
+      {isBookmarksActive && (
+        <BookmarksTab
           onOpenBook={(bookId, pageNumber) => bookActions.openReader({ id: bookId }, pageNumber)}
           onOpenBookmark={(bookId, pageNumber, quoteText) =>
             bookActions.openReader({ id: bookId }, pageNumber, quoteText)
           }
-          onCountChange={setReadingBookmarksCount}
+          onCountChange={setBookmarksCount}
         />
       )}
     </div>
   );
 };
+export default LibraryView;

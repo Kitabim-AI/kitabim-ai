@@ -42,11 +42,11 @@ test('shows Bookmarks shortcut for signed-in users', () => {
   expect(screen.getByText('nav.bookmarks')).toBeInTheDocument();
 });
 
-test('Bookmarks shortcut navigates to the Library reading-bookmarks tab', () => {
+test('Bookmarks shortcut navigates to the Library bookmarks tab', () => {
   const { setView, setActiveTab } = renderMenu();
   fireEvent.click(screen.getByRole('button'));
   fireEvent.click(screen.getByText('nav.bookmarks'));
 
   expect(setView).toHaveBeenCalledWith('library');
-  expect(setActiveTab).toHaveBeenCalledWith('reading-bookmarks');
+  expect(setActiveTab).toHaveBeenCalledWith('bookmarks');
 });

@@ -86,10 +86,11 @@ test('renders the 3 library tabs and defaults to All Books', () => {
   render(<LibraryView />);
 
   expect(screen.getByText('library.tabs.allBooks')).toBeInTheDocument();
-  expect(screen.getByText('library.tabs.readingAndBookmarks')).toBeInTheDocument();
+  expect(screen.getByText('library.tabs.reading')).toBeInTheDocument();
+  expect(screen.getByText('library.tabs.bookmarks')).toBeInTheDocument();
 });
 
-test('clicking the Reading & Bookmarks tab calls setActiveTab', () => {
+test('clicking the Reading History tab calls setActiveTab', () => {
   const setActiveTab = vi.fn();
   vi.mocked(AppContextModule.useAppContext).mockReturnValue({
     sortedBooks: mockBooks,
@@ -104,12 +105,32 @@ test('clicking the Reading & Bookmarks tab calls setActiveTab', () => {
   } as any);
 
   render(<LibraryView />);
-  fireEvent.click(screen.getByText('library.tabs.readingAndBookmarks'));
+  fireEvent.click(screen.getByText('library.tabs.reading'));
 
-  expect(setActiveTab).toHaveBeenCalledWith('reading-bookmarks');
+  expect(setActiveTab).toHaveBeenCalledWith('reading');
 });
 
-test('renders reading and bookmarks count badge when on combined tab', () => {
+test('clicking the Bookmarks tab calls setActiveTab', () => {
+  const setActiveTab = vi.fn();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    sortedBooks: mockBooks,
+    totalReady: 2,
+    isLoading: false,
+    isLoadingMoreShelf: false,
+    hasMoreShelf: false,
+    loaderRef: { current: null },
+    bookActions: {},
+    activeTab: 'all-books',
+    setActiveTab,
+  } as any);
+
+  render(<LibraryView />);
+  fireEvent.click(screen.getByText('library.tabs.bookmarks'));
+
+  expect(setActiveTab).toHaveBeenCalledWith('bookmarks');
+});
+
+test('renders bookmarks tab when on bookmarks tab', () => {
   vi.mocked(AppContextModule.useAppContext).mockReturnValue({
     sortedBooks: mockBooks,
     totalReady: 2,
@@ -119,15 +140,15 @@ test('renders reading and bookmarks count badge when on combined tab', () => {
     hasMoreShelf: false,
     loaderRef: { current: null },
     bookActions: {},
-    activeTab: 'reading-bookmarks',
+    activeTab: 'bookmarks',
     setActiveTab: vi.fn(),
   } as any);
 
   render(<LibraryView />);
-  expect(screen.getByText('library.tabs.readingAndBookmarks')).toBeInTheDocument();
+  expect(screen.getByText('library.tabs.bookmarks')).toBeInTheDocument();
 });
 
-test('hides the bookmarks tab for guest users and only renders all books', () => {
+test('hides reading and bookmarks tabs for guest users and only renders all books', () => {
   vi.mocked(useAuth).mockReturnValue({ isAuthenticated: false } as any);
   vi.mocked(AppContextModule.useAppContext).mockReturnValue({
     sortedBooks: mockBooks,
@@ -144,7 +165,8 @@ test('hides the bookmarks tab for guest users and only renders all books', () =>
   render(<LibraryView />);
 
   expect(screen.getByText('library.tabs.allBooks')).toBeInTheDocument();
-  expect(screen.queryByText('library.tabs.readingAndBookmarks')).not.toBeInTheDocument();
+  expect(screen.queryByText('library.tabs.reading')).not.toBeInTheDocument();
+  expect(screen.queryByText('library.tabs.bookmarks')).not.toBeInTheDocument();
 });
 
 

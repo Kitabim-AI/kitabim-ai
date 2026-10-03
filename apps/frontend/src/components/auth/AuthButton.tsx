@@ -235,7 +235,7 @@ export function UserMenu({ onLogout, side = 'left', inline = false }: { onLogout
           onClick={() => {
             setIsOpen(false);
             setView('library');
-            setActiveTab('reading-bookmarks');
+            setActiveTab('bookmarks');
           }}
           className="w-full flex items-center justify-between px-4 py-3 text-[#1a1a1a] dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 rounded-2xl transition-all font-normal text-sm active:scale-95 group"
           dir="rtl"
