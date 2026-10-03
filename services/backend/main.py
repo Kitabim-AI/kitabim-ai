@@ -15,6 +15,7 @@ from slowapi.errors import RateLimitExceeded
 from api.endpoints import (
     ai_router,
     auth_router,
+    bookmarks_router,
     books_router,
     chat_router,
     users_router,
@@ -467,6 +468,7 @@ app.mount("/api/covers", StaticFiles(directory=str(settings.covers_dir)), name="
 app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users_router.router, prefix="/api/users", tags=["users"])
 app.include_router(books_router.router, prefix="/api/books", tags=["books"])
+app.include_router(bookmarks_router.router, prefix="/api/bookmarks", tags=["bookmarks"])
 app.include_router(chat_router.router, prefix="/api/chat", tags=["chat"])
 app.include_router(ai_router.router, prefix="/api/ai", tags=["ai"])
 app.include_router(

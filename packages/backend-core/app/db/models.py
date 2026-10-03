@@ -25,7 +25,13 @@ from sqlalchemy import (
     Date,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+    validates,
+)
 from pgvector.sqlalchemy import Vector
 
 
@@ -135,6 +141,12 @@ class Book(Base):
         uselist=False,
     )
 
+    @validates("title", "author", "last_error")
+    def _validate_clean_strings(self, key: str, value: Optional[str]) -> Optional[str]:
+        if isinstance(value, str):
+            return value.replace("\x00", "")
+        return value
+
     # Constraints
     __table_args__ = (
         CheckConstraint(
@@ -235,6 +247,12 @@ class Page(Base):
         if offset > 0 and self.page_number > offset:
             return str(self.page_number - offset)
         return str(self.page_number)
+
+    @validates("text", "error")
+    def _validate_clean_strings(self, key: str, value: Optional[str]) -> Optional[str]:
+        if isinstance(value, str):
+            return value.replace("\x00", "")
+        return value
 
     __table_args__ = (
         UniqueConstraint(
@@ -1204,6 +1222,69 @@ class ConversationMessage(Base):
 
     evaluation: Mapped[Optional["RAGEvaluation"]] = relationship(
         "RAGEvaluation", foreign_keys=[eval_id], lazy="selectin"
+    )
+
+
+class ReadingProgress(Base):
+    """Silent per-user, per-book resume position"""
+
+    __tablename__ = "reading_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "book_id", name="uq_reading_progress_user_book"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    book_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("books.id", ondelete="CASCADE"), nullable=False
+    )
+    book: Mapped["Book"] = relationship("Book", lazy="selectin")
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class Bookmark(Base):
+    """A user's named whole-page or passage bookmark"""
+
+    __tablename__ = "bookmarks"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    book_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    book: Mapped["Book"] = relationship("Book", lazy="selectin")
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    quote_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
     )
 
 

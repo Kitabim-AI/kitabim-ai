@@ -8,6 +8,7 @@ vi.mock('@/src/services/persistenceService', () => ({
   PersistenceService: {
     uploadPdf: vi.fn(),
     getBookById: vi.fn(),
+    getReadingProgress: vi.fn(),
     saveBookGlobally: vi.fn(),
     deleteBook: vi.fn(),
     updateBookMetadata: vi.fn(),
@@ -125,6 +126,7 @@ test('useBookActions ignores invalid uploads and handles upload errors', async (
 
 test('useBookActions handles openReader', async () => {
   vi.mocked(PersistenceService.getBookById).mockResolvedValue(mockBook as any);
+  vi.mocked(PersistenceService.getReadingProgress).mockResolvedValue(null);
   const { result, setSelectedBook, setView, setChatMessages, setCurrentPage } = createHook();
 
   await act(async () => {
@@ -134,6 +136,43 @@ test('useBookActions handles openReader', async () => {
   expect(setSelectedBook).toHaveBeenCalledWith(mockBook);
   expect(setChatMessages).toHaveBeenCalledWith([]);
   expect(setView).toHaveBeenCalledWith('reader');
+  expect(setCurrentPage).toHaveBeenCalledWith(1);
+});
+
+test('useBookActions openReader uses an explicit initialPage without checking progress', async () => {
+  vi.mocked(PersistenceService.getBookById).mockResolvedValue(mockBook as any);
+  const { result, setCurrentPage } = createHook();
+
+  await act(async () => {
+    await result.current.openReader(mockBook, 7);
+  });
+
+  expect(setCurrentPage).toHaveBeenCalledWith(7);
+  expect(PersistenceService.getReadingProgress).not.toHaveBeenCalled();
+});
+
+test('useBookActions openReader resumes from saved progress when no initialPage given', async () => {
+  vi.mocked(PersistenceService.getBookById).mockResolvedValue(mockBook as any);
+  vi.mocked(PersistenceService.getReadingProgress).mockResolvedValue(15);
+  const { result, setCurrentPage } = createHook();
+
+  await act(async () => {
+    await result.current.openReader(mockBook);
+  });
+
+  expect(PersistenceService.getReadingProgress).toHaveBeenCalledWith('1');
+  expect(setCurrentPage).toHaveBeenCalledWith(15);
+});
+
+test('useBookActions openReader falls back to page 1 with no saved progress', async () => {
+  vi.mocked(PersistenceService.getBookById).mockResolvedValue(mockBook as any);
+  vi.mocked(PersistenceService.getReadingProgress).mockResolvedValue(null);
+  const { result, setCurrentPage } = createHook();
+
+  await act(async () => {
+    await result.current.openReader(mockBook);
+  });
+
   expect(setCurrentPage).toHaveBeenCalledWith(1);
 });
 

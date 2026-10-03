@@ -1,6 +1,7 @@
 from engine.text_cleanup import (
     clean_uyghur_text,
     correct_uyghur_ocr_orthography,
+    dehyphenate_uyghur_text,
     is_block_repetition_loop,
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
@@ -348,3 +349,42 @@ def test_clean_uyghur_text_preserves_dash_attribution_lines_exactly():
         "— خۇپتەننى بىللە ئوقۇيلى."
     )
     assert clean_uyghur_text(dialogue) == dialogue
+
+
+def test_dehyphenate_uyghur_text_merges_split_word_when_valid():
+    valid = {"ئۇرۇقى", "ئاز-ئازدىن"}
+    # w1-w2 split across newline
+    text_nl = "تېرىقچىلىق ئۇ-\nرۇقى تېپىلدى."
+    cleaned, count = dehyphenate_uyghur_text(text_nl, valid)
+    assert count == 1
+    assert cleaned == "تېرىقچىلىق ئۇرۇقى تېپىلدى."
+
+    # w1-w2 inline
+    text_inline = "تېرىقچىلىق ئۇ-رۇقى تېپىلدى."
+    cleaned_inline, count_inline = dehyphenate_uyghur_text(text_inline, valid)
+    assert count_inline == 1
+    assert cleaned_inline == "تېرىقچىلىق ئۇرۇقى تېپىلدى."
+
+
+def test_dehyphenate_uyghur_text_preserves_compound_words():
+    valid = {"ئاز-ئازدىن"}
+    text = "سۇنى ئاز-ئازدىن ئىچىش كېرەك."
+    cleaned, count = dehyphenate_uyghur_text(text, valid)
+    assert count == 0
+    assert cleaned == text
+
+
+def test_dehyphenate_uyghur_text_preserves_unknown_merged_word():
+    # If the merged word is not in valid dictionary, do not merge
+    valid = {"باشقا"}
+    text = "بۇ نائەلۇم-سۆز بولىدۇ."
+    cleaned, count = dehyphenate_uyghur_text(text, valid)
+    assert count == 0
+    assert cleaned == text
+
+
+def test_clean_uyghur_text_with_valid_words():
+    valid = {"دورىلارنى", "ئاز-ئازدىن"}
+    raw = "تەبىئىي دو-رىلارنى ئىستېمال قىلىپ ئاز-ئازدىن ساقىيدى."
+    res = clean_uyghur_text(raw, valid_words=valid)
+    assert res == "تەبىئىي دورىلارنى ئىستېمال قىلىپ ئاز-ئازدىن ساقىيدى."

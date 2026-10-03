@@ -48,7 +48,7 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
         return local_cache[query_stripped]
 
     # 2. Redis/External API check
-    q_hash = hashlib.md5(query_stripped.encode()).hexdigest()
+    q_hash = hashlib.md5(query_stripped.encode(), usedforsecurity=False).hexdigest()
     emb_cache_key = cache_config.KEY_RAG_EMBEDDING.format(hash=q_hash)
     try:
         vector = await cache_service.get(emb_cache_key)
@@ -246,17 +246,22 @@ async def vector_search(
     except ValueError:
         rag_top_k = settings.rag_top_k
 
-    emb_hash = hashlib.md5(str(effective_vector).encode()).hexdigest()
+    emb_hash = hashlib.md5(
+        str(effective_vector).encode(), usedforsecurity=False
+    ).hexdigest()
     sorted_book_ids = sorted(book_ids) if book_ids else []
     book_ids_hash = (
-        hashlib.md5(",".join(sorted_book_ids).encode()).hexdigest()
+        hashlib.md5(
+            ",".join(sorted_book_ids).encode(), usedforsecurity=False
+        ).hexdigest()
         if sorted_book_ids
         else "all"
     )
 
     if ctx.character_categories:
         cat_hash = hashlib.md5(
-            ",".join(sorted(ctx.character_categories)).encode()
+            ",".join(sorted(ctx.character_categories)).encode(),
+            usedforsecurity=False,
         ).hexdigest()
         book_ids_hash += f"_cat_{cat_hash}"
 
@@ -569,7 +574,7 @@ async def graph_entity_lookup(
 
     import hashlib
 
-    q_hash = hashlib.md5(question.encode("utf-8")).hexdigest()
+    q_hash = hashlib.md5(question.encode("utf-8"), usedforsecurity=False).hexdigest()
     cache_key = f"rag_graph_lookup:{q_hash}"
     try:
         cached_results = await cache_service.get(cache_key)
@@ -829,7 +834,9 @@ async def find_books_by_title_in_question(
     cache_key = None
     if hasattr(session, "info") and isinstance(session.info, dict):
         cat_hash = (
-            hashlib.md5(",".join(sorted(categories)).encode()).hexdigest()
+            hashlib.md5(
+                ",".join(sorted(categories)).encode(), usedforsecurity=False
+            ).hexdigest()
             if categories
             else "all"
         )

@@ -219,7 +219,35 @@ const dotLeaderPattern = /(?:[.\u00b7\u2022\u2219\u22c5\u2024\ufe52\u3002]\s*){3
 const isHr = (line: string) => /^(-{3,}|\*{3,}|_{3,})$/.test(line.trim());
 const isHeading = (line: string) => /^#{1,6}(\s+|$|[^\s#])/.test(line.trim());
 const isQuote = (line: string) => /^\s*>\s?/.test(line);
-const isOrderedList = (line: string) => /^\s*\d+[.)]\s+/.test(line);
+const isNumberedEntry = (line: string) => /^\s*\d+\s*[.)]\s+/.test(line);
+
+const matchOrderedListItem = (line: string): { num: number; marker: string; text: string } | null => {
+  const match = line.match(/^\s*(\d{1,3})\s*([.)])\s+(.*)$/);
+  if (!match) return null;
+  const num = parseInt(match[1], 10);
+  if (isNaN(num)) return null;
+  return { num, marker: match[2], text: match[3] };
+};
+
+const isOrderedListAt = (lines: string[], idx: number, isToc: boolean = false): boolean => {
+  if (isToc && isTocLine(lines[idx])) return false;
+  const m = matchOrderedListItem(lines[idx]);
+  if (!m || m.num > 99) return false;
+
+  // Real ordered list must have at least 2 consecutive items
+  if (idx + 1 < lines.length) {
+    const nextLine = lines[idx + 1];
+    if (!(isToc && isTocLine(nextLine))) {
+      const mNext = matchOrderedListItem(nextLine);
+      if (mNext && mNext.num <= 99) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
 const isArabicScriptChar = (value: string) => /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/.test(value);
 const isUnorderedList = (line: string) => {
   if (/^\s*•\s+/.test(line)) return true;
@@ -309,7 +337,7 @@ const extractRowPageNumber = (row: string[]): number | null => {
 const isTableRow = (line: string) => /^\s*\|/.test(line);
 const isTableSeparator = (line: string) => /^\s*\|[\s|:=-]+\|?\s*$/.test(line);
 const isBlockStart = (line: string, isToc: boolean = false) =>
-  isHr(line) || isHeading(line) || isQuote(line) || (isToc && isTocLine(line)) || isOrderedList(line) || isUnorderedList(line) || isTableRow(line);
+  isHr(line) || isHeading(line) || isQuote(line) || (isToc && isTocLine(line)) || isUnorderedList(line) || isTableRow(line);
 
 export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ content, className, style, onReferenceClick, contentPageOffset, onTocPageClick, isTocPage }) => {
   const effectiveIsTocPage = isTocPage !== undefined ? isTocPage : isTocPageContent(content);
@@ -318,9 +346,9 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
     .split('\n')
     .map(line => line.replace(/\[(Header|Footer)\]/g, '').trim())
     .filter(line => {
-      if (!line) return false;
+      if (!line) return true;
       // Allow lines that contain text OR start with markdown block markers (including table rows/separators)
-      return /[A-Za-z\u0600-\u06FF]/.test(line) || isBlockStart(line, effectiveIsTocPage) || isTableSeparator(line);
+      return /[A-Za-z\u0600-\u06FF]/.test(line) || isBlockStart(line, effectiveIsTocPage) || isTableSeparator(line) || isNumberedEntry(line);
     });
   const blocks: React.ReactNode[] = [];
   let i = 0;
@@ -430,14 +458,19 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
       continue;
     }
 
-    if (isOrderedList(line) && !(effectiveIsTocPage && isTocLine(line))) {
+    if (isOrderedListAt(lines, i, effectiveIsTocPage)) {
+      const startNum = matchOrderedListItem(lines[i])!.num;
       const items: string[] = [];
-      while (i < lines.length && isOrderedList(lines[i]) && !(effectiveIsTocPage && isTocLine(lines[i]))) {
-        items.push(lines[i].replace(/^\s*\d+[.)]\s+/, ''));
+      while (i < lines.length) {
+        const itemMatch = matchOrderedListItem(lines[i]);
+        if (!itemMatch || itemMatch.num > 99 || (effectiveIsTocPage && isTocLine(lines[i]))) {
+          break;
+        }
+        items.push(itemMatch.text);
         i += 1;
       }
       blocks.push(
-        <ol key={`ol-${key++}`} className="list-decimal pr-6 space-y-1">
+        <ol key={`ol-${key++}`} start={startNum} className="list-decimal pr-6 space-y-1">
           {items.map((item, idx) => (
             <li key={`ol-${key}-item-${idx}`}>{renderInline(item, onReferenceClick)}</li>
           ))}
@@ -570,7 +603,14 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
     }
 
     const paragraphLines: string[] = [];
-    while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i], effectiveIsTocPage)) {
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      (paragraphLines.length === 0 ||
+        (!isBlockStart(lines[i], effectiveIsTocPage) &&
+          !isOrderedListAt(lines, i, effectiveIsTocPage) &&
+          !isNumberedEntry(lines[i])))
+    ) {
       paragraphLines.push(lines[i]);
       i += 1;
     }

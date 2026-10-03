@@ -133,6 +133,50 @@ def test_process_page_sync_renders_each_block_type_and_appends_footnotes_last():
     assert mean_conf == 0.9
 
 
+def test_block_html_to_markdown_keeps_paragraphs_before_list_in_list_group():
+    """Surya can return a whole page as one ListGroup block: prose paragraphs
+    followed by a numbered list. The paragraphs must not be dropped, and the
+    list items must stay as printed rather than become TOC table rows."""
+    html = (
+        "<p>بىرىنچى ئابزاس تېكىستى.</p>"
+        "<p>ئىككىنچى ئابزاس تېكىستى.</p>"
+        "<ol><li>1) بىرىنچى نۇقتا.</li><li>2) ئىككىنچى نۇقتا.</li></ol>"
+    )
+
+    md = svc._block_html_to_markdown(html, "ListGroup")
+
+    assert md == (
+        "بىرىنچى ئابزاس تېكىستى.\n\n"
+        "ئىككىنچى ئابزاس تېكىستى.\n\n"
+        "1) بىرىنچى نۇقتا.\n2) ئىككىنچى نۇقتا."
+    )
+
+
+def test_block_html_to_markdown_toc_keeps_title_and_formats_rows():
+    html = "<p>مۇندەرىجە</p><ol><li>3 ..... باب بىر</li><li>9 ..... باب ئىككى</li></ol>"
+
+    md = svc._block_html_to_markdown(html, "TableOfContents")
+
+    assert md == "مۇندەرىجە\n\n| باب بىر | 3 |\n| باب ئىككى | 9 |"
+
+
+def test_process_page_sync_keeps_list_group_paragraphs():
+    img = Image.new("RGB", (200, 200))
+    mock_result = MagicMock()
+    mock_result.blocks = [
+        _block(
+            "ListGroup",
+            "<p>ئابزاس تېكىستى.</p><ol><li>1) نۇقتا.</li></ol>",
+            position=0,
+        ),
+    ]
+
+    with patch("engine.recognize.recognize_page", return_value=mock_result):
+        markdown, _ = svc._process_page_sync(img, MagicMock())
+
+    assert markdown == "ئابزاس تېكىستى.\n\n1) نۇقتا."
+
+
 def test_process_page_sync_with_savitr_predictor():
     img = Image.new("RGB", (200, 200))
     mock_predictor = MagicMock(spec=svc.SavitrPredictor)
@@ -458,6 +502,75 @@ def test_is_phantom_bleed_through_block():
 
     assert svc._is_phantom_bleed_through_block(real_block, gray_arr) is False
     assert svc._is_phantom_bleed_through_block(phantom_block, gray_arr) is True
+
+
+def _light_print_block(order: int, y: int, html: str) -> MagicMock:
+    block = MagicMock()
+    block.reading_order = order
+    block.label = "Text"
+    block.confidence = 0.95
+    block.skipped = False
+    block.error = False
+    block.polygon = [[10, y], [190, y], [190, y + 30], [10, y + 30]]
+    block.html = html
+    return block
+
+
+def test_process_page_sync_keeps_all_blocks_on_light_print_page():
+    """Light/faded print (ink ~180 on white paper) must not be mistaken for
+    bleed-through: phantom detection is relative to the page's own ink level,
+    not a fixed absolute luminance."""
+    import numpy as np
+
+    img_arr = np.full((200, 200), 255, dtype=np.uint8)
+    ys = (10, 60, 110, 160)
+    for y in ys:
+        img_arr[y + 5 : y + 25, 20:180] = 180  # faint but real ink strokes
+    img = Image.fromarray(img_arr, mode="L")
+
+    texts = [
+        "بىرىنچى مىسرا تېكىستى",
+        "ئىككىنچى مىسرا تېكىستى",
+        "ئۈچىنچى مىسرا تېكىستى",
+        "تۆتىنچى مىسرا تېكىستى",
+    ]
+    blocks = [
+        _light_print_block(i, y, f"<p>{t}</p>")
+        for i, (y, t) in enumerate(zip(ys, texts))
+    ]
+    mock_result = MagicMock()
+    mock_result.blocks = blocks
+    mock_predictor = MagicMock(return_value=[mock_result])
+
+    markdown, _ = svc._process_page_sync(img, mock_predictor)
+
+    for t in texts:
+        assert t in markdown
+
+
+def test_process_page_sync_drops_ghost_block_among_dark_print():
+    import numpy as np
+
+    img_arr = np.full((200, 200), 245, dtype=np.uint8)
+    for y in (10, 60, 110):
+        img_arr[y + 5 : y + 25, 20:180] = 30  # real dark ink
+    img_arr[165:185, 20:180] = 200  # faint show-through from the verso
+    img = Image.fromarray(img_arr, mode="L")
+
+    blocks = [
+        _light_print_block(0, 10, "<p>ھەقىقىي بىرىنچى قۇر</p>"),
+        _light_print_block(1, 60, "<p>ھەقىقىي ئىككىنچى قۇر</p>"),
+        _light_print_block(2, 110, "<p>ھەقىقىي ئۈچىنچى قۇر</p>"),
+        _light_print_block(3, 160, "<p>ئارقا بەتتىن كۆرۈنگەن خىيالىي قۇر</p>"),
+    ]
+    mock_result = MagicMock()
+    mock_result.blocks = blocks
+    mock_predictor = MagicMock(return_value=[mock_result])
+
+    markdown, _ = svc._process_page_sync(img, mock_predictor)
+
+    assert "ھەقىقىي ئۈچىنچى قۇر" in markdown
+    assert "خىيالىي قۇر" not in markdown
 
 
 def test_process_page_sync_discards_phantom_and_hallucinated_blocks():

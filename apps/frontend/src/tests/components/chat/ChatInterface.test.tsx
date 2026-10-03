@@ -461,6 +461,10 @@ test('ChatInterface renders cost info side by side with feedback buttons in glob
   expect(screen.getByText(/جاۋاب تەننەرقى.*0\.0122.*73\.1K/)).toBeInTheDocument();
   expect(screen.getByTitle('جاۋاب ياقتى')).toBeInTheDocument();
   expect(screen.getByTitle('جاۋاب ياقمىدى')).toBeInTheDocument();
+  const donateLinkGlobal = screen.getByRole('link', { name: /chat\.donate|ئىئانە قىلىڭ|Donate/ });
+  expect(donateLinkGlobal).toBeInTheDocument();
+  expect(donateLinkGlobal).toHaveAttribute('href', 'https://www.paypal.com/donate/?hosted_button_id=TKHXS8HCDUEJA');
+  expect(donateLinkGlobal).toHaveAttribute('target', '_blank');
 });
 
 test('ChatInterface renders cost info side by side with feedback buttons in reader chat', () => {
@@ -492,6 +496,10 @@ test('ChatInterface renders cost info side by side with feedback buttons in read
   expect(screen.getByText(/جاۋاب تەننەرقى.*0\.0005.*600/)).toBeInTheDocument();
   expect(screen.getByTitle('جاۋاب ياقتى')).toBeInTheDocument();
   expect(screen.getByTitle('جاۋاب ياقمىدى')).toBeInTheDocument();
+  const donateLinkReader = screen.getByRole('link', { name: /chat\.donate|ئىئانە قىلىڭ|Donate/ });
+  expect(donateLinkReader).toBeInTheDocument();
+  expect(donateLinkReader).toHaveAttribute('href', 'https://www.paypal.com/donate/?hosted_button_id=TKHXS8HCDUEJA');
+  expect(donateLinkReader).toHaveAttribute('target', '_blank');
 });
 
 test('ChatInterface hides cost info when showChatCost is false', async () => {

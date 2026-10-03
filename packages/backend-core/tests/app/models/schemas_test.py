@@ -19,6 +19,11 @@ def test_ocr_page_input_is_toc_defaults_false():
     assert page.is_toc is False
 
 
+def test_ocr_page_input_strips_null_bytes():
+    page = OcrPageInput.model_validate({"pageNumber": 1, "text": "hello\x00world\x00"})
+    assert page.text == "helloworld"
+
+
 def test_chat_request_validation_valid():
     # Valid Uyghur question
     req = ChatRequest(book_id="book-abc", question="سوئال", history=[])
@@ -53,6 +58,8 @@ def test_rag_question_admin_includes_eval_scores():
         faithfulness_score=0.9,
         answer_relevance_score=0.8,
         context_precision_score=0.7,
+        answer="بۇ جاۋاب",
+        retrieved_context="بۇ ئارقا كۆرۈنۈش",
         ts=datetime.now(timezone.utc),
     )
     admin_view = RagQuestionAdmin.model_validate(row)
@@ -61,12 +68,16 @@ def test_rag_question_admin_includes_eval_scores():
     assert admin_view.faithfulness_score == 0.9
     assert admin_view.answer_relevance_score == 0.8
     assert admin_view.context_precision_score == 0.7
+    assert admin_view.answer == "بۇ جاۋاب"
+    assert admin_view.retrieved_context == "بۇ ئارقا كۆرۈنۈش"
 
     dumped = admin_view.model_dump(by_alias=True)
     assert dumped["evalStatus"] == "completed"
     assert dumped["faithfulnessScore"] == 0.9
     assert dumped["answerRelevanceScore"] == 0.8
     assert dumped["contextPrecisionScore"] == 0.7
+    assert dumped["answer"] == "بۇ جاۋاب"
+    assert dumped["retrievedContext"] == "بۇ ئارقا كۆرۈنۈش"
 
 
 def test_rag_question_admin_scores_default_to_none_for_unscored_row():
