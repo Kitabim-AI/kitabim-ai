@@ -1,5 +1,6 @@
 import {
   ALargeSmall,
+  Bookmark as BookmarkIcon,
   BookOpen,
   Bot,
   Download,
@@ -17,8 +18,10 @@ import { createPortal } from 'react-dom';
 import { useNotification } from '../../context/NotificationContext';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth, useIsEditor, useIsAdmin } from '../../hooks/useAuth';
+import { useBookmarks } from '../../hooks/useBookmarks';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
+import { BookmarksDrawer } from './BookmarksDrawer';
 import { ChatInterface } from '../chat/ChatInterface';
 import { ShareModal } from '../share/ShareModal';
 import { GlassPanel } from '../ui/GlassPanel';
@@ -56,6 +59,7 @@ export const ReaderView: React.FC = () => {
   const isEditor = useIsEditor();
   const isAdmin = useIsAdmin();
   const { isAuthenticated, user } = useAuth();
+  const { bookmarks, create: createBookmark, rename: renameBookmark, remove: removeBookmark } = useBookmarks(selectedBook.id);
   const isGuest = !isAuthenticated;
   const isGuestOrReader = !isAuthenticated || (user?.role === 'reader');
   const usesArabicReaderFont = (selectedBook.categories || []).some(
@@ -92,6 +96,7 @@ export const ReaderView: React.FC = () => {
   const [hasMorePages, setHasMorePages] = useState(true);
   const [isFetchingContent, setIsFetchingContent] = useState(false);
   const [mobileTab, setMobileTab] = useState<'reader' | 'chat'>('reader');
+  const [showBookmarksDrawer, setShowBookmarksDrawer] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showFontSlider, setShowFontSlider] = useState(false);
   const [sliderPos, setSliderPos] = useState({ top: 0, left: 0 });
@@ -557,6 +562,16 @@ export const ReaderView: React.FC = () => {
                 </button>
               )}
 
+              {!isGuest && (
+                <button
+                  onClick={() => setShowBookmarksDrawer(true)}
+                  title={t('bookmarks.drawerTitle')}
+                  className="p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
+                >
+                  <BookmarkIcon size={18} className="sm:w-5 sm:h-5" />
+                </button>
+              )}
+
               <div className="relative flex items-center">
                 <button
                   ref={fontButtonRef}
@@ -664,6 +679,10 @@ export const ReaderView: React.FC = () => {
                 selectedBookPages={selectedBook.pages}
                 contentPageOffset={contentPageOffset}
                 onTocPageClick={handleTocPageClick}
+                bookmarks={bookmarks}
+                onCreateBookmark={createBookmark}
+                onRenameBookmark={renameBookmark}
+                onDeleteBookmark={removeBookmark}
               />
             ) : (
               <div className={`w-full mx-auto transition-all duration-300 ${isSidebarCollapsed ? 'max-w-6xl' : 'max-w-4xl'} ${editingPageNum !== null ? 'h-full flex flex-col' : 'space-y-4 pb-40'}`}>
@@ -711,6 +730,10 @@ export const ReaderView: React.FC = () => {
                         isFullscreen={isFullscreen}
                         contentPageOffset={contentPageOffset}
                         onTocPageClick={handleTocPageClick}
+                        bookmarks={bookmarks}
+                        onCreateBookmark={createBookmark}
+                        onRenameBookmark={renameBookmark}
+                        onDeleteBookmark={removeBookmark}
                       />
                     </div>
                   ))}
@@ -829,6 +852,20 @@ export const ReaderView: React.FC = () => {
             {mobileTab === 'reader' ? <Bot size={38} strokeWidth={2} /> : <BookOpen size={38} strokeWidth={2} />}
           </button>,
           document.body
+        )}
+
+        {showBookmarksDrawer && (
+          <BookmarksDrawer
+            bookmarks={bookmarks}
+            onRename={renameBookmark}
+            onDelete={removeBookmark}
+            onJumpTo={(pageNumber, quoteText) => {
+              setCurrentPage(pageNumber);
+              if (quoteText) setPendingQuoteHighlight(quoteText);
+              setShowBookmarksDrawer(false);
+            }}
+            onClose={() => setShowBookmarksDrawer(false)}
+          />
         )}
       </div>
     </>

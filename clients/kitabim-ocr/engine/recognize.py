@@ -40,6 +40,7 @@ from engine.config import (
     is_bleed_through_suppression_enabled,
     is_dot_enhancement_enabled,
 )
+from engine.dictionary import get_valid_words
 from engine.savitr_engine import SavitrPredictor
 from engine.text_cleanup import (
     clean_uyghur_text,
@@ -65,6 +66,8 @@ OCR_PAGE_ZOOM_FACTOR = get_configured_zoom_factor(DEFAULT_OCR_PAGE_ZOOM_FACTOR)
 
 FOOTNOTE_LABELS = frozenset({"Footnote"})
 DISCARD_LABELS = frozenset({"PageHeader"})
+_PHANTOM_CHECK_LABELS = frozenset({"Text", "PageFooter"})
+_ROW_FORMAT_LABELS = frozenset({"TableOfContents", "Table"})
 
 
 class LowConfidenceOcrError(Exception):
@@ -243,13 +246,58 @@ def _html_rows_to_markdown(html: str) -> str:
     return "\n".join(rows)
 
 
-def _block_html_to_markdown(html: str) -> str:
+def _list_html_to_lines(html: str) -> str:
+    """Render list items / table rows one per line, text kept as printed."""
+    soup = BeautifulSoup(html, "html.parser")
+    items = soup.find_all(["tr", "li"])
+    if not items:
+        return soup.get_text(separator=" ", strip=True)
+    return "\n".join(
+        item_text
+        for item in items
+        if (item_text := item.get_text(separator=" ", strip=True))
+    )
+
+
+def _mixed_list_html_to_markdown(html: str, format_rows: bool) -> str:
+    """Render a block containing lists/tables, keeping any paragraphs around them.
+
+    Surya can return a whole page as one ListGroup block (prose paragraphs
+    followed by a numbered list), so each top-level element is rendered in
+    order instead of extracting only the list items.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    parts: list[str] = []
+    for node in soup.children:
+        if isinstance(node, str):
+            text = node.strip()
+        elif node.name in ("ol", "ul", "table") or node.find(["li", "tr"]):
+            text = (
+                _html_rows_to_markdown(str(node))
+                if format_rows
+                else _list_html_to_lines(str(node))
+            )
+        else:
+            for br in node.find_all("br"):
+                br.replace_with("\n")
+            text = "\n".join(
+                line.strip() for line in node.get_text().split("\n") if line.strip()
+            )
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts)
+
+
+def _block_html_to_markdown(html: str, label: str | None = None) -> str:
     heading_match = _HEADING_TAG_RE.match(html.strip())
     if heading_match:
         level = min(int(heading_match.group(1)), 6)
         return f"{'#' * level} {_html_to_text(html)}"
     if "<li" in html or "<tr" in html:
-        return _html_rows_to_markdown(html)
+        # TOC-style "| title | page |" rows only for TOC/table blocks; plain
+        # lists keep their items as printed. No label (Savitr) keeps rows.
+        format_rows = label is None or label in _ROW_FORMAT_LABELS
+        return _mixed_list_html_to_markdown(html, format_rows)
 
     soup = BeautifulSoup(html, "html.parser")
     p_tags = soup.find_all("p")
@@ -401,14 +449,22 @@ def suppress_bleed_through(img: Image.Image) -> Image.Image:
     return Image.fromarray(adjusted)
 
 
-def _is_phantom_bleed_through_block(
-    block: Any,
-    image_gray: np.ndarray,
-) -> bool:
-    """Return True if the block contains no real dark ink strokes (faint ghost/paper)."""
+# A block is phantom bleed-through when its darkest strokes reach less than
+# this fraction of the page's typical ink contrast against the paper.
+_PHANTOM_RELATIVE_CONTRAST = 0.45
+# Blocks whose darkest strokes are within this many luminance levels of the
+# paper are treated as blank regardless of the page's ink level.
+_PHANTOM_MIN_CONTRAST = 25.0
+
+
+def _block_ink_contrast(
+    block: Any, image_gray: np.ndarray, paper_level: float
+) -> float | None:
+    """Return paper_level minus the block's 5th-percentile luminance (how dark its
+    darkest strokes are against the paper), or None if the block has no usable crop."""
     box = _get_block_bbox(block)
     if not box:
-        return False
+        return None
     try:
         bx0, bx1, by0, by1 = box
         h, w = image_gray.shape[:2]
@@ -418,20 +474,56 @@ def _is_phantom_bleed_through_block(
         y1 = max(0, min(h, int(by1)))
 
         if x1 <= x0 or y1 <= y0:
-            return False
+            return None
 
         crop = image_gray[y0:y1, x0:x1]
         if crop.size < 50:
-            return False
+            return None
 
-        p5 = float(np.percentile(crop, 5))
-        # Real ink has dark pixels (typically < 120, well below 155).
-        # Bleed-through or blank regions without real ink have p5 > 155.
-        if p5 > 155.0:
-            return True
+        return paper_level - float(np.percentile(crop, 5))
     except Exception:
-        pass
-    return False
+        return None
+
+
+def _page_paper_level(image_gray: np.ndarray) -> float:
+    return float(np.percentile(image_gray, 90))
+
+
+def _page_ink_contrast_reference(
+    blocks: list[Any], image_gray: np.ndarray, paper_level: float
+) -> float:
+    """Typical ink contrast on this page: the median block contrast, so a light
+    (faded) print run is judged against its own ink, not against dark print."""
+    contrasts = [
+        c
+        for b in blocks
+        if (c := _block_ink_contrast(b, image_gray, paper_level)) is not None
+    ]
+    if contrasts:
+        return float(np.median(contrasts))
+    return paper_level - float(np.percentile(image_gray, 0.5))
+
+
+def _is_phantom_bleed_through_block(
+    block: Any,
+    image_gray: np.ndarray,
+    ink_contrast_reference: float | None = None,
+) -> bool:
+    """Return True if the block's ink is far fainter than the page's real ink.
+
+    Thresholds adapt to the page: a heavily printed page drops faint show-through
+    from the verso, while a lightly printed page keeps its (uniformly light) text.
+    """
+    paper_level = _page_paper_level(image_gray)
+    contrast = _block_ink_contrast(block, image_gray, paper_level)
+    if contrast is None:
+        return False
+    if ink_contrast_reference is None:
+        ink_contrast_reference = paper_level - float(np.percentile(image_gray, 0.5))
+    threshold = max(
+        _PHANTOM_MIN_CONTRAST, _PHANTOM_RELATIVE_CONTRAST * ink_contrast_reference
+    )
+    return contrast < threshold
 
 
 def _get_block_bbox(block: Any) -> tuple[float, float, float, float] | None:
@@ -505,6 +597,16 @@ def _process_page_sync(
 
     valid_blocks: list[Any] = []
 
+    phantom_candidates = [
+        b
+        for b in result.blocks
+        if not (b.skipped or b.error or b.label in DISCARD_LABELS)
+        and b.label in _PHANTOM_CHECK_LABELS
+    ]
+    ink_contrast_reference = _page_ink_contrast_reference(
+        phantom_candidates, gray_arr, _page_paper_level(gray_arr)
+    )
+
     for block in sorted(result.blocks, key=lambda b: b.reading_order):
         if block.skipped or block.error or block.label in DISCARD_LABELS:
             continue
@@ -524,11 +626,8 @@ def _process_page_sync(
                 continue
 
         # Filter phantom bleed-through text blocks with no dark ink
-        if block.label not in FOOTNOTE_LABELS and getattr(block, "label", "") in (
-            "Text",
-            "PageFooter",
-        ):
-            if _is_phantom_bleed_through_block(block, gray_arr):
+        if block.label in _PHANTOM_CHECK_LABELS:
+            if _is_phantom_bleed_through_block(block, gray_arr, ink_contrast_reference):
                 logger.info(
                     "Discarding phantom bleed-through block %s (no dark ink)",
                     getattr(block, "reading_order", 0),
@@ -552,7 +651,7 @@ def _process_page_sync(
 
         if len(current_group) == 1:
             b = current_group[0]
-            txt = _block_html_to_markdown(b.html)
+            txt = _block_html_to_markdown(b.html, b.label)
             if (
                 txt.strip()
                 and not is_block_repetition_loop(txt)
@@ -593,7 +692,7 @@ def _process_page_sync(
     for block in valid_blocks:
         if block.label in FOOTNOTE_LABELS:
             flush_group()
-            txt = _block_html_to_markdown(block.html)
+            txt = _block_html_to_markdown(block.html, block.label)
             if (
                 txt.strip()
                 and not is_block_repetition_loop(txt)
@@ -604,7 +703,7 @@ def _process_page_sync(
 
         if getattr(block, "label", "") != "Text":
             flush_group()
-            txt = _block_html_to_markdown(block.html)
+            txt = _block_html_to_markdown(block.html, block.label)
             if (
                 txt.strip()
                 and not is_block_repetition_loop(txt)
@@ -671,7 +770,16 @@ async def ocr_page(
     max_parallel_pages: int = DEFAULT_MAX_PARALLEL_PAGES,
     min_confidence: float = 0.3,
     max_retries: int | None = None,
+    valid_words: set[str] | None = None,
 ) -> str:
+    words_dict = valid_words
+    if words_dict is None:
+        try:
+            words_dict = get_valid_words()
+        except Exception as err:
+            logger.debug("Could not load dictionary words: %s", err)
+            words_dict = None
+
     if isinstance(recognition_predictor, SavitrPredictor):
         executor = _get_savitr_executor()
     else:
@@ -731,6 +839,21 @@ async def ocr_page(
                 )
 
             cleaned = clean_uyghur_text(markdown)
+            if words_dict and any(
+                h in cleaned
+                for h in (
+                    "-",
+                    "\u2010",
+                    "\u2011",
+                    "\u2012",
+                    "\u2013",
+                    "\u2014",
+                    "\u00ad",
+                )
+            ):
+                from engine.text_cleanup import dehyphenate_uyghur_text
+
+                cleaned, _ = dehyphenate_uyghur_text(cleaned, words_dict)
             if is_degenerate_ocr_output(cleaned):
                 raise LowConfidenceOcrError(
                     f"OCR output looks like a runaway repetition/reasoning-leak "

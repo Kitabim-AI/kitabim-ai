@@ -119,3 +119,22 @@ async def test_delete_dictionary_entry_not_found():
 
     assert exc_info.value.status_code == 404
     mock_session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_words_bundle():
+    setup_paths()
+    import gzip
+    from api.endpoints.dictionary_router import get_words_bundle
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.all.return_value = ["ئۇرۇقى", "دورىلارنى", "كىتاب"]
+    mock_session.execute.return_value = mock_res
+
+    response = await get_words_bundle(session=mock_session)
+
+    assert response.headers["Content-Encoding"] == "gzip"
+    decompressed = gzip.decompress(response.body).decode("utf-8")
+    words = decompressed.splitlines()
+    assert words == ["ئۇرۇقى", "دورىلارنى", "كىتاب"]

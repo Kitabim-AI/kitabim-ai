@@ -111,3 +111,21 @@ export interface ChatRequest {
   conversationId?: string;
 }
 
+export interface Bookmark {
+  id: string;
+  bookId: string;
+  bookTitle: string | null;
+  pageNumber: number;
+  name: string;
+  quoteText: string | null;
+  createdAt: string;
+}
+
+export interface ReadingProgressEntry {
+  bookId: string;
+  bookTitle: string | null;
+  bookCoverUrl: string | null;
+  pageNumber: number;
+  updatedAt: string;
+}
+

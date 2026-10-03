@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import zipfile
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from pathlib import Path
 
 logger = logging.getLogger(__name__)

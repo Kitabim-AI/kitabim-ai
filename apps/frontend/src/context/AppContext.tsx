@@ -62,6 +62,9 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+export const ADMIN_TABS = ['books', 'users', 'questions', 'rules', 'stats', 'contacts', 'config'] as const;
+export const LIBRARY_TABS = ['all-books', 'reading', 'bookmarks'] as const;
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const parsePath = (path: string): {
     view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran',
@@ -79,10 +82,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let pageNumber: number | undefined;
     let quote: string | undefined;
 
-    if (viewPortion === 'library') view = 'library';
+    if (viewPortion === 'library') {
+      view = 'library';
+      const rawTab = parts[1] === 'reading-bookmarks' ? 'bookmarks' : parts[1];
+      tab = LIBRARY_TABS.includes(rawTab as any) ? rawTab : 'all-books';
+    }
     else if (viewPortion === 'admin') {
       view = 'admin';
-      tab = parts[1] || 'books';
+      tab = ADMIN_TABS.includes(parts[1] as any) ? parts[1] : 'books';
     }
     else if (viewPortion === 'chat') view = 'global-chat';
     else if (viewPortion === 'join-us') view = 'join-us';
@@ -116,16 +123,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const getPathFromView = (v: string, t?: string) => {
     if (v === 'home') return '/';
     if (v === 'global-chat') return '/chat';
-    if (v === 'admin' && t && t !== 'books') return `/admin/${t}`;
+    if (v === 'admin') {
+      return t && t !== 'books' && ADMIN_TABS.includes(t as any) ? `/admin/${t}` : '/admin';
+    }
+    if (v === 'library') {
+      return t && t !== 'all-books' && LIBRARY_TABS.includes(t as any) ? `/library/${t}` : '/library';
+    }
     return `/${v}`;
   };
 
   const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran', updateHistory = true) => {
     if (newView !== view) {
+      const enteringLibraryFresh = newView === 'library' && view !== 'library';
+      const enteringAdminFresh = newView === 'admin' && view !== 'admin';
+
+      let effectiveTab = activeTab;
+      if (enteringLibraryFresh || (newView === 'library' && !LIBRARY_TABS.includes(activeTab as any))) {
+        effectiveTab = 'all-books';
+      } else if (enteringAdminFresh || (newView === 'admin' && !ADMIN_TABS.includes(activeTab as any))) {
+        effectiveTab = 'books';
+      }
+
       if (updateHistory && newView !== 'reader') {
-        const path = getPathFromView(newView, newView === 'admin' ? activeTab : undefined);
+        const path = getPathFromView(newView, (newView === 'admin' || newView === 'library') ? effectiveTab : undefined);
         if (window.location.pathname !== path) {
-          window.history.pushState({ view: newView, tab: activeTab }, '', path);
+          window.history.pushState({ view: newView, tab: effectiveTab }, '', path);
         }
       }
 
@@ -142,6 +164,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setHomeSearchText('');
       }
 
+      if (effectiveTab !== activeTab) {
+        setActiveTabInternal(effectiveTab);
+      }
+
       if (view !== 'reader' && view !== 'global-chat') {
         setPreviousView(view);
       }
@@ -151,10 +177,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const setActiveTab = (newTab: string, updateHistory = true) => {
     if (newTab !== activeTab) {
-      if (updateHistory && view === 'admin') {
-        const path = getPathFromView('admin', newTab);
+      if (updateHistory && (view === 'admin' || view === 'library')) {
+        const path = getPathFromView(view, newTab);
         if (window.location.pathname !== path) {
-          window.history.pushState({ view: 'admin', tab: newTab }, '', path);
+          window.history.pushState({ view, tab: newTab }, '', path);
         }
       }
       setActiveTabInternal(newTab);
@@ -203,6 +229,57 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   }, []);
 
+  // Silently persist reading progress a couple seconds after the centered
+  // page settles, and flush on unmount or tab hide so progress is never lost.
+  const latestProgressRef = useRef<{ bookId: string; pageNumber: number } | null>(null);
+
+  useEffect(() => {
+    if (!selectedBook || currentPage === null) {
+      latestProgressRef.current = null;
+      return;
+    }
+    latestProgressRef.current = { bookId: selectedBook.id, pageNumber: currentPage };
+
+    const timeoutId = window.setTimeout(() => {
+      if (latestProgressRef.current && typeof PersistenceService.saveReadingProgress === 'function') {
+        PersistenceService.saveReadingProgress(
+          latestProgressRef.current.bookId,
+          latestProgressRef.current.pageNumber
+        );
+      }
+    }, 2000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [selectedBook, currentPage]);
+
+  useEffect(() => {
+    const flush = () => {
+      if (latestProgressRef.current && typeof PersistenceService.saveReadingProgress === 'function') {
+        PersistenceService.saveReadingProgress(
+          latestProgressRef.current.bookId,
+          latestProgressRef.current.pageNumber
+        );
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flush();
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', flush);
+
+    return () => {
+      flush();
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, []);
+
   const [modal, setModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -242,7 +319,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setView,
     setModal,
     chat.setChatMessages,
-    setCurrentPage
+    setCurrentPage,
+    setPendingQuoteHighlight
   );
 
   const value = {

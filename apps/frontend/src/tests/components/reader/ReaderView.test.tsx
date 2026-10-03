@@ -27,6 +27,10 @@ vi.mock('@/src/services/persistenceService', () => ({
     getBookContent: vi.fn(),
     getBookPages: vi.fn(),
     downloadBook: vi.fn(),
+    listBookmarks: vi.fn().mockResolvedValue([]),
+    createBookmark: vi.fn(),
+    renameBookmark: vi.fn(),
+    deleteBookmark: vi.fn(),
   }
 }));
 

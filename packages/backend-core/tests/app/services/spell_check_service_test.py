@@ -170,3 +170,44 @@ async def test_run_spell_check_for_page_no_tokens():
 
     count = await run_spell_check_for_page(session, page)
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_run_spell_check_for_page_dehyphenation():
+    session = AsyncMock()
+    session.add_all = MagicMock()
+    page = Page(
+        id=2,
+        text="بۇ ئۇ-رۇقى ئەپ",
+        book_id="b1",
+        chunking_milestone="succeeded",
+        embedding_milestone="succeeded",
+        is_indexed=True,
+    )
+
+    mock_rules_res = MagicMock()
+    mock_rules_res.fetchall.return_value = []
+
+    # find_unknown_words -> all known
+    mock_unknown_res = MagicMock()
+    mock_unknown_res.fetchall.return_value = []
+
+    session.execute.side_effect = [
+        mock_rules_res,
+        mock_unknown_res,
+        MagicMock(),  # delete issues
+        MagicMock(),  # update page
+    ]
+
+    with patch(
+        "app.services.spell_check_service.dehyphenate_uyghur_text_async",
+        new=AsyncMock(return_value="بۇ ئۇرۇقى ئەپ"),
+    ) as mock_dehyphen:
+        count = await run_spell_check_for_page(session, page)
+
+        assert count == 0
+        assert mock_dehyphen.called
+        assert page.text == "بۇ ئۇرۇقى ئەپ"
+        assert page.chunking_milestone == "idle"
+        assert page.embedding_milestone == "idle"
+        assert page.is_indexed is False

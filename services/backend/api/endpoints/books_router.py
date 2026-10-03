@@ -69,7 +69,11 @@ from auth.dependencies import (
     require_reader,
 )
 import logging
-from app.utils.text import generate_uyghur_regex, normalize_uyghur_chars
+from app.utils.text import (
+    dehyphenate_uyghur_text_async,
+    generate_uyghur_regex,
+    normalize_uyghur_chars,
+)
 from app.core.i18n import t
 from app.utils.observability import log_json
 from app.services.pdf_service import (
@@ -302,7 +306,8 @@ async def get_books(
         json.dumps(
             cache_params_with_stats if includeStats else cache_params_no_stats,
             sort_keys=True,
-        ).encode()
+        ).encode(),
+        usedforsecurity=False,
     ).hexdigest()
     cache_key = cache_config.KEY_BOOKS_LIST.format(hash=f"{version}:{param_hash}")
 
@@ -321,7 +326,8 @@ async def get_books(
     ):
         # Try loading from metadata-only cache (excludeStats version)
         metadata_hash = hashlib.md5(
-            json.dumps(cache_params_no_stats, sort_keys=True).encode()
+            json.dumps(cache_params_no_stats, sort_keys=True).encode(),
+            usedforsecurity=False,
         ).hexdigest()
         metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(
             hash=f"{version}:{metadata_hash}"
@@ -693,7 +699,8 @@ async def get_books(
 
             # Cache metadata version (longer TTL since metadata is stable)
             metadata_hash = hashlib.md5(
-                json.dumps(cache_params_no_stats, sort_keys=True).encode()
+                json.dumps(cache_params_no_stats, sort_keys=True).encode(),
+                usedforsecurity=False,
             ).hexdigest()
             metadata_cache_key = cache_config.KEY_BOOKS_LIST.format(
                 hash=f"{version}:{metadata_hash}"
@@ -755,7 +762,9 @@ async def get_random_proverb(
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
 
     # Cache Lookup for the LIST of proverbs for this keyword
-    keyword_hash = hashlib.md5((keyword or "default").encode()).hexdigest()[:8]
+    keyword_hash = hashlib.md5(
+        (keyword or "default").encode(), usedforsecurity=False
+    ).hexdigest()[:8]
     list_cache_key = f"proverbs:list:{keyword_hash}"
 
     proverbs_list = await cache_service.get(list_cache_key)
@@ -817,7 +826,8 @@ async def get_top_categories(
     cache_params = {"limit": limit, "sort": sort, "is_guest": current_user is None}
     version = await cache_service.get_namespace_version("category")
     param_hash = hashlib.md5(
-        json.dumps(cache_params, sort_keys=True).encode()
+        json.dumps(cache_params, sort_keys=True).encode(),
+        usedforsecurity=False,
     ).hexdigest()[:8]
     cache_key = cache_config.KEY_CATEGORY.format(
         type="top", params=f"{version}:{param_hash}"
@@ -879,7 +889,7 @@ async def suggest_books(
 
     # Cache Lookup
     # Limit to first 10 chars to increase hit rate, hash to prevent key injection
-    q_prefix = hashlib.md5(q[:10].encode()).hexdigest()[:8]
+    q_prefix = hashlib.md5(q[:10].encode(), usedforsecurity=False).hexdigest()[:8]
     user_role = current_user.role if current_user else "guest"
     cache_key = f"suggestions:{q_prefix}:{user_role}"
 
@@ -1688,7 +1698,7 @@ async def upload_pdf(
                 Page(
                     book_id=book_id,
                     page_number=i + 1,
-                    text=text,
+                    text=(text or "").replace("\x00", ""),
                     pipeline_step=PIPELINE_STEP_CHUNKING,
                     milestone=PAGE_MILESTONE_IDLE,
                     status="ocr_done",
@@ -1845,12 +1855,19 @@ async def upload_pdf_ocrd(
     )
 
     pages_by_number = {p.page_number: p for p in pages_data}
-    session.add_all(
-        [
+    dehyphen_cache: dict[str, bool] = {}
+    pages_to_add = []
+    for n in range(1, page_count + 1):
+        raw_text = (pages_by_number[n].text or "").replace("\x00", "")
+        cleaned_text, _ = await dehyphenate_uyghur_text_async(
+            raw_text, session, word_cache=dehyphen_cache
+        )
+        cleaned_text = cleaned_text.replace("\x00", "")
+        pages_to_add.append(
             Page(
                 book_id=book_id,
                 page_number=n,
-                text=pages_by_number[n].text,
+                text=cleaned_text,
                 is_toc=pages_by_number[n].is_toc,
                 pipeline_step=PIPELINE_STEP_CHUNKING,
                 milestone=PAGE_MILESTONE_IDLE,
@@ -1860,9 +1877,8 @@ async def upload_pdf_ocrd(
                 embedding_milestone=PAGE_MILESTONE_IDLE,
                 spell_check_milestone=PAGE_MILESTONE_IDLE,
             )
-            for n in range(1, page_count + 1)
-        ]
-    )
+        )
+    session.add_all(pages_to_add)
 
     await session.commit()
 
@@ -2581,6 +2597,7 @@ async def update_page_text(
 
     new_text = normalize_markdown(payload.get("text", ""))
     new_text = normalize_uyghur_chars(new_text)
+    new_text, _ = await dehyphenate_uyghur_text_async(new_text, session)
 
     # 1. Update page text and status
     page = await pages_repo.find_one(book_id, page_num)

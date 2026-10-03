@@ -71,6 +71,11 @@ class OcrPageInput(BaseModel):
     text: str
     is_toc: bool = False  # API: isToc
 
+    @field_validator("text", mode="after")
+    @classmethod
+    def strip_null_bytes(cls, v: str) -> str:
+        return v.replace("\x00", "") if v else ""
+
 
 class Book(BaseModel):
     """
@@ -246,6 +251,8 @@ class RagQuestionAdmin(BaseModel):
     input_tokens: Optional[int] = 0
     output_tokens: Optional[int] = 0
     cost_usd: Optional[float] = 0.0
+    answer: Optional[str] = None
+    retrieved_context: Optional[str] = None
 
 
 class RagQuestionsPage(BaseModel):
