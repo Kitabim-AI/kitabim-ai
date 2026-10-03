@@ -2,6 +2,7 @@ import {
   BookOpen,
   Calendar,
   Check,
+  Coins,
   Copy,
   Eye,
   EyeOff,
@@ -225,11 +226,11 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
           </div>
 
           {/* Metadata & Scores Bar */}
-          <div className="bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800/60 rounded-2xl p-4 sm:p-5 space-y-3">
+          <div className="bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800/60 rounded-2xl p-4 sm:p-5 space-y-3 uyghur-text">
             <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
               {/* User Details */}
-              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                <User size={13} />
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 uyghur-text">
+                <User size={13} className="shrink-0" />
                 <span className="font-semibold">{t('admin.questions.colUser')}:</span>
                 <span className="font-medium text-slate-800 dark:text-slate-200">
                   {question.userDisplayName || '—'}
@@ -237,14 +238,14 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
               </div>
 
               {/* User Feedback */}
-              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 uyghur-text">
                 <span className="font-semibold">{t('admin.questions.colFeedback')}:</span>
                 {question.userFeedback === 'positive' ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40 text-xs font-medium">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40 text-xs font-medium uyghur-text">
                     👍 {t('admin.questions.feedbackPositive') || 'ئىجابىي'}
                   </span>
                 ) : question.userFeedback === 'negative' ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200/60 dark:border-red-900/40 text-xs font-medium">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200/60 dark:border-red-900/40 text-xs font-medium uyghur-text">
                     👎 {t('admin.questions.feedbackNegative') || 'سەلبىي'}
                   </span>
                 ) : (
@@ -254,31 +255,35 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
 
               {/* Cost & Tokens */}
               {question.costUsd !== undefined && question.costUsd > 0 && (
-                <div className="text-slate-500 dark:text-slate-400 text-xs font-mono">
-                  {formatAnswerCost(question.costUsd, totalTokens, t)}
+                <div className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-xs font-medium uyghur-text">
+                  <Coins size={13} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>{formatAnswerCost(question.costUsd, totalTokens, t)}</span>
                 </div>
               )}
             </div>
 
             {/* Eval Scores (if completed) */}
             {question.evalStatus === 'completed' && (
-              <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/50 flex flex-wrap items-center gap-3 text-xs">
+              <div className="pt-3 border-t border-slate-200/60 dark:border-slate-700/50 flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs">
                 <span className="text-slate-500 dark:text-slate-400 font-semibold uyghur-text">
                   {t('admin.questions.colEvalQuality')}:
                 </span>
                 {question.faithfulnessScore !== null && (
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-mono text-[11px] border border-emerald-200/60 dark:border-emerald-800/40">
-                    {t('admin.questions.evalFaithfulness')}: {question.faithfulnessScore.toFixed(2)}
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[11px] border border-emerald-200/60 dark:border-emerald-800/40 uyghur-text">
+                    <span>{t('admin.questions.evalFaithfulness')}:</span>
+                    <span className="font-mono tabular-nums ltr-text font-semibold">{question.faithfulnessScore.toFixed(2)}</span>
                   </span>
                 )}
                 {question.answerRelevanceScore !== null && (
-                  <span className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-mono text-[11px] border border-blue-200/60 dark:border-blue-800/40">
-                    {t('admin.questions.evalAnswerRelevance')}: {question.answerRelevanceScore.toFixed(2)}
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[11px] border border-blue-200/60 dark:border-blue-800/40 uyghur-text">
+                    <span>{t('admin.questions.evalAnswerRelevance')}:</span>
+                    <span className="font-mono tabular-nums ltr-text font-semibold">{question.answerRelevanceScore.toFixed(2)}</span>
                   </span>
                 )}
                 {question.contextPrecisionScore !== null && (
-                  <span className="px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 font-mono text-[11px] border border-violet-200/60 dark:border-violet-800/40">
-                    {t('admin.questions.evalContextPrecision')}: {question.contextPrecisionScore.toFixed(2)}
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 text-[11px] border border-violet-200/60 dark:border-violet-800/40 uyghur-text">
+                    <span>{t('admin.questions.evalContextPrecision')}:</span>
+                    <span className="font-mono tabular-nums ltr-text font-semibold">{question.contextPrecisionScore.toFixed(2)}</span>
                   </span>
                 )}
               </div>
