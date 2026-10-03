@@ -299,3 +299,26 @@ def test_is_dot_enhancement_enabled(monkeypatch):
     monkeypatch.delenv("KITABIM_OCR_DOT_ENHANCEMENT", raising=False)
     monkeypatch.setenv("OCR_DOT_ENHANCEMENT", "false")
     assert is_dot_enhancement_enabled() is False
+
+
+def test_is_paddle_available():
+    from engine.config import is_paddle_available
+
+    res = is_paddle_available()
+    assert isinstance(res, bool)
+
+
+def test_get_configured_engine_paddle(monkeypatch):
+    from engine.config import get_configured_engine
+
+    monkeypatch.setenv("KITABIM_OCR_ENGINE", "paddle")
+    assert get_configured_engine() == "paddle"
+
+
+def test_resolve_concurrency_paddle():
+    from engine.config import resolve_concurrency
+
+    # Defaults to 2 and clamps to MAX_PADDLE_CONCURRENCY (2)
+    assert resolve_concurrency("paddle") == 2
+    assert resolve_concurrency("paddle", 4) == 2
+    assert resolve_concurrency("paddle", 1) == 1

@@ -6,10 +6,12 @@ import sys
 from typing import Literal
 
 DEFAULT_OCR_ENGINE = "surya"
-SUPPORTED_OCR_ENGINES = ("surya", "savitr")
-OcrEngineName = Literal["surya", "savitr"]
+SUPPORTED_OCR_ENGINES = ("surya", "savitr", "paddle")
+OcrEngineName = Literal["surya", "savitr", "paddle"]
 DEFAULT_OCR_CONCURRENCY = 4
 MAX_SURYA_CONCURRENCY = 4
+DEFAULT_PADDLE_CONCURRENCY = 2
+MAX_PADDLE_CONCURRENCY = 2
 DEFAULT_OCR_PAGE_TIMEOUT: float = 120.0
 DEFAULT_OCR_MAX_RETRIES: int = 2
 DEFAULT_SURYA_MAX_TOKENS_FULL_PAGE: int = 2500
@@ -39,6 +41,17 @@ def is_savitr_available() -> bool:
             return True
         except ImportError:
             return False
+
+
+def is_paddle_available() -> bool:
+    """Return True if paddle and paddleocr dependencies can be imported."""
+    try:
+        import paddle  # type: ignore  # noqa: F401
+        import paddleocr  # type: ignore  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
 
 
 def get_configured_engine(default: str = DEFAULT_OCR_ENGINE) -> str:
@@ -106,10 +119,17 @@ def resolve_concurrency(engine: str | None, requested: int | None = None) -> int
     standalone preview server) clamp consistently with the rest of the app.
 
     If requested is None, reads the configured value from the environment.
-    Clamps to MAX_SURYA_CONCURRENCY for the 'surya' engine; floors at 1
-    otherwise.
+    Clamps to MAX_SURYA_CONCURRENCY for 'surya', MAX_PADDLE_CONCURRENCY for 'paddle';
+    floors at 1 otherwise.
     """
     resolved_engine = (engine or get_configured_engine()).strip().lower()
+    if resolved_engine == "paddle":
+        max_limit = MAX_PADDLE_CONCURRENCY
+        default_val = DEFAULT_PADDLE_CONCURRENCY
+        if requested is None:
+            return get_configured_concurrency(default=default_val, max_limit=max_limit)
+        return min(max(1, requested), max_limit)
+
     max_limit = MAX_SURYA_CONCURRENCY if resolved_engine == "surya" else None
     if requested is None:
         return get_configured_concurrency(max_limit=max_limit)
