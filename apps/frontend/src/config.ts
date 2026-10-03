@@ -1,5 +1,5 @@
 /**
  * API configuration for the frontend application.
  */
-export const APP_CLIENT_ID = '84d42c7774bba56c2de5e8545104ac18';
+export const APP_CLIENT_ID = '1e2da513d16fa073b0582fd4108ec955';
 

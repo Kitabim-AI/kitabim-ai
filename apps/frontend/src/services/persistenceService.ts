@@ -176,6 +176,29 @@ export const PersistenceService = {
 
   async downloadBook(bookId: string, fileName: string): Promise<void> {
     try {
+      // Step 1: Request high-speed download ticket or direct signed URL
+      try {
+        const ticketRes = await authFetch(`${API_BASE}/books/${bookId}/download-ticket`, {
+          method: 'POST',
+        });
+        if (ticketRes.ok) {
+          const data = await ticketRes.json();
+          if (data?.download_url) {
+            // Trigger native browser download directly — no in-memory blob buffering
+            const a = document.createElement('a');
+            a.href = data.download_url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            return;
+          }
+        }
+      } catch (ticketErr) {
+        console.warn("Could not get download ticket, falling back to direct download:", ticketErr);
+      }
+
+      // Step 2: Fallback to direct authenticated fetch
       const response = await authFetch(`${API_BASE}/books/${bookId}/download`);
       if (!response.ok) {
         if (response.status === 401) throw new Error("Authentication required");

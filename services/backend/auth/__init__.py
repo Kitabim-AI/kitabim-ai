@@ -8,7 +8,12 @@ This module provides:
 - Role-based access control
 """
 
-from auth.jwt_handler import create_access_token, create_refresh_token, decode_jwt
+from auth.jwt_handler import (
+    create_access_token,
+    create_refresh_token,
+    create_download_token,
+    decode_jwt,
+)
 from auth.dependencies import (
     get_current_user,
     get_current_user_optional,
@@ -21,6 +26,7 @@ from auth.dependencies import (
 __all__ = [
     "create_access_token",
     "create_refresh_token",
+    "create_download_token",
     "decode_jwt",
     "get_current_user",
     "get_current_user_optional",

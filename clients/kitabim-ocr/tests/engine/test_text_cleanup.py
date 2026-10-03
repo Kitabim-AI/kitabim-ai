@@ -2,6 +2,7 @@ from engine.text_cleanup import (
     clean_uyghur_text,
     correct_uyghur_ocr_orthography,
     dehyphenate_uyghur_text,
+    has_repeated_word_span,
     is_block_repetition_loop,
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
@@ -388,3 +389,33 @@ def test_clean_uyghur_text_with_valid_words():
     raw = "تەبىئىي دو-رىلارنى ئىستېمال قىلىپ ئاز-ئازدىن ساقىيدى."
     res = clean_uyghur_text(raw, valid_words=valid)
     assert res == "تەبىئىي دورىلارنى ئىستېمال قىلىپ ئاز-ئازدىن ساقىيدى."
+
+
+def test_has_repeated_word_span_detects_short_decoder_loop():
+    # Real Surya full-page output: a 2-line block where the model re-emitted
+    # its last line before drifting into the footnote's text.
+    looped = (
+        "پەرغانە نۇسخىسى ئەرەب ھەرپى ئاساس قىلىنغان ئۇيغۇر يېزىقىدا كۆچۈرۈلگەن ۋە "
+        "ھەممىدىن تولۇق نۇسخا بولۇپ، بۇ نۇسخىنى تۇنجى قېتىم تاتار ئالىمى زەكى "
+        "ۋەلىدىي 1914 - يىلى پەرغانىدا تولۇق نۇسخىسى بولۇپ، بۇ نۇسخىنى تۇنجى "
+        "قېتىم تاتار ئالىمى زەكى ۋەلىدىي 1914 - يىلى پەرغانىدا تولۇق نۇسخىسى "
+        "بولۇپ، مەھمۇد كاشى ھەرىسىڭ ئېيىنىچە، بۇ سۆزنىڭ قەدىمكى يۈركىسى"
+    )
+    assert is_block_repetition_loop(looped) is False  # too short a loop for it
+    assert has_repeated_word_span(looped) is True
+
+
+def test_has_repeated_word_span_false_for_normal_paragraph():
+    normal = (
+        "ۋېنا نۇسخىسى مىلادىيە 1439 - يىلى ھىرات شەھىرىدە ھەسەن قارا سايىل شەمس "
+        "دېگەن كىشى تەرىپىدىن قەدىمكى ئۇيغۇر يېزىقىدا كۆچۈرۈلۈپ، مىلادىيە 1474 - "
+        "يىلى ئىستانبۇلغا كەلتۈرۈلگەن، بۇ نۇسخا ھازىرمۇ شۇ كۈتۈپخانىدا ساقلانماقتا."
+    )
+    assert has_repeated_word_span(normal) is False
+
+
+def test_has_repeated_word_span_ignores_short_repeated_phrases():
+    text = (
+        "بۇ نۇسخىنى تۇنجى قېتىم ئېلان قىلدى. كېيىن بۇ نۇسخىنى تۇنجى قېتىم نەشر قىلدى."
+    )
+    assert has_repeated_word_span(text) is False

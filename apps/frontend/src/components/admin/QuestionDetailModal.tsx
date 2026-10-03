@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Loader,
   MessageSquare,
+  Share2,
   Sparkles,
   User,
   X,
@@ -19,6 +20,7 @@ import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
 import { formatAnswerCost } from '../../utils/costUtils';
 import { MarkdownContent } from '../common/MarkdownContent';
+import { ShareChatModal } from '../share/ShareChatModal';
 
 export interface RagQuestionDetail {
   id: number;
@@ -73,6 +75,7 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
 }) => {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const [showShare, setShowShare] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -126,31 +129,33 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
                 {t('admin.questions.modalTitle')}
               </h3>
               <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {/* Scope Badge */}
+                {/* Scope / Book Badge */}
                 <span
-                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium ${
+                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium max-w-full ${
                     question.isGlobal
                       ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 border border-violet-100 dark:border-violet-900/40'
                       : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-900/40'
                   }`}
+                  title={!question.isGlobal ? (question.bookTitle || question.bookId || undefined) : undefined}
                 >
-                  {question.isGlobal ? <Globe size={11} /> : <BookOpen size={11} />}
-                  <span>
-                    {question.isGlobal
-                      ? t('admin.questions.scopeGlobal')
-                      : t('admin.questions.scopeBook')}
-                  </span>
+                  {question.isGlobal ? (
+                    <Globe size={11} className="shrink-0" />
+                  ) : (
+                    <BookOpen size={11} className="shrink-0" />
+                  )}
+                  {question.isGlobal ? (
+                    <span>{t('admin.questions.scopeGlobal')}</span>
+                  ) : question.bookTitle || question.bookId ? (
+                    <>
+                      <span className="shrink-0">{t('admin.questions.scopeBook')}:</span>
+                      <span className="truncate max-w-[200px] sm:max-w-xs font-semibold uyghur-text">
+                        {question.bookTitle || question.bookId}
+                      </span>
+                    </>
+                  ) : (
+                    <span>{t('admin.questions.scopeBook')}</span>
+                  )}
                 </span>
-
-                {/* Book Title */}
-                {!question.isGlobal && (question.bookTitle || question.bookId) && (
-                  <span
-                    className="truncate max-w-[200px] sm:max-w-xs font-semibold text-amber-700 dark:text-amber-400/90 uyghur-text"
-                    title={question.bookTitle || question.bookId || undefined}
-                  >
-                    📖 {question.bookTitle || question.bookId}
-                  </span>
-                )}
 
                 {/* Timestamp */}
                 <span className="flex items-center gap-1 font-mono text-[11px] text-slate-400">
@@ -161,13 +166,25 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="p-2 hover:bg-red-50 dark:hover:bg-red-950/20 text-slate-400 hover:text-red-500 dark:hover:text-red-400 rounded-2xl transition-all cursor-pointer"
-          >
-            <X size={20} strokeWidth={2.2} />
-          </button>
+          <div className="flex items-center gap-1 sm:gap-2">
+            {question.answer && (
+              <button
+                onClick={() => setShowShare(true)}
+                title={t('share.shareQA')}
+                aria-label={t('share.shareQA')}
+                className="p-2 hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 text-slate-400 hover:text-[#0369a1] dark:hover:text-[#38bdf8] rounded-2xl transition-all cursor-pointer"
+              >
+                <Share2 size={20} strokeWidth={2.2} />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="p-2 hover:bg-red-50 dark:hover:bg-red-950/20 text-slate-400 hover:text-red-500 dark:hover:text-red-400 rounded-2xl transition-all cursor-pointer"
+            >
+              <X size={20} strokeWidth={2.2} />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Content Body */}
@@ -192,25 +209,36 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
               </div>
 
               {question.answer && (
-                <button
-                  onClick={handleCopyAnswer}
-                  title={t('admin.questions.copyAnswer')}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-500 hover:text-[#0369a1] dark:hover:text-[#38bdf8] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
-                >
-                  {copied ? (
-                    <>
-                      <Check size={13} className="text-emerald-500" />
-                      <span className="text-emerald-500 uyghur-text">
-                        {t('admin.questions.copied')}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={13} />
-                      <span className="uyghur-text">{t('admin.questions.copyAnswer')}</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setShowShare(true)}
+                    title={t('share.shareQA')}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-500 hover:text-[#0369a1] dark:hover:text-[#38bdf8] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+                  >
+                    <Share2 size={13} />
+                    <span className="uyghur-text">{t('share.shareQA')}</span>
+                  </button>
+
+                  <button
+                    onClick={handleCopyAnswer}
+                    title={t('admin.questions.copyAnswer')}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-500 hover:text-[#0369a1] dark:hover:text-[#38bdf8] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+                  >
+                    {copied ? (
+                      <>
+                        <Check size={13} className="text-emerald-500" />
+                        <span className="text-emerald-500 uyghur-text">
+                          {t('admin.questions.copied')}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={13} />
+                        <span className="uyghur-text">{t('admin.questions.copyAnswer')}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               )}
             </div>
 
@@ -293,32 +321,42 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
 
         {/* Footer */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50">
-          {onToggleHomepage ? (
-            <button
-              onClick={() => onToggleHomepage(question)}
-              disabled={isToggling}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
-                question.showOnHomepage
-                  ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50'
-                  : 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 hover:opacity-95'
-              }`}
-            >
-              {isToggling ? (
-                <Loader size={14} className="animate-spin" />
-              ) : question.showOnHomepage ? (
-                <EyeOff size={14} />
-              ) : (
-                <Eye size={14} />
-              )}
-              <span className="uyghur-text">
-                {question.showOnHomepage
-                  ? t('admin.questions.hideFromHome')
-                  : t('admin.questions.showOnHome')}
-              </span>
-            </button>
-          ) : (
-            <div />
-          )}
+          <div className="flex items-center gap-2">
+            {onToggleHomepage && (
+              <button
+                onClick={() => onToggleHomepage(question)}
+                disabled={isToggling}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+                  question.showOnHomepage
+                    ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                    : 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 hover:opacity-95'
+                }`}
+              >
+                {isToggling ? (
+                  <Loader size={14} className="animate-spin" />
+                ) : question.showOnHomepage ? (
+                  <EyeOff size={14} />
+                ) : (
+                  <Eye size={14} />
+                )}
+                <span className="uyghur-text">
+                  {question.showOnHomepage
+                    ? t('admin.questions.hideFromHome')
+                    : t('admin.questions.showOnHome')}
+                </span>
+              </button>
+            )}
+
+            {question.answer && (
+              <button
+                onClick={() => setShowShare(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-white dark:bg-slate-800 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10 transition-all cursor-pointer"
+              >
+                <Share2 size={14} />
+                <span className="uyghur-text">{t('share.shareQA')}</span>
+              </button>
+            )}
+          </div>
 
           <button
             onClick={onClose}
@@ -328,6 +366,16 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
           </button>
         </div>
       </div>
+
+      {showShare && question.answer && (
+        <ShareChatModal
+          question={question.question}
+          answer={question.answer}
+          bookId={question.bookId || undefined}
+          bookTitle={question.bookTitle || undefined}
+          onClose={() => setShowShare(false)}
+        />
+      )}
     </div>,
     document.body
   );

@@ -103,6 +103,18 @@ test('PageItem renders display page number and PDF page number with spacing when
   expect(screen.getByText('(PDF 204)')).toBeInTheDocument();
 });
 
+test('PageItem renders both content page number and PDF page number in footer even without offset', () => {
+  renderPageItem({
+    page: {
+      pageNumber: 15,
+      text: 'Content without offset',
+      status: 'ocr_done',
+    },
+  });
+  expect(screen.getByText('chat.pageNumber')).toBeInTheDocument();
+  expect(screen.getByText('(PDF 15)')).toBeInTheDocument();
+});
+
 test('PageItem shows Mark as Page 1 and Mark as ToC buttons for editor/admin users', () => {
   vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
   const onSetStartPage = vi.fn();

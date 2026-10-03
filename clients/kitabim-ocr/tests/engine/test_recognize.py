@@ -1118,3 +1118,84 @@ def test_process_page_sync_preserves_prose_paragraphs_as_separate_blocks():
     assert cleaned_paras[0].startswith("كەلتۈرگەن، شۇنداقلا")
     assert cleaned_paras[1].startswith("ئابدۇرېھىم ئۆتكۈز 1980")
     assert cleaned_paras[4].startswith("بۇ توپلامغا شائىر")
+
+
+def _boxed_block(label, html, position, y0, y1, confidence=0.97):
+    b = _block(label, html, position=position, confidence=confidence)
+    b.polygon = [[10.0, y0], [190.0, y0], [190.0, y1], [10.0, y1]]
+    return b
+
+
+_LOOPED_HTML = (
+    "<p>ھەممىدىن تولۇق نۇسخا بولۇپ، بۇ نۇسخىنى تۇنجى قېتىم تاتار ئالىمى زەكى "
+    "ۋەلىدىي 1914 - يىلى پەرغانىدا تولۇق نۇسخىسى بولۇپ، بۇ نۇسخىنى تۇنجى قېتىم "
+    "تاتار ئالىمى زەكى ۋەلىدىي 1914 - يىلى پەرغانىدا تولۇق نۇسخىسى بولۇپ، "
+    "مەھمۇد كاشى</p>"
+)
+
+
+def test_process_page_sync_reocrs_looping_block_in_block_mode():
+    img = Image.new("RGB", (200, 200))
+    full_page = MagicMock()
+    full_page.blocks = [
+        _boxed_block("Text", "<p>بىرىنچى ئابزاس.</p>", 0, 10, 50),
+        _boxed_block("Text", _LOOPED_HTML, 1, 60, 100),
+        # Footnote truncated because the looping block "stole" its text.
+        _boxed_block("Footnote", "<p>1. ھاجىپ - ئارىچى</p>", 2, 110, 150),
+    ]
+    block_mode = MagicMock()
+    block_mode.blocks = [
+        _boxed_block("Text", "<p>بىرىنچى ئابزاس!</p>", 0, 10, 50),
+        _boxed_block(
+            "Text",
+            "<p>ھەممىدىن تولۇق نۇسخا بولۇپ، بۇ نۇسخىنى تاتار ئالىمى زەكى ۋەلىدىي 1914 - يىلى پەرغانىدا</p>",
+            1,
+            60,
+            100,
+        ),
+        _boxed_block(
+            "Footnote",
+            "<p>1. ھاجىپ - ئارىچى، ۋاكالەتدار، خاننىڭ ئەڭ يېقىن مەسلىھەتچىسى</p>",
+            2,
+            110,
+            150,
+        ),
+    ]
+    predictor = MagicMock(return_value=[block_mode])
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    args, kwargs = predictor.call_args
+    assert kwargs == {"full_page": False}
+    layout = args[1][0]
+    assert [b.label for b in layout.bboxes] == ["Text", "Text", "Footnote"]
+    assert layout.bboxes[1].bbox == [10.0, 60.0, 190.0, 100.0]
+
+    blocks = markdown.split("\n\n")
+    # Untouched block keeps the (more accurate) full-page text.
+    assert blocks[0] == "بىرىنچى ئابزاس."
+    # Looping block replaced by its block-mode re-read.
+    assert blocks[1].endswith("پەرغانىدا")
+    assert blocks[1].count("زەكى") == 1
+    # Truncated neighbour replaced because block mode recovered more text.
+    assert blocks[2] == "1. ھاجىپ - ئارىچى، ۋاكالەتدار، خاننىڭ ئەڭ يېقىن مەسلىھەتچىسى"
+
+
+def test_process_page_sync_does_not_reocr_clean_page():
+    img = Image.new("RGB", (200, 200))
+    full_page = MagicMock()
+    full_page.blocks = [_boxed_block("Text", "<p>ئادەتتىكى تېكىست.</p>", 0, 10, 50)]
+    predictor = MagicMock()
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    predictor.assert_not_called()
+    assert markdown == "ئادەتتىكى تېكىست."

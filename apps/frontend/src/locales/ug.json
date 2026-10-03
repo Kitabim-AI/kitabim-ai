@@ -327,6 +327,7 @@
     "spellCheck": "ئىملا تەكشۈرۈش",
     "editBook": "كىتاب تەھرىرلەش",
     "editPage": "بەت تەھرىرلەش",
+    "reprocessPage": "بەتنى قايتا تونۇتۇش",
     "loadFullDocument": "ھەممە بەتنى كۆرۈش",
     "virtualScroll": "كۆزنەكلىك ئوقۇش",
     "pageNumber": "بەت نومۇرى",

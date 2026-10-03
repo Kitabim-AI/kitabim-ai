@@ -67,7 +67,11 @@ from auth.dependencies import (
     require_admin,
     require_editor,
     require_reader,
+    security,
 )
+from auth.jwt_handler import create_download_token, decode_jwt
+from fastapi.security import HTTPAuthorizationCredentials
+from app.models.user import UserRole
 import logging
 from app.utils.text import (
     dehyphenate_uyghur_text_async,
@@ -3207,14 +3211,91 @@ async def update_book_cover(
     }
 
 
-@router.get("/{book_id}/download")
-async def download_book(
+@router.post("/{book_id}/download-ticket")
+async def get_download_ticket(
     book_id: str,
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
+    """
+    Generate a high-speed download ticket or signed URL for downloading the book.
+    Returns a direct GCS signed URL if available, or a short-lived ticket URL.
+    """
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    ext = f".{book.file_type}"
+    remote_path = f"uploads/{book_id}{ext}"
+    if not storage.exists(remote_path) and book.file_name:
+        remote_path = f"uploads/{book.file_name}"
+
+    if not storage.exists(remote_path):
+        raise HTTPException(
+            status_code=404, detail=t("errors.file_not_found_in_storage")
+        )
+
+    download_name = book.file_name or f"{book.title or book_id}{ext}"
+    if not download_name.lower().endswith(ext):
+        download_name += ext
+
+    # 1. Try direct GCS signed URL (if production / GCS configured)
+    signed_url = storage.generate_signed_url(
+        remote_path=remote_path,
+        expiration_seconds=900,
+        download_filename=download_name,
+    )
+    if signed_url:
+        return {"download_url": signed_url}
+
+    # 2. Local storage or fallback: generate short-lived ticket
+    token = create_download_token(current_user, book_id, expire_seconds=120)
+    return {"download_url": f"/api/books/{book_id}/download?ticket={token}"}
+
+
+@router.get("/{book_id}/download")
+async def download_book(
+    book_id: str,
+    ticket: Optional[str] = Query(None),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    session: AsyncSession = Depends(get_session),
+):
     """Download the original book file (PDF or DOCX) from storage."""
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
+
+    # Authenticate via either short-lived download ticket or Bearer credentials
+    if ticket:
+        try:
+            payload = decode_jwt(ticket, expected_type="download")
+            if payload.get("book_id") != book_id:
+                raise HTTPException(status_code=403, detail="Invalid download ticket")
+            user_role = payload.get("role")
+            allowed_roles = (
+                UserRole.ADMIN.value
+                if hasattr(UserRole.ADMIN, "value")
+                else str(UserRole.ADMIN),
+                UserRole.EDITOR.value
+                if hasattr(UserRole.EDITOR, "value")
+                else str(UserRole.EDITOR),
+            )
+            if user_role not in allowed_roles:
+                raise HTTPException(status_code=403, detail="Insufficient permissions")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(
+                status_code=401, detail="Invalid or expired download ticket"
+            )
+    else:
+        # Require editor via Bearer token
+        if not credentials:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        user = await get_current_user_optional(credentials, session)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        if user.role not in (UserRole.ADMIN, UserRole.EDITOR):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
@@ -3234,37 +3315,65 @@ async def download_book(
             status_code=404, detail=t("errors.file_not_found_in_storage")
         )
 
-    try:
-        # Get a readable stream directly from storage (doesn't load entire file into memory)
-        stream = storage.get_stream(remote_path)
-        media_type = (
-            "application/pdf"
-            if book.file_type == "pdf"
-            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    download_name = book.file_name or f"{book.title or book_id}{ext}"
+    if not download_name.lower().endswith(ext):
+        download_name += ext
+
+    from urllib.parse import quote
+
+    safe_fallback = "".join(c if ord(c) < 128 else "_" for c in download_name)
+    encoded_filename = quote(download_name)
+    content_disposition = (
+        f"attachment; filename=\"{safe_fallback}\"; filename*=UTF-8''{encoded_filename}"
+    )
+
+    # 1. If GCS signed URL is available, redirect directly
+    signed_url = storage.generate_signed_url(
+        remote_path=remote_path,
+        expiration_seconds=900,
+        download_filename=download_name,
+    )
+    if signed_url:
+        return RedirectResponse(signed_url, status_code=307)
+
+    media_type = (
+        "application/pdf"
+        if book.file_type == "pdf"
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+    # 2. If stored locally, use FileResponse for zero-copy kernel sendfile & Content-Length
+    local_path = storage.get_local_path(remote_path)
+    if local_path and local_path.is_file():
+        return FileResponse(
+            path=str(local_path),
+            media_type=media_type,
+            filename=safe_fallback,
+            headers={"Content-Disposition": content_disposition},
         )
 
-        # Use a safe filename for the download, handling non-ASCII characters for RFC 5987
-        from urllib.parse import quote
-
-        download_name = book.file_name or f"{book.title or book_id}{ext}"
-        if not download_name.lower().endswith(ext):
-            download_name += ext
-
-        # Sanitize fallback filename for standard 'filename' (latin-1 only)
-        # We replace non-latin characters with underscores or similar for the fallback
-        safe_fallback = "".join(c if ord(c) < 128 else "_" for c in download_name)
-        encoded_filename = quote(download_name)
+    # 3. Fallback streaming: read in 1 MB chunks (never line-by-line) and provide Content-Length if known
+    try:
+        stream = storage.get_stream(remote_path)
+        file_size = storage.get_size(remote_path)
 
         def iter_file():
-            yield from stream
-            stream.close()
+            chunk_size = 1024 * 1024  # 1 MB blocks
+            try:
+                while chunk := stream.read(chunk_size):
+                    yield chunk
+            finally:
+                if hasattr(stream, "close"):
+                    stream.close()
+
+        headers = {"Content-Disposition": content_disposition}
+        if file_size:
+            headers["Content-Length"] = str(file_size)
 
         return StreamingResponse(
             iter_file(),
             media_type=media_type,
-            headers={
-                "Content-Disposition": f"attachment; filename=\"{safe_fallback}\"; filename*=UTF-8''{encoded_filename}"
-            },
+            headers=headers,
         )
     except Exception as exc:
         logger.error(f"Failed to download book {book_id}: {exc}")

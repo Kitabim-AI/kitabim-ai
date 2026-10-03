@@ -98,4 +98,14 @@ describe('QuestionDetailModal', () => {
 
     expect(onToggleHomepage).toHaveBeenCalledWith(mockQuestion);
   });
+
+  it('opens share modal when share button is clicked', () => {
+    render(<QuestionDetailModal question={mockQuestion} onClose={vi.fn()} />);
+
+    const shareBtns = screen.getAllByTitle('share.shareQA');
+    expect(shareBtns.length).toBeGreaterThan(0);
+    fireEvent.click(shareBtns[0]);
+
+    expect(screen.getByText('share.copyContent')).toBeInTheDocument();
+  });
 });

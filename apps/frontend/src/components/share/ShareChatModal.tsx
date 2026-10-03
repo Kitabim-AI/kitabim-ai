@@ -65,7 +65,7 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({ question, answer
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4" dir="rtl">
+    <div className="fixed inset-0 z-[350] flex items-center justify-center p-4" dir="rtl">
       <div
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl animate-fade-in"
         onClick={onClose}

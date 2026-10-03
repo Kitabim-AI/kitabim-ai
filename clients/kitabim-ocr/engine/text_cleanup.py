@@ -458,6 +458,24 @@ _COMMON_ARABIC_WORDS = re.compile(
 )
 
 
+def has_repeated_word_span(text: str, min_words: int = 8) -> bool:
+    """True if any run of ``min_words`` consecutive words occurs twice in ``text``.
+
+    Catches the short decoder loop that ``is_block_repetition_loop`` is tuned
+    to miss: Surya's full-page pass re-emitting a block's last printed line
+    once or twice before drifting into a neighbouring block's text. Normal
+    prose essentially never repeats an 8-word span inside one block.
+    """
+    words = text.split()
+    seen: set[tuple[str, ...]] = set()
+    for i in range(len(words) - min_words + 1):
+        span = tuple(words[i : i + min_words])
+        if span in seen:
+            return True
+        seen.add(span)
+    return False
+
+
 def is_block_repetition_loop(text: str) -> bool:
     """Detect if a block contains a runaway repetitive decoding loop (n-grams or words)."""
     if not text:

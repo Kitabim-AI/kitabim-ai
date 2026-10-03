@@ -1086,3 +1086,141 @@ async def test_trigger_llm_spell_check_page_404_when_not_found():
             )
 
     assert excinfo.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_download_ticket_returns_ticket_url():
+    setup_paths()
+    from api.endpoints.books_router import get_download_ticket
+    from app.models.user import UserRole
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.id = "user123"
+    mock_user.role = UserRole.EDITOR
+
+    mock_book = MagicMock()
+    mock_book.id = "book123"
+    mock_book.file_type = "pdf"
+    mock_book.file_name = "test.pdf"
+    mock_book.title = "Test Book"
+
+    mock_repo = MagicMock()
+    mock_repo.get = AsyncMock(return_value=mock_book)
+
+    with patch(
+        "api.endpoints.books_router.BooksRepository", return_value=mock_repo
+    ), patch("api.endpoints.books_router.storage.exists", return_value=True), patch(
+        "api.endpoints.books_router.storage.generate_signed_url", return_value=None
+    ):
+        res = await get_download_ticket(
+            book_id="book123",
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert "download_url" in res
+    assert res["download_url"].startswith("/api/books/book123/download?ticket=")
+
+
+@pytest.mark.asyncio
+async def test_get_download_ticket_returns_signed_url_when_gcs():
+    setup_paths()
+    from api.endpoints.books_router import get_download_ticket
+    from app.models.user import UserRole
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.id = "user123"
+    mock_user.role = UserRole.EDITOR
+
+    mock_book = MagicMock()
+    mock_book.id = "book123"
+    mock_book.file_type = "pdf"
+    mock_book.file_name = "test.pdf"
+    mock_book.title = "Test Book"
+
+    mock_repo = MagicMock()
+    mock_repo.get = AsyncMock(return_value=mock_book)
+
+    signed_gcs_url = (
+        "https://storage.googleapis.com/test-bucket/uploads/book123.pdf?signature=xyz"
+    )
+
+    with patch(
+        "api.endpoints.books_router.BooksRepository", return_value=mock_repo
+    ), patch("api.endpoints.books_router.storage.exists", return_value=True), patch(
+        "api.endpoints.books_router.storage.generate_signed_url",
+        return_value=signed_gcs_url,
+    ):
+        res = await get_download_ticket(
+            book_id="book123",
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert res == {"download_url": signed_gcs_url}
+
+
+@pytest.mark.asyncio
+async def test_download_book_with_valid_ticket_local_file(tmp_path):
+    setup_paths()
+    from api.endpoints.books_router import download_book
+    from auth.jwt_handler import create_download_token
+    from app.models.user import UserRole
+    from fastapi.responses import FileResponse
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.id = "user123"
+    mock_user.role = UserRole.EDITOR
+
+    token = create_download_token(mock_user, "book123")
+
+    mock_book = MagicMock()
+    mock_book.id = "book123"
+    mock_book.file_type = "pdf"
+    mock_book.file_name = "sample.pdf"
+    mock_book.title = "Sample Title"
+
+    fake_file = tmp_path / "sample.pdf"
+    fake_file.write_bytes(b"%PDF-1.4 test data")
+
+    mock_repo = MagicMock()
+    mock_repo.get = AsyncMock(return_value=mock_book)
+
+    with patch(
+        "api.endpoints.books_router.BooksRepository", return_value=mock_repo
+    ), patch("api.endpoints.books_router.storage.exists", return_value=True), patch(
+        "api.endpoints.books_router.storage.generate_signed_url", return_value=None
+    ), patch(
+        "api.endpoints.books_router.storage.get_local_path", return_value=fake_file
+    ):
+        resp = await download_book(
+            book_id="book123",
+            ticket=token,
+            credentials=None,
+            session=mock_session,
+        )
+
+    assert isinstance(resp, FileResponse)
+    assert resp.path == str(fake_file)
+    assert "attachment" in resp.headers["content-disposition"]
+
+
+@pytest.mark.asyncio
+async def test_download_book_with_invalid_ticket_raises_401():
+    setup_paths()
+    from api.endpoints.books_router import download_book
+
+    mock_session = AsyncMock()
+
+    with pytest.raises(HTTPException) as excinfo:
+        await download_book(
+            book_id="book123",
+            ticket="not-a-valid-ticket",
+            credentials=None,
+            session=mock_session,
+        )
+
+    assert excinfo.value.status_code == 401

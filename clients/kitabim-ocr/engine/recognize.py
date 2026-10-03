@@ -44,6 +44,7 @@ from engine.dictionary import get_valid_words
 from engine.savitr_engine import SavitrPredictor
 from engine.text_cleanup import (
     clean_uyghur_text,
+    has_repeated_word_span,
     is_block_repetition_loop,
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
@@ -68,6 +69,10 @@ FOOTNOTE_LABELS = frozenset({"Footnote"})
 DISCARD_LABELS = frozenset({"PageHeader"})
 _PHANTOM_CHECK_LABELS = frozenset({"Text", "PageFooter"})
 _ROW_FORMAT_LABELS = frozenset({"TableOfContents", "Table"})
+# A neighbour of a looping block is only swapped for its block-mode re-read
+# when that re-read recovers this much more text (i.e. the full-page pass
+# truncated it, typically because the looping block swallowed its content).
+_REOCR_NEIGHBOUR_MIN_GROWTH = 1.2
 
 
 class LowConfidenceOcrError(Exception):
@@ -580,6 +585,72 @@ def _is_single_line_verse_block(block: Any) -> bool:
     return len(lines[0]) <= 85
 
 
+def _reocr_looping_blocks(
+    predictor: Any, image: Image.Image, blocks: list[Any]
+) -> list[Any]:
+    """Re-recognize a page in Surya block mode when a full-page block loops.
+
+    Surya's full-page pass decodes the whole page in one autoregressive run;
+    on a block whose last printed sentence runs on to the next page it can
+    re-emit that line and then drift into the following block's text (e.g. a
+    footnote), which then comes back truncated. Surya's own fallback only
+    fires on page-length repetition loops, so it never sees this. Block mode
+    OCRs each region's crop on its own and can't bleed between blocks, so we
+    re-read the page's existing block boxes that way and take the re-read for
+    every looping block, plus any block whose re-read recovered clearly more
+    text. All other blocks keep the (more accurate) full-page text.
+    """
+    looping = {
+        id(b)
+        for b in blocks
+        if not (b.skipped or b.error)
+        and b.html
+        and has_repeated_word_span(_html_to_text(b.html))
+    }
+    if not looping:
+        return blocks
+
+    from surya.layout.schema import LayoutBox, LayoutResult
+
+    redo_targets: list[Any] = []
+    layout_boxes: list[LayoutBox] = []
+    for b in blocks:
+        box = _get_block_bbox(b)
+        if b.skipped or b.error or not b.html or box is None:
+            continue
+        x0, x1, y0, y1 = box
+        redo_targets.append(b)
+        layout_boxes.append(
+            LayoutBox(
+                polygon=[x0, y0, x1, y1],
+                label=b.label,
+                raw_label=b.label,
+                position=b.reading_order,
+                count=max(400, 2 * len(b.html)),
+            )
+        )
+    if not layout_boxes:
+        return blocks
+
+    logger.info(
+        "Re-OCRing page in block mode: %s looping block(s) in full-page output",
+        len(looping),
+    )
+    w, h = image.size
+    layout = LayoutResult(bboxes=layout_boxes, image_bbox=[0, 0, float(w), float(h)])
+    redone = predictor([image], [layout], full_page=False)[0].blocks
+
+    replacements: dict[int, Any] = {}
+    for old, new in zip(redo_targets, redone):
+        if new.error or not new.html:
+            continue
+        if id(old) in looping or len(_html_to_text(new.html)) >= (
+            _REOCR_NEIGHBOUR_MIN_GROWTH * len(_html_to_text(old.html))
+        ):
+            replacements[id(old)] = new
+    return [replacements.get(id(b), b) for b in blocks]
+
+
 def _process_page_sync(
     image: Image.Image,
     recognition_predictor: Any,
@@ -590,6 +661,7 @@ def _process_page_sync(
         return markdown, mean_confidence
 
     result = recognize_page(recognition_predictor, image)
+    page_blocks = _reocr_looping_blocks(recognition_predictor, image, result.blocks)
 
     footnotes: list[str] = []
     confidences: list[float] = []
@@ -599,7 +671,7 @@ def _process_page_sync(
 
     phantom_candidates = [
         b
-        for b in result.blocks
+        for b in page_blocks
         if not (b.skipped or b.error or b.label in DISCARD_LABELS)
         and b.label in _PHANTOM_CHECK_LABELS
     ]
@@ -607,7 +679,7 @@ def _process_page_sync(
         phantom_candidates, gray_arr, _page_paper_level(gray_arr)
     )
 
-    for block in sorted(result.blocks, key=lambda b: b.reading_order):
+    for block in sorted(page_blocks, key=lambda b: b.reading_order):
         if block.skipped or block.error or block.label in DISCARD_LABELS:
             continue
 
