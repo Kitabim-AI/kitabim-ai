@@ -85,9 +85,18 @@ test('renders the 3 library tabs and defaults to All Books', () => {
 
   render(<LibraryView />);
 
-  expect(screen.getByText('library.tabs.allBooks')).toBeInTheDocument();
-  expect(screen.getByText('library.tabs.reading')).toBeInTheDocument();
-  expect(screen.getByText('library.tabs.bookmarks')).toBeInTheDocument();
+  const allBooksSpan = screen.getByText('library.tabs.allBooks');
+  const readingSpan = screen.getByText('library.tabs.reading');
+  const bookmarksSpan = screen.getByText('library.tabs.bookmarks');
+
+  expect(allBooksSpan).toBeInTheDocument();
+  expect(allBooksSpan).toHaveClass('inline');
+  expect(readingSpan).toBeInTheDocument();
+  expect(readingSpan).toHaveClass('hidden');
+  expect(readingSpan).toHaveClass('sm:inline');
+  expect(bookmarksSpan).toBeInTheDocument();
+  expect(bookmarksSpan).toHaveClass('hidden');
+  expect(bookmarksSpan).toHaveClass('sm:inline');
 });
 
 test('clicking the Reading History tab calls setActiveTab', () => {

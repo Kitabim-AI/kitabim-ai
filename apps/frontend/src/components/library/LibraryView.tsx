@@ -85,14 +85,18 @@ export const LibraryView: React.FC = () => {
               <button
                 key={key}
                 onClick={() => setActiveTab(key)}
-                className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold rounded-t-xl transition-all duration-200 active:scale-95 whitespace-nowrap cursor-pointer ${
+                title={label}
+                aria-label={label}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold rounded-t-xl transition-all duration-200 active:scale-95 whitespace-nowrap cursor-pointer ${
                   isSelected
                     ? 'bg-[#0369a1] dark:bg-[#38bdf8] text-white dark:text-slate-950 shadow-sm'
                     : 'bg-white/80 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 border border-b-0 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:text-[#0369a1] dark:hover:text-[#38bdf8]'
                 }`}
               >
                 <Icon size={16} strokeWidth={2.2} className="shrink-0" />
-                <span className="uyghur-text mt-[2px]">{label}</span>
+                <span className={`uyghur-text mt-[2px] ${isSelected ? 'inline' : 'hidden sm:inline'}`}>
+                  {label}
+                </span>
               </button>
             );
           })}
