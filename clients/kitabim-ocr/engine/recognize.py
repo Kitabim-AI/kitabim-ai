@@ -67,6 +67,7 @@ OCR_PAGE_ZOOM_FACTOR = get_configured_zoom_factor(DEFAULT_OCR_PAGE_ZOOM_FACTOR)
 FOOTNOTE_LABELS = frozenset({"Footnote"})
 DISCARD_LABELS = frozenset({"PageHeader"})
 _PHANTOM_CHECK_LABELS = frozenset({"Text", "PageFooter"})
+_ROW_FORMAT_LABELS = frozenset({"TableOfContents", "Table"})
 
 
 class LowConfidenceOcrError(Exception):
@@ -245,13 +246,58 @@ def _html_rows_to_markdown(html: str) -> str:
     return "\n".join(rows)
 
 
-def _block_html_to_markdown(html: str) -> str:
+def _list_html_to_lines(html: str) -> str:
+    """Render list items / table rows one per line, text kept as printed."""
+    soup = BeautifulSoup(html, "html.parser")
+    items = soup.find_all(["tr", "li"])
+    if not items:
+        return soup.get_text(separator=" ", strip=True)
+    return "\n".join(
+        item_text
+        for item in items
+        if (item_text := item.get_text(separator=" ", strip=True))
+    )
+
+
+def _mixed_list_html_to_markdown(html: str, format_rows: bool) -> str:
+    """Render a block containing lists/tables, keeping any paragraphs around them.
+
+    Surya can return a whole page as one ListGroup block (prose paragraphs
+    followed by a numbered list), so each top-level element is rendered in
+    order instead of extracting only the list items.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    parts: list[str] = []
+    for node in soup.children:
+        if isinstance(node, str):
+            text = node.strip()
+        elif node.name in ("ol", "ul", "table") or node.find(["li", "tr"]):
+            text = (
+                _html_rows_to_markdown(str(node))
+                if format_rows
+                else _list_html_to_lines(str(node))
+            )
+        else:
+            for br in node.find_all("br"):
+                br.replace_with("\n")
+            text = "\n".join(
+                line.strip() for line in node.get_text().split("\n") if line.strip()
+            )
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts)
+
+
+def _block_html_to_markdown(html: str, label: str | None = None) -> str:
     heading_match = _HEADING_TAG_RE.match(html.strip())
     if heading_match:
         level = min(int(heading_match.group(1)), 6)
         return f"{'#' * level} {_html_to_text(html)}"
     if "<li" in html or "<tr" in html:
-        return _html_rows_to_markdown(html)
+        # TOC-style "| title | page |" rows only for TOC/table blocks; plain
+        # lists keep their items as printed. No label (Savitr) keeps rows.
+        format_rows = label is None or label in _ROW_FORMAT_LABELS
+        return _mixed_list_html_to_markdown(html, format_rows)
 
     soup = BeautifulSoup(html, "html.parser")
     p_tags = soup.find_all("p")
@@ -605,7 +651,7 @@ def _process_page_sync(
 
         if len(current_group) == 1:
             b = current_group[0]
-            txt = _block_html_to_markdown(b.html)
+            txt = _block_html_to_markdown(b.html, b.label)
             if (
                 txt.strip()
                 and not is_block_repetition_loop(txt)
@@ -646,7 +692,7 @@ def _process_page_sync(
     for block in valid_blocks:
         if block.label in FOOTNOTE_LABELS:
             flush_group()
-            txt = _block_html_to_markdown(block.html)
+            txt = _block_html_to_markdown(block.html, block.label)
             if (
                 txt.strip()
                 and not is_block_repetition_loop(txt)
@@ -657,7 +703,7 @@ def _process_page_sync(
 
         if getattr(block, "label", "") != "Text":
             flush_group()
-            txt = _block_html_to_markdown(block.html)
+            txt = _block_html_to_markdown(block.html, block.label)
             if (
                 txt.strip()
                 and not is_block_repetition_loop(txt)

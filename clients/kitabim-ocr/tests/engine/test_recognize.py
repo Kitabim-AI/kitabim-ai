@@ -133,6 +133,50 @@ def test_process_page_sync_renders_each_block_type_and_appends_footnotes_last():
     assert mean_conf == 0.9
 
 
+def test_block_html_to_markdown_keeps_paragraphs_before_list_in_list_group():
+    """Surya can return a whole page as one ListGroup block: prose paragraphs
+    followed by a numbered list. The paragraphs must not be dropped, and the
+    list items must stay as printed rather than become TOC table rows."""
+    html = (
+        "<p>بىرىنچى ئابزاس تېكىستى.</p>"
+        "<p>ئىككىنچى ئابزاس تېكىستى.</p>"
+        "<ol><li>1) بىرىنچى نۇقتا.</li><li>2) ئىككىنچى نۇقتا.</li></ol>"
+    )
+
+    md = svc._block_html_to_markdown(html, "ListGroup")
+
+    assert md == (
+        "بىرىنچى ئابزاس تېكىستى.\n\n"
+        "ئىككىنچى ئابزاس تېكىستى.\n\n"
+        "1) بىرىنچى نۇقتا.\n2) ئىككىنچى نۇقتا."
+    )
+
+
+def test_block_html_to_markdown_toc_keeps_title_and_formats_rows():
+    html = "<p>مۇندەرىجە</p><ol><li>3 ..... باب بىر</li><li>9 ..... باب ئىككى</li></ol>"
+
+    md = svc._block_html_to_markdown(html, "TableOfContents")
+
+    assert md == "مۇندەرىجە\n\n| باب بىر | 3 |\n| باب ئىككى | 9 |"
+
+
+def test_process_page_sync_keeps_list_group_paragraphs():
+    img = Image.new("RGB", (200, 200))
+    mock_result = MagicMock()
+    mock_result.blocks = [
+        _block(
+            "ListGroup",
+            "<p>ئابزاس تېكىستى.</p><ol><li>1) نۇقتا.</li></ol>",
+            position=0,
+        ),
+    ]
+
+    with patch("engine.recognize.recognize_page", return_value=mock_result):
+        markdown, _ = svc._process_page_sync(img, MagicMock())
+
+    assert markdown == "ئابزاس تېكىستى.\n\n1) نۇقتا."
+
+
 def test_process_page_sync_with_savitr_predictor():
     img = Image.new("RGB", (200, 200))
     mock_predictor = MagicMock(spec=svc.SavitrPredictor)
