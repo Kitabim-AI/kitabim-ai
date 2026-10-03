@@ -196,7 +196,15 @@
     "searchPlaceholder": "كىتاب ئىزدەش...",
     "tabs": {
       "allBooks": "بارلىق كىتابلار",
-      "readingAndBookmarks": "خەتكۈشلېرىم"
+      "reading": "ئوقۇۋاتقانلىرىم",
+      "bookmarks": "خەتكۈشلەر"
+    },
+    "readingHistory": {
+      "searchPlaceholder": "ئوقۇغان كىتابلىرىڭىزدىن ئىزدەڭ...",
+      "empty": "سىز تېخى ھېچقانداق كىتابنى ئوقۇمىدىڭىز",
+      "emptyHint": "كىتاب ئوقۇشقا باشلىغىنىڭىزدا، ئوقۇش تەرەققىياتىڭىز بۇ يەردە كۆرۈنىدۇ",
+      "lastReadPage": "{page}-بەت",
+      "browseBooks": "كىتابلارنى كۆرۈش"
     },
     "readingBookmarks": {
       "searchPlaceholder": "خەتكۈشلېرىڭىزدىن ئىزدەڭ...",

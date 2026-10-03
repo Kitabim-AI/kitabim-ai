@@ -196,7 +196,15 @@
     "searchPlaceholder": "Search books...",
     "tabs": {
       "allBooks": "All Books",
-      "readingAndBookmarks": "Bookmarks"
+      "reading": "Reading History",
+      "bookmarks": "Bookmarks"
+    },
+    "readingHistory": {
+      "searchPlaceholder": "Search reading history...",
+      "empty": "You haven't read any books yet",
+      "emptyHint": "When you start reading books, your reading progress will appear here",
+      "lastReadPage": "Page {page}",
+      "browseBooks": "Browse Books"
     },
     "readingBookmarks": {
       "searchPlaceholder": "Search your bookmarks...",
