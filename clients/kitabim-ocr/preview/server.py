@@ -698,6 +698,7 @@ _PAGE_HTML = """<!doctype html>
 
 class RedoRequest(BaseModel):
     pageNumbers: list[int]
+    engine: Optional[str] = None
 
 
 class UpdatePageRequest(BaseModel):

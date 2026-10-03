@@ -1338,3 +1338,22 @@ async def test_background_completion_preserves_landing_stage(tmp_path: Path):
         # Completing in background while user is on landing MUST NOT kick stage to review
         assert state.stage == "landing"
         assert state.workdir is None
+
+
+def test_switch_engine_endpoint(tmp_path: Path):
+    app = create_landing_app(MagicMock(), tmp_path / "work")
+    client = TestClient(app)
+
+    resp = client.post("/api/settings/engine", json={"engine": "paddle"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert data["engine"] == "paddle"
+
+
+def test_switch_engine_invalid(tmp_path: Path):
+    app = create_landing_app(MagicMock(), tmp_path / "work")
+    client = TestClient(app)
+
+    resp = client.post("/api/settings/engine", json={"engine": "invalid_engine"})
+    assert resp.status_code == 400

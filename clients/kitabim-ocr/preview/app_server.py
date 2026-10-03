@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from engine.config import (
+    SUPPORTED_OCR_ENGINES,
     get_configured_concurrency,
     get_configured_engine,
     get_configured_page_timeout,
@@ -915,9 +916,11 @@ _APP_HTML = """<!doctype html>
       </div>
 
       <div class="header-badges">
-        <div class="status-pill">
+        <div class="status-pill" style="padding: 2px 8px;">
           <span class="status-dot active"></span>
-          <span>__OCR_ENGINE_LABEL__</span>
+          <select id="engineSelector" onchange="switchEngine(this.value)" style="background: transparent; border: none; font-size: 12px; font-weight: 500; color: inherit; cursor: pointer; outline: none; font-family: inherit;">
+            __OCR_ENGINE_OPTIONS__
+          </select>
         </div>
         <div class="status-pill">
           <span class="status-dot active"></span>
@@ -2479,6 +2482,23 @@ _APP_HTML = """<!doctype html>
       }
     }
 
+    async function switchEngine(engine) {
+      try {
+        const res = await fetch('/api/settings/engine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ engine: engine })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || 'Failed to switch engine');
+        }
+        showToast(`OCR Engine switched to: ${engine}`);
+      } catch (err) {
+        showToast(`Failed to switch engine: ${err.message || err}`, true);
+      }
+    }
+
     async function backToLibrary() {
       currentProcessingSessionId = null;
       currentProcessingBookTitle = '';
@@ -2559,12 +2579,31 @@ _APP_HTML = """<!doctype html>
 </html>"""
 
 
+def get_engine_display_name(engine_name: str) -> str:
+    normalized = engine_name.strip().lower()
+    if normalized == "savitr":
+        return "Savitr OCR (MLX)"
+    if normalized == "paddle":
+        return "PaddleOCR (Uyghur)"
+    return "Surya OCR"
+
+
 def get_app_html(lang: str = "ug", engine: Optional[str] = None) -> str:
     i18n_json = get_translations_json(lang)
     engine_name = (engine or get_configured_engine()).strip().lower()
-    engine_label = "Savitr OCR (MLX)" if engine_name == "savitr" else "Surya OCR"
-    return _APP_HTML.replace("__I18N_JSON__", i18n_json).replace(
-        "__OCR_ENGINE_LABEL__", engine_label
+    engine_label = get_engine_display_name(engine_name)
+
+    options = []
+    for eng in SUPPORTED_OCR_ENGINES:
+        selected = " selected" if eng == engine_name else ""
+        label = get_engine_display_name(eng)
+        options.append(f'<option value="{eng}"{selected}>{label}</option>')
+    engine_options_html = "\n".join(options)
+
+    return (
+        _APP_HTML.replace("__I18N_JSON__", i18n_json)
+        .replace("__OCR_ENGINE_LABEL__", engine_label)
+        .replace("__OCR_ENGINE_OPTIONS__", engine_options_html)
     )
 
 
@@ -3021,6 +3060,26 @@ def create_landing_app(
             state.concurrency = resolve_concurrency(state.engine, val)
         return {"status": "ok", "concurrency": state.concurrency}
 
+    @app.post("/api/settings/engine")
+    def set_engine(payload: dict):
+        new_engine = payload.get("engine")
+        if not new_engine or not isinstance(new_engine, str):
+            raise HTTPException(status_code=400, detail="Engine name is required")
+        engine_clean = new_engine.strip().lower()
+        if engine_clean not in SUPPORTED_OCR_ENGINES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported engine '{engine_clean}'. Supported engines: {', '.join(SUPPORTED_OCR_ENGINES)}",
+            )
+        state.engine = engine_clean
+        state.concurrency = resolve_concurrency(state.engine)
+        return {
+            "status": "ok",
+            "ok": True,
+            "engine": state.engine,
+            "concurrency": state.concurrency,
+        }
+
     @app.get("/api/sessions")
     def get_sessions():
         return list_local_sessions(state.work_root, state.queue_manager)
@@ -3288,11 +3347,12 @@ def create_landing_app(
     @app.post("/api/pages/redo")
     async def redo_pages(body: RedoRequest):
         _require_active_workdir(state)
+        target_engine = (body.engine or state.engine).strip().lower()
         return await redo_pages_response(
             state.workdir,
             body.pageNumbers,
             concurrency=state.concurrency,
-            engine=state.engine,
+            engine=target_engine,
         )
 
     @app.post("/api/pages/{page_number}/update")
