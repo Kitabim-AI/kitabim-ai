@@ -62,6 +62,35 @@ async def test_get_recognition_predictor_unknown_engine_raises_value_error():
         await svc.get_recognition_predictor(engine="nonexistent")
 
 
+@pytest.mark.asyncio
+async def test_get_recognition_predictor_paddle_constructs_and_caches():
+    with patch("engine.paddle_engine.PaddleEnginePredictor") as mock_cls:
+        instance = MagicMock()
+        mock_cls.return_value = instance
+
+        # Reset cached predictor if any
+        svc._paddle_predictor = None
+
+        p1 = await svc.get_recognition_predictor(engine="paddle")
+        p2 = await svc.get_recognition_predictor(engine="paddle")
+
+        assert p1 is instance
+        assert p2 is instance
+        assert mock_cls.call_count == 1
+
+
+def test_recognize_page_calls_paddle_predictor():
+    from engine.paddle_engine import PaddleEnginePredictor
+
+    mock_predictor = MagicMock(spec=PaddleEnginePredictor)
+    mock_result = MagicMock()
+    mock_predictor.recognize_image.return_value = mock_result
+
+    result = svc.recognize_page(mock_predictor, image="fake-image")
+    mock_predictor.recognize_image.assert_called_once_with("fake-image")
+    assert result is mock_result
+
+
 def test_recognize_page_calls_predictor_full_page_and_returns_first_result():
     mock_predictor = MagicMock()
     mock_result = MagicMock()

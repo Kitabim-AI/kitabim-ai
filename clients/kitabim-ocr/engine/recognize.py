@@ -28,6 +28,7 @@ from engine.config import (
     DEFAULT_OCR_CONCURRENCY,
     DEFAULT_OCR_MAX_RETRIES,
     DEFAULT_OCR_PAGE_ZOOM_FACTOR,
+    MAX_PADDLE_CONCURRENCY,
     MAX_SURYA_CONCURRENCY,
     apply_surya_token_limits,
     get_configured_concurrency,
@@ -41,6 +42,7 @@ from engine.config import (
     is_dot_enhancement_enabled,
 )
 from engine.dictionary import get_valid_words
+from engine.paddle_engine import PaddleEnginePredictor
 from engine.savitr_engine import SavitrPredictor
 from engine.text_cleanup import (
     clean_uyghur_text,
@@ -112,6 +114,7 @@ def get_adaptive_page_zoom(
 
 _surya_predictor: Any = None
 _savitr_predictor: Any = None
+_paddle_predictor: Any = None
 _predictor_lock = asyncio.Lock()
 _executor: ThreadPoolExecutor | None = None
 _savitr_executor: ThreadPoolExecutor | None = None
@@ -129,9 +132,9 @@ def _get_savitr_executor() -> ThreadPoolExecutor:
 async def get_recognition_predictor(engine: str | None = None) -> Any:
     """Return the initialized OCR predictor for the requested or configured engine.
 
-    Supported engines: 'surya' (default) and 'savitr' (MLX on Apple Silicon).
+    Supported engines: 'surya' (default), 'savitr' (MLX on Apple Silicon), and 'paddle'.
     """
-    global _surya_predictor, _savitr_predictor
+    global _surya_predictor, _savitr_predictor, _paddle_predictor
 
     target_engine = (engine or get_configured_engine()).strip().lower()
 
@@ -155,6 +158,19 @@ async def get_recognition_predictor(engine: str | None = None) -> Any:
                 )
         return _savitr_predictor
 
+    if target_engine == "paddle":
+        if _paddle_predictor is not None:
+            return _paddle_predictor
+        async with _predictor_lock:
+            if _paddle_predictor is None:
+                from engine.paddle_engine import PaddleEnginePredictor
+
+                loop = asyncio.get_running_loop()
+                _paddle_predictor = await loop.run_in_executor(
+                    None, PaddleEnginePredictor
+                )
+        return _paddle_predictor
+
     if target_engine == "surya":
         if _surya_predictor is not None:
             return _surya_predictor
@@ -169,12 +185,14 @@ async def get_recognition_predictor(engine: str | None = None) -> Any:
         return _surya_predictor
 
     raise ValueError(
-        f"Unknown OCR engine '{target_engine}'. Expected 'surya' or 'savitr'."
+        f"Unknown OCR engine '{target_engine}'. Expected 'surya', 'savitr', or 'paddle'."
     )
 
 
 def recognize_page(predictor: Any, image: Image.Image) -> Any:
     if isinstance(predictor, SavitrPredictor):
+        return predictor.recognize_image(image)
+    if isinstance(predictor, PaddleEnginePredictor):
         return predictor.recognize_image(image)
     return predictor([image], full_page=True)[0]
 
@@ -782,6 +800,9 @@ async def ocr_page(
 
     if isinstance(recognition_predictor, SavitrPredictor):
         executor = _get_savitr_executor()
+    elif isinstance(recognition_predictor, PaddleEnginePredictor):
+        workers = min(max(1, max_parallel_pages), MAX_PADDLE_CONCURRENCY)
+        executor = _get_executor(workers)
     else:
         workers = min(max(1, max_parallel_pages), MAX_SURYA_PARALLEL_PAGES)
         executor = _get_executor(workers)
