@@ -458,21 +458,56 @@ _COMMON_ARABIC_WORDS = re.compile(
 )
 
 
-def has_repeated_word_span(text: str, min_words: int = 8) -> bool:
-    """True if any run of ``min_words`` consecutive words occurs twice in ``text``.
+def _normalize_words_for_span(text: str) -> list[str]:
+    words = [
+        re.sub(r"^[^\w\u0600-\u06FF]+|[^\w\u0600-\u06FF]+$", "", w)
+        for w in text.split()
+    ]
+    return [w for w in words if w]
 
-    Catches the short decoder loop that ``is_block_repetition_loop`` is tuned
-    to miss: Surya's full-page pass re-emitting a block's last printed line
-    once or twice before drifting into a neighbouring block's text. Normal
-    prose essentially never repeats an 8-word span inside one block.
+
+def extract_word_spans(
+    text: str,
+    min_words: int = 8,
+) -> list[tuple[str, ...]]:
+    words = _normalize_words_for_span(text)
+    if len(words) < min_words:
+        return []
+    return [tuple(words[i : i + min_words]) for i in range(len(words) - min_words + 1)]
+
+
+def add_word_spans(
+    text: str,
+    seen_spans: set[tuple[str, ...]],
+    min_words: int = 8,
+) -> None:
+    """Add all ``min_words`` word spans from ``text`` into ``seen_spans``."""
+    for span in extract_word_spans(text, min_words=min_words):
+        seen_spans.add(span)
+
+
+def has_repeated_word_span(
+    text: str,
+    min_words: int = 8,
+    seen_spans: set[tuple[str, ...]] | None = None,
+) -> bool:
+    """True if any run of ``min_words`` consecutive words occurs twice in ``text``,
+    or matches any span already present in ``seen_spans``.
+
+    Catches both intra-block decoder loops (re-emitting a line inside a block)
+    and cross-block repetition loops (repeating a stanza or sentence from
+    earlier on the page at the bottom/margin).
     """
-    words = text.split()
-    seen: set[tuple[str, ...]] = set()
-    for i in range(len(words) - min_words + 1):
-        span = tuple(words[i : i + min_words])
-        if span in seen:
+    spans = extract_word_spans(text, min_words=min_words)
+    if not spans:
+        return False
+    local_seen: set[tuple[str, ...]] = set()
+    for span in spans:
+        if span in local_seen:
             return True
-        seen.add(span)
+        if seen_spans is not None and span in seen_spans:
+            return True
+        local_seen.add(span)
     return False
 
 

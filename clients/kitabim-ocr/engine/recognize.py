@@ -43,6 +43,7 @@ from engine.config import (
 from engine.dictionary import get_valid_words
 from engine.savitr_engine import SavitrPredictor
 from engine.text_cleanup import (
+    add_word_spans,
     clean_uyghur_text,
     has_repeated_word_span,
     is_block_repetition_loop,
@@ -437,6 +438,11 @@ def suppress_bleed_through(img: Image.Image) -> Image.Image:
     bg_val = float(np.percentile(gray, 90))
     if bg_val < 140.0:
         return img
+    # For clean white / digital pages where background is already nearly pure white (>= 248.0),
+    # there is no bleed-through to suppress, and aggressive white_point clipping can erode thin
+    # anti-aliased font strokes (such as digits '6' and '0').
+    if bg_val >= 248.0:
+        return img
 
     white_point = max(175.0, min(235.0, bg_val - 38.0))
     black_point = 40.0
@@ -465,7 +471,7 @@ _PHANTOM_MIN_CONTRAST = 25.0
 def _block_ink_contrast(
     block: Any, image_gray: np.ndarray, paper_level: float
 ) -> float | None:
-    """Return paper_level minus the block's 5th-percentile luminance (how dark its
+    """Return paper_level minus the block's lowest-percentile luminance (how dark its
     darkest strokes are against the paper), or None if the block has no usable crop."""
     box = _get_block_bbox(block)
     if not box:
@@ -485,7 +491,12 @@ def _block_ink_contrast(
         if crop.size < 50:
             return None
 
-        return paper_level - float(np.percentile(crop, 5))
+        # In sparse text blocks (e.g. 1-2 lines inside a large bounding box),
+        # ink pixels may make up less than 2% of the crop area. A fixed 5th percentile
+        # lands on the blank paper background, falsely classifying real text as bleed-through.
+        # Use an adaptive percentile that scales down with crop size to sample actual stroke pixels.
+        percentile_level = min(1.0, max(0.2, 50.0 / crop.size))
+        return paper_level - float(np.percentile(crop, percentile_level))
     except Exception:
         return None
 
@@ -550,6 +561,33 @@ def _get_block_bbox(block: Any) -> tuple[float, float, float, float] | None:
     return None
 
 
+def _is_vertical_marginalia_block(block: Any, img_w: float, img_h: float) -> bool:
+    """Return True if block is a vertical marginalia / running side header.
+
+    In published books, running headers (book or chapter titles, e.g. 'قۇتادغۇ بىلىك')
+    are often printed vertically along the outer side margins. Because Uyghur is a
+    horizontal script, text in the outer margin with a tall, narrow aspect ratio
+    (height >= 1.8 * width) represents running side marginalia, not body text.
+    When read horizontally by standard OCR, it produces garbled fragments or
+    hallucinated headers/echoes placed at the bottom of the page.
+    """
+    box = _get_block_bbox(block)
+    if not box or img_w <= 0 or img_h <= 0:
+        return False
+    x0, x1, y0, y1 = box
+    w = x1 - x0
+    h = y1 - y0
+    if w <= 0 or h <= 0:
+        return False
+
+    if h < 1.8 * w:
+        return False
+
+    is_left_margin = (x1 / img_w) <= 0.18
+    is_right_margin = (x0 / img_w) >= 0.82
+    return is_left_margin or is_right_margin
+
+
 def _is_single_line_verse_block(block: Any) -> bool:
     """Return True if block contains exactly one physical print line, making it
     a grouping candidate for a vertically-adjacent block (whether the group
@@ -593,20 +631,32 @@ def _reocr_looping_blocks(
     Surya's full-page pass decodes the whole page in one autoregressive run;
     on a block whose last printed sentence runs on to the next page it can
     re-emit that line and then drift into the following block's text (e.g. a
-    footnote), which then comes back truncated. Surya's own fallback only
-    fires on page-length repetition loops, so it never sees this. Block mode
-    OCRs each region's crop on its own and can't bleed between blocks, so we
+    footnote), which then comes back truncated. It can also lose visual
+    grounding at the page bottom and echo a verse or sentence already recognized
+    earlier on the page into the last block or a phantom footer block.
+
+    Surya's own fallback only fires on page-length repetition loops, so it
+    never sees these shorter loops. Block mode OCRs each region's crop on its
+    own and can't bleed between blocks or access text from other regions, so we
     re-read the page's existing block boxes that way and take the re-read for
     every looping block, plus any block whose re-read recovered clearly more
-    text. All other blocks keep the (more accurate) full-page text.
+    text. If an echoed block was a phantom box with no real ink, block mode
+    re-OCR returns empty/error and its text is dropped.
     """
-    looping = {
-        id(b)
-        for b in blocks
-        if not (b.skipped or b.error)
-        and b.html
-        and has_repeated_word_span(_html_to_text(b.html))
-    }
+    seen_page_spans: set[tuple[str, ...]] = set()
+    looping: set[int] = set()
+
+    for b in sorted(blocks, key=lambda x: getattr(x, "reading_order", 0)):
+        if b.skipped or b.error or not b.html:
+            continue
+        text = _html_to_text(b.html)
+        if not text.strip():
+            continue
+        if has_repeated_word_span(text, min_words=8, seen_spans=seen_page_spans):
+            looping.add(id(b))
+        else:
+            add_word_spans(text, seen_page_spans, min_words=8)
+
     if not looping:
         return blocks
 
@@ -642,12 +692,32 @@ def _reocr_looping_blocks(
 
     replacements: dict[int, Any] = {}
     for old, new in zip(redo_targets, redone):
-        if new.error or not new.html:
-            continue
-        if id(old) in looping or len(_html_to_text(new.html)) >= (
-            _REOCR_NEIGHBOUR_MIN_GROWTH * len(_html_to_text(old.html))
-        ):
-            replacements[id(old)] = new
+        if id(old) in looping:
+            # If the looping block was re-read and produced non-empty text, use it;
+            # if it produced an error or empty text (e.g. phantom margin box),
+            # clear its text so the hallucination is dropped.
+            new_text = (
+                _html_to_text(getattr(new, "html", "") or "")
+                if not getattr(new, "error", False)
+                else ""
+            )
+            if new_text.strip():
+                replacements[id(old)] = new
+            else:
+                try:
+                    new.html = ""
+                except Exception:
+                    pass
+                try:
+                    old.html = ""
+                except Exception:
+                    pass
+                replacements[id(old)] = new
+        elif not getattr(new, "error", False) and getattr(new, "html", None):
+            if len(_html_to_text(new.html)) >= (
+                _REOCR_NEIGHBOUR_MIN_GROWTH * len(_html_to_text(old.html))
+            ):
+                replacements[id(old)] = new
     return [replacements.get(id(b), b) for b in blocks]
 
 
@@ -661,7 +731,13 @@ def _process_page_sync(
         return markdown, mean_confidence
 
     result = recognize_page(recognition_predictor, image)
-    page_blocks = _reocr_looping_blocks(recognition_predictor, image, result.blocks)
+    img_w, img_h = image.size
+    non_marginalia_blocks = [
+        b for b in result.blocks if not _is_vertical_marginalia_block(b, img_w, img_h)
+    ]
+    page_blocks = _reocr_looping_blocks(
+        recognition_predictor, image, non_marginalia_blocks
+    )
 
     footnotes: list[str] = []
     confidences: list[float] = []
@@ -680,7 +756,12 @@ def _process_page_sync(
     )
 
     for block in sorted(page_blocks, key=lambda b: b.reading_order):
-        if block.skipped or block.error or block.label in DISCARD_LABELS:
+        if (
+            block.skipped
+            or block.error
+            or block.label in DISCARD_LABELS
+            or _is_vertical_marginalia_block(block, img_w, img_h)
+        ):
             continue
 
         if block.confidence is not None:

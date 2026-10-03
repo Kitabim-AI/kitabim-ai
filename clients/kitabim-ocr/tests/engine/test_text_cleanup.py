@@ -1,4 +1,5 @@
 from engine.text_cleanup import (
+    add_word_spans,
     clean_uyghur_text,
     correct_uyghur_ocr_orthography,
     dehyphenate_uyghur_text,
@@ -419,3 +420,42 @@ def test_has_repeated_word_span_ignores_short_repeated_phrases():
         "بۇ نۇسخىنى تۇنجى قېتىم ئېلان قىلدى. كېيىن بۇ نۇسخىنى تۇنجى قېتىم نەشر قىلدى."
     )
     assert has_repeated_word_span(text) is False
+
+
+def test_has_repeated_word_span_detects_cross_block_duplicate():
+    top_block = (
+        "(ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،\n"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن)."
+    )
+    bottom_echo = (
+        "ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،\n" "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن"
+    )
+    seen_spans = set()
+    # Top block has no internal repetition
+    assert (
+        has_repeated_word_span(top_block, min_words=8, seen_spans=seen_spans) is False
+    )
+    add_word_spans(top_block, seen_spans, min_words=8)
+    assert len(seen_spans) > 0
+
+    # Bottom echo block repeats the span from earlier on the page
+    assert (
+        has_repeated_word_span(bottom_echo, min_words=8, seen_spans=seen_spans) is True
+    )
+
+
+def test_has_repeated_word_span_detects_cross_block_duplicate_in_combined_block():
+    top_block = (
+        "(ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،\n"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن)."
+    )
+    last_block = (
+        "ئۆز دەۋرىدىكى رېئاللىققا قارىتا، يۈسۈپ خاس ھاجىپ ئۆزى ياراتقان غايىۋى پېرسوناژلار\n"
+        "ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،\n"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن"
+    )
+    seen_spans = set()
+    add_word_spans(top_block, seen_spans, min_words=8)
+    assert (
+        has_repeated_word_span(last_block, min_words=8, seen_spans=seen_spans) is True
+    )

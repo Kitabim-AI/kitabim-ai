@@ -1199,3 +1199,184 @@ def test_process_page_sync_does_not_reocr_clean_page():
 
     predictor.assert_not_called()
     assert markdown == "ئادەتتىكى تېكىست."
+
+
+def test_process_page_sync_reocrs_cross_block_echo_and_drops_empty_phantom_block():
+    img = Image.new("RGB", (200, 200))
+    top_html = (
+        "<p>(ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،<br>"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن).</p>"
+    )
+    mid_html = "<p>ئۆز دەۋرىدىكى رېئاللىققا قارىتا، يۈسۈپ خاس ھاجىپ ئۆزى ياراتقان غايىۋى پېرسوناژلار</p>"
+    echo_html = (
+        "<p>ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،<br>"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن</p>"
+    )
+    full_page = MagicMock()
+    full_page.blocks = [
+        _boxed_block("Text", top_html, 0, 10, 50),
+        _boxed_block("Text", mid_html, 1, 60, 120),
+        _boxed_block("Text", echo_html, 2, 130, 170),
+    ]
+
+    block_mode = MagicMock()
+    block_mode.blocks = [
+        _boxed_block("Text", top_html, 0, 10, 50),
+        _boxed_block("Text", mid_html, 1, 60, 120),
+        # In block mode, the empty margin crop yields empty html
+        _boxed_block("Text", "", 2, 130, 170),
+    ]
+    predictor = MagicMock(return_value=[block_mode])
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    predictor.assert_called_once()
+    _, kwargs = predictor.call_args
+    assert kwargs == {"full_page": False}
+
+    blocks = markdown.split("\n\n")
+    # Top block is kept
+    assert "(ئەلىگە سەن تېۋىپقا" in blocks[0]
+    # Middle block is kept
+    assert "يۈسۈپ خاس ھاجىپ" in blocks[1]
+    # Echo block was dropped (not in output)
+    assert len(blocks) == 2
+
+
+def test_process_page_sync_reocrs_cross_block_echo_in_combined_block():
+    img = Image.new("RGB", (200, 200))
+    top_html = (
+        "<p>(ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،<br>"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن).</p>"
+    )
+    combined_html = (
+        "<p>ئۆز دەۋرىدىكى رېئاللىققا قارىتا، يۈسۈپ خاس ھاجىپ ئۆزى ياراتقان غايىۋى پېرسوناژلار<br>"
+        "ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،<br>"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن</p>"
+    )
+    clean_last_html = "<p>ئۆز دەۋرىدىكى رېئاللىققا قارىتا، يۈسۈپ خاس ھاجىپ ئۆزى ياراتقان غايىۋى پېرسوناژلار</p>"
+
+    full_page = MagicMock()
+    full_page.blocks = [
+        _boxed_block("Text", top_html, 0, 10, 50),
+        _boxed_block("Text", combined_html, 1, 60, 120),
+    ]
+
+    block_mode = MagicMock()
+    block_mode.blocks = [
+        _boxed_block("Text", top_html, 0, 10, 50),
+        _boxed_block("Text", clean_last_html, 1, 60, 120),
+    ]
+    predictor = MagicMock(return_value=[block_mode])
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    predictor.assert_called_once()
+    blocks = markdown.split("\n\n")
+    assert len(blocks) == 2
+    assert "(ئەلىگە سەن تېۋىپقا" in blocks[0]
+    assert (
+        blocks[1]
+        == "ئۆز دەۋرىدىكى رېئاللىققا قارىتا، يۈسۈپ خاس ھاجىپ ئۆزى ياراتقان غايىۋى پېرسوناژلار"
+    )
+
+
+def test_is_vertical_marginalia_block():
+    img_w, img_h = 1000.0, 1400.0
+    # Left margin vertical running header (e.g. x: 50..80, y: 400..600 -> h=200, w=30)
+    left_marginalia = MagicMock()
+    left_marginalia.polygon = [
+        [50.0, 400.0],
+        [80.0, 400.0],
+        [80.0, 600.0],
+        [50.0, 600.0],
+    ]
+    assert svc._is_vertical_marginalia_block(left_marginalia, img_w, img_h) is True
+
+    # Right margin vertical running header
+    right_marginalia = MagicMock()
+    right_marginalia.polygon = [
+        [930.0, 400.0],
+        [960.0, 400.0],
+        [960.0, 600.0],
+        [930.0, 600.0],
+    ]
+    assert svc._is_vertical_marginalia_block(right_marginalia, img_w, img_h) is True
+
+    # Normal horizontal body line (w=600, h=40)
+    body_block = MagicMock()
+    body_block.polygon = [
+        [200.0, 400.0],
+        [800.0, 400.0],
+        [800.0, 440.0],
+        [200.0, 440.0],
+    ]
+    assert svc._is_vertical_marginalia_block(body_block, img_w, img_h) is False
+
+    # Centered tall element (not in side margin)
+    centered = MagicMock()
+    centered.polygon = [[450.0, 200.0], [550.0, 200.0], [550.0, 700.0], [450.0, 700.0]]
+    assert svc._is_vertical_marginalia_block(centered, img_w, img_h) is False
+
+
+def test_process_page_sync_discards_vertical_marginalia_block():
+    img = Image.new("RGB", (1000, 1400))
+    body_html = "<p>ئاساسىي تېكىست.</p>"
+    marginalia_html = "<p>قۇتادغۇ بىلىك</p>"
+
+    body = _boxed_block("Text", body_html, 0, 100, 200)
+    body.polygon = [[200.0, 100.0], [800.0, 100.0], [800.0, 200.0], [200.0, 200.0]]
+
+    marginalia = _boxed_block("PageFooter", marginalia_html, 1, 400, 600)
+    marginalia.polygon = [[50.0, 400.0], [80.0, 400.0], [80.0, 600.0], [50.0, 600.0]]
+
+    full_page = MagicMock()
+    full_page.blocks = [body, marginalia]
+    predictor = MagicMock()
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    assert "قۇتادغۇ بىلىك" not in markdown
+    assert markdown == "ئاساسىي تېكىست."
+
+
+def test_suppress_bleed_through_preserves_clean_white_pages():
+    import numpy as np
+
+    # Page with clean white background (all pixels 250) and black text (0)
+    arr = np.full((100, 100, 3), 250, dtype=np.uint8)
+    arr[10:15, 10:15] = 0
+    img = Image.fromarray(arr)
+
+    processed = svc.suppress_bleed_through(img)
+    # On clean white pages (bg_val >= 248), the original image should be returned untouched
+    assert processed is img
+
+
+def test_block_ink_contrast_sparse_text_block():
+    import numpy as np
+
+    # A large block (e.g. 200x500 = 100,000 pixels) where only 500 pixels (~0.5%) are dark text
+    img_gray = np.full((300, 600), 250.0, dtype=np.float32)
+    # Dark text strokes (value 30.0)
+    img_gray[50:52, 50:300] = 30.0  # 2 x 250 = 500 pixels
+
+    block = MagicMock()
+    block.polygon = [[40.0, 40.0], [550.0, 40.0], [550.0, 240.0], [40.0, 240.0]]
+
+    contrast = svc._block_ink_contrast(block, img_gray, paper_level=250.0)
+    assert contrast is not None
+    # Contrast should be close to 250 - 30 = 220, NOT dropped to ~0 because of 5th percentile
+    assert contrast > 180.0
