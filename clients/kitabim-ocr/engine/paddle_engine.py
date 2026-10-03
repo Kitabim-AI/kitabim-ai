@@ -115,7 +115,10 @@ class PaddleEnginePredictor:
             ) from err
 
         logger.info("Initializing PaddleOCR with lang='ug'...")
-        self.engine = PaddleOCR(use_angle_cls=True, lang="ug", use_gpu=use_gpu)
+        try:
+            self.engine = PaddleOCR(lang="ug", use_textline_orientation=True)
+        except Exception:
+            self.engine = PaddleOCR(lang="ug")
         logger.info("PaddleOCR engine initialized successfully.")
 
     def recognize_image(self, image: "Image.Image") -> PaddleRecognitionResult:
@@ -124,8 +127,12 @@ class PaddleEnginePredictor:
         rgb_image = image.convert("RGB")
         img_arr = np.array(rgb_image)
 
+        raw_result = None
         try:
-            raw_result = self.engine.ocr(img_arr, cls=True)
+            if hasattr(self.engine, "predict"):
+                raw_result = self.engine.predict(img_arr)
+            elif hasattr(self.engine, "ocr"):
+                raw_result = self.engine.ocr(img_arr, cls=True)
         except Exception as e:
             logger.error("PaddleOCR recognition failed: %s", e)
             return PaddleRecognitionResult(blocks=[])
@@ -133,44 +140,90 @@ class PaddleEnginePredictor:
         if not raw_result or raw_result[0] is None:
             return PaddleRecognitionResult(blocks=[])
 
-        page_entries = (
-            raw_result[0] if isinstance(raw_result, list) and raw_result else []
-        )
-        if not isinstance(page_entries, list):
-            return PaddleRecognitionResult(blocks=[])
-
         raw_items: list[dict[str, Any]] = []
-        for entry in page_entries:
-            if not entry or len(entry) < 2:
-                continue
-            box_points, text_info = entry[0], entry[1]
-            if not text_info or len(text_info) < 2:
-                continue
-            text, conf = str(text_info[0]), float(text_info[1])
-            cleaned_text = normalize_uyghur_text_direction(text)
-            if not cleaned_text:
-                continue
 
-            # Calculate bounding box [min_x, min_y, max_x, max_y]
-            xs = [p[0] for p in box_points]
-            ys = [p[1] for p in box_points]
-            bbox = [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
+        # Format 1: PaddleX / PaddleOCR 3.7+ dict result: [{'rec_texts': [...], 'rec_scores': [...], ...}]
+        if (
+            isinstance(raw_result, list)
+            and raw_result
+            and isinstance(raw_result[0], dict)
+        ):
+            page_data = raw_result[0]
+            texts = page_data.get("rec_texts", [])
+            scores = page_data.get("rec_scores", [])
+            polys = page_data.get("rec_polys", [])
+            boxes = page_data.get("rec_boxes", [])
 
-            raw_items.append(
-                {
-                    "bbox": bbox,
-                    "polygon": [[int(p[0]), int(p[1])] for p in box_points],
-                    "text": cleaned_text,
-                    "confidence": conf,
-                }
-            )
+            for i, text in enumerate(texts):
+                cleaned_text = normalize_uyghur_text_direction(str(text))
+                if not cleaned_text:
+                    continue
+                score = float(scores[i]) if i < len(scores) else 0.0
+
+                if i < len(polys) and polys[i] is not None:
+                    poly = [[int(pt[0]), int(pt[1])] for pt in polys[i]]
+                    xs = [pt[0] for pt in poly]
+                    ys = [pt[1] for pt in poly]
+                    bbox = [min(xs), min(ys), max(xs), max(ys)]
+                elif i < len(boxes) and boxes[i] is not None:
+                    box = [int(v) for v in boxes[i]]
+                    bbox = box
+                    poly = [
+                        [box[0], box[1]],
+                        [box[2], box[1]],
+                        [box[2], box[3]],
+                        [box[0], box[3]],
+                    ]
+                else:
+                    bbox = [0, 0, 100, 30]
+                    poly = [[0, 0], [100, 0], [100, 30], [0, 30]]
+
+                raw_items.append(
+                    {
+                        "bbox": bbox,
+                        "polygon": poly,
+                        "text": cleaned_text,
+                        "confidence": score,
+                    }
+                )
+
+        # Format 2: Legacy list result: [[ [box, (text, conf)], ... ]]
+        elif (
+            isinstance(raw_result, list)
+            and raw_result
+            and isinstance(raw_result[0], list)
+        ):
+            page_entries = raw_result[0]
+            for entry in page_entries:
+                if not entry or len(entry) < 2:
+                    continue
+                box_points, text_info = entry[0], entry[1]
+                if not text_info or len(text_info) < 2:
+                    continue
+                text, conf = str(text_info[0]), float(text_info[1])
+                cleaned_text = normalize_uyghur_text_direction(text)
+                if not cleaned_text:
+                    continue
+
+                xs = [p[0] for p in box_points]
+                ys = [p[1] for p in box_points]
+                bbox = [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
+
+                raw_items.append(
+                    {
+                        "bbox": bbox,
+                        "polygon": [[int(p[0]), int(p[1])] for p in box_points],
+                        "text": cleaned_text,
+                        "confidence": conf,
+                    }
+                )
 
         # Sort into RTL reading order
         ordered = cluster_lines_into_reading_order(raw_items)
 
         blocks: list[PaddleBlock] = []
         for idx, item in enumerate(ordered):
-            html = f"<p dir=\"rtl\">{item['text']}</p>"
+            html = f'<p dir="rtl">{item["text"]}</p>'
             block = PaddleBlock(
                 reading_order=idx,
                 confidence=item["confidence"],
