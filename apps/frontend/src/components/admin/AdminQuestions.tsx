@@ -7,12 +7,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 import { authFetch } from '../../services/authService';
 import { formatAnswerCost } from '../../utils/costUtils';
+import { QuestionDetailModal } from './QuestionDetailModal';
 
 const PAGE_SIZE = 25;
 
 interface RagQuestion {
   id: number;
   question: string;
+  answer?: string | null;
+  retrievedContext?: string | null;
   isGlobal: boolean;
   bookId: string | null;
   bookTitle?: string | null;
@@ -57,6 +60,7 @@ export function AdminQuestions() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [selectedQuestion, setSelectedQuestion] = useState<RagQuestion | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [localSearch, setLocalSearch] = useState('');
@@ -144,6 +148,11 @@ export function AdminQuestions() {
             ? { ...q, showOnHomepage: updated.showOnHomepage ?? updated.show_on_homepage }
             : q
         )
+      );
+      setSelectedQuestion((prev) =>
+        prev && prev.id === question.id
+          ? { ...prev, showOnHomepage: updated.showOnHomepage ?? updated.show_on_homepage }
+          : prev
       );
     } catch {
       // silent — the toggle visually snaps back since we didn't optimistically update
@@ -260,11 +269,23 @@ export function AdminQuestions() {
                         >
                           {q.isGlobal ? <Globe size={14} /> : <BookOpen size={14} />}
                         </div>
-                        <div className="flex-1 min-w-0 flex flex-col gap-1 text-right" dir="rtl">
+                        <div
+                          className="flex-1 min-w-0 flex flex-col gap-1 text-right cursor-pointer group/title"
+                          dir="rtl"
+                          onClick={() => setSelectedQuestion(q)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSelectedQuestion(q);
+                            }
+                          }}
+                        >
                           <p
-                            className="uyghur-text text-[#1a1a1a] dark:text-slate-100 font-semibold text-[13px] sm:text-[15px] md:text-[16px] lg:text-[17px] leading-relaxed line-clamp-3 break-words"
+                            className="uyghur-text text-[#1a1a1a] dark:text-slate-100 font-semibold text-[13px] sm:text-[15px] md:text-[16px] lg:text-[17px] leading-relaxed line-clamp-3 break-words group-hover/title:text-[#0369a1] dark:group-hover/title:text-[#38bdf8] transition-colors"
                             lang="ug"
-                            title={q.question}
+                            title={t('admin.questions.viewDetails')}
                           >
                             {q.question}
                           </p>
@@ -399,6 +420,15 @@ export function AdminQuestions() {
             ) : null}
           </div>
         </div>
+      )}
+
+      {selectedQuestion && (
+        <QuestionDetailModal
+          question={selectedQuestion}
+          onClose={() => setSelectedQuestion(null)}
+          onToggleHomepage={handleToggle}
+          isToggling={togglingId === selectedQuestion.id}
+        />
       )}
     </div>
   );

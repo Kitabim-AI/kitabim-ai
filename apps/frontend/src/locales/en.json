@@ -480,7 +480,14 @@
       "evalQueued": "Scoring…",
       "evalFailed": "Eval failed",
       "empty": "No questions yet",
-      "error": "Failed to load questions"
+      "error": "Failed to load questions",
+      "modalTitle": "Question & Answer Details",
+      "questionLabel": "Question",
+      "answerLabel": "Answer",
+      "noAnswer": "No answer recorded yet.",
+      "copyAnswer": "Copy Answer",
+      "copied": "Copied",
+      "viewDetails": "View Details"
     },
     "pipeline": {
       "ocr": "OCR",

@@ -251,6 +251,8 @@ class RagQuestionAdmin(BaseModel):
     input_tokens: Optional[int] = 0
     output_tokens: Optional[int] = 0
     cost_usd: Optional[float] = 0.0
+    answer: Optional[str] = None
+    retrieved_context: Optional[str] = None
 
 
 class RagQuestionsPage(BaseModel):
