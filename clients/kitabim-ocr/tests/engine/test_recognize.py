@@ -1380,3 +1380,64 @@ def test_block_ink_contrast_sparse_text_block():
     assert contrast is not None
     # Contrast should be close to 250 - 30 = 220, NOT dropped to ~0 because of 5th percentile
     assert contrast > 180.0
+
+
+def _ocr_mock_page():
+    page = MagicMock()
+    pix = MagicMock()
+    pix.samples = bytes([10, 250] * 1500)
+    pix.tobytes.return_value = _fake_png_bytes()
+    page.get_pixmap.return_value = pix
+    return page
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_joins_spaced_hyphen_confirmed_at_line_end():
+    with (
+        patch(
+            "engine.recognize._process_page_sync",
+            return_value=("ئەھۋالى ھەز - رىتى، پاك - پاكىز", 0.9),
+        ),
+        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
+        patch("engine.recognize.get_line_detector", return_value=MagicMock()),
+        patch(
+            "engine.recognize.read_line_end_words", return_value={"ھەز"}
+        ) as mock_read,
+    ):
+        result = await svc.ocr_page(
+            _ocr_mock_page(), MagicMock(), valid_words={"ھەزرىتى", "پاكپاكىز"}
+        )
+
+    assert result == "ئەھۋالى ھەزرىتى، پاك - پاكىز"
+    mock_read.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_skips_line_end_check_without_spaced_candidates():
+    with (
+        patch(
+            "engine.recognize._process_page_sync",
+            return_value=("ئادەتتىكى تېكىست", 0.9),
+        ),
+        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
+        patch("engine.recognize.read_line_end_words") as mock_read,
+    ):
+        await svc.ocr_page(_ocr_mock_page(), MagicMock(), valid_words={"ھەزرىتى"})
+
+    mock_read.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_keeps_text_when_line_end_check_fails():
+    with (
+        patch("engine.recognize._process_page_sync", return_value=("ھەز - رىتى", 0.9)),
+        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
+        patch(
+            "engine.recognize.get_line_detector", side_effect=RuntimeError("no model")
+        ),
+    ):
+        result = await svc.ocr_page(
+            _ocr_mock_page(), MagicMock(), valid_words={"ھەزرىتى"}
+        )
+
+    assert result == "ھەز - رىتى"

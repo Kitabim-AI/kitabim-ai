@@ -1,8 +1,11 @@
+import pytest
+
 from engine.text_cleanup import (
     add_word_spans,
     clean_uyghur_text,
     correct_uyghur_ocr_orthography,
     dehyphenate_uyghur_text,
+    spaced_hyphen_candidates,
     has_repeated_word_span,
     is_block_repetition_loop,
     is_degenerate_ocr_output,
@@ -459,3 +462,94 @@ def test_has_repeated_word_span_detects_cross_block_duplicate_in_combined_block(
     assert (
         has_repeated_word_span(last_block, min_words=8, seen_spans=seen_spans) is True
     )
+
+
+# ── Line-break join cases ─────────────────────────────────────────────────────
+# Each case: (text, words in the dictionary, expected output). Rule: join when
+# "p1p2" is a dictionary word and "p1-p2" is not, for a hyphen glued to both
+# words or followed by a line break. Spaced hyphens inside a line stay.
+_LINE_BREAK_JOINS = [
+    ("ھەز-رىتى", {"ھەزرىتى"}, "ھەزرىتى"),
+    ("ھەز\u2013رىتى", {"ھەزرىتى"}, "ھەزرىتى"),
+    ("ھەز-\nرىتى", {"ھەزرىتى"}, "ھەزرىتى"),
+    ("ھەز -\n رىتى", {"ھەزرىتى"}, "ھەزرىتى"),
+    ("بۇلار-\nغا", {"بۇلار", "غا", "بۇلارغا"}, "بۇلارغا"),
+    ("ئۈمىد-لىك", {"ئۈمىدلىك"}, "ئۈمىدلىك"),
+]
+
+_LINE_BREAK_KEEPS = [
+    # Spaced hyphen or dash inside a line: real pair, "-دە" particle, or punctuation.
+    ("ھەز - رىتى", {"ھەزرىتى"}),
+    ("ھەز -رىتى", {"ھەزرىتى"}),
+    ("ھەز- رىتى", {"ھەزرىتى"}),
+    ("ئىكەن — دە", {"ئىكەندە"}),
+    ("پاك - پاكىز", {"پاكپاكىز"}),
+    # The hyphenated form is itself a dictionary word: a real compound.
+    ("ئاز-ئازدىن", {"ئاز-ئازدىن", "ئازئازدىن"}),
+    # The glued form isn't a dictionary word.
+    ("نائەلۇم-\nسۆز", {"سۆز"}),
+    # Numbers are not word pieces.
+    ("1906-يىلى", {"يىلى", "1906يىلى"}),
+    # Only hyphens are handled: periods and a hyphen misread as "د" are left as is.
+    ("خىرا. جىتىنىڭ", {"خىراجىتىنىڭ"}),
+    ("ئارقىد-لىق", {"ئارقىلىق"}),
+]
+
+
+@pytest.mark.parametrize("text,words,expected", _LINE_BREAK_JOINS)
+def test_dehyphenate_joins_line_break_variants(text, words, expected):
+    cleaned, count = dehyphenate_uyghur_text(f"بۇ {text} بولدى", words.__contains__)
+    assert cleaned == f"بۇ {expected} بولدى"
+    assert count == 1
+
+
+@pytest.mark.parametrize("text,words", _LINE_BREAK_KEEPS)
+def test_dehyphenate_keeps_real_word_pairs(text, words):
+    sentence = f"بۇ {text} بولدى"
+    cleaned, count = dehyphenate_uyghur_text(sentence, words.__contains__)
+    assert cleaned == sentence
+    assert count == 0
+
+
+# ── Spaced hyphens: joined only when the page shows the word ending a line ───
+
+
+@pytest.mark.parametrize(
+    "text", ["ھەز - رىتى", "ھەز -رىتى", "ھەز- رىتى", "ھەز \u2014 رىتى"]
+)
+def test_dehyphenate_joins_spaced_hyphen_at_line_end(text):
+    cleaned, count = dehyphenate_uyghur_text(
+        f"بۇ {text} بولدى", {"ھەزرىتى"}, line_end_words={"ھەز"}
+    )
+    assert cleaned == "بۇ ھەزرىتى بولدى"
+    assert count == 1
+
+
+def test_dehyphenate_keeps_spaced_hyphen_not_at_line_end():
+    text = "ئۆي پاك - پاكىز بولدى، ھەز - رىتى"
+    words = {"پاكپاكىز", "ھەزرىتى"}
+    cleaned, count = dehyphenate_uyghur_text(text, words, line_end_words={"ھەز"})
+    assert cleaned == "ئۆي پاك - پاكىز بولدى، ھەزرىتى"
+    assert count == 1
+    # Without layout information spaced hyphens are never joined.
+    assert dehyphenate_uyghur_text(text, words) == (text, 0)
+
+
+def test_dehyphenate_spaced_line_end_still_needs_dictionary():
+    # Real compound whose hyphen falls at a line end: "p1-p2" is a word.
+    text = "ئاز - ئازدىن"
+    words = {"ئاز-ئازدىن", "ئازئازدىن"}
+    assert dehyphenate_uyghur_text(text, words, line_end_words={"ئاز"}) == (text, 0)
+    # Glued form isn't a word.
+    assert dehyphenate_uyghur_text(
+        "قەدىر - قىممىتى", set(), line_end_words={"قەدىر"}
+    ) == (
+        "قەدىر - قىممىتى",
+        0,
+    )
+
+
+def test_spaced_hyphen_candidates_lists_dictionary_backed_pairs():
+    text = "ھەز - رىتى ۋە پاك - پاكىز، ئاز - ئازدىن، نائەلۇم - سۆز، ئۇ-رۇقى"
+    words = {"ھەزرىتى", "پاكپاكىز", "ئاز-ئازدىن", "ئازئازدىن", "ئۇرۇقى"}
+    assert spaced_hyphen_candidates(text, words) == ["ھەز", "پاك"]

@@ -41,15 +41,18 @@ from engine.config import (
     is_dot_enhancement_enabled,
 )
 from engine.dictionary import get_valid_words
+from engine.line_ends import get_line_detector, read_line_end_words
 from engine.savitr_engine import SavitrPredictor
 from engine.text_cleanup import (
     add_word_spans,
     clean_uyghur_text,
+    dehyphenate_uyghur_text,
     has_repeated_word_span,
     is_block_repetition_loop,
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
     is_isolated_page_number,
+    spaced_hyphen_candidates,
 )
 
 logger = logging.getLogger("kitabim_ocr_client.engine.recognize")
@@ -915,6 +918,35 @@ def _process_page_sync(
     return markdown, mean_confidence
 
 
+async def _join_line_end_spaced_hyphens(
+    text: str,
+    image: Image.Image,
+    recognition_predictor: Any,
+    words: set[str],
+    executor: ThreadPoolExecutor,
+) -> str:
+    """Join spaced hyphens ("ھەز - رىتى") the page image shows at a line end.
+
+    Only runs the line detection + line-end recognition when the page has a
+    spaced pair the dictionary would join; on any failure the text is kept.
+    """
+    if not spaced_hyphen_candidates(text, words):
+        return text
+    loop = asyncio.get_running_loop()
+    try:
+        line_end_words = await loop.run_in_executor(
+            executor,
+            lambda: read_line_end_words(
+                image, get_line_detector(), recognition_predictor
+            ),
+        )
+    except Exception as exc:
+        logger.warning("Line-end check failed, keeping spaced hyphens: %s", exc)
+        return text
+    joined, _ = dehyphenate_uyghur_text(text, words, line_end_words=line_end_words)
+    return joined
+
+
 async def ocr_page(
     page: fitz.Page,
     recognition_predictor: Any,
@@ -992,21 +1024,12 @@ async def ocr_page(
                 )
 
             cleaned = clean_uyghur_text(markdown)
-            if words_dict and any(
-                h in cleaned
-                for h in (
-                    "-",
-                    "\u2010",
-                    "\u2011",
-                    "\u2012",
-                    "\u2013",
-                    "\u2014",
-                    "\u00ad",
-                )
-            ):
-                from engine.text_cleanup import dehyphenate_uyghur_text
-
+            if words_dict:
                 cleaned, _ = dehyphenate_uyghur_text(cleaned, words_dict)
+                if not isinstance(recognition_predictor, SavitrPredictor):
+                    cleaned = await _join_line_end_spaced_hyphens(
+                        cleaned, image, recognition_predictor, words_dict, executor
+                    )
             if is_degenerate_ocr_output(cleaned):
                 raise LowConfidenceOcrError(
                     f"OCR output looks like a runaway repetition/reasoning-leak "
