@@ -63,4 +63,54 @@ describe('authService.initAppConfig / getCollectionPageSize', () => {
 
     expect(getShowChatCost()).toBe(true);
   });
+
+  it('fetches maxUploadMb from /api/config and exposes it', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ maxUploadMb: 750 }),
+    });
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { initAppConfig, getMaxUploadMb } = await import('../../services/authService');
+    await initAppConfig();
+
+    expect(getMaxUploadMb()).toBe(750);
+  });
+
+  it('defaults maxUploadMb to 500 when omitted or on error', async () => {
+    const mockFetch = vi.fn().mockRejectedValue(new Error('error'));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { initAppConfig, getMaxUploadMb } = await import('../../services/authService');
+    await initAppConfig();
+
+    expect(getMaxUploadMb()).toBe(500);
+  });
+
+  it('includes X-Kitabim-App-Id header from environment in auth headers and authFetch', async () => {
+    vi.stubEnv('VITE_SECURITY_APP_ID', 'test-app-id-123');
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      json: vi.fn().mockResolvedValue({}),
+    });
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getAuthHeaders, authFetch } = await import('../../services/authService');
+    const headers = getAuthHeaders() as Record<string, string>;
+    expect(headers['X-Kitabim-App-Id']).toBe('test-app-id-123');
+
+    await authFetch('/api/test');
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/test',
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      })
+    );
+    const sentHeaders = mockFetch.mock.calls[0][1].headers as Headers;
+    expect(sentHeaders.get('X-Kitabim-App-Id')).toBe('test-app-id-123');
+
+    vi.unstubAllEnvs();
+  });
 });

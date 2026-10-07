@@ -89,6 +89,8 @@ services:
     build:
       context: .
       dockerfile: apps/frontend/Dockerfile
+      args:
+        VITE_SECURITY_APP_ID: ${SECURITY_APP_ID:-}
     image: kitabim-frontend:local
     restart: always
     ports:

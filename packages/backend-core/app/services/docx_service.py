@@ -59,14 +59,14 @@ def _is_heading_para(para_el) -> bool:
     return all(r.find(f".//{{{_NS}}}b") is not None for r in runs)
 
 
-def extract_docx_pages(path: Path) -> list[str]:
+def extract_docx_pages(path: Path, page_char_size: int = 2000) -> list[str]:
     """
     Split a .docx file into pages using lastRenderedPageBreak markers.
 
     - Splits at run level to handle paragraphs spanning multiple pages.
     - Bold short paragraphs are prefixed with '## ' as section headings.
     - Footnote texts are appended at the bottom of the page they appear on.
-    - Falls back to fixed 3000-char blocks if no page-break markers are found.
+    - Falls back to fixed character blocks (default 2000 chars) if no page-break markers are found.
     """
     from docx import Document
 
@@ -134,7 +134,7 @@ def extract_docx_pages(path: Path) -> list[str]:
     # Fallback: no page break markers found, split by fixed block size
     if len(pages) <= 1:
         full_text = pages[0] if pages else ""
-        block_size = 3000
+        block_size = page_char_size if page_char_size > 0 else 2000
         pages = [
             full_text[i : i + block_size] for i in range(0, len(full_text), block_size)
         ]

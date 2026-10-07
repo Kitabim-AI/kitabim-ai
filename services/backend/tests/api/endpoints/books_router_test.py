@@ -636,6 +636,40 @@ async def test_upload_pdf_exceeds_size_limit():
 
 
 @pytest.mark.asyncio
+async def test_upload_pdf_uses_system_config_max_upload_size():
+    setup_paths()
+    from api.endpoints.books_router import upload_pdf
+
+    # Set configured limit to 10 MB
+    mock_config_repo = MagicMock()
+    mock_config_repo.get_value = AsyncMock(return_value="10")
+
+    mock_file = AsyncMock()
+    mock_file.filename = "book.pdf"
+    # Send 11 MB
+    chunk_11mb = b"X" * (11 * 1024 * 1024)
+    mock_file.read = AsyncMock(side_effect=[chunk_11mb, b""])
+
+    mock_user = MagicMock()
+    mock_session = AsyncMock()
+
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=MagicMock()),
+        patch(
+            "api.endpoints.books_router.SystemConfigsRepository",
+            return_value=mock_config_repo,
+        ),
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            await upload_pdf(
+                file=mock_file, current_user=mock_user, session=mock_session
+            )
+
+    assert excinfo.value.status_code == 413
+    assert "File size exceeds maximum limit of 10MB" in excinfo.value.detail
+
+
+@pytest.mark.asyncio
 async def test_upload_ocrd_rejects_page_count_mismatch():
     setup_paths()
     from api.endpoints.books_router import upload_pdf_ocrd

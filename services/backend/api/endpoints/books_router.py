@@ -1579,6 +1579,24 @@ async def get_book_by_hash(
     return Book.model_validate(book_model)
 
 
+async def _get_max_book_upload_bytes(session: AsyncSession) -> tuple[int, int]:
+    """Return (max_bytes, max_mb) from system_configs with fallback to settings."""
+    try:
+        config_repo = SystemConfigsRepository(session)
+        val = await config_repo.get_value("sys_max_book_upload_mb")
+        if val:
+            try:
+                max_mb = int(val)
+                if max_mb > 0:
+                    return max_mb * 1024 * 1024, max_mb
+            except (ValueError, TypeError):
+                pass
+    except Exception:
+        pass
+    fallback_bytes = settings.max_book_upload_bytes
+    return fallback_bytes, max(1, fallback_bytes // (1024 * 1024))
+
+
 @router.post("/upload")
 async def upload_pdf(
     file: UploadFile = File(...),
@@ -1602,6 +1620,7 @@ async def upload_pdf(
     temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}{ext}"
     hasher = hashlib.sha256()
 
+    max_upload_bytes, max_upload_mb = await _get_max_book_upload_bytes(session)
     total_bytes = 0
     try:
         with open(temp_path, "wb") as handle:
@@ -1610,13 +1629,12 @@ async def upload_pdf(
                 if not chunk:
                     break
                 total_bytes += len(chunk)
-                if total_bytes > settings.max_book_upload_bytes:
+                if total_bytes > max_upload_bytes:
                     handle.close()
                     temp_path.unlink(missing_ok=True)
-                    max_mb = settings.max_book_upload_bytes // (1024 * 1024)
                     raise HTTPException(
                         status_code=413,
-                        detail=f"File size exceeds maximum limit of {max_mb}MB",
+                        detail=f"File size exceeds maximum limit of {max_upload_mb}MB",
                     )
                 hasher.update(chunk)
                 handle.write(chunk)
@@ -1647,7 +1665,13 @@ async def upload_pdf(
             temp_path.unlink(missing_ok=True)
         else:
             # DOCX: extract pages immediately, skip OCR
-            docx_pages = extract_docx_pages(temp_path)
+            config_repo = SystemConfigsRepository(session)
+            docx_char_val = await config_repo.get_value("sys_docx_page_char_size")
+            try:
+                docx_char_size = int(docx_char_val) if docx_char_val else 2000
+            except (ValueError, TypeError):
+                docx_char_size = 2000
+            docx_pages = extract_docx_pages(temp_path, page_char_size=docx_char_size)
             page_count = len(docx_pages)
             if extract_docx_cover(temp_path, cover_temp_path):
                 try:
@@ -1766,6 +1790,7 @@ async def upload_pdf_ocrd(
 
     temp_path = settings.uploads_dir / f".upload_{uuid.uuid4().hex}.pdf"
     hasher = hashlib.sha256()
+    max_upload_bytes, max_upload_mb = await _get_max_book_upload_bytes(session)
     total_bytes = 0
     try:
         with open(temp_path, "wb") as handle:
@@ -1774,13 +1799,12 @@ async def upload_pdf_ocrd(
                 if not chunk:
                     break
                 total_bytes += len(chunk)
-                if total_bytes > settings.max_book_upload_bytes:
+                if total_bytes > max_upload_bytes:
                     handle.close()
                     temp_path.unlink(missing_ok=True)
-                    max_mb = settings.max_book_upload_bytes // (1024 * 1024)
                     raise HTTPException(
                         status_code=413,
-                        detail=f"File size exceeds maximum limit of {max_mb}MB",
+                        detail=f"File size exceeds maximum limit of {max_upload_mb}MB",
                     )
                 hasher.update(chunk)
                 handle.write(chunk)
