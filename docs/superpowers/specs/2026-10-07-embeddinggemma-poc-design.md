@@ -19,17 +19,17 @@ Decide whether Google's open **EmbeddingGemma 2** (text encoder only, ~270M para
 
 | Model | Dims evaluated | How |
 |---|---|---|
-| `gemini-embedding-2` (baseline) | 3072 | Gemini Batch API, no `task_type` — identical to prod today |
+| `gemini-embedding-2` (baseline) | 3072 | Interactive `batchEmbedContents`, `outputDimensionality=3072`, no `task_type` — identical to prod's default path (`embed_batch_enabled=false`). ~10M tokens × $0.15/M ≈ $1.50 for the pool |
 | EmbeddingGemma 2, text encoder only | 768, 512, 256 | Official `google/embeddinggemma-2` checkpoint, text path only; 512/256 by Matryoshka truncation + re-normalization of the 768 vector (no re-embedding) |
 
 Community text-only exports (e.g. `jayyun98/embeddinggemma-2-text-270m`) may be used only if their vectors match the official checkpoint's text path (cosine ≥ 0.999) on 200 Uyghur chunks.
 
-EmbeddingGemma's recommended query/document prompt prefixes are used as the model card specifies; the exact strings are recorded in the report.
+EmbeddingGemma is loaded text-only via `config_kwargs={"vision_config": None, "audio_config": None}` in **float32** (the model card forbids float16). Queries use `prompt_name="SearchQuery"` (`task: search result | query: …`), documents use `prompt_name="Document"` (`title: none | text: …`).
 
 ## Runtime
 
 - **CPU only, everywhere** — no MPS/GPU, to match prod.
-- Runs in a Docker container (`linux/arm64`, CPU PyTorch + `sentence-transformers`) with `--cpus` / `--memory` pinned to the prod worker VM's spec.
+- Runs in a Docker container (`linux/arm64`, CPU PyTorch + `sentence-transformers`) with `--cpus` / `--memory` pinned to the prod worker VM's spec. Prod images are `amd64` (x86), so Mac arm64 throughput is an estimate — see Risks.
 - **Prod worker spec is an input the user confirms before Stage 3.** Until confirmed, the container uses 4 CPUs / 8 GB.
 - Code: `scripts/poc/embeddinggemma/`. Reads the local DB via `DATABASE_URL`. Report: `docs/poc/embeddinggemma/`.
 
@@ -37,9 +37,12 @@ EmbeddingGemma's recommended query/document prompt prefixes are used as the mode
 
 ### Stage 0 — Uyghur sanity check (go/no-go, ~1 hour, no tables)
 
-- ~50 hand-checked Uyghur pairs: 20 paraphrase, 15 question→answer-passage, 15 unrelated.
-- **Pass:** mean cosine of paraphrase and Q→A pairs exceeds mean of unrelated pairs by a clear margin, and ≥ 90% of related pairs score above every unrelated pair's median.
-- Tokenizer check: tokens per Uyghur word and share of byte-fallback tokens on 1,000 words of book text, reported alongside Gemini's figures for context. Heavy byte-fallback is a warning sign.
+Hand-writing Uyghur paraphrase pairs is avoided (machine-written Uyghur needs the user's review anyway), so Stage 0 is a miniature retrieval test built from real book text:
+
+- 50 passages sampled from the test volumes (fresh split, ≥ 200 chars); one Gemini-generated question per passage using the Stage 2 generator.
+- Each question is ranked against all 50 passages by both Gemma (768) and Gemini.
+- **Pass:** Gemma top-1 accuracy ≥ 70% **and** ≥ 80% of Gemini's top-1 accuracy.
+- Tokenizer check (Gemma only): tokens per Uyghur word and share of byte-fallback tokens over the 50 passages. A byte-fallback share above 20% is reported as a warning sign.
 - **Fail → stop the PoC** and write up the result.
 
 ### Stage 1 — Build the pool (local DB, `poc` schema)
@@ -60,7 +63,11 @@ Created by a setup script (`CREATE SCHEMA poc`), not a numbered migration; `DROP
 | `emb_gemma` | vector(768) | |
 | `emb_gemini` | vector(3072) | |
 
-Unique on `(strategy, book_id, page_number, chunk_index)`. Offsets are found by sequential search of each chunk's text in the cleaned page text (overlap carry-over means chunks can share text, so search starts from the previous chunk's start). Chunks whose text cannot be located are counted and reported; if > 1%, stop and fix before continuing.
+Unique on `(strategy, book_id, page_number, chunk_index)`. Extra column `offset_exact boolean`.
+
+**`current` is a fresh re-split, not a copy of local `chunks`.** Local `chunks` rows were produced by older chunker versions (only 3 of 558 pages of `631481d3a7e9` match a re-split with today's `chunking_service`), so the pool re-runs exactly what `ChunkingJob` does today — `chunking_service.split_text(clean_uyghur_text(page.text))`, skipping `is_toc` pages — into `poc.chunks` only. Prod and local `chunks` are never written.
+
+Offsets within `clean_uyghur_text(page.text)` are located in order: (1) exact substring search starting at the previous chunk's start; (2) whitespace-normalized match mapped back to original offsets; (3) fallback to the whole page range with `offset_exact=false`. Measured on 4 test volumes: 96.4% exact, 0.8% whitespace-normalized, 2.8% fallback. **Stop if fallback exceeds 5%.** Synthetic gold passages are drawn only from `offset_exact=true` chunks.
 
 **Pool contents (~50k chunks, all `strategy='current'`, copied from local `chunks`):**
 
@@ -74,7 +81,7 @@ Local `chunks.embedding` is almost entirely NULL (63 / 526k), so both models emb
 ### Stage 2 — Test set
 
 **Synthetic (~300 questions)**
-- Passages sampled across all 10 test volumes, proportional to chunk count, skipping passages under 200 chars.
+- Passages sampled across all 10 test volumes, proportional to chunk count, skipping passages under 200 chars and `offset_exact=false` chunks.
 - Gemini generates one natural Uyghur question per passage, instructed to avoid copying the passage's wording. Prompt authored via `/prompt-engineer`.
 - Reject a question if > 40% of its word trigrams appear in the source passage.
 - Gold label: `(book_id, page_number, char_start, char_end)` of the source passage.
@@ -82,15 +89,15 @@ Local `chunks.embedding` is almost entirely NULL (63 / 526k), so both models emb
 
 **Real (~200 questions)**
 - Sampled from the 1,502 global (`is_global = true`) distinct questions in `rag_evaluations`, de-duplicated, fixed seed.
-- Relevance via pooled blind judging: union of every variant's top-10 from the pool, judged by Gemini as relevant / not relevant without knowing the source model. Questions with zero relevant results anywhere are dropped.
+- Relevance via pooled blind judging: union of every variant's top-25 from the pool (top-25 so Recall@25 never scores an unjudged chunk), judged by Gemini as relevant / not relevant without knowing the source model. Questions with zero relevant results anywhere are dropped.
 
 ### Stage 3 — Evaluation
 
 - **Hit rule:** a retrieved chunk is a hit if its `[char_start, char_end)` overlaps the gold range on the same `(book_id, page_number)` — strategy-agnostic, so semantic chunks can be scored on the same test set later. For real questions, a hit is a judged-relevant chunk.
 - **Metrics:** Recall@5/10/25 (25 = prod `RAG_TOP_K`), MRR@10, nDCG@10.
 - **Scopes:** within-book (synthetic only) and full pool (both sets).
-- **Search:** exact cosine (sequential scan) — no ANN index, so index approximation doesn't confound the comparison.
-- **Performance (Gemma, CPU container):** chunks/sec for document embedding, single-query latency p50/p95, peak RAM, model load time, and projected time to embed a 500-page book.
+- **Search:** exact cosine in NumPy over L2-normalized vectors loaded from `poc.chunks` — no ANN index, so index approximation doesn't confound the comparison.
+- **Performance (Gemma, CPU container):** chunks/sec for document embedding, single-query **encoding** latency p50/p95 (the part the model changes; vector search cost is the same pgvector work in both cases), peak RAM, model load time, and projected time to embed a 500-page book.
 
 ## Go/no-go criteria
 
@@ -108,7 +115,7 @@ Recommend the smallest dimension that passes (256 is 12× smaller than 3072).
 - Stage 0 result and tokenizer stats.
 - Metric tables (model × dim × scope × question set) and performance table.
 - 20 questions with the largest disagreement between Gemini and the best Gemma variant, top-5 results side by side, for the user's review.
-- Clear GO / NO-GO recommendation against the criteria above, with costs: Gemini Batch spend for the PoC and projected prod compute.
+- Clear GO / NO-GO recommendation against the criteria above, with costs: Gemini spend for the PoC and projected prod compute.
 
 ## Risks
 
