@@ -15,8 +15,10 @@ from engine.dictionary import (
 @pytest.fixture(autouse=True)
 def reset_memory_cache():
     engine.dictionary._MEMORY_WORDS = None
+    engine.dictionary._LAST_FAILED_FETCH = None
     yield
     engine.dictionary._MEMORY_WORDS = None
+    engine.dictionary._LAST_FAILED_FETCH = None
 
 
 def test_load_cached_words_missing(tmp_path):
@@ -83,3 +85,32 @@ def test_get_valid_words_network_failure_falls_back_to_cache(tmp_path):
             force_refresh=True,
         )
         assert words == {"قوغۇن", "تاۋۇز"}
+
+
+def test_get_valid_words_retries_after_failure_with_no_cache(tmp_path):
+    cache_file = tmp_path / "words.txt"
+    ok = MagicMock(status_code=200, text="ئالما\n")
+
+    with patch(
+        "engine.dictionary.httpx.get",
+        side_effect=[httpx.ReadTimeout("slow"), ok],
+    ) as mock_get:
+        assert get_valid_words(cache_path=cache_file) == set()
+        # Inside the back-off window: no new request, still empty.
+        assert get_valid_words(cache_path=cache_file) == set()
+        assert mock_get.call_count == 1
+
+        with patch(
+            "engine.dictionary.time.time",
+            return_value=time.time() + engine.dictionary.FETCH_RETRY_SECONDS + 1,
+        ):
+            assert get_valid_words(cache_path=cache_file) == {"ئالما"}
+        assert mock_get.call_count == 2
+
+
+def test_fetch_uses_generous_default_timeout(tmp_path):
+    ok = MagicMock(status_code=200, text="ئالما\n")
+    with patch("engine.dictionary.httpx.get", return_value=ok) as mock_get:
+        get_valid_words(cache_path=tmp_path / "words.txt")
+    # The full bundle (~1.5M words) takes well over 15s to download.
+    assert mock_get.call_args.kwargs["timeout"] >= 120

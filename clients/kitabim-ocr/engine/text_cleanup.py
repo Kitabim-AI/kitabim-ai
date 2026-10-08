@@ -300,27 +300,88 @@ def is_metadata_or_key_value_block(lines: list[str]) -> bool:
 
 # ── Uyghur Line-Break De-Hyphenation ──────────────────────────────────────────
 
-_UYGHUR_WORD_PATTERN = (
-    r"[\u0621-\u064A\u0671-\u06D5\u06EE-\u06EF\uFB50-\uFDFF\uFE70-\uFEFF]+"
-)
-_DEHYPHEN_NL_RE = re.compile(
-    rf"({_UYGHUR_WORD_PATTERN})[\t ]*[\-\u2010\u2011\u2012\u2013\u2014\u00ad][\t ]*[\r\n]+[\t ]*({_UYGHUR_WORD_PATTERN})"
-)
-_DEHYPHEN_INLINE_RE = re.compile(
-    rf"({_UYGHUR_WORD_PATTERN})[\-\u2010\u2011\u2012\u2013\u2014\u00ad]({_UYGHUR_WORD_PATTERN})"
+_UYGHUR_CHAR_CLASS = (
+    r"[\u0621-\u064A\u0671-\u06D5\u06EE-\u06EF\uFB50-\uFDFF\uFE70-\uFEFF]"
 )
 _HYPHEN_CHARS = ("-", "\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u00ad")
+# A hyphen between two Uyghur words, either glued to both ("ھەز-رىتى") or at a
+# line end ("ھەز-\nرىتى", "ھەز -\nرىتى"). A spaced hyphen inside a line
+# ("ھەز - رىتى") is left alone: it is as often a real pair, a "-دە" particle or
+# a punctuation dash as a split word, and the words table can't tell them apart.
+_LINE_BREAK_RE = re.compile(
+    rf"(?<!{_UYGHUR_CHAR_CLASS})({_UYGHUR_CHAR_CLASS}+)"
+    rf"(?:[\-\u2010\u2011\u2012\u2013\u2014\u00ad]"
+    rf"|[\t ]*[\-\u2010\u2011\u2012\u2013\u2014\u00ad][\t ]*[\r\n]+[\t ]*)"
+    rf"({_UYGHUR_CHAR_CLASS}+)"
+)
+
+
+# A hyphen or dash with a space on at least one side, inside a line
+# ("ھەز - رىتى"). Joined only when the page image shows the left piece ending a
+# printed line with a hyphen (see engine.line_ends): in running text such a dash
+# is as often a real pair, a "-دە" particle or punctuation.
+_SPACED_HYPHEN_RE = re.compile(
+    rf"(?<!{_UYGHUR_CHAR_CLASS})({_UYGHUR_CHAR_CLASS}+)"
+    rf"(?:[\t ]+[\-\u2010\u2011\u2012\u2013\u2014\u00ad][\t ]*"
+    rf"|[\-\u2010\u2011\u2012\u2013\u2014\u00ad][\t ]+)"
+    rf"({_UYGHUR_CHAR_CLASS}+)"
+)
+
+
+def spaced_hyphen_candidates(
+    text: str, is_valid_word: Callable[[str], bool] | set[str]
+) -> list[str]:
+    """Left pieces of spaced-hyphen pairs the dictionary would join.
+
+    Lets the caller skip the (slow) line-end layout check on pages with none.
+    """
+    validator = _as_validator(is_valid_word)
+    return [
+        m.group(1)
+        for m in _SPACED_HYPHEN_RE.finditer(text)
+        if _resolve_line_break(m, validator) is not None
+    ]
+
+
+def _as_validator(
+    is_valid_word: Callable[[str], bool] | set[str],
+) -> Callable[[str], bool]:
+    if isinstance(is_valid_word, (set, frozenset)):
+        return is_valid_word.__contains__
+    return is_valid_word
+
+
+def _line_break_lookup_words(match: re.Match) -> set[str]:
+    """Every word _resolve_line_break looks up for this match."""
+    left, right = match.groups()
+    return {f"{left}-{right}", left + right}
+
+
+def _resolve_line_break(
+    match: re.Match, is_valid_word: Callable[[str], bool]
+) -> str | None:
+    """Return the joined word, or None to keep the hyphen.
+
+    Joins when "p1p2" is a dictionary word and "p1-p2" is not (which protects
+    real compounds like "ئاز-ئازدىن").
+    """
+    left, right = match.groups()
+    if not is_valid_word(f"{left}-{right}") and is_valid_word(left + right):
+        return left + right
+    return None
 
 
 def dehyphenate_uyghur_text(
     text: str,
     is_valid_word: Callable[[str], bool] | set[str],
+    line_end_words: set[str] | None = None,
 ) -> tuple[str, int]:
-    """De-hyphenates line-broken words matching the global auto-correction condition:
+    """De-hyphenate words split by a line-end hyphen, checked against the dictionary.
 
-    Condition:
-    1. cand_hyphen (p1-p2) is NOT in the valid words dictionary (protects legitimate compounds like 'ئاز-ئازدىن').
-    2. cand_merged (p1p2) IS in the valid words dictionary.
+    A hyphen glued to both words or followed by a line break is removed when
+    "p1p2" is a dictionary word and "p1-p2" is not. A spaced hyphen inside a
+    line ("p1 - p2") is joined on the same condition only when p1 is in
+    line_end_words, i.e. the page shows p1 ending a printed line with a hyphen.
 
     Returns:
         (cleaned_text, replacement_count)
@@ -328,42 +389,25 @@ def dehyphenate_uyghur_text(
     if not text or not any(h in text for h in _HYPHEN_CHARS):
         return text, 0
 
-    if isinstance(is_valid_word, (set, frozenset)):
-        valid_set = is_valid_word
-
-        def validator(w: str) -> bool:
-            return w in valid_set
-    else:
-        validator = is_valid_word
-
+    validator = _as_validator(is_valid_word)
     count = 0
 
-    def _replace_nl(match: re.Match) -> str:
+    def _replace(match: re.Match) -> str:
         nonlocal count
-        p1, p2 = match.group(1), match.group(2)
-        cand_hyphen = f"{p1}-{p2}"
-        cand_merged = f"{p1}{p2}"
-        if not validator(cand_hyphen) and validator(cand_merged):
-            count += 1
-            return cand_merged
-        return match.group(0)
+        joined = _resolve_line_break(match, validator)
+        if joined is None:
+            return match.group(0)
+        count += 1
+        return joined
 
-    # 1. First pass: line-break hyphens across newlines
-    text = _DEHYPHEN_NL_RE.sub(_replace_nl, text)
+    def _replace_spaced(match: re.Match) -> str:
+        if match.group(1) not in line_end_words:
+            return match.group(0)
+        return _replace(match)
 
-    def _replace_inline(match: re.Match) -> str:
-        nonlocal count
-        p1, p2 = match.group(1), match.group(2)
-        cand_hyphen = f"{p1}-{p2}"
-        cand_merged = f"{p1}{p2}"
-        if not validator(cand_hyphen) and validator(cand_merged):
-            count += 1
-            return cand_merged
-        return match.group(0)
-
-    # 2. Second pass: inline hyphens
-    text = _DEHYPHEN_INLINE_RE.sub(_replace_inline, text)
-
+    text = _LINE_BREAK_RE.sub(_replace, text)
+    if line_end_words:
+        text = _SPACED_HYPHEN_RE.sub(_replace_spaced, text)
     return text, count
 
 
@@ -378,7 +422,7 @@ def clean_uyghur_text(text: str, valid_words: set[str] | None = None) -> str:
     text = correct_uyghur_ocr_orthography(text)
 
     # 3. De-hyphenate line-break split words if valid words dictionary is provided
-    if valid_words and any(h in text for h in _HYPHEN_CHARS):
+    if valid_words:
         text, _ = dehyphenate_uyghur_text(text, valid_words)
 
     # 4. Strip OCR markers
@@ -456,6 +500,59 @@ _UYGHUR_VOWELS = frozenset("ەۇۆۈېىئ")
 _COMMON_ARABIC_WORDS = re.compile(
     r"\b(في|من|على|إلى|عن|هذا|هذه|الذي|التي|ذلك|تلك|الله|كان|كانت|مع|قد|ما|لم|لن|بل|إن|أن)\b"
 )
+
+
+def _normalize_words_for_span(text: str) -> list[str]:
+    words = [
+        re.sub(r"^[^\w\u0600-\u06FF]+|[^\w\u0600-\u06FF]+$", "", w)
+        for w in text.split()
+    ]
+    return [w for w in words if w]
+
+
+def extract_word_spans(
+    text: str,
+    min_words: int = 8,
+) -> list[tuple[str, ...]]:
+    words = _normalize_words_for_span(text)
+    if len(words) < min_words:
+        return []
+    return [tuple(words[i : i + min_words]) for i in range(len(words) - min_words + 1)]
+
+
+def add_word_spans(
+    text: str,
+    seen_spans: set[tuple[str, ...]],
+    min_words: int = 8,
+) -> None:
+    """Add all ``min_words`` word spans from ``text`` into ``seen_spans``."""
+    for span in extract_word_spans(text, min_words=min_words):
+        seen_spans.add(span)
+
+
+def has_repeated_word_span(
+    text: str,
+    min_words: int = 8,
+    seen_spans: set[tuple[str, ...]] | None = None,
+) -> bool:
+    """True if any run of ``min_words`` consecutive words occurs twice in ``text``,
+    or matches any span already present in ``seen_spans``.
+
+    Catches both intra-block decoder loops (re-emitting a line inside a block)
+    and cross-block repetition loops (repeating a stanza or sentence from
+    earlier on the page at the bottom/margin).
+    """
+    spans = extract_word_spans(text, min_words=min_words)
+    if not spans:
+        return False
+    local_seen: set[tuple[str, ...]] = set()
+    for span in spans:
+        if span in local_seen:
+            return True
+        if seen_spans is not None and span in seen_spans:
+            return True
+        local_seen.add(span)
+    return False
 
 
 def is_block_repetition_loop(text: str) -> bool:

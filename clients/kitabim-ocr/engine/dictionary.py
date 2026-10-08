@@ -12,8 +12,14 @@ logger = logging.getLogger("kitabim_ocr_client.engine.dictionary")
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "kitabim-ocr"
 WORDS_CACHE_FILE = DEFAULT_CACHE_DIR / "words_dict.txt"
 CACHE_TTL_SECONDS = 7 * 86400  # 7 days
+# The full words bundle (~1.5M words) routinely takes longer than 15s.
+FETCH_TIMEOUT_SECONDS = 120.0
+# With no dictionary at all, wait this long before trying the download again
+# rather than retrying on every page (or never, for the rest of the session).
+FETCH_RETRY_SECONDS = 300
 
 _MEMORY_WORDS: set[str] | None = None
+_LAST_FAILED_FETCH: float | None = None
 
 
 def get_default_words_cache_path() -> Path:
@@ -26,7 +32,7 @@ def get_default_words_cache_path() -> Path:
 def fetch_and_cache_words(
     base_url: str | None = None,
     cache_path: Path | None = None,
-    timeout: float = 15.0,
+    timeout: float = FETCH_TIMEOUT_SECONDS,
 ) -> set[str]:
     """Fetch words bundle from Kitabim API and cache to disk."""
     dest = cache_path or get_default_words_cache_path()
@@ -80,12 +86,18 @@ def get_valid_words(
     base_url: str | None = None,
     cache_path: Path | None = None,
     force_refresh: bool = False,
-    timeout: float = 15.0,
+    timeout: float = FETCH_TIMEOUT_SECONDS,
 ) -> set[str]:
     """Get valid words set, using in-memory cache, disk cache, or remote API."""
-    global _MEMORY_WORDS
+    global _MEMORY_WORDS, _LAST_FAILED_FETCH
     if _MEMORY_WORDS is not None and not force_refresh:
         return _MEMORY_WORDS
+    if (
+        _LAST_FAILED_FETCH is not None
+        and not force_refresh
+        and time.time() - _LAST_FAILED_FETCH < FETCH_RETRY_SECONDS
+    ):
+        return set()
 
     dest = cache_path or get_default_words_cache_path()
     is_stale = True
@@ -106,6 +118,7 @@ def get_valid_words(
             base_url=base_url, cache_path=dest, timeout=timeout
         )
         _MEMORY_WORDS = words
+        _LAST_FAILED_FETCH = None
         return words
     except Exception as exc:
         logger.warning(
@@ -117,7 +130,9 @@ def get_valid_words(
             _MEMORY_WORDS = cached
             return cached
         logger.warning(
-            "No words dictionary cache available. De-hyphenation will be bypassed."
+            "No words dictionary cache available. De-hyphenation is skipped "
+            "until the download succeeds (next attempt in %ss).",
+            FETCH_RETRY_SECONDS,
         )
-        _MEMORY_WORDS = set()
-        return _MEMORY_WORDS
+        _LAST_FAILED_FETCH = time.time()
+        return set()

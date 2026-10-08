@@ -4,7 +4,9 @@ import logging
 import os
 import shutil
 from abc import ABC, abstractmethod
+from datetime import timedelta
 from pathlib import Path
+from typing import Optional
 
 from app.core.config import settings
 from app.utils.observability import log_json
@@ -64,6 +66,23 @@ class StorageProvider(ABC):
     def get_stream(self, remote_path: str):
         """Get a readable stream for the file"""
         pass
+
+    def get_local_path(self, remote_path: str) -> Optional[Path]:
+        """Return local filesystem Path if stored locally and exists, else None"""
+        return None
+
+    def get_size(self, remote_path: str) -> Optional[int]:
+        """Return size in bytes if available, else None"""
+        return None
+
+    def generate_signed_url(
+        self,
+        remote_path: str,
+        expiration_seconds: int = 900,
+        download_filename: Optional[str] = None,
+    ) -> Optional[str]:
+        """Generate a temporary signed download URL if supported, else None"""
+        return None
 
 
 class FileSystemStorageProvider(StorageProvider):
@@ -140,6 +159,14 @@ class FileSystemStorageProvider(StorageProvider):
         if not src_path.exists():
             raise FileNotFoundError(f"Source file {src_path} does not exist")
         return open(src_path, "rb")
+
+    def get_local_path(self, remote_path: str) -> Optional[Path]:
+        p = self._get_full_path(remote_path)
+        return p if p.exists() else None
+
+    def get_size(self, remote_path: str) -> Optional[int]:
+        p = self._get_full_path(remote_path)
+        return p.stat().st_size if p.exists() else None
 
 
 class GCSStorageProvider(StorageProvider):
@@ -272,6 +299,49 @@ class GCSStorageProvider(StorageProvider):
                 f"Blob {final_path} does not exist in bucket {bucket.name}"
             )
         return blob.open("rb")
+
+    def get_size(self, remote_path: str) -> Optional[int]:
+        try:
+            bucket, _, final_path = self._get_bucket_and_path(remote_path)
+            blob = bucket.blob(final_path)
+            if blob.exists():
+                blob.reload()
+                return blob.size
+        except Exception as e:
+            logger.warning(f"Could not get GCS blob size for {remote_path}: {e}")
+        return None
+
+    def generate_signed_url(
+        self,
+        remote_path: str,
+        expiration_seconds: int = 900,
+        download_filename: Optional[str] = None,
+    ) -> Optional[str]:
+        try:
+            from urllib.parse import quote
+
+            bucket, bucket_name, final_path = self._get_bucket_and_path(remote_path)
+            blob = bucket.blob(final_path)
+            if not blob.exists():
+                return None
+
+            kwargs = {
+                "version": "v4",
+                "expiration": timedelta(seconds=expiration_seconds),
+                "method": "GET",
+            }
+            if download_filename:
+                safe_fallback = "".join(
+                    c if ord(c) < 128 else "_" for c in download_filename
+                )
+                encoded_name = quote(download_filename)
+                kwargs["response_disposition"] = (
+                    f"attachment; filename=\"{safe_fallback}\"; filename*=UTF-8''{encoded_name}"
+                )
+            return blob.generate_signed_url(**kwargs)
+        except Exception as e:
+            logger.warning(f"Could not generate signed URL for {remote_path}: {e}")
+            return None
 
 
 def get_storage_provider() -> StorageProvider:

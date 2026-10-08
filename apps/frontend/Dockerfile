@@ -24,6 +24,8 @@ COPY apps/frontend ./apps/frontend
 
 # Build the frontend
 WORKDIR /repo/apps/frontend
+ARG VITE_SECURITY_APP_ID
+ENV VITE_SECURITY_APP_ID=$VITE_SECURITY_APP_ID
 RUN npm run build
 
 # Stage 2: Production (Nginx)

@@ -1118,3 +1118,326 @@ def test_process_page_sync_preserves_prose_paragraphs_as_separate_blocks():
     assert cleaned_paras[0].startswith("كەلتۈرگەن، شۇنداقلا")
     assert cleaned_paras[1].startswith("ئابدۇرېھىم ئۆتكۈز 1980")
     assert cleaned_paras[4].startswith("بۇ توپلامغا شائىر")
+
+
+def _boxed_block(label, html, position, y0, y1, confidence=0.97):
+    b = _block(label, html, position=position, confidence=confidence)
+    b.polygon = [[10.0, y0], [190.0, y0], [190.0, y1], [10.0, y1]]
+    return b
+
+
+_LOOPED_HTML = (
+    "<p>ھەممىدىن تولۇق نۇسخا بولۇپ، بۇ نۇسخىنى تۇنجى قېتىم تاتار ئالىمى زەكى "
+    "ۋەلىدىي 1914 - يىلى پەرغانىدا تولۇق نۇسخىسى بولۇپ، بۇ نۇسخىنى تۇنجى قېتىم "
+    "تاتار ئالىمى زەكى ۋەلىدىي 1914 - يىلى پەرغانىدا تولۇق نۇسخىسى بولۇپ، "
+    "مەھمۇد كاشى</p>"
+)
+
+
+def test_process_page_sync_reocrs_looping_block_in_block_mode():
+    img = Image.new("RGB", (200, 200))
+    full_page = MagicMock()
+    full_page.blocks = [
+        _boxed_block("Text", "<p>بىرىنچى ئابزاس.</p>", 0, 10, 50),
+        _boxed_block("Text", _LOOPED_HTML, 1, 60, 100),
+        # Footnote truncated because the looping block "stole" its text.
+        _boxed_block("Footnote", "<p>1. ھاجىپ - ئارىچى</p>", 2, 110, 150),
+    ]
+    block_mode = MagicMock()
+    block_mode.blocks = [
+        _boxed_block("Text", "<p>بىرىنچى ئابزاس!</p>", 0, 10, 50),
+        _boxed_block(
+            "Text",
+            "<p>ھەممىدىن تولۇق نۇسخا بولۇپ، بۇ نۇسخىنى تاتار ئالىمى زەكى ۋەلىدىي 1914 - يىلى پەرغانىدا</p>",
+            1,
+            60,
+            100,
+        ),
+        _boxed_block(
+            "Footnote",
+            "<p>1. ھاجىپ - ئارىچى، ۋاكالەتدار، خاننىڭ ئەڭ يېقىن مەسلىھەتچىسى</p>",
+            2,
+            110,
+            150,
+        ),
+    ]
+    predictor = MagicMock(return_value=[block_mode])
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    args, kwargs = predictor.call_args
+    assert kwargs == {"full_page": False}
+    layout = args[1][0]
+    assert [b.label for b in layout.bboxes] == ["Text", "Text", "Footnote"]
+    assert layout.bboxes[1].bbox == [10.0, 60.0, 190.0, 100.0]
+
+    blocks = markdown.split("\n\n")
+    # Untouched block keeps the (more accurate) full-page text.
+    assert blocks[0] == "بىرىنچى ئابزاس."
+    # Looping block replaced by its block-mode re-read.
+    assert blocks[1].endswith("پەرغانىدا")
+    assert blocks[1].count("زەكى") == 1
+    # Truncated neighbour replaced because block mode recovered more text.
+    assert blocks[2] == "1. ھاجىپ - ئارىچى، ۋاكالەتدار، خاننىڭ ئەڭ يېقىن مەسلىھەتچىسى"
+
+
+def test_process_page_sync_does_not_reocr_clean_page():
+    img = Image.new("RGB", (200, 200))
+    full_page = MagicMock()
+    full_page.blocks = [_boxed_block("Text", "<p>ئادەتتىكى تېكىست.</p>", 0, 10, 50)]
+    predictor = MagicMock()
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    predictor.assert_not_called()
+    assert markdown == "ئادەتتىكى تېكىست."
+
+
+def test_process_page_sync_reocrs_cross_block_echo_and_drops_empty_phantom_block():
+    img = Image.new("RGB", (200, 200))
+    top_html = (
+        "<p>(ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،<br>"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن).</p>"
+    )
+    mid_html = "<p>ئۆز دەۋرىدىكى رېئاللىققا قارىتا، يۈسۈپ خاس ھاجىپ ئۆزى ياراتقان غايىۋى پېرسوناژلار</p>"
+    echo_html = (
+        "<p>ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،<br>"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن</p>"
+    )
+    full_page = MagicMock()
+    full_page.blocks = [
+        _boxed_block("Text", top_html, 0, 10, 50),
+        _boxed_block("Text", mid_html, 1, 60, 120),
+        _boxed_block("Text", echo_html, 2, 130, 170),
+    ]
+
+    block_mode = MagicMock()
+    block_mode.blocks = [
+        _boxed_block("Text", top_html, 0, 10, 50),
+        _boxed_block("Text", mid_html, 1, 60, 120),
+        # In block mode, the empty margin crop yields empty html
+        _boxed_block("Text", "", 2, 130, 170),
+    ]
+    predictor = MagicMock(return_value=[block_mode])
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    predictor.assert_called_once()
+    _, kwargs = predictor.call_args
+    assert kwargs == {"full_page": False}
+
+    blocks = markdown.split("\n\n")
+    # Top block is kept
+    assert "(ئەلىگە سەن تېۋىپقا" in blocks[0]
+    # Middle block is kept
+    assert "يۈسۈپ خاس ھاجىپ" in blocks[1]
+    # Echo block was dropped (not in output)
+    assert len(blocks) == 2
+
+
+def test_process_page_sync_reocrs_cross_block_echo_in_combined_block():
+    img = Image.new("RGB", (200, 200))
+    top_html = (
+        "<p>(ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،<br>"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن).</p>"
+    )
+    combined_html = (
+        "<p>ئۆز دەۋرىدىكى رېئاللىققا قارىتا، يۈسۈپ خاس ھاجىپ ئۆزى ياراتقان غايىۋى پېرسوناژلار<br>"
+        "ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،<br>"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن</p>"
+    )
+    clean_last_html = "<p>ئۆز دەۋرىدىكى رېئاللىققا قارىتا، يۈسۈپ خاس ھاجىپ ئۆزى ياراتقان غايىۋى پېرسوناژلار</p>"
+
+    full_page = MagicMock()
+    full_page.blocks = [
+        _boxed_block("Text", top_html, 0, 10, 50),
+        _boxed_block("Text", combined_html, 1, 60, 120),
+    ]
+
+    block_mode = MagicMock()
+    block_mode.blocks = [
+        _boxed_block("Text", top_html, 0, 10, 50),
+        _boxed_block("Text", clean_last_html, 1, 60, 120),
+    ]
+    predictor = MagicMock(return_value=[block_mode])
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    predictor.assert_called_once()
+    blocks = markdown.split("\n\n")
+    assert len(blocks) == 2
+    assert "(ئەلىگە سەن تېۋىپقا" in blocks[0]
+    assert (
+        blocks[1]
+        == "ئۆز دەۋرىدىكى رېئاللىققا قارىتا، يۈسۈپ خاس ھاجىپ ئۆزى ياراتقان غايىۋى پېرسوناژلار"
+    )
+
+
+def test_is_vertical_marginalia_block():
+    img_w, img_h = 1000.0, 1400.0
+    # Left margin vertical running header (e.g. x: 50..80, y: 400..600 -> h=200, w=30)
+    left_marginalia = MagicMock()
+    left_marginalia.polygon = [
+        [50.0, 400.0],
+        [80.0, 400.0],
+        [80.0, 600.0],
+        [50.0, 600.0],
+    ]
+    assert svc._is_vertical_marginalia_block(left_marginalia, img_w, img_h) is True
+
+    # Right margin vertical running header
+    right_marginalia = MagicMock()
+    right_marginalia.polygon = [
+        [930.0, 400.0],
+        [960.0, 400.0],
+        [960.0, 600.0],
+        [930.0, 600.0],
+    ]
+    assert svc._is_vertical_marginalia_block(right_marginalia, img_w, img_h) is True
+
+    # Normal horizontal body line (w=600, h=40)
+    body_block = MagicMock()
+    body_block.polygon = [
+        [200.0, 400.0],
+        [800.0, 400.0],
+        [800.0, 440.0],
+        [200.0, 440.0],
+    ]
+    assert svc._is_vertical_marginalia_block(body_block, img_w, img_h) is False
+
+    # Centered tall element (not in side margin)
+    centered = MagicMock()
+    centered.polygon = [[450.0, 200.0], [550.0, 200.0], [550.0, 700.0], [450.0, 700.0]]
+    assert svc._is_vertical_marginalia_block(centered, img_w, img_h) is False
+
+
+def test_process_page_sync_discards_vertical_marginalia_block():
+    img = Image.new("RGB", (1000, 1400))
+    body_html = "<p>ئاساسىي تېكىست.</p>"
+    marginalia_html = "<p>قۇتادغۇ بىلىك</p>"
+
+    body = _boxed_block("Text", body_html, 0, 100, 200)
+    body.polygon = [[200.0, 100.0], [800.0, 100.0], [800.0, 200.0], [200.0, 200.0]]
+
+    marginalia = _boxed_block("PageFooter", marginalia_html, 1, 400, 600)
+    marginalia.polygon = [[50.0, 400.0], [80.0, 400.0], [80.0, 600.0], [50.0, 600.0]]
+
+    full_page = MagicMock()
+    full_page.blocks = [body, marginalia]
+    predictor = MagicMock()
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    assert "قۇتادغۇ بىلىك" not in markdown
+    assert markdown == "ئاساسىي تېكىست."
+
+
+def test_suppress_bleed_through_preserves_clean_white_pages():
+    import numpy as np
+
+    # Page with clean white background (all pixels 250) and black text (0)
+    arr = np.full((100, 100, 3), 250, dtype=np.uint8)
+    arr[10:15, 10:15] = 0
+    img = Image.fromarray(arr)
+
+    processed = svc.suppress_bleed_through(img)
+    # On clean white pages (bg_val >= 248), the original image should be returned untouched
+    assert processed is img
+
+
+def test_block_ink_contrast_sparse_text_block():
+    import numpy as np
+
+    # A large block (e.g. 200x500 = 100,000 pixels) where only 500 pixels (~0.5%) are dark text
+    img_gray = np.full((300, 600), 250.0, dtype=np.float32)
+    # Dark text strokes (value 30.0)
+    img_gray[50:52, 50:300] = 30.0  # 2 x 250 = 500 pixels
+
+    block = MagicMock()
+    block.polygon = [[40.0, 40.0], [550.0, 40.0], [550.0, 240.0], [40.0, 240.0]]
+
+    contrast = svc._block_ink_contrast(block, img_gray, paper_level=250.0)
+    assert contrast is not None
+    # Contrast should be close to 250 - 30 = 220, NOT dropped to ~0 because of 5th percentile
+    assert contrast > 180.0
+
+
+def _ocr_mock_page():
+    page = MagicMock()
+    pix = MagicMock()
+    pix.samples = bytes([10, 250] * 1500)
+    pix.tobytes.return_value = _fake_png_bytes()
+    page.get_pixmap.return_value = pix
+    return page
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_joins_spaced_hyphen_confirmed_at_line_end():
+    with (
+        patch(
+            "engine.recognize._process_page_sync",
+            return_value=("ئەھۋالى ھەز - رىتى، پاك - پاكىز", 0.9),
+        ),
+        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
+        patch("engine.recognize.get_line_detector", return_value=MagicMock()),
+        patch(
+            "engine.recognize.read_line_end_words", return_value={"ھەز"}
+        ) as mock_read,
+    ):
+        result = await svc.ocr_page(
+            _ocr_mock_page(), MagicMock(), valid_words={"ھەزرىتى", "پاكپاكىز"}
+        )
+
+    assert result == "ئەھۋالى ھەزرىتى، پاك - پاكىز"
+    mock_read.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_skips_line_end_check_without_spaced_candidates():
+    with (
+        patch(
+            "engine.recognize._process_page_sync",
+            return_value=("ئادەتتىكى تېكىست", 0.9),
+        ),
+        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
+        patch("engine.recognize.read_line_end_words") as mock_read,
+    ):
+        await svc.ocr_page(_ocr_mock_page(), MagicMock(), valid_words={"ھەزرىتى"})
+
+    mock_read.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_keeps_text_when_line_end_check_fails():
+    with (
+        patch("engine.recognize._process_page_sync", return_value=("ھەز - رىتى", 0.9)),
+        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
+        patch(
+            "engine.recognize.get_line_detector", side_effect=RuntimeError("no model")
+        ),
+    ):
+        result = await svc.ocr_page(
+            _ocr_mock_page(), MagicMock(), valid_words={"ھەزرىتى"}
+        )
+
+    assert result == "ھەز - رىتى"

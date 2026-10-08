@@ -70,6 +70,8 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
 
   const textSelection = useTextSelectionShare(contentRef, isActive);
 
+  const displayPage = page.displayPageNumber || page.display_page_number;
+
   const adjustHeight = React.useCallback(() => {
     if (!isEditing || !textareaRef.current || !containerRef.current) return;
     const textarea = textareaRef.current;
@@ -159,7 +161,7 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {isAuthenticated && (
             <button
               onClick={(e) => {
@@ -172,7 +174,7 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
                     top: rect.bottom + 8,
                     left: centerX,
                     mode: 'create',
-                    defaultName: t('chat.pageNumber', { page: page.displayPageNumber || page.display_page_number || page.pageNumber }),
+                    defaultName: t('chat.pageNumber', { page: displayPage || page.pageNumber }),
                   });
                 }
               }}
@@ -189,12 +191,6 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
           >
             <Share2 size={14} />
           </button>
-          <span className="text-xs font-bold text-[#94a3b8] dark:text-slate-500 uppercase flex items-center gap-1.5">
-            <span>{t('chat.pageNumber', { page: page.displayPageNumber || page.display_page_number || page.pageNumber })}</span>
-            {(page.displayPageNumber || page.display_page_number) && String(page.displayPageNumber || page.display_page_number) !== String(page.pageNumber) && (
-              <span className="text-[10px] opacity-60">(PDF {page.pageNumber})</span>
-            )}
-          </span>
         </div>
       </div>
 
@@ -244,6 +240,18 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
           </div>
         )
       )}
+
+      {/* Page Footer: Page Numbers */}
+      <div className="flex items-center justify-between mt-6 pt-3 border-t border-[#0369a1]/5 dark:border-slate-800 text-xs font-bold text-[#94a3b8] dark:text-slate-500 uppercase select-none">
+        <span>
+          {t('chat.pageNumber', { page: displayPage || page.pageNumber })}
+        </span>
+        {page.pageNumber !== undefined && page.pageNumber !== null && (
+          <span className="text-[10px] opacity-60" dir="ltr">
+            (PDF {page.pageNumber})
+          </span>
+        )}
+      </div>
 
       {textSelection && createPortal(
         <button
