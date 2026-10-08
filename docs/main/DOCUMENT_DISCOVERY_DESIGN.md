@@ -212,7 +212,7 @@ flowchart TD
 | Manual upload: unsupported file extension | `upload_pdf` raises `HTTPException(400, ...)` before any temp file is written. |
 | Manual upload: exception during file write/hash/storage upload | Re-raised after the temp file is deleted (`temp_path.unlink(missing_ok=True)`); no `Book` row is created since `books_repo.create()` only runs after the file upload to storage succeeds. |
 | Manual upload: duplicate content hash | Returns `{"bookId": existing.id, "status": "existing"}` (HTTP 200) — not treated as an error. |
-| Manual upload / pre-OCR'd upload: file exceeds `settings.max_book_upload_bytes` | Streaming write aborts mid-transfer, the temp file is deleted, and `HTTPException(413, "File size exceeds maximum limit of {N}MB")` is raised. |
+| Manual upload / pre-OCR'd upload: file exceeds `sys_max_book_upload_mb` (or fallback `settings.max_book_upload_bytes`) | Streaming write aborts mid-transfer, the temp file is deleted, and `HTTPException(413, "File size exceeds maximum limit of {N}MB")` is raised. |
 | Pre-OCR'd upload: unparseable or schema-invalid `pages` payload | `HTTPException(400, "errors.invalid_pages_payload")` before any temp file is written. |
 | Pre-OCR'd upload: `pages` payload count or page numbers don't match the PDF's actual page count | Temp file is deleted; `HTTPException(400, "errors.pages_count_mismatch")` is raised — no `Book` row is created. |
 | Pre-OCR'd upload: duplicate content hash | Returns `{"bookId": existing.id, "status": "existing"}` (HTTP 200) — not treated as an error. |
@@ -224,12 +224,13 @@ flowchart TD
 | `run_gcs_discovery_scanner` cron cadence | Hardcoded `minute={0,5,10,...,55}` in `WorkerSettings.cron_jobs` | `services/worker/worker.py` (effectively every 5 minutes) |
 | `gcs_auto_sync_interval_minutes` (`system_configs`) | `5` (seeded in `packages/backend-core/migrations/001_initial_baseline.sql`) | Not read by any code path found in this repo — the actual cadence is the hardcoded cron above, not this config row. |
 | `gcs_last_sync_at` (`system_configs`) | seed timestamp | Also not read or written by any code found in this repo — appears unused. |
+| `sys_max_book_upload_mb` (`system_configs`) | `500` (seeded in migration `097`) | Runtime authority for max book upload size in MB, editable via Admin System Configs panel; exposed in `GET /api/config`; enforced by `upload_pdf` and `upload_pdf_ocrd`. |
 | `STORAGE_BACKEND` | `"local"` | `get_storage_provider()` in `storage_service.py` — `"gcs"` selects `GCSStorageProvider`, anything else uses `FileSystemStorageProvider`. |
 | `GCS_DATA_BUCKET` / `GCS_MEDIA_BUCKET` | none (required when `STORAGE_BACKEND=gcs`) | `get_storage_provider()`. |
 | `DATA_DIR` | `<repo_root>/data` | `settings.data_dir` — all three entry points write temp download/cover files under here before upload to storage. GCS discovery writes directly under `settings.data_dir`; manual upload and pre-OCR'd upload write under `settings.uploads_dir` (`{DATA_DIR}/uploads`). |
-| `MAX_BOOK_UPLOAD_BYTES` | `500 MiB` (`500 * 1024 * 1024`) | `settings.max_book_upload_bytes` — enforced by both `upload_pdf` and `upload_pdf_ocrd` while streaming the uploaded file to a temp path; exceeding it aborts with HTTP 413. Not enforced on GCS-discovered files (the scanner downloads whatever size is already in the bucket) or on the `pages` JSON part of `POST /books/upload-ocrd`. |
+| `MAX_BOOK_UPLOAD_BYTES` | `500 MiB` (`500 * 1024 * 1024`) | `settings.max_book_upload_bytes` — fallback limit if `sys_max_book_upload_mb` is unconfigured. Not enforced on GCS-discovered files (the scanner downloads whatever size is already in the bucket) or on the `pages` JSON part of `POST /books/upload-ocrd`. |
 | `MAX_COVER_UPLOAD_BYTES` | `5 MiB` (`5 * 1024 * 1024`) | `settings.max_cover_upload_bytes` — used by the separate `POST /books/{id}/cover` update endpoint, not by the discovery/upload paths themselves (covers extracted from the book file during discovery aren't subject to this cap). |
-| `client_max_body_size` (nginx) | `512M` | `deploy/gcp/nginx/conf.d/kitabim.conf`, `apps/frontend/nginx.conf` — the outer ceiling on request size for `POST /books/upload` and `POST /books/upload-ocrd`, above the application-level `MAX_BOOK_UPLOAD_BYTES` check. |
+| `client_max_body_size` (nginx) | `2048M` | `deploy/gcp/nginx/conf.d/kitabim.conf`, `apps/frontend/nginx.conf` — the outer ceiling on request size for `POST /books/upload` and `POST /books/upload-ocrd`, allowing configurable application-level limits up to 2GB. |
 
 ## API Endpoints
 
@@ -241,7 +242,7 @@ flowchart TD
 ## Security Considerations
 
 - **File-type validation is extension-based only.** All three entry points check the filename suffix (`.pdf`, and `.docx` for manual upload) case-insensitively — there is no MIME-type sniffing or magic-byte validation of file contents.
-- **Application-level upload size limit exists for the two request-based endpoints.** `upload_pdf` and `upload_pdf_ocrd` both cap the streamed file at `settings.max_book_upload_bytes` (default 400 MiB), aborting with HTTP 413 if exceeded, ahead of nginx's outer `client_max_body_size 512M` ceiling. This cap does not apply to `GcsDiscoveryScanner`'s downloads (any file already placed in the bucket is processed regardless of size) or to the `pages` JSON part of `POST /books/upload-ocrd`, which is read into memory unbounded.
+- **Application-level upload size limit exists for the two request-based endpoints.** `upload_pdf` and `upload_pdf_ocrd` both cap the streamed file dynamically using `sys_max_book_upload_mb` from `system_configs` (fallback to `settings.max_book_upload_bytes`), aborting with HTTP 413 if exceeded, ahead of nginx's outer `client_max_body_size 2048M` ceiling. This cap does not apply to `GcsDiscoveryScanner`'s downloads (any file already placed in the bucket is processed regardless of size) or to the `pages` JSON part of `POST /books/upload-ocrd`, which is read into memory unbounded.
 - **No signed URLs.** `GCSStorageProvider.get_public_url` returns a direct public URL only for the media (covers) bucket; the private data bucket (where `uploads/` lives) returns an internal `/api/storage/{path}` reference. There is no `generate_signed_url` call anywhere in `storage_service.py`.
 - **Content-hash duplicate detection doubles as an integrity/de-dup control**: `books.content_hash` has a unique DB constraint, so even a race between two concurrent inserts is caught by `IntegrityError` rather than allowing a second book to reference the same file content.
 - **Both `POST /books/upload` and `POST /books/upload-ocrd` are role-gated** (`require_editor`); `GcsDiscoveryScanner` has no such gate since it is an internal cron job, not a user-facing endpoint.

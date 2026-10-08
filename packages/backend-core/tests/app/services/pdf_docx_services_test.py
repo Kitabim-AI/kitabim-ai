@@ -88,7 +88,9 @@ async def test_extract_docx_pages_fallback():
         mock_para.text = "Some text"
 
         mock_run = MagicMock()
-        mock_run.find.return_value = MagicMock(text="Some text")  # find w:t
+        mock_run.find.side_effect = (
+            lambda tag: MagicMock(text="Some text") if tag.endswith("}t") else None
+        )
         mock_run.get.return_value = None  # no footnote
 
         # w:r
@@ -103,6 +105,38 @@ async def test_extract_docx_pages_fallback():
             # Should have 1 page containing "Some text"
             assert len(pages) == 1
             assert "Some text" in pages[0]
+
+
+@pytest.mark.asyncio
+async def test_extract_docx_pages_fallback_chunk_size():
+    with patch("docx.Document") as mock_doc_cls:
+        mock_doc = mock_doc_cls.return_value
+
+        long_text = "A" * 4500
+        mock_para = MagicMock()
+        mock_run = MagicMock()
+        mock_run.find.side_effect = (
+            lambda tag: MagicMock(text=long_text) if tag.endswith("}t") else None
+        )
+        mock_run.get.return_value = None
+
+        para_el = MagicMock()
+        para_el.findall.return_value = [mock_run]
+        mock_para._p = para_el
+        mock_doc.paragraphs = [mock_para]
+
+        with patch("app.services.docx_service._load_footnotes", return_value={}):
+            # Default chunk size: 2000 -> 2000, 2000, 500 (3 pages)
+            pages = extract_docx_pages(Path("test.docx"))
+            assert len(pages) == 3
+            assert len(pages[0]) == 2000
+            assert len(pages[1]) == 2000
+            assert len(pages[2]) == 500
+
+            # Custom chunk size: 1500 -> 1500, 1500, 1500 (3 pages)
+            custom_pages = extract_docx_pages(Path("test.docx"), page_char_size=1500)
+            assert len(custom_pages) == 3
+            assert len(custom_pages[0]) == 1500
 
 
 @pytest.mark.asyncio

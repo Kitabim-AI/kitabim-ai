@@ -324,6 +324,7 @@
     "fontSize": "Font Size",
     "editBook": "Edit Book",
     "editPage": "Edit Page",
+    "reprocessPage": "Reprocess Page",
     "loadFullDocument": "Load Full Document",
     "virtualScroll": "Virtual Scroll",
     "spellCheck": "Spell Check",

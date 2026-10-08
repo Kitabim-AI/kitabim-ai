@@ -100,6 +100,40 @@ def create_refresh_token(user: User) -> tuple[str, str]:
     return token, jti
 
 
+def create_download_token(user: User, book_id: str, expire_seconds: int = 120) -> str:
+    """
+    Create a short-lived download token for authenticating file downloads.
+
+    Args:
+        user: The user requesting the download.
+        book_id: The ID of the book being downloaded.
+        expire_seconds: Token lifetime in seconds (default 120s).
+
+    Returns:
+        Encoded JWT download token string.
+    """
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user.id,
+        "book_id": book_id,
+        "role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        "type": "download",
+        "iat": now,
+        "exp": now + timedelta(seconds=expire_seconds),
+    }
+    active_secret = settings.jwt_secrets.get(settings.jwt_active_kid)
+    if not active_secret:
+        raise RuntimeError(
+            f"JWT active secret for kid '{settings.jwt_active_kid}' is not configured"
+        )
+    return jwt.encode(
+        payload,
+        active_secret,
+        algorithm=settings.jwt_algorithm,
+        headers={"kid": settings.jwt_active_kid},
+    )
+
+
 def decode_jwt(token: str, expected_type: str = "access") -> Dict[str, Any]:
     """
     Decode and validate a JWT token.

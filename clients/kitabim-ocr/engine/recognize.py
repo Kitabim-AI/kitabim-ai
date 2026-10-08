@@ -41,13 +41,18 @@ from engine.config import (
     is_dot_enhancement_enabled,
 )
 from engine.dictionary import get_valid_words
+from engine.line_ends import get_line_detector, read_line_end_words
 from engine.savitr_engine import SavitrPredictor
 from engine.text_cleanup import (
+    add_word_spans,
     clean_uyghur_text,
+    dehyphenate_uyghur_text,
+    has_repeated_word_span,
     is_block_repetition_loop,
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
     is_isolated_page_number,
+    spaced_hyphen_candidates,
 )
 
 logger = logging.getLogger("kitabim_ocr_client.engine.recognize")
@@ -68,6 +73,10 @@ FOOTNOTE_LABELS = frozenset({"Footnote"})
 DISCARD_LABELS = frozenset({"PageHeader"})
 _PHANTOM_CHECK_LABELS = frozenset({"Text", "PageFooter"})
 _ROW_FORMAT_LABELS = frozenset({"TableOfContents", "Table"})
+# A neighbour of a looping block is only swapped for its block-mode re-read
+# when that re-read recovers this much more text (i.e. the full-page pass
+# truncated it, typically because the looping block swallowed its content).
+_REOCR_NEIGHBOUR_MIN_GROWTH = 1.2
 
 
 class LowConfidenceOcrError(Exception):
@@ -432,6 +441,11 @@ def suppress_bleed_through(img: Image.Image) -> Image.Image:
     bg_val = float(np.percentile(gray, 90))
     if bg_val < 140.0:
         return img
+    # For clean white / digital pages where background is already nearly pure white (>= 248.0),
+    # there is no bleed-through to suppress, and aggressive white_point clipping can erode thin
+    # anti-aliased font strokes (such as digits '6' and '0').
+    if bg_val >= 248.0:
+        return img
 
     white_point = max(175.0, min(235.0, bg_val - 38.0))
     black_point = 40.0
@@ -460,7 +474,7 @@ _PHANTOM_MIN_CONTRAST = 25.0
 def _block_ink_contrast(
     block: Any, image_gray: np.ndarray, paper_level: float
 ) -> float | None:
-    """Return paper_level minus the block's 5th-percentile luminance (how dark its
+    """Return paper_level minus the block's lowest-percentile luminance (how dark its
     darkest strokes are against the paper), or None if the block has no usable crop."""
     box = _get_block_bbox(block)
     if not box:
@@ -480,7 +494,12 @@ def _block_ink_contrast(
         if crop.size < 50:
             return None
 
-        return paper_level - float(np.percentile(crop, 5))
+        # In sparse text blocks (e.g. 1-2 lines inside a large bounding box),
+        # ink pixels may make up less than 2% of the crop area. A fixed 5th percentile
+        # lands on the blank paper background, falsely classifying real text as bleed-through.
+        # Use an adaptive percentile that scales down with crop size to sample actual stroke pixels.
+        percentile_level = min(1.0, max(0.2, 50.0 / crop.size))
+        return paper_level - float(np.percentile(crop, percentile_level))
     except Exception:
         return None
 
@@ -545,6 +564,33 @@ def _get_block_bbox(block: Any) -> tuple[float, float, float, float] | None:
     return None
 
 
+def _is_vertical_marginalia_block(block: Any, img_w: float, img_h: float) -> bool:
+    """Return True if block is a vertical marginalia / running side header.
+
+    In published books, running headers (book or chapter titles, e.g. 'قۇتادغۇ بىلىك')
+    are often printed vertically along the outer side margins. Because Uyghur is a
+    horizontal script, text in the outer margin with a tall, narrow aspect ratio
+    (height >= 1.8 * width) represents running side marginalia, not body text.
+    When read horizontally by standard OCR, it produces garbled fragments or
+    hallucinated headers/echoes placed at the bottom of the page.
+    """
+    box = _get_block_bbox(block)
+    if not box or img_w <= 0 or img_h <= 0:
+        return False
+    x0, x1, y0, y1 = box
+    w = x1 - x0
+    h = y1 - y0
+    if w <= 0 or h <= 0:
+        return False
+
+    if h < 1.8 * w:
+        return False
+
+    is_left_margin = (x1 / img_w) <= 0.18
+    is_right_margin = (x0 / img_w) >= 0.82
+    return is_left_margin or is_right_margin
+
+
 def _is_single_line_verse_block(block: Any) -> bool:
     """Return True if block contains exactly one physical print line, making it
     a grouping candidate for a vertically-adjacent block (whether the group
@@ -580,6 +626,104 @@ def _is_single_line_verse_block(block: Any) -> bool:
     return len(lines[0]) <= 85
 
 
+def _reocr_looping_blocks(
+    predictor: Any, image: Image.Image, blocks: list[Any]
+) -> list[Any]:
+    """Re-recognize a page in Surya block mode when a full-page block loops.
+
+    Surya's full-page pass decodes the whole page in one autoregressive run;
+    on a block whose last printed sentence runs on to the next page it can
+    re-emit that line and then drift into the following block's text (e.g. a
+    footnote), which then comes back truncated. It can also lose visual
+    grounding at the page bottom and echo a verse or sentence already recognized
+    earlier on the page into the last block or a phantom footer block.
+
+    Surya's own fallback only fires on page-length repetition loops, so it
+    never sees these shorter loops. Block mode OCRs each region's crop on its
+    own and can't bleed between blocks or access text from other regions, so we
+    re-read the page's existing block boxes that way and take the re-read for
+    every looping block, plus any block whose re-read recovered clearly more
+    text. If an echoed block was a phantom box with no real ink, block mode
+    re-OCR returns empty/error and its text is dropped.
+    """
+    seen_page_spans: set[tuple[str, ...]] = set()
+    looping: set[int] = set()
+
+    for b in sorted(blocks, key=lambda x: getattr(x, "reading_order", 0)):
+        if b.skipped or b.error or not b.html:
+            continue
+        text = _html_to_text(b.html)
+        if not text.strip():
+            continue
+        if has_repeated_word_span(text, min_words=8, seen_spans=seen_page_spans):
+            looping.add(id(b))
+        else:
+            add_word_spans(text, seen_page_spans, min_words=8)
+
+    if not looping:
+        return blocks
+
+    from surya.layout.schema import LayoutBox, LayoutResult
+
+    redo_targets: list[Any] = []
+    layout_boxes: list[LayoutBox] = []
+    for b in blocks:
+        box = _get_block_bbox(b)
+        if b.skipped or b.error or not b.html or box is None:
+            continue
+        x0, x1, y0, y1 = box
+        redo_targets.append(b)
+        layout_boxes.append(
+            LayoutBox(
+                polygon=[x0, y0, x1, y1],
+                label=b.label,
+                raw_label=b.label,
+                position=b.reading_order,
+                count=max(400, 2 * len(b.html)),
+            )
+        )
+    if not layout_boxes:
+        return blocks
+
+    logger.info(
+        "Re-OCRing page in block mode: %s looping block(s) in full-page output",
+        len(looping),
+    )
+    w, h = image.size
+    layout = LayoutResult(bboxes=layout_boxes, image_bbox=[0, 0, float(w), float(h)])
+    redone = predictor([image], [layout], full_page=False)[0].blocks
+
+    replacements: dict[int, Any] = {}
+    for old, new in zip(redo_targets, redone):
+        if id(old) in looping:
+            # If the looping block was re-read and produced non-empty text, use it;
+            # if it produced an error or empty text (e.g. phantom margin box),
+            # clear its text so the hallucination is dropped.
+            new_text = (
+                _html_to_text(getattr(new, "html", "") or "")
+                if not getattr(new, "error", False)
+                else ""
+            )
+            if new_text.strip():
+                replacements[id(old)] = new
+            else:
+                try:
+                    new.html = ""
+                except Exception:
+                    pass
+                try:
+                    old.html = ""
+                except Exception:
+                    pass
+                replacements[id(old)] = new
+        elif not getattr(new, "error", False) and getattr(new, "html", None):
+            if len(_html_to_text(new.html)) >= (
+                _REOCR_NEIGHBOUR_MIN_GROWTH * len(_html_to_text(old.html))
+            ):
+                replacements[id(old)] = new
+    return [replacements.get(id(b), b) for b in blocks]
+
+
 def _process_page_sync(
     image: Image.Image,
     recognition_predictor: Any,
@@ -590,6 +734,13 @@ def _process_page_sync(
         return markdown, mean_confidence
 
     result = recognize_page(recognition_predictor, image)
+    img_w, img_h = image.size
+    non_marginalia_blocks = [
+        b for b in result.blocks if not _is_vertical_marginalia_block(b, img_w, img_h)
+    ]
+    page_blocks = _reocr_looping_blocks(
+        recognition_predictor, image, non_marginalia_blocks
+    )
 
     footnotes: list[str] = []
     confidences: list[float] = []
@@ -599,7 +750,7 @@ def _process_page_sync(
 
     phantom_candidates = [
         b
-        for b in result.blocks
+        for b in page_blocks
         if not (b.skipped or b.error or b.label in DISCARD_LABELS)
         and b.label in _PHANTOM_CHECK_LABELS
     ]
@@ -607,8 +758,13 @@ def _process_page_sync(
         phantom_candidates, gray_arr, _page_paper_level(gray_arr)
     )
 
-    for block in sorted(result.blocks, key=lambda b: b.reading_order):
-        if block.skipped or block.error or block.label in DISCARD_LABELS:
+    for block in sorted(page_blocks, key=lambda b: b.reading_order):
+        if (
+            block.skipped
+            or block.error
+            or block.label in DISCARD_LABELS
+            or _is_vertical_marginalia_block(block, img_w, img_h)
+        ):
             continue
 
         if block.confidence is not None:
@@ -762,6 +918,35 @@ def _process_page_sync(
     return markdown, mean_confidence
 
 
+async def _join_line_end_spaced_hyphens(
+    text: str,
+    image: Image.Image,
+    recognition_predictor: Any,
+    words: set[str],
+    executor: ThreadPoolExecutor,
+) -> str:
+    """Join spaced hyphens ("ھەز - رىتى") the page image shows at a line end.
+
+    Only runs the line detection + line-end recognition when the page has a
+    spaced pair the dictionary would join; on any failure the text is kept.
+    """
+    if not spaced_hyphen_candidates(text, words):
+        return text
+    loop = asyncio.get_running_loop()
+    try:
+        line_end_words = await loop.run_in_executor(
+            executor,
+            lambda: read_line_end_words(
+                image, get_line_detector(), recognition_predictor
+            ),
+        )
+    except Exception as exc:
+        logger.warning("Line-end check failed, keeping spaced hyphens: %s", exc)
+        return text
+    joined, _ = dehyphenate_uyghur_text(text, words, line_end_words=line_end_words)
+    return joined
+
+
 async def ocr_page(
     page: fitz.Page,
     recognition_predictor: Any,
@@ -839,21 +1024,12 @@ async def ocr_page(
                 )
 
             cleaned = clean_uyghur_text(markdown)
-            if words_dict and any(
-                h in cleaned
-                for h in (
-                    "-",
-                    "\u2010",
-                    "\u2011",
-                    "\u2012",
-                    "\u2013",
-                    "\u2014",
-                    "\u00ad",
-                )
-            ):
-                from engine.text_cleanup import dehyphenate_uyghur_text
-
+            if words_dict:
                 cleaned, _ = dehyphenate_uyghur_text(cleaned, words_dict)
+                if not isinstance(recognition_predictor, SavitrPredictor):
+                    cleaned = await _join_line_end_spaced_hyphens(
+                        cleaned, image, recognition_predictor, words_dict, executor
+                    )
             if is_degenerate_ocr_output(cleaned):
                 raise LowConfidenceOcrError(
                     f"OCR output looks like a runaway repetition/reasoning-leak "

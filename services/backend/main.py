@@ -522,9 +522,18 @@ async def get_public_config(session: AsyncSession = Depends(get_session)):
     show_chat_cost_str = await repo.get_value("rag_chat_cost_enabled", "true")
     show_chat_cost = show_chat_cost_str.lower() in ("true", "1", "yes")
 
+    max_upload_mb_str = await repo.get_value(
+        "sys_max_book_upload_mb", str(settings.max_book_upload_bytes // (1024 * 1024))
+    )
+    try:
+        max_upload_mb = int(max_upload_mb_str)
+    except (ValueError, TypeError):
+        max_upload_mb = settings.max_book_upload_bytes // (1024 * 1024)
+
     return {
         "collectionPageSize": collection_page_size,
         "showChatCost": show_chat_cost,
+        "maxUploadMb": max_upload_mb,
     }
 
 

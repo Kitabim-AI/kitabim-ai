@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Page, PageSpellIssue, AutoCorrectRule
 from app.services.cache_service import cache_service
-from app.utils.text import dehyphenate_uyghur_text_async, normalize_uyghur_chars
+from app.utils.text import normalize_uyghur_chars
 from sqlalchemy import select
 
 _DICT_CACHE_TTL = 86400  # 24 hours — dictionary words change rarely
@@ -503,14 +503,7 @@ async def run_spell_check_for_page(
     raw_text = page.text or ""
     text_changed = False
 
-    # 1. Global de-hyphenation rule: merge split hyphenated words if valid
-    if "-" in raw_text:
-        dehyphenated = await dehyphenate_uyghur_text_async(raw_text, session)
-        if dehyphenated != raw_text:
-            raw_text = dehyphenated
-            text_changed = True
-
-    # 2. S-NEW-AUTO: Fetch and apply global correction rules immediately
+    # 1. S-NEW-AUTO: Fetch and apply global correction rules immediately
     # This prevents manual review of words we already have a solution for.
     rules_result = await session.execute(
         select(AutoCorrectRule.misspelled_word, AutoCorrectRule.corrected_word).where(

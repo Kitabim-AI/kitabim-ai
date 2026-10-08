@@ -1,19 +1,22 @@
-import { APP_CLIENT_ID } from '../config';
-
 /**
  * Authentication service for handling auth API calls.
  */
 const API_BASE = '/api/auth';
 const SESSION_TOKEN_KEY = 'kitabim_access_token_session';
 
-// App ID configured via build config or environment variable at build/runtime.
-let _appClientId = APP_CLIENT_ID || (import.meta as any).env?.VITE_SECURITY_APP_ID || '';
+// App ID configured via Vite build-time environment variable (from SECURITY_APP_ID)
+let _appClientId =
+  ((import.meta as any).env?.VITE_SECURITY_APP_ID as string) ||
+  (typeof process !== 'undefined' ? (process.env?.VITE_SECURITY_APP_ID as string) : '') ||
+  '';
 let _configPromise: Promise<void> | null = null;
 let _configLoaded = false;
 
 const DEFAULT_COLLECTION_PAGE_SIZE = 40;
 let _collectionPageSize = DEFAULT_COLLECTION_PAGE_SIZE;
 let _showChatCost = true;
+const DEFAULT_MAX_UPLOAD_MB = 500;
+let _maxUploadMb = DEFAULT_MAX_UPLOAD_MB;
 
 export async function initAppConfig(): Promise<void> {
   if (_configLoaded) return;
@@ -31,6 +34,10 @@ export async function initAppConfig(): Promise<void> {
             typeof data.showChatCost === 'boolean'
               ? data.showChatCost
               : true;
+          _maxUploadMb =
+            typeof data.maxUploadMb === 'number'
+              ? data.maxUploadMb
+              : DEFAULT_MAX_UPLOAD_MB;
           _configLoaded = true;
         }
       } catch {
@@ -49,6 +56,10 @@ export function getCollectionPageSize(): number {
 
 export function getShowChatCost(): boolean {
   return _showChatCost;
+}
+
+export function getMaxUploadMb(): number {
+  return _maxUploadMb;
 }
 
 // Access token lives in memory only — never persisted to localStorage.

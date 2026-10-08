@@ -13,7 +13,6 @@ React 19 / Vite / TypeScript SPA. Provides the Uyghur Digital Library UI: book b
 apps/frontend/src/
   App.tsx                        ← Root component and routing
   index.tsx                      ← React entry point
-  config.ts                      ← Frontend configuration constants
   components/
     auth/                        ← AuthButton (login/logout)
     admin/
