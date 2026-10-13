@@ -574,14 +574,50 @@ def _extract_book_ids(args: dict) -> Optional[List[str]]:
     return [str(raw).strip()]
 
 
+async def _clamp_reader_scope(
+    book_ids: Optional[List[str]], ctx: QueryContext
+) -> Optional[List[str]]:
+    """Hard scope limit for reader chat (is_global=False): only the current
+    book and its sister volumes may be searched, whatever book_ids the agent
+    passes. Omitted, empty, or entirely out-of-scope book_ids fall back to the
+    current book — an empty list must never become a whole-library search
+    here. Global chat is returned unchanged.
+    """
+    if ctx.is_global or not ctx.book_id:
+        return book_ids
+    current = str(ctx.book_id)
+    if not book_ids:
+        return [current]
+    if all(str(b) == current for b in book_ids):
+        return [current]
+
+    allowed = getattr(ctx, "_reader_allowed_book_ids", None)
+    if not isinstance(allowed, frozenset):
+        from app.db.repositories.books_repository import BooksRepository
+
+        sisters = await BooksRepository(ctx.session).find_sister_volumes(current)
+        allowed = frozenset({current, *(str(b.id) for b in sisters)})
+        ctx._reader_allowed_book_ids = allowed
+
+    kept = list(dict.fromkeys(str(b) for b in book_ids if str(b) in allowed))
+    dropped = [str(b) for b in book_ids if str(b) not in allowed]
+    if dropped:
+        log_json(
+            logger,
+            logging.INFO,
+            "Reader scope clamp dropped out-of-scope book_ids",
+            book_id=current,
+            dropped=dropped[:10],
+        )
+    return kept or [current]
+
+
 async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     from app.services.rag.agent.config import CONTEXT_SWITCH_SCORE_THRESHOLD
 
     query = args.get("query", "")
     # Preserve None (agent omitted book_ids = global search) vs [] (agent passed empty = no books found).
-    book_ids = _extract_book_ids(args)
-    if book_ids is None and not ctx.is_global and ctx.book_id:
-        book_ids = [ctx.book_id]
+    book_ids = await _clamp_reader_scope(_extract_book_ids(args), ctx)
 
     query_vector = await embed_query(query, ctx)
     if not query_vector:
@@ -688,9 +724,7 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
 
 async def _run_search_keyword_phrase(args: dict, ctx: QueryContext) -> List[dict]:
     phrase = args.get("phrase") or ""
-    book_ids = _extract_book_ids(args)
-    if book_ids is None and not ctx.is_global and ctx.book_id:
-        book_ids = [ctx.book_id]
+    book_ids = await _clamp_reader_scope(_extract_book_ids(args), ctx)
 
     results = await agent_keyword_search(ctx, phrase, book_ids)
 
@@ -710,9 +744,7 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
     from app.core.config import settings
 
     query = args.get("query", "")
-    char_book_ids = _extract_book_ids(args)
-    if char_book_ids is None and not ctx.is_global and ctx.book_id:
-        char_book_ids = [ctx.book_id]
+    char_book_ids = await _clamp_reader_scope(_extract_book_ids(args), ctx)
 
     query_vector = await embed_query(query, ctx)
     if not query_vector:
@@ -756,9 +788,7 @@ async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
     from app.db.repositories.books_repository import BooksRepository
     from app.db.repositories.pages_repository import PagesRepository
 
-    book_ids = _extract_book_ids(args) or []
-    if not book_ids and not ctx.is_global and ctx.book_id:
-        book_ids = [ctx.book_id]
+    book_ids = await _clamp_reader_scope(_extract_book_ids(args), ctx) or []
 
     if not book_ids:
         return {"context": "No book IDs provided.", "summaries": []}
