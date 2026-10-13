@@ -475,9 +475,16 @@ class ChatOrchestrator:
                     agent_session_recent_events = _AGENT_SESSION_RECENT_EVENTS_DEFAULT
 
                 # 3. Retrieval Agent Execution
+                log_json(
+                    logger,
+                    logging.INFO,
+                    "Retrieval agent mode",
+                    summary_narrowing=ctx.summary_narrowing_enabled,
+                )
                 retrieval_agent = build_retrieval_agent(
                     model=agent_model,
                     intent_signals=signals,
+                    summary_narrowing_enabled=ctx.summary_narrowing_enabled,
                 )
 
                 # Runner configuration

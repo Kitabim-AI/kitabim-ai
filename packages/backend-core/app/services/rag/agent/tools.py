@@ -99,9 +99,8 @@ async def search_chunks(
     Args:
         query: The search query to embed and match against book passages.
         book_ids: Optional list of book IDs to restrict the search scope.
-                  Always try to restrict scope first. Only omit (pass no book_ids) after a
-                  scoped search returned fewer than 4 results, or after discovery tools found
-                  no usable book IDs.
+                  Follow the system instructions for when to pass book_ids and
+                  when to omit them to search the whole library.
     """
     args = {"query": query, "book_ids": book_ids}
     return await _execute_and_record_tool(tool_context, "search_chunks", args)

@@ -2856,3 +2856,43 @@ def test_parse_bool_config_defaults_and_values():
     assert _parse_bool_config(" FALSE ", default=True) is False
     assert _parse_bool_config("true", default=False) is True
     assert _parse_bool_config("garbage", default=True) is True
+
+
+def test_legacy_prompt_unchanged_when_summary_narrowing_enabled():
+    from app.services.rag.agent.prompts import (
+        AGENT_SYSTEM_PROMPT,
+        build_agent_system_prompt,
+    )
+
+    assert build_agent_system_prompt(summary_narrowing=True) == AGENT_SYSTEM_PROMPT
+    assert "search_books_by_summary" in AGENT_SYSTEM_PROMPT
+
+
+def test_direct_prompt_never_mentions_summary_narrowing():
+    from app.services.rag.agent.prompts import build_agent_system_prompt
+
+    prompt = build_agent_system_prompt(summary_narrowing=False)
+    assert "search_books_by_summary" not in prompt
+    # Library-wide search is the stated default, and the legacy ban is gone.
+    assert "whole library" in prompt
+    assert (
+        "Do NOT call search_chunks with an empty book_ids list as your first action"
+        not in prompt
+    )
+    # "What is this book about" still uses get_book_summary.
+    assert "get_book_summary" in prompt
+
+
+def test_build_retrieval_agent_direct_mode_drops_summary_search_tool():
+    agent = build_retrieval_agent(
+        model="gemini-3.5-flash-lite", summary_narrowing_enabled=False
+    )
+    tool_names = {tool.__name__ for tool in agent.tools}
+    assert "search_books_by_summary" not in tool_names
+    assert {"search_chunks", "search_keyword_phrase", "get_book_summary"} <= tool_names
+    assert "search_books_by_summary" not in agent.instruction
+
+
+def test_build_retrieval_agent_default_keeps_summary_search_tool():
+    agent = build_retrieval_agent(model="gemini-3.5-flash-lite")
+    assert "search_books_by_summary" in {tool.__name__ for tool in agent.tools}
