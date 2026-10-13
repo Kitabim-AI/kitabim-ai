@@ -19,6 +19,13 @@ logger = logging.getLogger("app.db.repositories.chunks_repository")
 _KEYWORD_SEARCH_WORK_MEM = "128MB"
 _KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS = "5000"
 
+# HNSW returns at most hnsw.ef_search rows (pgvector default 40). The unscoped
+# similarity search filters TOC pages, the score threshold and character
+# categories *after* the index scan, so over-fetch generously and raise
+# ef_search to match. pgvector caps ef_search at 1000.
+_VECTOR_OVERFETCH_FACTOR = 8
+_HNSW_EF_SEARCH_MAX = 1000
+
 
 class ChunksRepository(BaseRepository[Chunk]):
     """
@@ -113,8 +120,9 @@ class ChunksRepository(BaseRepository[Chunk]):
             "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
 
-        # Over-fetch to compensate for TOC rows filtered out in the outer query.
-        inner_limit = limit * 3
+        # Over-fetch to compensate for TOC/threshold/category rows filtered out
+        # in the outer query (see _VECTOR_OVERFETCH_FACTOR).
+        inner_limit = min(int(limit) * _VECTOR_OVERFETCH_FACTOR, _HNSW_EF_SEARCH_MAX)
 
         # Build query using CTE approach: the inner CTE does pure vector search
         # (allowing the HNSW index to be used), then the outer query filters
@@ -210,6 +218,13 @@ class ChunksRepository(BaseRepository[Chunk]):
             }
             if categories:
                 params["categories"] = categories
+
+        if book_ids is None:
+            # Int-validated, never user input — SET does not accept bind params.
+            # SET LOCAL scopes it to this transaction only.
+            await self.session.execute(
+                text(f"SET LOCAL hnsw.ef_search = {int(inner_limit)}")
+            )
 
         result = await self.session.execute(query, params)
         rows = result.fetchall()
