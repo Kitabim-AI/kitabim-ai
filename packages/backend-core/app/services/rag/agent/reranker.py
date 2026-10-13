@@ -113,14 +113,22 @@ async def rerank_context(
 
     candidates = docs
     if len(candidates) > RERANK_MAX_INPUT_CHUNKS:
-        candidates = sorted(
-            candidates,
+        # Keyword hits carry `rank`, not a cosine `score`, so a score sort would
+        # always push them below every vector hit and cut them. Reserve their
+        # slots first, fill the rest with the best-scoring vector hits, and keep
+        # the original pool order for the reranker prompt.
+        keyword_docs = [d for d in candidates if d.metadata.get("rank") is not None]
+        keyword_docs = keyword_docs[:RERANK_MAX_INPUT_CHUNKS]
+        other_docs = sorted(
+            (d for d in candidates if d.metadata.get("rank") is None),
             key=lambda d: (
                 d.metadata.get("rrf_score", 0.0),
                 d.metadata.get("score", 0.0),
             ),
             reverse=True,
-        )[:RERANK_MAX_INPUT_CHUNKS]
+        )[: RERANK_MAX_INPUT_CHUNKS - len(keyword_docs)]
+        keep = {id(d) for d in keyword_docs} | {id(d) for d in other_docs}
+        candidates = [d for d in candidates if id(d) in keep]
 
     numbered = "\n\n".join(
         f"[{i}] {format_document(d)}" for i, d in enumerate(candidates, start=1)

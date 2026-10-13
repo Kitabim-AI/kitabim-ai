@@ -284,3 +284,28 @@ async def test_rerank_context_empty_array_with_trailing_bracket_in_commentary():
 
     assert after_count == 1
     assert graded_context != "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
+
+
+@pytest.mark.asyncio
+async def test_rerank_truncation_keeps_keyword_hits():
+    from app.services.rag.agent.config import RERANK_MAX_INPUT_CHUNKS
+
+    vector_chunks = [
+        _chunk(book_id="b1", page=i, text=f"vec-{i}", score=0.9 - i * 0.001)
+        for i in range(RERANK_MAX_INPUT_CHUNKS + 5)
+    ]
+    keyword_hit = {"book_id": "b2", "page": 7, "text": "KEYWORD-HIT", "rank": 0.06}
+    observations = [
+        _search_obs(vector_chunks),
+        {
+            "tool": "search_keyword_phrase",
+            "result": {"ok": True, "data": {"chunks": [keyword_hit]}},
+        },
+    ]
+    llm = _mock_llm("[1]")
+    with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
+        await rerank_context("q", observations, model="gemini-test")
+
+    prompt = llm.ainvoke.await_args.args[0]
+    assert "KEYWORD-HIT" in prompt
+    assert prompt.count("[BookID:") <= RERANK_MAX_INPUT_CHUNKS
