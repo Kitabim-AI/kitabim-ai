@@ -59,6 +59,10 @@ class QueryContext:
     used_book_ids: List[str] = field(
         default_factory=list
     )  # populated by retrieval, returned in done event
+    # rag_summary_narrowing_enabled system_config — False means the retrieval
+    # agent searches chunks library-wide instead of pre-narrowing to books via
+    # search_books_by_summary. Default True = legacy behavior when unset.
+    summary_narrowing_enabled: bool = True
 
     # ── Eval metadata. Set by the deleted legacy pipeline's `_build_context`/
     # `_record_eval`; `ChatOrchestrator` computes its `rag_evaluations` insert

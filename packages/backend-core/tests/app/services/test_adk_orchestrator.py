@@ -2845,3 +2845,14 @@ async def test_stream_response_catalog_ambiguous_falls_back_to_retrieval_agent()
 
     mock_build_retrieval_agent.assert_called_once()
     retrieval_runner.run_async.assert_called_once()
+
+
+def test_parse_bool_config_defaults_and_values():
+    from app.services.chat.orchestrator import _parse_bool_config
+
+    assert _parse_bool_config(None, default=True) is True
+    assert _parse_bool_config("", default=True) is True
+    assert _parse_bool_config("false", default=True) is False
+    assert _parse_bool_config(" FALSE ", default=True) is False
+    assert _parse_bool_config("true", default=False) is True
+    assert _parse_bool_config("garbage", default=True) is True
