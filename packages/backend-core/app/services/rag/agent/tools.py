@@ -605,42 +605,52 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     ):
         top_score = max((r.get("score", 0.0) for r in results), default=0.0)
         if top_score < CONTEXT_SWITCH_SCORE_THRESHOLD:
+            # rag_summary_narrowing_enabled=false: re-search the whole library
+            # rather than rediscovering books via the summary index.
+            direct_mode = not getattr(ctx, "summary_narrowing_enabled", True)
             log_json(
                 logger,
                 logging.INFO,
-                "Context switch detected — rediscovering books via summaries",
+                "Context switch detected — broadening search",
                 top_score=round(top_score, 3),
                 threshold=CONTEXT_SWITCH_SCORE_THRESHOLD,
+                via="whole_library" if direct_mode else "summaries",
             )
-            new_book_ids = await _run_search_books_by_summary({"query": query}, ctx)
-            if new_book_ids:
-                broader = await vector_search(
-                    ctx, new_book_ids, query_vector=query_vector
+            if direct_mode:
+                new_book_ids = None
+                broader = await vector_search(ctx, None, query_vector=query_vector)
+            else:
+                new_book_ids = await _run_search_books_by_summary({"query": query}, ctx)
+                broader = (
+                    await vector_search(ctx, new_book_ids, query_vector=query_vector)
+                    if new_book_ids
+                    else []
                 )
-                if broader:
-                    existing_keys = {
-                        (r.get("book_id"), r.get("page_number"), r.get("chunk_index"))
-                        for r in results
-                    }
-                    new_chunks = [
-                        c
-                        for c in broader
-                        if (
-                            c.get("book_id"),
-                            c.get("page_number"),
-                            c.get("chunk_index"),
-                        )
-                        not in existing_keys
-                    ]
-                    results = results + new_chunks
-                    book_ids = list(dict.fromkeys((book_ids or []) + new_book_ids))
-                    log_json(
-                        logger,
-                        logging.INFO,
-                        "Context-switch re-search succeeded",
-                        new_books=len(new_book_ids),
-                        added_chunks=len(new_chunks),
+            if broader:
+                existing_keys = {
+                    (r.get("book_id"), r.get("page_number"), r.get("chunk_index"))
+                    for r in results
+                }
+                new_chunks = [
+                    c
+                    for c in broader
+                    if (
+                        c.get("book_id"),
+                        c.get("page_number"),
+                        c.get("chunk_index"),
                     )
+                    not in existing_keys
+                ]
+                results = results + new_chunks
+                if new_book_ids:
+                    book_ids = list(dict.fromkeys((book_ids or []) + new_book_ids))
+                log_json(
+                    logger,
+                    logging.INFO,
+                    "Context-switch re-search succeeded",
+                    new_books=len(new_book_ids) if new_book_ids else 0,
+                    added_chunks=len(new_chunks),
+                )
 
     # Knowledge-graph entity lookup (design v2 §6) — pure cache read + Neo4j fact
     # fetch, no LLM call. Rides this same search_chunks call rather than adding a

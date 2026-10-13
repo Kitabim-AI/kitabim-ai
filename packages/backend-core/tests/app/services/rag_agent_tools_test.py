@@ -772,3 +772,87 @@ async def test_search_keyword_phrase_tool_dispatches_to_retrieval():
     assert result["found_count"] == 1
     assert result["chunks"] == mock_results
     mock_search.assert_awaited_once_with(ctx, "ھوزۇرۇم", ["b1"])
+
+
+def _ctx_for_context_switch(summary_narrowing_enabled: bool):
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = True
+    ctx.book_id = None
+    ctx.context_book_ids = ["old-book"]
+    ctx.summary_narrowing_enabled = summary_narrowing_enabled
+    return ctx
+
+
+@pytest.mark.asyncio
+async def test_context_switch_direct_mode_broadens_to_whole_library():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
+    ctx = _ctx_for_context_switch(summary_narrowing_enabled=False)
+    calls = []
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        calls.append(book_ids)
+        if book_ids == ["old-book"]:
+            return [
+                {
+                    "book_id": "old-book",
+                    "page_number": 1,
+                    "chunk_index": 0,
+                    "score": 0.30,
+                }
+            ]
+        return [
+            {"book_id": "new-book", "page_number": 9, "chunk_index": 0, "score": 0.80}
+        ]
+
+    summary_mock = AsyncMock(return_value=["should-not-be-used"])
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(agent_tools, "_run_search_books_by_summary", summary_mock),
+        patch.object(
+            SystemConfigsRepository, "get_value", AsyncMock(return_value="10")
+        ),
+    ):
+        results = await agent_tools._run_search_chunks(
+            {"query": "q", "book_ids": ["old-book"]}, ctx
+        )
+
+    summary_mock.assert_not_awaited()
+    assert calls == [["old-book"], None]
+    assert {r["book_id"] for r in results} == {"old-book", "new-book"}
+
+
+@pytest.mark.asyncio
+async def test_context_switch_legacy_mode_still_uses_summary_rediscovery():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
+    ctx = _ctx_for_context_switch(summary_narrowing_enabled=True)
+    calls = []
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        calls.append(book_ids)
+        return [
+            {"book_id": "old-book", "page_number": 1, "chunk_index": 0, "score": 0.30}
+        ]
+
+    summary_mock = AsyncMock(return_value=["summary-book"])
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(agent_tools, "_run_search_books_by_summary", summary_mock),
+        patch.object(
+            SystemConfigsRepository, "get_value", AsyncMock(return_value="10")
+        ),
+    ):
+        await agent_tools._run_search_chunks(
+            {"query": "q", "book_ids": ["old-book"]}, ctx
+        )
+
+    summary_mock.assert_awaited_once()
+    assert calls == [["old-book"], ["summary-book"]]
