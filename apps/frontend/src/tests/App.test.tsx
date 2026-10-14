@@ -1,15 +1,23 @@
 import App from '@/src/App';
 import * as AppContextModule from '@/src/context/AppContext';
+import * as AuthModule from '@/src/hooks/useAuth';
 import { AuthProvider } from '@/src/hooks/useAuth';
 import { PersistenceService } from '@/src/services/persistenceService';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
-// App.tsx calls useAuth()/useIsEditor() directly, so it needs a real AuthProvider —
-// these two views (reader/library) aren't gated behind the auth-loading shield, so
-// rendering doesn't need to wait for the async auth check to settle.
-const renderApp = (ui: React.ReactElement) => render(<AuthProvider>{ui}</AuthProvider>);
+// These tests cover which view App renders, not login. Auth is mocked as a
+// signed-in editor by default (admin and spell-check are editor-only); the
+// real AuthProvider would also fire /api/auth/refresh requests.
+vi.mock('@/src/hooks/useAuth', () => ({
+  AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useAuth: vi.fn(),
+  useIsEditor: vi.fn(),
+}));
+
+// Passed as `wrapper` so rerender() keeps it too.
+const renderApp = (ui: React.ReactElement) => render(ui, { wrapper: AuthProvider });
 
 vi.mock('@/src/context/AppContext', () => ({
   AppProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -86,11 +94,13 @@ const baseContext = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(AuthModule.useAuth).mockReturnValue({ isAuthenticated: true, isLoading: false } as any);
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(true);
 });
 
 test('App renders the active view from app context', () => {
   vi.mocked(AppContextModule.useAppContext).mockReturnValue(baseContext as any);
-  const { rerender } = render(<App />);
+  const { rerender } = renderApp(<App />);
 
   expect(screen.getByText('home-view')).toBeInTheDocument();
 
@@ -138,40 +148,61 @@ test('App does not keep HomeView mounted when navigating to a different main vie
   expect(screen.queryByText('home-view')).not.toBeInTheDocument();
 });
 
-test('App closes global chat back to the previous view', () => {
-  const setView = vi.fn();
+test('App renders the global chat view', () => {
+  // Global chat is a full page left via the navbar; it has no close button
+  // (the old onClose → previousView flow was removed with the chat redesign).
   vi.mocked(AppContextModule.useAppContext).mockReturnValue({
     ...baseContext,
     view: 'global-chat',
-    previousView: 'library',
-    setView,
   } as any);
 
-  render(<App />);
+  renderApp(<App />);
 
-  fireEvent.click(screen.getByText('close-chat'));
-  expect(setView).toHaveBeenCalledWith('library');
+  expect(screen.getByText('chat-view')).toBeInTheDocument();
 });
 
-test('App polls selected book immediately while admin view is processing', async () => {
-  vi.mocked(PersistenceService.getBookById).mockResolvedValue({ id: '1', status: 'ready', pages: [] } as any);
-  const setSelectedBook = vi.fn();
-
+test('App redirects a non-editor away from the admin view', () => {
+  vi.mocked(AuthModule.useIsEditor).mockReturnValue(false);
+  const setView = vi.fn();
   vi.mocked(AppContextModule.useAppContext).mockReturnValue({
     ...baseContext,
     view: 'admin',
-    setSelectedBook,
-    selectedBook: {
-      id: '1',
-      status: 'ocr_processing',
-      pages: [{ pageNumber: 1, status: 'pending' }],
-    },
+    setView,
   } as any);
 
-  render(<App />);
+  renderApp(<App />);
 
-  await waitFor(() => {
+  expect(screen.queryByText('admin-view')).not.toBeInTheDocument();
+  expect(setView).toHaveBeenCalledWith('home');
+});
+
+test('App polls a processing book every 30 seconds in the admin view', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(PersistenceService.getBookById).mockResolvedValue({ id: '1', status: 'ready', pages: [] } as any);
+    const setSelectedBook = vi.fn();
+
+    vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+      ...baseContext,
+      view: 'admin',
+      setSelectedBook,
+      selectedBook: {
+        id: '1',
+        status: 'ocr_processing',
+        pages: [{ pageNumber: 1, status: 'pending' }],
+      },
+    } as any);
+
+    renderApp(<App />);
+
+    // No immediate fetch: the book was just loaded when it was opened.
+    expect(PersistenceService.getBookById).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(30000);
+
     expect(PersistenceService.getBookById).toHaveBeenCalledWith('1');
     expect(setSelectedBook).toHaveBeenCalledWith({ id: '1', status: 'ready', pages: [] });
-  });
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -1,5 +1,6 @@
 import { AppProvider } from '@/src/context/AppContext';
 import { NotificationProvider } from '@/src/context/NotificationContext';
+import { ThemeProvider } from '@/src/context/ThemeContext';
 import { AuthProvider } from '@/src/hooks/useAuth';
 import { I18nContext } from '@/src/i18n/I18nContext';
 import { render as tlRender } from '@testing-library/react';
@@ -22,7 +23,9 @@ export function renderWithProviders(ui: React.ReactElement, options = {}) {
   };
 
   const Wrapper = ({ children }: { children: React.ReactNode }) => {
+    // Same provider order as App.tsx: ThemeProvider is outermost.
     return (
+      <ThemeProvider>
       <NotificationProvider>
         <AuthProvider>
           <I18nContext.Provider value={i18nMockValue}>
@@ -32,6 +35,7 @@ export function renderWithProviders(ui: React.ReactElement, options = {}) {
           </I18nContext.Provider>
         </AuthProvider>
       </NotificationProvider>
+      </ThemeProvider>
     );
   };
   

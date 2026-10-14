@@ -146,10 +146,20 @@ test('AdminView renders no Graph emerald icon when hasGraph is false (empty pipe
     </I18nContext.Provider>
   );
 
-  // With empty pipelineStats and both boolean flags false, no step produces
-  // text-emerald-500 — all fall back to text-slate-300.
-  const emeraldIcons = document.querySelectorAll('.text-emerald-500');
-  expect(emeraldIcons.length).toBe(0);
+  // Graph and Summary come from the hasGraph/hasSummary flags, so with both
+  // false neither icon is green (mobile + desktop variants are both in jsdom).
+  const graphIcons = document.querySelectorAll('svg[class*="lucide-network"]');
+  const summaryIcons = document.querySelectorAll('svg[class*="lucide-wand"]');
+  expect(graphIcons.length).toBeGreaterThan(0);
+  expect(summaryIcons.length).toBeGreaterThan(0);
+  graphIcons.forEach((icon) => expect(icon).not.toHaveClass('text-emerald-500'));
+  summaryIcons.forEach((icon) => expect(icon).not.toHaveClass('text-emerald-500'));
+
+  // A 'ready' book has necessarily finished OCR, chunking and embedding, so
+  // those mandatory steps show green even without pipelineStats.
+  const ocrIcons = document.querySelectorAll('svg[class*="lucide-scan-text"]');
+  expect(ocrIcons.length).toBeGreaterThan(0);
+  ocrIcons.forEach((icon) => expect(icon).toHaveClass('text-emerald-500'));
 });
 
 test('AdminView renders emerald LLM spell check icon when fully done', () => {
