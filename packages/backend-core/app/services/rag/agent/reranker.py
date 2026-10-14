@@ -26,13 +26,33 @@ logger = logging.getLogger("app.services.rag.agent.reranker")
 _NO_DOCS_MESSAGE = "NO RELEVANT DOCUMENTS FOUND IN THE LIBRARY."
 
 
+def is_better_duplicate(new_meta: dict, old_meta: dict) -> bool:
+    """For two hits on the same (book_id, page), True when the new one should
+    replace the old. A keyword hit (has `rank`) beats a vector chunk: it
+    carries the whole page text, which contains the chunk, plus the exact
+    phrase the agent searched for. Between two hits of the same kind, the
+    higher score wins (rank for keyword hits, (rrf_score, score) otherwise).
+    """
+    new_kw = new_meta.get("rank") is not None
+    old_kw = old_meta.get("rank") is not None
+    if new_kw != old_kw:
+        return new_kw
+    if new_kw:
+        return (new_meta.get("rank") or 0.0) > (old_meta.get("rank") or 0.0)
+    return (new_meta.get("rrf_score", 0.0), new_meta.get("score", 0.0)) > (
+        old_meta.get("rrf_score", 0.0),
+        old_meta.get("score", 0.0),
+    )
+
+
 def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
     """Pool chunks from every search_chunks/search_keyword_phrase observation,
-    deduped by (book_id, page). No relevance filtering here — that's the reranker's
-    job, not this pooling step (data hygiene only, same dedup _grade_context always did)."""
+    deduped by (book_id, page), keeping the better hit per page
+    (is_better_duplicate). No relevance filtering here — that's the reranker's
+    job, not this pooling step (data hygiene only, same dedup _grade_context does)."""
     docs: list[Document] = []
     total_raw_chunks = 0
-    seen: set[tuple] = set()
+    seen: dict[tuple, int] = {}
 
     for obs in observations:
         if obs.get("tool") not in CHUNK_RESULT_TOOLS:
@@ -53,28 +73,29 @@ def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
                 c.get("page") if c.get("page") is not None else c.get("page_number")
             )
             key = (c.get("book_id"), page_val)
-            if key in seen:
-                continue
-            seen.add(key)
-            docs.append(
-                Document(
-                    page_content=c.get("text", ""),
-                    metadata={
-                        "title": c.get("title") or "Unknown",
-                        "author": c.get("author") or None,
-                        "volume": c.get("volume"),
-                        "page": page_val,
-                        "page_number": page_val,
-                        "book_id": c.get("book_id"),
-                        "score": c.get("score", 0.0),
-                        "rrf_score": c.get("rrf_score", 0.0),
-                        "rank": c.get("rank"),
-                        "surah_name_en": c.get("surah_name_en"),
-                        "surah": c.get("surah"),
-                        "ayah": c.get("ayah"),
-                    },
-                )
+            doc = Document(
+                page_content=c.get("text", ""),
+                metadata={
+                    "title": c.get("title") or "Unknown",
+                    "author": c.get("author") or None,
+                    "volume": c.get("volume"),
+                    "page": page_val,
+                    "page_number": page_val,
+                    "book_id": c.get("book_id"),
+                    "score": c.get("score", 0.0),
+                    "rrf_score": c.get("rrf_score", 0.0),
+                    "rank": c.get("rank"),
+                    "surah_name_en": c.get("surah_name_en"),
+                    "surah": c.get("surah"),
+                    "ayah": c.get("ayah"),
+                },
             )
+            if key in seen:
+                if is_better_duplicate(doc.metadata, docs[seen[key]].metadata):
+                    docs[seen[key]] = doc
+                continue
+            seen[key] = len(docs)
+            docs.append(doc)
     return docs, total_raw_chunks
 
 

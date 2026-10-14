@@ -66,6 +66,7 @@ def _grade_context(
 
     limit = max_chunks if max_chunks is not None else AGENT_MAX_CONTEXT_CHUNKS
     from app.services.rag.answer_builder import format_document, Document
+    from app.services.rag.agent.reranker import is_better_duplicate
 
     # Build metadata context from any tool returning a "context" key
     metadata_parts = []
@@ -79,7 +80,7 @@ def _grade_context(
 
     all_graded_documents: list[Document] = []
     total_raw_chunks = 0
-    seen: set[tuple] = set()
+    seen: dict[tuple, int] = {}
 
     for obs in observations:
         if obs.get("tool") not in CHUNK_RESULT_TOOLS:
@@ -157,8 +158,11 @@ def _grade_context(
             )
             key = (doc.metadata["book_id"], page_val)
             if key in seen:
+                existing = all_graded_documents[seen[key]]
+                if is_better_duplicate(doc.metadata, existing.metadata):
+                    all_graded_documents[seen[key]] = doc
                 continue
-            seen.add(key)
+            seen[key] = len(all_graded_documents)
             all_graded_documents.append(doc)
 
     # Final global sort and limit cap

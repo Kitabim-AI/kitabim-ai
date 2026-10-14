@@ -309,3 +309,47 @@ async def test_rerank_truncation_keeps_keyword_hits():
     prompt = llm.ainvoke.await_args.args[0]
     assert "KEYWORD-HIT" in prompt
     assert prompt.count("[BookID:") <= RERANK_MAX_INPUT_CHUNKS
+
+
+@pytest.mark.asyncio
+async def test_rerank_dedup_keeps_higher_scoring_chunk_from_same_page():
+    observations = [
+        _search_obs([_chunk(book_id="b1", page=5, text="WEAK-CHUNK", score=0.5)]),
+        _search_obs([_chunk(book_id="b1", page=5, text="STRONG-CHUNK", score=0.8)]),
+    ]
+    llm = _mock_llm("[1]")
+    with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
+        graded_context, _, _ = await rerank_context("q", observations, model="m")
+
+    assert "STRONG-CHUNK" in graded_context
+    assert "WEAK-CHUNK" not in graded_context
+
+
+@pytest.mark.asyncio
+async def test_rerank_dedup_prefers_keyword_page_over_chunk_from_same_page():
+    keyword_obs = {
+        "tool": "search_keyword_phrase",
+        "result": {
+            "ok": True,
+            "data": {
+                "chunks": [
+                    {"book_id": "b1", "page": 5, "text": "FULL-PAGE", "rank": 0.1}
+                ]
+            },
+        },
+    }
+    for observations in (
+        [
+            _search_obs([_chunk(book_id="b1", page=5, text="CHUNK", score=0.9)]),
+            keyword_obs,
+        ],
+        [
+            keyword_obs,
+            _search_obs([_chunk(book_id="b1", page=5, text="CHUNK", score=0.9)]),
+        ],
+    ):
+        llm = _mock_llm("[1]")
+        with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
+            graded_context, _, _ = await rerank_context("q", observations, model="m")
+        assert "FULL-PAGE" in graded_context
+        assert "CHUNK\n" not in graded_context and not graded_context.endswith("CHUNK")

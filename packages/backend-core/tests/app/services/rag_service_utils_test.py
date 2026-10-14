@@ -393,3 +393,48 @@ def test_grade_context_final_cap_keeps_keyword_hits():
     # The best vector hit is still kept; the weakest is the one dropped.
     assert "vec-0" in graded_context
     assert "vec-24" not in graded_context
+
+
+def test_grade_context_dedup_keeps_higher_scoring_chunk_from_same_page():
+    from app.services.chat.context_grading import _grade_context
+
+    observations = [
+        {
+            "tool": "search_chunks",
+            "result": {
+                "ok": True,
+                "data": {
+                    "chunks": [
+                        {
+                            "book_id": "b1",
+                            "page": 5,
+                            "text": "WEAK-CHUNK",
+                            "score": 0.5,
+                        },
+                    ]
+                },
+            },
+        },
+        {
+            "tool": "search_chunks",
+            "result": {
+                "ok": True,
+                "data": {
+                    "chunks": [
+                        {
+                            "book_id": "b1",
+                            "page": 5,
+                            "text": "STRONG-CHUNK",
+                            "score": 0.8,
+                        },
+                    ]
+                },
+            },
+        },
+    ]
+
+    graded_context, _, after_count = _grade_context(observations)
+
+    assert after_count == 1
+    assert "STRONG-CHUNK" in graded_context
+    assert "WEAK-CHUNK" not in graded_context
