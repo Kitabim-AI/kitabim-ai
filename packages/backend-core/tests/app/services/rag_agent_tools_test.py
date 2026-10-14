@@ -6,6 +6,20 @@ from app.db.repositories.books_repository import BooksRepository
 from app.db.repositories.book_summaries_repository import BookSummariesRepository
 
 
+@pytest.fixture(autouse=True)
+def _all_book_ids_exist():
+    """Global-chat tools validate book_ids against `books` (_resolve_book_scope).
+    Tests here use made-up IDs on a mocked session, so treat every ID as
+    existing by default; tests about unknown IDs patch find_existing_ids
+    themselves (the inner patch wins)."""
+
+    async def _identity(self, book_ids):
+        return {str(b) for b in book_ids}
+
+    with patch.object(BooksRepository, "find_existing_ids", _identity):
+        yield
+
+
 class FakeBook:
     def __init__(self, id, title, author, volume):
         self.id = id
@@ -989,3 +1003,67 @@ async def test_reader_get_book_summary_ignores_unrelated_books():
         await _run_get_book_summary({"book_ids": ["other"]}, _reader_ctx())
 
     assert set(captured["ids"]) == {"cur", "sis"}
+
+
+# ── Global chat: book IDs the agent invented (e.g. after a catalog result) must
+# not silently scope a search down to zero results. ──────────────────────────
+
+
+def _global_ctx():
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = True
+    ctx.book_id = None
+    ctx.context_book_ids = []
+    ctx.summary_narrowing_enabled = False
+    return ctx
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "requested, known, expected",
+    [
+        (None, set(), None),
+        ([], set(), []),
+        (["real", "fake"], {"real"}, ["real"]),
+        (["fake"], set(), None),
+        (["قۇتادغۇبىلىك"], set(), None),
+    ],
+)
+async def test_resolve_book_scope_global_drops_unknown_ids(requested, known, expected):
+    from app.services.rag.agent.tools import _resolve_book_scope
+
+    async def fake_find_existing_ids(self, ids):
+        return {i for i in ids if i in known}
+
+    with patch.object(BooksRepository, "find_existing_ids", fake_find_existing_ids):
+        assert await _resolve_book_scope(requested, _global_ctx()) == expected
+
+
+@pytest.mark.asyncio
+async def test_global_search_chunks_with_invented_id_searches_whole_library():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
+    calls = []
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        calls.append(book_ids)
+        return []
+
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(
+            BooksRepository, "find_existing_ids", AsyncMock(return_value=set())
+        ),
+        patch.object(
+            SystemConfigsRepository, "get_value", AsyncMock(return_value="10")
+        ),
+    ):
+        await agent_tools._run_search_chunks(
+            {"query": "q", "book_ids": ["invented-id"]}, _global_ctx()
+        )
+
+    assert calls == [None]

@@ -299,3 +299,65 @@ def test_is_who_is_query():
     assert is_who_is_query("ئانا يۇرت كىمنىڭ؟") is False
     assert is_who_is_query("ئانا يۇرت رومانى قاچان يېزىلغان؟") is False
     assert is_who_is_query("ئالىم دېگەن ئىسىم مەنىسى نېمە؟") is False
+
+
+@pytest.mark.asyncio
+async def test_build_catalog_context_title_match_includes_book_ids():
+    """The retrieval agent scopes search_chunks with book IDs it copies from
+    tool output — without an ID here it invents one and gets 0 results."""
+    session = AsyncMock()
+    mock_titles = MagicMock()
+    mock_titles.fetchall.return_value = [("قۇتادغۇبىلىك",)]
+    mock_books = MagicMock()
+    mock_books.fetchall.return_value = [
+        MagicMock(
+            id="abc123def456",
+            title="قۇتادغۇبىلىك",
+            author="يۈسۈپ خاس ھاجىپ",
+            volume=None,
+            total_pages=900,
+            status="ready",
+        )
+    ]
+    session.execute.side_effect = [mock_titles, mock_books]
+
+    ctx, count = await CatalogHandler._build_catalog_context("قۇتادغۇبىلىك", session)
+
+    assert count == 1
+    assert "BookID: abc123def456" in ctx
+
+
+@pytest.mark.asyncio
+async def test_build_catalog_context_author_match_includes_book_ids():
+    session = AsyncMock()
+    no_titles = MagicMock()
+    no_titles.fetchall.return_value = []
+    authors = MagicMock()
+    authors.fetchall.return_value = [("زوردۇن سابىر",)]
+    books = MagicMock()
+    books.fetchall.return_value = [
+        MagicMock(
+            id="b-1",
+            title="ئانا يۇرت",
+            author="زوردۇن سابىر",
+            volume=1,
+            total_pages=500,
+            status="ready",
+        ),
+        MagicMock(
+            id="b-2",
+            title="ئانا يۇرت",
+            author="زوردۇن سابىر",
+            volume=2,
+            total_pages=480,
+            status="ready",
+        ),
+    ]
+    session.execute.side_effect = [no_titles, authors, books]
+
+    ctx, count = await CatalogHandler._build_catalog_context(
+        "زوردۇن سابىر نېمىلەرنى يازغان؟", session
+    )
+
+    assert count == 2
+    assert "BookID: b-1" in ctx and "BookID: b-2" in ctx
