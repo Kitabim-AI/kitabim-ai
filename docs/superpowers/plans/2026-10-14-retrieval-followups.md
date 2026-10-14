@@ -16,8 +16,8 @@ Context: `rag_summary_narrowing_enabled = false` (direct whole-library chunk sea
 
 - [x] Check prod pgvector version: `SELECT extversion FROM pg_extension WHERE extname='vector';` → **0.8.1**
 - [x] If ≥ 0.8: `SET LOCAL hnsw.iterative_scan = relaxed_order` for library-wide searches with a persona category filter (`ChunksRepository.similarity_search`). Done: the category filter also moved inside the HNSW CTE, otherwise the iterative scan has no effect. After deploy, check on prod with `EXPLAIN` that a category-filtered query still uses `idx_chunks_embedding`.
-- [ ] Fallback grader (`_grade_context`, `services/chat/context_grading.py`): stop the final cut to 25 from dropping keyword hits. Same fix as the reranker.
-- [ ] `keyword_search`: run on its own DB session so its `SET LOCAL statement_timeout = '5000'` doesn't leak into later vector searches in the same turn.
+- [x] Fallback grader (`_grade_context`, `services/chat/context_grading.py`): stop the final cut to 25 from dropping keyword hits. Same fix as the reranker.
+- [x] `keyword_search`: run on its own DB session so its `SET LOCAL statement_timeout = '5000'` doesn't leak into later vector searches in the same turn.
 
 ## 3. After the A/B result
 
@@ -25,6 +25,7 @@ Context: `rag_summary_narrowing_enabled = false` (direct whole-library chunk sea
 
 ## 4. Lower priority
 
+- [ ] Exact-phrase leg (`exact_phrase_chunk_search`): multiple quoted phrases run `keyword_search` concurrently via `asyncio.gather` on ONE session, which asyncpg doesn't allow; give each phrase its own session (the agent's keyword tool already does).
 - [ ] Per-book quota: "what does [author] say about X" for prolific authors gives each book ≥3 slots and can exceed 25 chunks. Allocate by relevance instead.
 - [ ] Reranker dedup by (book, page) keeps the first chunk seen; keep the highest-scoring one instead.
 - [ ] Legacy prompt step 6b refers to "the relationship query modifier above", which doesn't exist. Remove it (moot if the legacy prompt is deleted).

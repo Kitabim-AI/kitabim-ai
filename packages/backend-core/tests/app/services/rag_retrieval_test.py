@@ -10,6 +10,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.rag.retrieval import exact_phrase_chunk_search
 
 
+@pytest.fixture(autouse=True)
+def _db_session_factory():
+    """agent_keyword_search opens its own session via
+    app.db.session.async_session_factory, which is None until init_db() runs.
+    Provide a mock factory by default; tests that care patch it themselves."""
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    with patch("app.db.session.async_session_factory", factory):
+        yield
+
+
 def _doc(book_id, page, **kw):
     d = {
         "book_id": book_id,
@@ -405,3 +417,41 @@ async def test_agent_keyword_search_empty_book_ids_list_broadens_to_global_scan(
 
     assert captured["book_ids"] is None
     assert result == [{"book_id": "b1", "page_number": 5, "text": "hit", "rank": 0.9}]
+
+
+@pytest.mark.asyncio
+async def test_agent_keyword_search_runs_on_its_own_session():
+    """keyword_search runs SET LOCAL work_mem/statement_timeout; on the shared
+    request session that would stay in force for every later query in the
+    turn (e.g. the next vector search). It must use a dedicated session."""
+    from app.services.rag.retrieval import agent_keyword_search
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+    from app.db.repositories.chunks_repository import ChunksRepository
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock(name="request_session")
+    ctx.character_categories = []
+    own_session = AsyncMock(name="keyword_session")
+
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=own_session)
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    used_sessions = []
+
+    async def fake_keyword_search(
+        self, phrase, book_ids=None, categories=None, limit=10
+    ):
+        used_sessions.append(self.session)
+        return []
+
+    with (
+        patch.object(
+            SystemConfigsRepository, "get_value", AsyncMock(return_value="10")
+        ),
+        patch.object(ChunksRepository, "keyword_search", fake_keyword_search),
+        patch("app.db.session.async_session_factory", factory),
+    ):
+        await agent_keyword_search(ctx, "بابۇر", None)
+
+    assert used_sessions == [own_session]

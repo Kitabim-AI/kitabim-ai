@@ -180,13 +180,19 @@ async def agent_keyword_search(
     except ValueError:
         rag_keyword_top_k = _AGENT_KEYWORD_SEARCH_DEFAULT_LIMIT
 
-    chunks_repo = get_vector_store(ctx.session)
-    return await chunks_repo.keyword_search(
-        phrase=phrase,
-        book_ids=book_ids,
-        categories=ctx.character_categories or None,
-        limit=rag_keyword_top_k,
-    )
+    # Own session: keyword_search runs SET LOCAL work_mem/statement_timeout,
+    # which on ctx.session would stay in force for every later query in this
+    # turn's transaction (e.g. the agent's next vector search). Read the
+    # factory at call time — it is None until init_db() runs at startup.
+    from app.db import session as db_session
+
+    async with db_session.async_session_factory() as keyword_session:
+        return await get_vector_store(keyword_session).keyword_search(
+            phrase=phrase,
+            book_ids=book_ids,
+            categories=ctx.character_categories or None,
+            limit=rag_keyword_top_k,
+        )
 
 
 async def vector_search(
