@@ -15,7 +15,7 @@ Context: `rag_summary_narrowing_enabled = false` (direct whole-library chunk sea
 ## 2. Small PR: search correctness
 
 - [x] Check prod pgvector version: `SELECT extversion FROM pg_extension WHERE extname='vector';` → **0.8.1**
-- [ ] Persona category filters on library-wide search. **Reverted 2026-10-14:** iterative scan (filter inside the HNSW CTE + `hnsw.iterative_scan = relaxed_order`) took 24.9 s on prod — it pulled 20,477 index rows (~1.2 ms each, heap reads) to find 200 in the history categories. Back to filtering the 200 HNSW candidates afterwards (fast, but few results for narrow personas). Needs a different design — see options in the conversation: cap `hnsw.max_scan_tuples`, route narrow categories to an exact scan over their books, or partial HNSW indexes per persona.
+- [ ] **Parked — persona chat is hidden in the UI (2026-10-14), so no category filter reaches prod.** Persona category filters on library-wide search: iterative scan was reverted after 24.9 s on prod (pulled 20,477 index rows for 200 matches). That EXPLAIN used an arbitrary first-chunk vector (likely a novel), so it was near worst case: the history categories cover ~91k of ~650k chunks (~14%). Before unhiding persona chat, measure the iterative scan with real persona questions' embeddings, and compare against an exact scan over the persona's books (scoped path) and per-persona partial HNSW indexes.
 - [x] Fallback grader (`_grade_context`, `services/chat/context_grading.py`): stop the final cut to 25 from dropping keyword hits. Same fix as the reranker.
 - [x] `keyword_search`: run on its own DB session so its `SET LOCAL statement_timeout = '5000'` doesn't leak into later vector searches in the same turn.
 
@@ -30,6 +30,10 @@ Context: `rag_summary_narrowing_enabled = false` (direct whole-library chunk sea
 - [ ] Reranker dedup by (book, page) keeps the first chunk seen; keep the highest-scoring one instead.
 - [ ] Legacy prompt step 6b refers to "the relationship query modifier above", which doesn't exist. Remove it (moot if the legacy prompt is deleted).
 - [ ] Fix the 6 already-failing tests: 3 in `tests/app/db/bookmarks_repository_test.py`, 3 in `tests/app/llm/models_test.py`.
+
+## Data cleanup
+
+- [ ] `books.categories` duplicates split category filters and browsing: zero-width-joiner variants (`ئ‍ىسلام` 1,301 chunks vs `ئىسلام`; `ئ‍ەرەبچە` vs `ئەرەبچە`) and spelling variants (`مۇۋەپپەقىيەتشۇناسلىق` / `مۇۋاپېقىيەتشۇناسلىق` / `مۇۋاپپىقىيەتشۇناسلىق`, `ماقالىلەر` / `ماقالىلار`, `نەسرلەر` / `نەسىرلەر`, `ئەدەبىي ئاخبارات` / `ئەدەبىي ئاخباراتلار`). Normalize with an UPDATE migration and strip U+200D on category input.
 
 ## Not now
 
