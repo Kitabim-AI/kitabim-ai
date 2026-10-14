@@ -256,3 +256,38 @@ async def test_similarity_search_scoped_does_not_touch_ef_search():
 
     statements = [str(c.args[0]) for c in session.execute.await_args_list]
     assert not any("ef_search" in s for s in statements)
+
+
+@pytest.mark.asyncio
+async def test_similarity_search_unscoped_categories_filters_inside_index_scan():
+    """The category filter must sit inside the HNSW CTE (before its LIMIT) and
+    hnsw.iterative_scan must be on — otherwise the index stops after
+    ef_search candidates and the persona filter runs on too few rows."""
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = []
+    session.execute.return_value = mock_res
+
+    await repo.similarity_search([0.1] * 3072, categories=["تارىخ"], limit=25)
+
+    statements = [str(c.args[0]) for c in session.execute.await_args_list]
+    assert any("SET LOCAL hnsw.iterative_scan = relaxed_order" in s for s in statements)
+    final_sql = statements[-1]
+    inner_cte = final_sql.split("LIMIT :inner_limit")[0]
+    assert "categories && CAST(:categories AS text[])" in inner_cte
+    assert session.execute.await_args_list[-1].args[1]["categories"] == ["تارىخ"]
+
+
+@pytest.mark.asyncio
+async def test_similarity_search_unscoped_without_categories_skips_iterative_scan():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = []
+    session.execute.return_value = mock_res
+
+    await repo.similarity_search([0.1] * 3072, limit=25)
+
+    statements = [str(c.args[0]) for c in session.execute.await_args_list]
+    assert not any("iterative_scan" in s for s in statements)
