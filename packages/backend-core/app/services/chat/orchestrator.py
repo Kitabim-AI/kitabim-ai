@@ -421,7 +421,6 @@ class ChatOrchestrator:
                 rag_keyword_top_k = _EXACT_PHRASE_DEFAULT_LIMIT
 
             hits, observation = await run_exact_phrase_retrieval(
-                db_session,
                 phrase_intent,
                 book_ids=ctx.context_book_ids,
                 categories=ctx.character_categories or None,

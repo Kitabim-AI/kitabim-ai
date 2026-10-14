@@ -52,15 +52,12 @@ async def test_exact_phrase_chunk_search_single_phrase_returns_leg_results():
 
 @pytest.mark.asyncio
 async def test_exact_phrase_chunk_search_multiple_phrases_are_anded():
-    """A chunk must contain ALL quoted phrases to survive — per the resolved
-    decision that multiple quoted phrases in one query are ANDed."""
+    """A page must contain ALL quoted phrases — per the resolved decision that
+    multiple quoted phrases in one query are ANDed. The AND runs in the
+    database (one query), not by intersecting each phrase's top-N in Python:
+    two top-10 lists rarely overlap even when many pages contain both."""
     chunks_repo = AsyncMock()
-    chunks_repo.keyword_search = AsyncMock(
-        side_effect=[
-            [_doc("b1", 1, rank=0.9), _doc("b1", 2, rank=0.5)],  # phrase 1 leg
-            [_doc("b1", 1, rank=0.7)],  # phrase 2 leg — only page 1 matches both
-        ]
-    )
+    chunks_repo.keyword_search = AsyncMock(return_value=[_doc("b1", 1, rank=0.7)])
 
     results = await exact_phrase_chunk_search(
         chunks_repo,
@@ -70,26 +67,28 @@ async def test_exact_phrase_chunk_search_multiple_phrases_are_anded():
         limit=10,
     )
 
-    assert chunks_repo.keyword_search.await_count == 2
+    chunks_repo.keyword_search.assert_awaited_once_with(
+        phrase="king Babur",
+        book_ids=None,
+        categories=None,
+        limit=10,
+        and_phrases=["Samarkand"],
+    )
     keys = {(d["book_id"], d["page_number"]) for d in results}
     assert keys == {("b1", 1)}
 
 
 @pytest.mark.asyncio
-async def test_exact_phrase_chunk_search_no_intersection_returns_empty():
+async def test_exact_phrase_chunk_search_no_page_with_all_phrases_returns_empty():
     chunks_repo = AsyncMock()
-    chunks_repo.keyword_search = AsyncMock(
-        side_effect=[
-            [_doc("b1", 1)],
-            [_doc("b1", 2)],
-        ]
-    )
+    chunks_repo.keyword_search = AsyncMock(return_value=[])
 
     results = await exact_phrase_chunk_search(
         chunks_repo, ["a", "b"], book_ids=None, categories=None, limit=10
     )
 
     assert results == []
+    assert chunks_repo.keyword_search.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -455,3 +454,50 @@ async def test_agent_keyword_search_runs_on_its_own_session():
         await agent_keyword_search(ctx, "بابۇر", None)
 
     assert used_sessions == [own_session]
+
+
+@pytest.mark.asyncio
+async def test_exact_phrase_chunk_search_three_phrases_use_one_query():
+    """One query per call also means no concurrent operations on the shared
+    session (asyncpg rejects those)."""
+    chunks_repo = AsyncMock()
+    chunks_repo.keyword_search = AsyncMock(return_value=[_doc("b1", 1, rank=0.5)])
+
+    results = await exact_phrase_chunk_search(
+        chunks_repo, ["a b", "c d", "e f"], book_ids=None, categories=None, limit=10
+    )
+
+    assert chunks_repo.keyword_search.await_count == 1
+    assert chunks_repo.keyword_search.await_args.kwargs["and_phrases"] == ["c d", "e f"]
+    assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_exact_phrase_retrieval_uses_its_own_session():
+    from app.services.chat.exact_phrase import run_exact_phrase_retrieval
+    from app.services.rag.phrase_intent import PhraseIntent
+    from app.db.repositories.chunks_repository import ChunksRepository
+
+    own_session = AsyncMock(name="exact_phrase_session")
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=own_session)
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    used = []
+
+    async def fake_keyword_search(
+        self, phrase, book_ids=None, categories=None, limit=10
+    ):
+        used.append(self.session)
+        return []
+
+    intent = MagicMock(spec=PhraseIntent)
+    intent.phrases = ["بابۇر شاھ"]
+    with (
+        patch.object(ChunksRepository, "keyword_search", fake_keyword_search),
+        patch("app.db.session.async_session_factory", factory),
+    ):
+        await run_exact_phrase_retrieval(
+            intent, book_ids=None, categories=None, limit=10
+        )
+
+    assert used == [own_session]

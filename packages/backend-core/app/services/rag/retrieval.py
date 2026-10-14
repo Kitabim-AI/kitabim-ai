@@ -91,43 +91,26 @@ async def exact_phrase_chunk_search(
     phrase mode is keyword-only by design.
 
     Multiple phrases are ANDed together (a result must contain all of them),
-    per the resolved decision on multi-phrase queries — implemented as one
-    `keyword_search` call per phrase, intersected by (book_id, page_number).
+    per the resolved decision on multi-phrase queries. The AND runs in the
+    database as one query (keyword_search's and_phrases), so the limit applies
+    after matching every phrase — intersecting each phrase's own top-N in
+    Python missed pages, and running the per-phrase queries concurrently on
+    one session isn't allowed by asyncpg.
     """
     if not phrases:
         return []
 
-    per_phrase_results = await asyncio.gather(
-        *[
-            chunks_repo.keyword_search(
-                phrase=phrase,
-                book_ids=book_ids,
-                categories=categories,
-                limit=limit,
-            )
-            for phrase in phrases
-        ]
+    kwargs = {}
+    if len(phrases) > 1:
+        kwargs["and_phrases"] = list(phrases[1:])
+    matched = await chunks_repo.keyword_search(
+        phrase=phrases[0],
+        book_ids=book_ids,
+        categories=categories,
+        limit=limit,
+        **kwargs,
     )
-
-    def key_of(c: dict) -> tuple:
-        page_val = c.get("page") if c.get("page") is not None else c.get("page_number")
-        return (c.get("book_id"), page_val)
-
-    common_keys = None
-    docs: dict = {}
-    for leg in per_phrase_results:
-        leg_keys = set()
-        for c in leg:
-            k = key_of(c)
-            leg_keys.add(k)
-            docs.setdefault(k, c)
-        common_keys = leg_keys if common_keys is None else (common_keys & leg_keys)
-
-    if not common_keys:
-        return []
-
-    matched = [docs[k] for k in common_keys]
-    matched.sort(key=lambda c: c.get("rank", 0.0), reverse=True)
+    matched = sorted(matched, key=lambda c: c.get("rank", 0.0), reverse=True)
     return matched[:limit]
 
 

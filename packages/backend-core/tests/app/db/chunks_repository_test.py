@@ -256,3 +256,25 @@ async def test_similarity_search_scoped_does_not_touch_ef_search():
 
     statements = [str(c.args[0]) for c in session.execute.await_args_list]
     assert not any("ef_search" in s for s in statements)
+
+
+@pytest.mark.asyncio
+async def test_keyword_search_and_phrases_requires_all_phrases_in_sql():
+    session = AsyncMock()
+    repo = ChunksRepository(session)
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = []
+    session.execute.return_value = mock_res
+
+    await repo.keyword_search("بابۇر", and_phrases=["ھىندىستان", "سەمەرقەنت"])
+
+    sql = str(session.execute.await_args_list[-1].args[0])
+    params = session.execute.await_args_list[-1].args[1]
+    assert (
+        "phraseto_tsquery('simple', :phrase)"
+        " && phraseto_tsquery('simple', :and_phrase_0)"
+        " && phraseto_tsquery('simple', :and_phrase_1)"
+    ) in sql
+    assert params["phrase"] == "بابۇر"
+    assert params["and_phrase_0"] == "ھىندىستان"
+    assert params["and_phrase_1"] == "سەمەرقەنت"
