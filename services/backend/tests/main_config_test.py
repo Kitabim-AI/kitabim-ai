@@ -36,7 +36,9 @@ async def test_get_public_config_returns_collection_page_size():
         result = await get_public_config(session=mock_session)
 
     assert result["collectionPageSize"] == 55
-    assert "appId" in result
+    # The app ID header value is a shared secret; the frontend gets it at build
+    # time (VITE_SECURITY_APP_ID) and the public config must not expose it.
+    assert "appId" not in result
 
 
 @pytest.mark.asyncio

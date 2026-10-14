@@ -7,10 +7,25 @@ from app.db.models import Bookmark
 from app.db.repositories.bookmarks_repository import BookmarksRepository
 
 
+def _session_returning_added_bookmark():
+    """create() commits, then reloads the new row with its book attached
+    (selectinload). Make that reload return the object passed to add()."""
+    session = AsyncMock()
+    added = {}
+    session.add = MagicMock(side_effect=lambda obj: added.setdefault("obj", obj))
+
+    async def execute(stmt, *args, **kwargs):
+        res = MagicMock()
+        res.scalar_one.return_value = added["obj"]
+        return res
+
+    session.execute = AsyncMock(side_effect=execute)
+    return session
+
+
 @pytest.mark.asyncio
 async def test_create_bookmark_whole_page():
-    session = AsyncMock()
-    session.add = MagicMock()
+    session = _session_returning_added_bookmark()
     repo = BookmarksRepository(session)
 
     bookmark = await repo.create(
@@ -23,12 +38,14 @@ async def test_create_bookmark_whole_page():
     assert bookmark.quote_text is None
     assert session.add.called
     assert session.commit.called
+    # The reload selects the new row so the response includes its book.
+    reload_sql = str(session.execute.await_args.args[0])
+    assert "FROM bookmarks" in reload_sql and "bookmarks.id" in reload_sql
 
 
 @pytest.mark.asyncio
 async def test_create_bookmark_with_quote():
-    session = AsyncMock()
-    session.add = MagicMock()
+    session = _session_returning_added_bookmark()
     repo = BookmarksRepository(session)
 
     bookmark = await repo.create(
@@ -73,7 +90,10 @@ async def test_rename_updates_name_when_owned():
     existing = Bookmark(id="bm1", user_id="u1", book_id="b1", page_number=1, name="Old")
     get_res = MagicMock()
     get_res.scalar_one_or_none.return_value = existing
-    session.execute.return_value = get_res
+    reload_res = MagicMock()
+    reload_res.scalar_one.return_value = existing
+    # 1st execute: ownership-checked get(); 2nd: reload with the book attached.
+    session.execute.side_effect = [get_res, reload_res]
     repo = BookmarksRepository(session)
 
     result = await repo.rename(bookmark_id="bm1", user_id="u1", name="New")
@@ -81,6 +101,7 @@ async def test_rename_updates_name_when_owned():
     assert result is not None
     assert result.name == "New"
     assert session.commit.called
+    assert session.execute.await_count == 2
 
 
 @pytest.mark.asyncio

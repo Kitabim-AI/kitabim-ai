@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 BACKEND_DIR = str(Path(__file__).resolve().parents[3])
 BACKEND_CORE_DIR = str(
@@ -92,9 +92,16 @@ async def test_list_progress_endpoint():
     row.book = Book(
         id="book-1", title="My Book", content_hash="h", cover_url="covers/book-1.jpg"
     )
+    # The real storage singleton may be the GCS provider, which needs Google
+    # credentials just to build a URL; the test only cares that the cover path
+    # is passed through.
+    fake_storage = MagicMock()
+    fake_storage.get_public_url.side_effect = (
+        lambda path: f"https://media.example/{path}"
+    )
     with _mock_repo(
         "api.endpoints.bookmarks_router.ReadingProgressRepository", "list_recent", [row]
-    ):
+    ), patch("api.endpoints.bookmarks_router.storage", fake_storage):
         response = await list_progress_endpoint(
             current_user=make_user(), session=session
         )

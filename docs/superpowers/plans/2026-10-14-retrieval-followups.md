@@ -29,7 +29,7 @@ Context: `rag_summary_narrowing_enabled = false` (direct whole-library chunk sea
 - [x] **Done 2026-10-14** (`select_balanced_chunks`). Per-book quota: "what does [author] say about X" for prolific authors gives each book ≥3 slots and can exceed 25 chunks. Allocate by relevance instead.
 - [x] **Done 2026-10-14** (`is_better_duplicate`, also in the fallback grader). Reranker dedup by (book, page) keeps the first chunk seen; keep the highest-scoring one instead.
 - [ ] Legacy prompt step 6b refers to "the relationship query modifier above", which doesn't exist. Remove it (moot if the legacy prompt is deleted).
-- [ ] Fix the already-failing tests. backend-core (6): 3 in `tests/app/db/bookmarks_repository_test.py`, 3 in `tests/app/llm/models_test.py`. services/backend (4): `bookmarks_router_test.py::test_list_progress_endpoint`, 2 in `books_router_toc_test.py`, `main_config_test.py::test_get_public_config_returns_collection_page_size`.
+- [x] **Done 2026-10-14** — all were stale tests (code had moved on), plus 5 worker failures that were hidden because `pytest services/worker/tests/` couldn't collect locally (fixed with a conftest). All suites green: backend-core 772, backend 135, worker 82. Fix the already-failing tests. backend-core (6): 3 in `tests/app/db/bookmarks_repository_test.py`, 3 in `tests/app/llm/models_test.py`. services/backend (4): `bookmarks_router_test.py::test_list_progress_endpoint`, 2 in `books_router_toc_test.py`, `main_config_test.py::test_get_public_config_returns_collection_page_size`.
 
 ## Data cleanup
 
