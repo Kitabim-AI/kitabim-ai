@@ -29,11 +29,11 @@ Context: `rag_summary_narrowing_enabled = false` (direct whole-library chunk sea
 - [ ] Per-book quota: "what does [author] say about X" for prolific authors gives each book ≥3 slots and can exceed 25 chunks. Allocate by relevance instead.
 - [ ] Reranker dedup by (book, page) keeps the first chunk seen; keep the highest-scoring one instead.
 - [ ] Legacy prompt step 6b refers to "the relationship query modifier above", which doesn't exist. Remove it (moot if the legacy prompt is deleted).
-- [ ] Fix the 6 already-failing tests: 3 in `tests/app/db/bookmarks_repository_test.py`, 3 in `tests/app/llm/models_test.py`.
+- [ ] Fix the already-failing tests. backend-core (6): 3 in `tests/app/db/bookmarks_repository_test.py`, 3 in `tests/app/llm/models_test.py`. services/backend (4): `bookmarks_router_test.py::test_list_progress_endpoint`, 2 in `books_router_toc_test.py`, `main_config_test.py::test_get_public_config_returns_collection_page_size`.
 
 ## Data cleanup
 
-- [ ] `books.categories` duplicates split category filters and browsing: zero-width-joiner variants (`ئ‍ىسلام` 1,301 chunks vs `ئىسلام`; `ئ‍ەرەبچە` vs `ئەرەبچە`) and spelling variants (`مۇۋەپپەقىيەتشۇناسلىق` / `مۇۋاپېقىيەتشۇناسلىق` / `مۇۋاپپىقىيەتشۇناسلىق`, `ماقالىلەر` / `ماقالىلار`, `نەسرلەر` / `نەسىرلەر`, `ئەدەبىي ئاخبارات` / `ئەدەبىي ئاخباراتلار`). Normalize with an UPDATE migration and strip U+200D on category input.
+- [x] **Done 2026-10-14 (migration 099 + `app/utils/categories.py`; apply 099 on prod).** `books.categories` duplicates split category filters and browsing: zero-width-joiner variants (`ئ‍ىسلام` 1,301 chunks vs `ئىسلام`; `ئ‍ەرەبچە` vs `ئەرەبچە`) and spelling variants (`مۇۋەپپەقىيەتشۇناسلىق` / `مۇۋاپېقىيەتشۇناسلىق` / `مۇۋاپپىقىيەتشۇناسلىق`, `ماقالىلەر` / `ماقالىلار`, `نەسرلەر` / `نەسىرلەر`, `ئەدەبىي ئاخبارات` / `ئەدەبىي ئاخباراتلار`). Normalize with an UPDATE migration and strip U+200D on category input.
 
 ## Not now
 

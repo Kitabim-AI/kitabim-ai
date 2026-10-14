@@ -58,6 +58,7 @@ from app.models.schemas import (
 )
 from app.models.user import User
 from app.services.storage_service import storage
+from app.utils.categories import normalize_categories
 from app.services.chunking_service import chunking_service
 from app.services.batch_llm_spell_check_service import submit_batch_llm_spell_check
 from app.utils.markdown import normalize_markdown, strip_markdown
@@ -120,14 +121,8 @@ def convert_dict_keys_to_snake(d: dict) -> dict:
 
 
 def _normalize_categories(categories: Optional[List[str]]) -> List[str]:
-    """Strip quotes and whitespace from category strings."""
-    if not categories:
-        return []
-    return [
-        c.strip().strip('"').strip()
-        for c in categories
-        if isinstance(c, str) and c.strip()
-    ]
+    """Clean category strings for API output (see app.utils.categories)."""
+    return normalize_categories(categories)
 
 
 router = APIRouter()
@@ -3072,13 +3067,10 @@ async def update_book_details(
         if match:
             book_update["cover_url"] = f"covers/{match.group(1)}"
 
-    # Normalize categories: strip quotes and filter empties
+    # Normalize categories: invisible characters, quotes, known spelling
+    # variants (app.utils.categories, mirrored by migration 099), duplicates.
     if "categories" in book_update and isinstance(book_update["categories"], list):
-        book_update["categories"] = [
-            c.strip().strip('"').strip()
-            for c in book_update["categories"]
-            if isinstance(c, str) and c.strip()
-        ]
+        book_update["categories"] = normalize_categories(book_update["categories"])
 
     # Ensure only valid column names for the Book model are passed to update
     if hasattr(BookDB, "__table__") and hasattr(BookDB.__table__, "columns"):
