@@ -171,7 +171,18 @@ def _grade_context(
             ),
             reverse=True,
         )
-        graded = all_graded_documents[:limit]
+        # Keyword hits carry `rank`, not a cosine `score`, so the sort above
+        # puts them last and a plain [:limit] would cut them. Reserve their
+        # slots, fill the rest with the best-scoring hits, keep sorted order
+        # (same rule as the reranker's candidate cap).
+        keyword_docs = [
+            d for d in all_graded_documents if d.metadata.get("rank") is not None
+        ][:limit]
+        other_docs = [
+            d for d in all_graded_documents if d.metadata.get("rank") is None
+        ][: limit - len(keyword_docs)]
+        keep = {id(d) for d in keyword_docs} | {id(d) for d in other_docs}
+        graded = [d for d in all_graded_documents if id(d) in keep]
 
         log_json(
             logger,

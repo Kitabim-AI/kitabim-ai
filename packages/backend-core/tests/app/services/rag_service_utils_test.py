@@ -361,3 +361,35 @@ async def test_build_catalog_context_author_match_includes_book_ids():
 
     assert count == 2
     assert "BookID: b-1" in ctx and "BookID: b-2" in ctx
+
+
+def test_grade_context_final_cap_keeps_keyword_hits():
+    """Keyword hits carry `rank`, not a cosine `score`; the final cap to
+    max_chunks must not sort them last and cut them (mirrors the reranker)."""
+    from app.services.chat.context_grading import _grade_context
+
+    vector_chunks = [
+        {"book_id": "b1", "page": i, "text": f"vec-{i}", "score": 0.9 - i * 0.001}
+        for i in range(30)
+    ]
+    keyword_hit = {"book_id": "b2", "page": 7, "text": "KEYWORD-HIT", "rank": 0.06}
+    observations = [
+        {
+            "tool": "search_chunks",
+            "result": {"ok": True, "data": {"chunks": vector_chunks}},
+        },
+        {
+            "tool": "search_keyword_phrase",
+            "result": {"ok": True, "data": {"chunks": [keyword_hit]}},
+        },
+    ]
+
+    graded_context, before_count, after_count = _grade_context(
+        observations, max_chunks=25
+    )
+
+    assert after_count == 25
+    assert "KEYWORD-HIT" in graded_context
+    # The best vector hit is still kept; the weakest is the one dropped.
+    assert "vec-0" in graded_context
+    assert "vec-24" not in graded_context
