@@ -179,14 +179,6 @@ class ChunksRepository(BaseRepository[Chunk]):
             if categories:
                 params["categories"] = categories
         else:
-            # Persona category filter goes INSIDE the HNSW CTE (before its
-            # LIMIT) so hnsw.iterative_scan keeps pulling candidates until
-            # enough pass it; filtering after the CTE's LIMIT would leave
-            # only the categories' share of ef_search rows.
-            inner_cat_join = "JOIN books cb ON cb.id = c.book_id" if categories else ""
-            inner_cat_filter = (
-                "AND cb.categories && CAST(:categories AS text[])" if categories else ""
-            )
             query = text(f"""
                 WITH vector_matches AS (
                     SELECT
@@ -196,9 +188,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                         c.text,
                         1 - (c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) AS similarity
                     FROM chunks c
-                    {inner_cat_join}
                     WHERE c.embedding IS NOT NULL
-                      {inner_cat_filter}
                     ORDER BY c.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))
                     LIMIT :inner_limit
                 )
@@ -216,6 +206,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 LEFT JOIN pages p ON vm.book_id = p.book_id AND vm.page_number = p.page_number
                 WHERE vm.similarity > :threshold
                   AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
+                  {cat_filter}
                 ORDER BY vm.similarity DESC
                 LIMIT :limit
             """)
@@ -234,13 +225,6 @@ class ChunksRepository(BaseRepository[Chunk]):
             await self.session.execute(
                 text(f"SET LOCAL hnsw.ef_search = {int(inner_limit)}")
             )
-            if categories:
-                # pgvector >= 0.8 (prod: 0.8.1): keep scanning the HNSW graph
-                # until enough rows pass the category filter instead of
-                # stopping at ef_search candidates.
-                await self.session.execute(
-                    text("SET LOCAL hnsw.iterative_scan = relaxed_order")
-                )
 
         result = await self.session.execute(query, params)
         rows = result.fetchall()

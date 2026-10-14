@@ -637,10 +637,7 @@ flowchart TD
    over-fetch limit × 8 (capped at 1000) candidates and SET LOCAL
    hnsw.ef_search to match, because HNSW returns at most ef_search rows
    (pgvector default 40) and the TOC/threshold/category filters run after
-   the index scan. With a persona category filter, the filter is joined
-   inside the HNSW CTE (before its LIMIT) and SET LOCAL
-   hnsw.iterative_scan = relaxed_order (pgvector >= 0.8; prod runs 0.8.1)
-   keeps the index scanning until enough rows pass the filter.
+   the index scan.
 5. IF zero chunks came back, retry the same shape with threshold=0.0.
 6. Dev-only: still zero, book_ids present, and settings.environment !=
    "production" → fuzzy-match the question's ≥3-char tokens against

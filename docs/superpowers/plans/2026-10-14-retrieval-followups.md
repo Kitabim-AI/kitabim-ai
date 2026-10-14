@@ -15,7 +15,7 @@ Context: `rag_summary_narrowing_enabled = false` (direct whole-library chunk sea
 ## 2. Small PR: search correctness
 
 - [x] Check prod pgvector version: `SELECT extversion FROM pg_extension WHERE extname='vector';` → **0.8.1**
-- [x] If ≥ 0.8: `SET LOCAL hnsw.iterative_scan = relaxed_order` for library-wide searches with a persona category filter (`ChunksRepository.similarity_search`). Done: the category filter also moved inside the HNSW CTE, otherwise the iterative scan has no effect. After deploy, check on prod with `EXPLAIN` that a category-filtered query still uses `idx_chunks_embedding`.
+- [ ] Persona category filters on library-wide search. **Reverted 2026-10-14:** iterative scan (filter inside the HNSW CTE + `hnsw.iterative_scan = relaxed_order`) took 24.9 s on prod — it pulled 20,477 index rows (~1.2 ms each, heap reads) to find 200 in the history categories. Back to filtering the 200 HNSW candidates afterwards (fast, but few results for narrow personas). Needs a different design — see options in the conversation: cap `hnsw.max_scan_tuples`, route narrow categories to an exact scan over their books, or partial HNSW indexes per persona.
 - [x] Fallback grader (`_grade_context`, `services/chat/context_grading.py`): stop the final cut to 25 from dropping keyword hits. Same fix as the reranker.
 - [x] `keyword_search`: run on its own DB session so its `SET LOCAL statement_timeout = '5000'` doesn't leak into later vector searches in the same turn.
 
