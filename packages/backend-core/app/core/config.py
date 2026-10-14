@@ -200,6 +200,11 @@ class Settings:
     cache_ttl_system_config: int = int(os.getenv("CACHE_TTL_SYSTEM_CONFIG", "600"))
     cache_ttl_categories: int = int(os.getenv("CACHE_TTL_CATEGORIES", "900"))
     cache_ttl_rag_query: int = int(os.getenv("CACHE_TTL_RAG_QUERY", "3600"))
+    # How long a word's "share of books mentioning it" is cached for the
+    # one-word title filter in find_books_by_title.
+    cache_ttl_title_word_share: int = int(
+        os.getenv("CACHE_TTL_TITLE_WORD_SHARE", "86400")
+    )
     cache_ttl_user_profile: int = int(os.getenv("CACHE_TTL_USER_PROFILE", "300"))
     cache_ttl_stats: int = int(os.getenv("CACHE_TTL_STATS", "120"))
     cache_ttl_summary_search: int = int(os.getenv("CACHE_TTL_SUMMARY_SEARCH", "1800"))

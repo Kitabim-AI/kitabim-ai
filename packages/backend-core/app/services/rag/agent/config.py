@@ -24,3 +24,11 @@ RERANK_MAX_INPUT_CHUNKS = 50
 # to all books. Prevents stale context from poisoning topic-switch queries.
 # Calibrated from observed scores: good match ≈ 0.65+, topic mismatch < 0.50.
 CONTEXT_SWITCH_SCORE_THRESHOLD = 0.55
+
+# ── One-word title filter (find_books_by_title) ───────────────────────────────
+# A one-word title matched by a multi-word question is dropped only when the
+# word is an everyday word: it appears in at least this share of the books that
+# have page text. Measured 2026-10-13 on 633 books: everyday words sit at
+# 30-100% (ھايات, ئۇيغۇرلار, گۇگۇم), distinctive titles at 0-20%
+# (قۇتادغۇبىلىك 14%, بابۇرنامە 7%).
+SINGLE_WORD_TITLE_MAX_BOOK_SHARE = 0.25

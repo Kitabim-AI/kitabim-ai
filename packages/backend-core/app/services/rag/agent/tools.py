@@ -14,6 +14,9 @@ import httpx
 from sqlalchemy.exc import DBAPIError, OperationalError
 from google.adk.tools import ToolContext
 
+from app.core import cache_config
+from app.core.config import settings
+from app.services.cache_service import cache_service
 from app.services.rag.context import QueryContext, get_current_query_context
 from app.services.rag.keywords import CURRENT_BOOK_KEYWORDS
 from app.services.rag.retrieval import (
@@ -983,6 +986,68 @@ async def _run_get_current_page(ctx: QueryContext) -> dict:
     return {"context": context}
 
 
+async def _title_is_common_word(word: str) -> bool:
+    """True when *word* is an everyday word rather than a distinctive title:
+    it appears in at least SINGLE_WORD_TITLE_MAX_BOOK_SHARE of the books that
+    have page text. Counts are cached in Redis (cache_ttl_title_word_share).
+    Any lookup failure returns True — the safe answer, matching the old
+    behavior of always dropping one-word title matches.
+    """
+    import hashlib
+
+    from app.db import session as db_session
+    from app.db.repositories.pages_repository import PagesRepository
+    from app.services.rag.agent.config import SINGLE_WORD_TITLE_MAX_BOOK_SHARE
+
+    word_key = cache_config.KEY_RAG_WORD_BOOK_COUNT.format(
+        hash=hashlib.md5(word.encode("utf-8"), usedforsecurity=False).hexdigest()
+    )
+    total_key = cache_config.KEY_RAG_BOOKS_WITH_TEXT
+    try:
+        mentioning = await cache_service.get(word_key)
+        total = await cache_service.get(total_key)
+        if mentioning is None or total is None:
+            # Own session: count_books_mentioning runs SET LOCAL
+            # statement_timeout, which must not leak into ctx.session.
+            # Read the factory at call time — it is None until init_db() runs
+            # at startup, so a module-level import would capture None.
+            async with db_session.async_session_factory() as session:
+                repo = PagesRepository(session)
+                if total is None:
+                    total = await repo.count_books_with_text()
+                    await cache_service.set(
+                        total_key, total, ttl=settings.cache_ttl_title_word_share
+                    )
+                if mentioning is None:
+                    mentioning = await repo.count_books_mentioning(word)
+                    await cache_service.set(
+                        word_key, mentioning, ttl=settings.cache_ttl_title_word_share
+                    )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.WARNING,
+            "Title word-frequency lookup failed; treating as common word",
+            word=word[:60],
+            error=str(exc) or type(exc).__name__,
+        )
+        return True
+
+    if not total:
+        return True
+    share = int(mentioning) / int(total)
+    log_json(
+        logger,
+        logging.INFO,
+        "One-word title frequency check",
+        word=word[:60],
+        books_mentioning=int(mentioning),
+        books_with_text=int(total),
+        share=round(share, 3),
+    )
+    return share >= SINGLE_WORD_TITLE_MAX_BOOK_SHARE
+
+
 async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
     question = args.get("question", "")
     if not hasattr(ctx, "_title_cache"):
@@ -1003,10 +1068,12 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
     )
     result = books or []
 
-    # Filter out single-word false positive matches if the query is a multi-word search
+    # Filter out single-word false positive matches if the query is a multi-word
+    # search — but only when the title is an everyday word (e.g. ھايات). A
+    # distinctive one-word title (e.g. قۇتادغۇبىلىك) is a real match.
     if result and len(result) == 1 and len(result[0]["title"].split()) == 1:
         q_words = [w for w in question.strip().split() if len(w) >= 3]
-        if len(q_words) >= 3:
+        if len(q_words) >= 3 and await _title_is_common_word(result[0]["title"]):
             result = []
 
     # Fallback to custom fuzzy keyword matching if strict title in question matching returned nothing

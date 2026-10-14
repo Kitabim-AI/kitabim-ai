@@ -1067,3 +1067,109 @@ async def test_global_search_chunks_with_invented_id_searches_whole_library():
         )
 
     assert calls == [None]
+
+
+# ── One-word title filter: keep distinctive one-word titles (e.g. قۇتادغۇبىلىك),
+# drop everyday words (e.g. ھايات) that match by accident. ─────────────────────
+
+_LONG_QUESTION = "قۇتادغۇبىلىكتە قىز پەرزەنت ھەققىدە قانداق سەلبى مەزمۇنلار بار؟"
+
+
+def _title_ctx():
+    ctx = _global_ctx()
+    res = MagicMock()
+    res.fetchall.return_value = []
+    ctx.session.execute = AsyncMock(return_value=res)
+    return ctx
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_common, expected_count", [(False, 1), (True, 0)])
+async def test_one_word_title_kept_unless_common(is_common, expected_count):
+    from app.services.rag.agent import tools as agent_tools
+
+    book = {"id": "kb1", "title": "قۇتادغۇبىلىك", "author": "A", "volume": None}
+    with (
+        patch.object(
+            agent_tools,
+            "find_books_by_title_in_question",
+            AsyncMock(return_value=[book]),
+        ),
+        patch.object(
+            agent_tools, "_title_is_common_word", AsyncMock(return_value=is_common)
+        ),
+    ):
+        result = await agent_tools._run_find_books_by_title(
+            {"question": _LONG_QUESTION}, _title_ctx()
+        )
+
+    assert len(result) == expected_count
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mentioning, total, expected",
+    [
+        (89, 633, False),
+        (308, 633, True),
+        (159, 633, True),
+        (158, 633, False),
+        (0, 0, True),
+    ],
+)
+async def test_title_is_common_word_uses_book_share(mentioning, total, expected):
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.pages_repository import PagesRepository
+
+    with (
+        patch.object(agent_tools.cache_service, "get", AsyncMock(return_value=None)),
+        patch.object(agent_tools.cache_service, "set", AsyncMock()),
+        patch.object(
+            PagesRepository,
+            "count_books_mentioning",
+            AsyncMock(return_value=mentioning),
+        ),
+        patch.object(
+            PagesRepository, "count_books_with_text", AsyncMock(return_value=total)
+        ),
+        patch("app.db.session.async_session_factory", MagicMock()),
+    ):
+        assert await agent_tools._title_is_common_word("word") is expected
+
+
+@pytest.mark.asyncio
+async def test_title_is_common_word_treats_lookup_failure_as_common():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.pages_repository import PagesRepository
+
+    with (
+        patch.object(agent_tools.cache_service, "get", AsyncMock(return_value=None)),
+        patch.object(
+            PagesRepository,
+            "count_books_mentioning",
+            AsyncMock(side_effect=TimeoutError("statement timeout")),
+        ),
+        patch.object(
+            PagesRepository, "count_books_with_text", AsyncMock(return_value=633)
+        ),
+        patch("app.db.session.async_session_factory", MagicMock()),
+    ):
+        assert await agent_tools._title_is_common_word("word") is True
+
+
+@pytest.mark.asyncio
+async def test_title_is_common_word_uses_cache():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.pages_repository import PagesRepository
+
+    mentioning = AsyncMock()
+
+    async def fake_get(key):
+        return 633 if key.endswith(":total") else 89
+
+    with (
+        patch.object(agent_tools.cache_service, "get", fake_get),
+        patch.object(PagesRepository, "count_books_mentioning", mentioning),
+    ):
+        assert await agent_tools._title_is_common_word("قۇتادغۇبىلىك") is False
+    mentioning.assert_not_awaited()
