@@ -3,6 +3,16 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QuestionDetailModal } from '@/src/components/admin/QuestionDetailModal';
 
+// Stub the reference viewer: it fetches book pages, and these tests only care
+// that a citation click opens it with the right book and pages.
+vi.mock('@/src/components/chat/ReferenceModal', () => ({
+  ReferenceModal: (props: { bookId: string; pageNumbers: number[]; isGraph?: boolean }) => (
+    <div data-testid="reference-modal">
+      {props.bookId}:{props.pageNumbers.join(',')}:{props.isGraph ? 'graph' : 'book'}
+    </div>
+  ),
+}));
+
 const mockQuestion = {
   id: 1,
   question: 'ئۇيغۇر تارىخى ھەققىدە سۆزلەپ بېرىڭ',
@@ -108,4 +118,51 @@ describe('QuestionDetailModal', () => {
 
     expect(screen.getByText('share.copyContent')).toBeInTheDocument();
   });
+
+  it('opens the reference viewer when a citation in the answer is clicked', () => {
+    const onClose = vi.fn();
+    render(
+      <QuestionDetailModal
+        question={{ ...mockQuestion, answer: 'جاۋاب [مەنبە، 12-بەت](ref:book-9:12,13)' }}
+        onClose={onClose}
+      />
+    );
+
+    expect(screen.queryByTestId('reference-modal')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'مەنبە، 12-بەت' }));
+
+    expect(screen.getByTestId('reference-modal')).toHaveTextContent('book-9:12,13:book');
+  });
+
+  it('passes knowledge-graph citations through as graph references', () => {
+    render(
+      <QuestionDetailModal
+        question={{ ...mockQuestion, answer: 'جاۋاب [بىلىم گىرافى](ref:graph:book-9:4)' }}
+        onClose={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'بىلىم گىرافى' }));
+
+    expect(screen.getByTestId('reference-modal')).toHaveTextContent('book-9:4:graph');
+  });
+
+  it('Escape closes the open reference first, then the question modal', () => {
+    const onClose = vi.fn();
+    render(
+      <QuestionDetailModal
+        question={{ ...mockQuestion, answer: 'جاۋاب [مەنبە](ref:book-9:12)' }}
+        onClose={onClose}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'مەنبە' }));
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('reference-modal')).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
+

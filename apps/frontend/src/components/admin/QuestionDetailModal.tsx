@@ -20,6 +20,7 @@ import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nContext';
 import { formatAnswerCost } from '../../utils/costUtils';
 import { MarkdownContent } from '../common/MarkdownContent';
+import { ReferenceModal } from '../chat/ReferenceModal';
 import { ShareChatModal } from '../share/ShareChatModal';
 
 export interface RagQuestionDetail {
@@ -76,16 +77,37 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  // Citation clicked in the answer — opens the same reference viewer as chat.
+  const [selectedReference, setSelectedReference] = useState<{
+    bookId: string;
+    pageNums: number[];
+    isGraph?: boolean;
+    graphQuery?: string;
+  } | null>(null);
+
+  const handleReferenceClick = (
+    bookId: string,
+    pageNums: number[],
+    isGraph?: boolean,
+    graphQuery?: string
+  ) => {
+    setSelectedReference({ bookId, pageNums, isGraph, graphQuery });
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        // An open reference viewer sits on top: close it, not the question.
+        if (selectedReference) {
+          setSelectedReference(null);
+        } else {
+          onClose();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, selectedReference]);
 
   const handleCopyAnswer = async () => {
     if (!question.answer) return;
@@ -244,7 +266,10 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
 
             {question.answer ? (
               <div className="bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4 sm:p-6 text-slate-800 dark:text-slate-100 text-sm sm:text-base uyghur-text leading-relaxed select-text shadow-xs">
-                <MarkdownContent content={question.answer} />
+                <MarkdownContent
+                  content={question.answer}
+                  onReferenceClick={handleReferenceClick}
+                />
               </div>
             ) : (
               <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-950/30 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 dark:text-slate-500 text-sm uyghur-text">
@@ -374,6 +399,17 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
           bookId={question.bookId || undefined}
           bookTitle={question.bookTitle || undefined}
           onClose={() => setShowShare(false)}
+        />
+      )}
+
+      {selectedReference && (
+        <ReferenceModal
+          isOpen={!!selectedReference}
+          onClose={() => setSelectedReference(null)}
+          bookId={selectedReference.bookId}
+          pageNumbers={selectedReference.pageNums}
+          isGraph={selectedReference.isGraph}
+          graphQuery={selectedReference.graphQuery}
         />
       )}
     </div>,
