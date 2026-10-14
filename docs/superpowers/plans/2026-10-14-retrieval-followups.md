@@ -25,9 +25,9 @@ Context: `rag_summary_narrowing_enabled = false` (direct whole-library chunk sea
 
 ## 4. Lower priority
 
-- [ ] Exact-phrase leg (`exact_phrase_chunk_search`): multiple quoted phrases run `keyword_search` concurrently via `asyncio.gather` on ONE session, which asyncpg doesn't allow; give each phrase its own session (the agent's keyword tool already does).
-- [ ] Per-book quota: "what does [author] say about X" for prolific authors gives each book ≥3 slots and can exceed 25 chunks. Allocate by relevance instead.
-- [ ] Reranker dedup by (book, page) keeps the first chunk seen; keep the highest-scoring one instead.
+- [x] **Done 2026-10-14** (also fixed: per-phrase top-10s were intersected in Python and missed pages; the AND now runs in SQL). Exact-phrase leg (`exact_phrase_chunk_search`): multiple quoted phrases run `keyword_search` concurrently via `asyncio.gather` on ONE session, which asyncpg doesn't allow; give each phrase its own session (the agent's keyword tool already does).
+- [x] **Done 2026-10-14** (`select_balanced_chunks`). Per-book quota: "what does [author] say about X" for prolific authors gives each book ≥3 slots and can exceed 25 chunks. Allocate by relevance instead.
+- [x] **Done 2026-10-14** (`is_better_duplicate`, also in the fallback grader). Reranker dedup by (book, page) keeps the first chunk seen; keep the highest-scoring one instead.
 - [ ] Legacy prompt step 6b refers to "the relationship query modifier above", which doesn't exist. Remove it (moot if the legacy prompt is deleted).
 - [ ] Fix the already-failing tests. backend-core (6): 3 in `tests/app/db/bookmarks_repository_test.py`, 3 in `tests/app/llm/models_test.py`. services/backend (4): `bookmarks_router_test.py::test_list_progress_endpoint`, 2 in `books_router_toc_test.py`, `main_config_test.py::test_get_public_config_returns_collection_page_size`.
 

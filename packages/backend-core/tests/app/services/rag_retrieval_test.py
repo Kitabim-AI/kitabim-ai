@@ -501,3 +501,55 @@ async def test_run_exact_phrase_retrieval_uses_its_own_session():
         )
 
     assert used == [own_session]
+
+
+def _book_chunks(book_id, sims):
+    return [
+        {
+            "book_id": book_id,
+            "page_number": i,
+            "similarity": s,
+            "text": f"{book_id}-{i}",
+        }
+        for i, s in enumerate(sims)
+    ]
+
+
+def test_select_balanced_chunks_three_books_each_get_floor_then_fill_by_score():
+    from app.services.rag.retrieval import select_balanced_chunks
+
+    strong = _book_chunks("A", [0.9 - i * 0.01 for i in range(25)])
+    weak_b = _book_chunks("B", [0.5 - i * 0.01 for i in range(10)])
+    weak_c = _book_chunks("C", [0.4 - i * 0.01 for i in range(10)])
+
+    picked = select_balanced_chunks([strong, weak_b, weak_c], top_k=25)
+
+    by_book = {b: sum(1 for c in picked if c["book_id"] == b) for b in "ABC"}
+    assert len(picked) == 25
+    assert by_book == {"A": 19, "B": 3, "C": 3}
+    sims = [c["similarity"] for c in picked]
+    assert sims == sorted(sims, reverse=True)
+
+
+def test_select_balanced_chunks_many_books_capped_at_top_k():
+    """A prolific author's 30 books used to yield up to 90 chunks."""
+    from app.services.rag.retrieval import select_balanced_chunks
+
+    books = [_book_chunks(f"b{i}", [0.3 + i * 0.01, 0.2, 0.1]) for i in range(30)]
+
+    picked = select_balanced_chunks(books, top_k=25)
+
+    assert len(picked) == 25
+    # One chunk per book, from the 25 books with the strongest best match.
+    assert len({c["book_id"] for c in picked}) == 25
+    assert {c["book_id"] for c in picked} == {f"b{i}" for i in range(5, 30)}
+
+
+def test_select_balanced_chunks_returns_everything_when_under_top_k():
+    from app.services.rag.retrieval import select_balanced_chunks
+
+    picked = select_balanced_chunks(
+        [_book_chunks("A", [0.9, 0.8]), _book_chunks("B", [0.7]), []], top_k=25
+    )
+
+    assert [c["text"] for c in picked] == ["A-0", "A-1", "B-0"]

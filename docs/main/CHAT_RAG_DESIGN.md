@@ -622,8 +622,11 @@ flowchart TD
    KEY_RAG_SEARCH_MULTI (hashing the sorted book IDs plus a category
    hash). On a hit, return it.
 4. For more than one book, run one _search_book_isolated per book
-   concurrently with per_book_limit = max(rag_vector_top_k // n_books, 3)
-   and merge, sorting by similarity; a single global top-K would let the
+   concurrently (limit = rag_vector_top_k each) and merge with
+   select_balanced_chunks: every book keeps its best
+   min(3, max(1, rag_vector_top_k // n_books)) chunks, remaining slots go to
+   the best chunks overall, total capped at rag_vector_top_k (with more books
+   than slots, the strongest-matching books win); a single global top-K would let the
    highest-scoring book crowd the others out. Each per-book call opens
    its OWN `async_session_factory()` session rather than sharing
    ctx.session — the single shared connection was serializing what
@@ -739,7 +742,7 @@ flowchart TD
 
 | Key | Default | Used by |
 |---|---|---|
-| `rag_vector_top_k` (`system_configs`) / `settings.rag_top_k` (env `RAG_TOP_K`, `app/core/config.py`) | `"25"` seeded in `app/db/seeds.py`; env/code default **`25`** (verified in `config.py`) | Renamed from `rag_top_k` (see `rag_keyword_top_k` / `rag_graph_top_k` below for the other two legs' independent caps). `vector_search` (per-call `limit`, and `max(rag_vector_top_k // n_books, 3)` per book on multi-book searches; also the Quran merge cap) and `ChatOrchestrator`'s `max_chunks` for rerank/grade. The DB key wins; `settings.rag_top_k` (the env var name itself was not renamed) is the fallback when the key is absent or unparseable. |
+| `rag_vector_top_k` (`system_configs`) / `settings.rag_top_k` (env `RAG_TOP_K`, `app/core/config.py`) | `"25"` seeded in `app/db/seeds.py`; env/code default **`25`** (verified in `config.py`) | Renamed from `rag_top_k` (see `rag_keyword_top_k` / `rag_graph_top_k` below for the other two legs' independent caps). `vector_search` (per-call `limit`, and the total cap on multi-book searches, where each book is guaranteed `min(3, max(1, rag_vector_top_k // n_books))` chunks via `select_balanced_chunks`; also the Quran merge cap) and `ChatOrchestrator`'s `max_chunks` for rerank/grade. The DB key wins; `settings.rag_top_k` (the env var name itself was not renamed) is the fallback when the key is absent or unparseable. |
 | `rag_keyword_top_k` (`system_configs`) | `"10"` (seeded) | `ChatOrchestrator`'s exact-phrase leg only: caps `run_exact_phrase_retrieval`'s `exact_phrase_chunk_search` call, independent of `rag_vector_top_k`. Falls back to the literal `10` on a missing/unparseable value. |
 | `rag_graph_top_k` (`system_configs`) | `"10"` (seeded) | `_run_search_chunks`'s `graph_entity_lookup(query, top_k=...)` call — caps knowledge-graph facts fed into RAG context per turn, highest-scoring first. Falls back to `10` on a missing/unparseable value. |
 | `settings.rag_score_threshold` (env `RAG_SCORE_THRESHOLD`) | `0.50` | Minimum cosine similarity for `ChunksRepository.similarity_search` and for Quran ayah inclusion. Raising it trades recall for precision; a zero-hit result is automatically retried at `threshold=0.0`, so it mostly controls *ordering pressure* rather than hard availability. |

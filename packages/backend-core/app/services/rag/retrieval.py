@@ -178,6 +178,35 @@ async def agent_keyword_search(
         )
 
 
+def select_balanced_chunks(
+    per_book_results: List[List[dict]], top_k: int
+) -> List[dict]:
+    """Pick at most *top_k* chunks from several books' search results.
+
+    Each book is guaranteed its best min(3, max(1, top_k // n_books)) chunks,
+    so a "compare A, B and C" question still sees every book; the remaining
+    slots go to the best chunks overall, whichever book they come from. With
+    more books than slots, the books with the strongest matches win. Returned
+    sorted by similarity, best first.
+    """
+    books = list(per_book_results)
+    if not books or top_k <= 0:
+        return []
+
+    def sim(c: dict) -> float:
+        return c.get("similarity", 0.0)
+
+    floor = min(3, max(1, top_k // len(books)))
+    ranked = [sorted(r, key=sim, reverse=True) for r in books]
+    guaranteed = sorted((c for r in ranked for c in r[:floor]), key=sim, reverse=True)
+    if len(guaranteed) >= top_k:
+        return guaranteed[:top_k]
+    rest = sorted((c for r in ranked for c in r[floor:]), key=sim, reverse=True)
+    picked = guaranteed + rest[: top_k - len(guaranteed)]
+    picked.sort(key=sim, reverse=True)
+    return picked
+
+
 async def vector_search(
     ctx: "QueryContext",
     book_ids: Optional[List[str]],
@@ -267,30 +296,25 @@ async def vector_search(
         top_results = await cache_service.get(search_cache_key)
         if top_results is None:
             if len(sorted_book_ids) > 1:
-                # Multi-book named-title questions (e.g. "compare book A, B
-                # and C") would otherwise compete for one global top-K ranked
-                # across every book's chunks combined — whichever book scores
-                # highest can crowd out the others entirely. Guarantee each
-                # named book a minimum slice instead of letting a single
-                # embedding-similarity ranking decide.
-                per_book_limit = max(rag_top_k // len(sorted_book_ids), 3)
+                # Multi-book searches (e.g. "compare book A, B and C", or an
+                # author's books) would otherwise compete for one global top-K
+                # ranked across every book's chunks combined — whichever book
+                # scores highest can crowd out the others entirely. Each book
+                # gets a guaranteed floor, the rest goes by score, and the
+                # total stays at rag_top_k (select_balanced_chunks). Fetching
+                # rag_top_k per book costs nothing extra: a scoped search
+                # scans the whole book either way.
                 per_book_results = await asyncio.gather(
                     *[
                         _search_book_isolated(
                             bid,
-                            limit=per_book_limit,
+                            limit=rag_top_k,
                             threshold=settings.rag_score_threshold,
                         )
                         for bid in sorted_book_ids
                     ]
                 )
-                similar_chunks = [
-                    chunk for chunks in per_book_results for chunk in chunks
-                ]
-                similar_chunks.sort(
-                    key=lambda c: c.get("similarity", 0.0),
-                    reverse=True,
-                )
+                similar_chunks = select_balanced_chunks(per_book_results, rag_top_k)
             else:
                 similar_chunks = await chunks_repo.similarity_search(
                     query_embedding=effective_vector,
@@ -307,24 +331,17 @@ async def vector_search(
                 # matching chunks are retrieved instead of an empty turn. Applies to both
                 # book-scoped and global (book_ids=None) searches.
                 if len(sorted_book_ids) > 1:
-                    per_book_limit = max(rag_top_k // len(sorted_book_ids), 3)
                     per_book_results = await asyncio.gather(
                         *[
                             _search_book_isolated(
                                 bid,
-                                limit=per_book_limit,
+                                limit=rag_top_k,
                                 threshold=0.0,
                             )
                             for bid in sorted_book_ids
                         ]
                     )
-                    similar_chunks = [
-                        chunk for chunks in per_book_results for chunk in chunks
-                    ]
-                    similar_chunks.sort(
-                        key=lambda c: c.get("similarity", 0.0),
-                        reverse=True,
-                    )
+                    similar_chunks = select_balanced_chunks(per_book_results, rag_top_k)
                 else:
                     similar_chunks = await chunks_repo.similarity_search(
                         query_embedding=effective_vector,

@@ -326,7 +326,9 @@ async def test_vector_search_multi_book_guarantees_per_book_quota(monkeypatch):
         query_embedding, book_ids, categories, limit, threshold
     ):
         assert book_ids is not None and len(book_ids) == 1
-        assert limit == 8  # rag_top_k(25) // 3 books
+        # Each book fetches up to rag_top_k; select_balanced_chunks then
+        # guarantees every book a floor and caps the total.
+        assert limit == 25
         return book_results[book_ids[0]]
 
     mock_factory = MagicMock()
