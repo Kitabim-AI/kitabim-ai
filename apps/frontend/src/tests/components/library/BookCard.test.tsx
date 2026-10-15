@@ -39,10 +39,19 @@ test('BookCard handles click event', () => {
   expect(onClick).toHaveBeenCalledWith(mockBook);
 });
 
-test('BookCard shows processing state', () => {
+test('BookCard hides the ready-only summary and share actions while processing', () => {
+  // Pipeline status is shown in the admin view, not on the library card; the
+  // card's only processing-specific behaviour is withholding these actions.
   const processingBook: Book = { ...mockBook, status: 'ocr_processing', pipelineStep: 'ocr' };
   render(<BookCard book={processingBook} onClick={vi.fn()} />);
 
-  // In the new system, it shows the pipeline step name (translated)
-  expect(screen.getByText(/ocr/i)).toBeInTheDocument();
+  expect(screen.queryByTitle('bookCard.summary.title')).not.toBeInTheDocument();
+  expect(screen.queryByTitle('share.shareBook')).not.toBeInTheDocument();
+});
+
+test('BookCard shows the summary and share actions for a ready book', () => {
+  render(<BookCard book={{ ...mockBook, status: 'ready' }} onClick={vi.fn()} />);
+
+  expect(screen.getByTitle('bookCard.summary.title')).toBeInTheDocument();
+  expect(screen.getByTitle('share.shareBook')).toBeInTheDocument();
 });

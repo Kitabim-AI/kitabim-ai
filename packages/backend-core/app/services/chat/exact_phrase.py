@@ -18,7 +18,6 @@ from app.services.rag.retrieval import exact_phrase_chunk_search
 
 
 async def run_exact_phrase_retrieval(
-    session,
     phrase_intent: PhraseIntent,
     book_ids: Optional[List[str]],
     categories: Optional[List[str]],
@@ -31,23 +30,31 @@ async def run_exact_phrase_retrieval(
     exact-phrase questions.
 
     Returns (raw_hits, observation).
+
+    Runs on its own session: keyword_search sets SET LOCAL work_mem /
+    statement_timeout, which on the request session would stay in force for
+    the rest of the turn. The factory is read at call time — it is None until
+    init_db() runs at startup.
     """
-    chunks_repo = get_vector_store(session)
-    hits = await exact_phrase_chunk_search(
-        chunks_repo,
-        phrase_intent.phrases,
-        book_ids=book_ids,
-        categories=categories,
-        limit=limit,
-    )
-    if not hits and book_ids is not None and is_global:
+    from app.db import session as db_session
+
+    async with db_session.async_session_factory() as phrase_session:
+        chunks_repo = get_vector_store(phrase_session)
         hits = await exact_phrase_chunk_search(
             chunks_repo,
             phrase_intent.phrases,
-            book_ids=None,
+            book_ids=book_ids,
             categories=categories,
             limit=limit,
         )
+        if not hits and book_ids is not None and is_global:
+            hits = await exact_phrase_chunk_search(
+                chunks_repo,
+                phrase_intent.phrases,
+                book_ids=None,
+                categories=categories,
+                limit=limit,
+            )
     chunks = [
         {
             "book_id": h.get("book_id"),

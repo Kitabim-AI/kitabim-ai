@@ -80,6 +80,18 @@ def _extract_effective_question(question: str, observations: list[dict]) -> str:
     return question
 
 
+def _parse_bool_config(value: Optional[str], default: bool) -> bool:
+    """Parse a 'true'/'false' system_config value; anything else → default."""
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    return default
+
+
 def _format_short_work_answer(match: ShortWorkMatch) -> str:
     """Format a resolved ToC short-work match as the final answer directly —
     no LLM call, so no risk of the model refusing or hedging on reproducing
@@ -277,6 +289,10 @@ class ChatOrchestrator:
         )
         ctx.cost_tracker.set_pricing(pricing_map, fallback_price)
         set_current_query_context(ctx)
+        ctx.summary_narrowing_enabled = _parse_bool_config(
+            await configs_repo.get_value("rag_summary_narrowing_enabled", "true"),
+            default=True,
+        )
 
         # 2. Phrase-intent gate (keyword-search-rework-plan.md Phase 1):
         # A quoted / explicit-exact-phrase question checks the DB catalog first.
@@ -405,7 +421,6 @@ class ChatOrchestrator:
                 rag_keyword_top_k = _EXACT_PHRASE_DEFAULT_LIMIT
 
             hits, observation = await run_exact_phrase_retrieval(
-                db_session,
                 phrase_intent,
                 book_ids=ctx.context_book_ids,
                 categories=ctx.character_categories or None,
@@ -459,9 +474,16 @@ class ChatOrchestrator:
                     agent_session_recent_events = _AGENT_SESSION_RECENT_EVENTS_DEFAULT
 
                 # 3. Retrieval Agent Execution
+                log_json(
+                    logger,
+                    logging.INFO,
+                    "Retrieval agent mode",
+                    summary_narrowing=ctx.summary_narrowing_enabled,
+                )
                 retrieval_agent = build_retrieval_agent(
                     model=agent_model,
                     intent_signals=signals,
+                    summary_narrowing_enabled=ctx.summary_narrowing_enabled,
                 )
 
                 # Runner configuration

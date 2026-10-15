@@ -258,6 +258,11 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Maximum number of knowledge-graph facts fed into RAG context per turn, highest-scoring first.",
         },
         {
+            "key": "rag_summary_narrowing_enabled",
+            "value": "false",
+            "description": 'When true, the chat retrieval agent first narrows content questions to ~30 books by book-summary similarity (search_books_by_summary) before chunk search. When false, it searches chunks across the whole library directly. get_book_summary for "what is this book about" questions is unaffected.',
+        },
+        {
             "key": "toc_short_work_max_pages",
             "value": "10",
             "description": "Maximum page span a table-of-contents entry may cover to be treated as a lookup-able short work (poem, song) by the ToC-based retrieval shortcut. Entries spanning more pages than this are left to the normal retrieval agent instead. Also caps how much page content is fetched/sent to the LLM for a matched entry — content beyond the cap is truncated with a note rather than dropped silently.",

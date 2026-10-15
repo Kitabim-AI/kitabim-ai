@@ -299,3 +299,142 @@ def test_is_who_is_query():
     assert is_who_is_query("ئانا يۇرت كىمنىڭ؟") is False
     assert is_who_is_query("ئانا يۇرت رومانى قاچان يېزىلغان؟") is False
     assert is_who_is_query("ئالىم دېگەن ئىسىم مەنىسى نېمە؟") is False
+
+
+@pytest.mark.asyncio
+async def test_build_catalog_context_title_match_includes_book_ids():
+    """The retrieval agent scopes search_chunks with book IDs it copies from
+    tool output — without an ID here it invents one and gets 0 results."""
+    session = AsyncMock()
+    mock_titles = MagicMock()
+    mock_titles.fetchall.return_value = [("قۇتادغۇبىلىك",)]
+    mock_books = MagicMock()
+    mock_books.fetchall.return_value = [
+        MagicMock(
+            id="abc123def456",
+            title="قۇتادغۇبىلىك",
+            author="يۈسۈپ خاس ھاجىپ",
+            volume=None,
+            total_pages=900,
+            status="ready",
+        )
+    ]
+    session.execute.side_effect = [mock_titles, mock_books]
+
+    ctx, count = await CatalogHandler._build_catalog_context("قۇتادغۇبىلىك", session)
+
+    assert count == 1
+    assert "BookID: abc123def456" in ctx
+
+
+@pytest.mark.asyncio
+async def test_build_catalog_context_author_match_includes_book_ids():
+    session = AsyncMock()
+    no_titles = MagicMock()
+    no_titles.fetchall.return_value = []
+    authors = MagicMock()
+    authors.fetchall.return_value = [("زوردۇن سابىر",)]
+    books = MagicMock()
+    books.fetchall.return_value = [
+        MagicMock(
+            id="b-1",
+            title="ئانا يۇرت",
+            author="زوردۇن سابىر",
+            volume=1,
+            total_pages=500,
+            status="ready",
+        ),
+        MagicMock(
+            id="b-2",
+            title="ئانا يۇرت",
+            author="زوردۇن سابىر",
+            volume=2,
+            total_pages=480,
+            status="ready",
+        ),
+    ]
+    session.execute.side_effect = [no_titles, authors, books]
+
+    ctx, count = await CatalogHandler._build_catalog_context(
+        "زوردۇن سابىر نېمىلەرنى يازغان؟", session
+    )
+
+    assert count == 2
+    assert "BookID: b-1" in ctx and "BookID: b-2" in ctx
+
+
+def test_grade_context_final_cap_keeps_keyword_hits():
+    """Keyword hits carry `rank`, not a cosine `score`; the final cap to
+    max_chunks must not sort them last and cut them (mirrors the reranker)."""
+    from app.services.chat.context_grading import _grade_context
+
+    vector_chunks = [
+        {"book_id": "b1", "page": i, "text": f"vec-{i}", "score": 0.9 - i * 0.001}
+        for i in range(30)
+    ]
+    keyword_hit = {"book_id": "b2", "page": 7, "text": "KEYWORD-HIT", "rank": 0.06}
+    observations = [
+        {
+            "tool": "search_chunks",
+            "result": {"ok": True, "data": {"chunks": vector_chunks}},
+        },
+        {
+            "tool": "search_keyword_phrase",
+            "result": {"ok": True, "data": {"chunks": [keyword_hit]}},
+        },
+    ]
+
+    graded_context, before_count, after_count = _grade_context(
+        observations, max_chunks=25
+    )
+
+    assert after_count == 25
+    assert "KEYWORD-HIT" in graded_context
+    # The best vector hit is still kept; the weakest is the one dropped.
+    assert "vec-0" in graded_context
+    assert "vec-24" not in graded_context
+
+
+def test_grade_context_dedup_keeps_higher_scoring_chunk_from_same_page():
+    from app.services.chat.context_grading import _grade_context
+
+    observations = [
+        {
+            "tool": "search_chunks",
+            "result": {
+                "ok": True,
+                "data": {
+                    "chunks": [
+                        {
+                            "book_id": "b1",
+                            "page": 5,
+                            "text": "WEAK-CHUNK",
+                            "score": 0.5,
+                        },
+                    ]
+                },
+            },
+        },
+        {
+            "tool": "search_chunks",
+            "result": {
+                "ok": True,
+                "data": {
+                    "chunks": [
+                        {
+                            "book_id": "b1",
+                            "page": 5,
+                            "text": "STRONG-CHUNK",
+                            "score": 0.8,
+                        },
+                    ]
+                },
+            },
+        },
+    ]
+
+    graded_context, _, after_count = _grade_context(observations)
+
+    assert after_count == 1
+    assert "STRONG-CHUNK" in graded_context
+    assert "WEAK-CHUNK" not in graded_context

@@ -365,7 +365,12 @@ export const SpellCheckPanel: React.FC<SpellCheckPanelProps> = ({
                     {suggestions.map((correction) => (
                       <button
                         key={correction.word}
-                        onClick={() => { setCustomInput(correction.word); handleCustomApply(); }}
+                        // Apply the clicked word directly. Going through
+                        // setCustomInput + handleCustomApply read the input's
+                        // previous value (state isn't updated yet), so the
+                        // first click did nothing and later clicks applied
+                        // the previously clicked word.
+                        onClick={() => handleOcrApply(correction.word)}
                         disabled={isBusy || isApplying !== null}
                         className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-sm active:scale-95 uyghur-text relative overflow-hidden"
                         style={{ fontSize: `${Math.max(14, fontSize - 2)}px` }}

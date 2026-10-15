@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.i18n import I18n
 from app.services.rag.phrase_intent import PhraseIntent
@@ -32,7 +32,10 @@ def _load_real_translations():
 @pytest.mark.asyncio
 async def test_run_exact_phrase_retrieval_wraps_hits_as_search_chunks_observation():
     chunks_repo = AsyncMock()
-    with patch(
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    with patch("app.db.session.async_session_factory", factory), patch(
         "app.services.chat.exact_phrase.get_vector_store", return_value=chunks_repo
     ), patch(
         "app.services.chat.exact_phrase.exact_phrase_chunk_search",
@@ -52,7 +55,6 @@ async def test_run_exact_phrase_retrieval_wraps_hits_as_search_chunks_observatio
         phrase_intent = PhraseIntent(is_exact=True, phrases=["king Babur"])
 
         hits, observation = await run_exact_phrase_retrieval(
-            session="fake-session",
             phrase_intent=phrase_intent,
             book_ids=["b1"],
             categories=None,

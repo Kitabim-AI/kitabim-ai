@@ -66,6 +66,7 @@ def _grade_context(
 
     limit = max_chunks if max_chunks is not None else AGENT_MAX_CONTEXT_CHUNKS
     from app.services.rag.answer_builder import format_document, Document
+    from app.services.rag.agent.reranker import is_better_duplicate
 
     # Build metadata context from any tool returning a "context" key
     metadata_parts = []
@@ -79,7 +80,7 @@ def _grade_context(
 
     all_graded_documents: list[Document] = []
     total_raw_chunks = 0
-    seen: set[tuple] = set()
+    seen: dict[tuple, int] = {}
 
     for obs in observations:
         if obs.get("tool") not in CHUNK_RESULT_TOOLS:
@@ -157,8 +158,11 @@ def _grade_context(
             )
             key = (doc.metadata["book_id"], page_val)
             if key in seen:
+                existing = all_graded_documents[seen[key]]
+                if is_better_duplicate(doc.metadata, existing.metadata):
+                    all_graded_documents[seen[key]] = doc
                 continue
-            seen.add(key)
+            seen[key] = len(all_graded_documents)
             all_graded_documents.append(doc)
 
     # Final global sort and limit cap
@@ -171,7 +175,18 @@ def _grade_context(
             ),
             reverse=True,
         )
-        graded = all_graded_documents[:limit]
+        # Keyword hits carry `rank`, not a cosine `score`, so the sort above
+        # puts them last and a plain [:limit] would cut them. Reserve their
+        # slots, fill the rest with the best-scoring hits, keep sorted order
+        # (same rule as the reranker's candidate cap).
+        keyword_docs = [
+            d for d in all_graded_documents if d.metadata.get("rank") is not None
+        ][:limit]
+        other_docs = [
+            d for d in all_graded_documents if d.metadata.get("rank") is None
+        ][: limit - len(keyword_docs)]
+        keep = {id(d) for d in keyword_docs} | {id(d) for d in other_docs}
+        graded = [d for d in all_graded_documents if id(d) in keep]
 
         log_json(
             logger,

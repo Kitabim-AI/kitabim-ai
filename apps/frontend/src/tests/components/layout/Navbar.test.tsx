@@ -2,6 +2,7 @@ import { Navbar } from '@/src/components/layout/Navbar';
 import * as AppContextModule from '@/src/context/AppContext';
 import * as AuthModule from '@/src/hooks/useAuth';
 import { I18nContext } from '@/src/i18n/I18nContext';
+import { ThemeProvider } from '@/src/context/ThemeContext';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
@@ -41,9 +42,11 @@ const createContextValue = () => ({
 
 const renderNavbar = () =>
   render(
-    <I18nContext.Provider value={i18nValue}>
-      <Navbar />
-    </I18nContext.Provider>
+    <ThemeProvider>
+      <I18nContext.Provider value={i18nValue}>
+        <Navbar />
+      </I18nContext.Provider>
+    </ThemeProvider>
   );
 
 beforeEach(() => {

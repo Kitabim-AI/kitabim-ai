@@ -439,3 +439,22 @@ async def test_get_batch_stats_llm_spell_check_never_assumed_done_for_ready_book
 
     assert stats["book-1"]["pipeline_stats"]["ocr"] == 10  # ready shortcut applies
     assert stats["book-1"]["pipeline_stats"]["llm_spell_check"] == 0  # never shortcut
+
+
+@pytest.mark.asyncio
+async def test_find_existing_ids_returns_only_known_ids():
+    session = AsyncMock()
+    repo = BooksRepository(session)
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = [("b1",)]
+    session.execute.return_value = mock_res
+
+    assert await repo.find_existing_ids(["b1", "made-up"]) == {"b1"}
+
+
+@pytest.mark.asyncio
+async def test_find_existing_ids_empty_input_skips_query():
+    session = AsyncMock()
+    repo = BooksRepository(session)
+    assert await repo.find_existing_ids([]) == set()
+    session.execute.assert_not_called()

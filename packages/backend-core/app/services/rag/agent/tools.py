@@ -14,6 +14,9 @@ import httpx
 from sqlalchemy.exc import DBAPIError, OperationalError
 from google.adk.tools import ToolContext
 
+from app.core import cache_config
+from app.core.config import settings
+from app.services.cache_service import cache_service
 from app.services.rag.context import QueryContext, get_current_query_context
 from app.services.rag.keywords import CURRENT_BOOK_KEYWORDS
 from app.services.rag.retrieval import (
@@ -99,9 +102,8 @@ async def search_chunks(
     Args:
         query: The search query to embed and match against book passages.
         book_ids: Optional list of book IDs to restrict the search scope.
-                  Always try to restrict scope first. Only omit (pass no book_ids) after a
-                  scoped search returned fewer than 4 results, or after discovery tools found
-                  no usable book IDs.
+                  Follow the system instructions for when to pass book_ids and
+                  when to omit them to search the whole library.
     """
     args = {"query": query, "book_ids": book_ids}
     return await _execute_and_record_tool(tool_context, "search_chunks", args)
@@ -575,14 +577,82 @@ def _extract_book_ids(args: dict) -> Optional[List[str]]:
     return [str(raw).strip()]
 
 
+async def _clamp_reader_scope(
+    book_ids: Optional[List[str]], ctx: QueryContext
+) -> Optional[List[str]]:
+    """Hard scope limit for reader chat (is_global=False): only the current
+    book and its sister volumes may be searched, whatever book_ids the agent
+    passes. Omitted, empty, or entirely out-of-scope book_ids fall back to the
+    current book — an empty list must never become a whole-library search
+    here. Global chat is returned unchanged.
+    """
+    if ctx.is_global or not ctx.book_id:
+        return book_ids
+    current = str(ctx.book_id)
+    if not book_ids:
+        return [current]
+    if all(str(b) == current for b in book_ids):
+        return [current]
+
+    allowed = getattr(ctx, "_reader_allowed_book_ids", None)
+    if not isinstance(allowed, frozenset):
+        from app.db.repositories.books_repository import BooksRepository
+
+        sisters = await BooksRepository(ctx.session).find_sister_volumes(current)
+        allowed = frozenset({current, *(str(b.id) for b in sisters)})
+        ctx._reader_allowed_book_ids = allowed
+
+    kept = list(dict.fromkeys(str(b) for b in book_ids if str(b) in allowed))
+    dropped = [str(b) for b in book_ids if str(b) not in allowed]
+    if dropped:
+        log_json(
+            logger,
+            logging.INFO,
+            "Reader scope clamp dropped out-of-scope book_ids",
+            book_id=current,
+            dropped=dropped[:10],
+        )
+    return kept or [current]
+
+
+async def _resolve_book_scope(
+    book_ids: Optional[List[str]], ctx: QueryContext
+) -> Optional[List[str]]:
+    """Validate the book_ids the agent passed before they scope a search.
+
+    Reader chat: hard-clamped to the current book and its sister volumes
+    (_clamp_reader_scope). Global chat: IDs that don't exist in `books` are
+    dropped — the agent sometimes invents an ID or passes a title where an ID
+    belongs, which would otherwise scope the search to zero results. If none
+    survive, returns None so the search runs across the whole library. None and
+    [] pass through unchanged.
+    """
+    if not ctx.is_global:
+        return await _clamp_reader_scope(book_ids, ctx)
+    if not book_ids:
+        return book_ids
+
+    from app.db.repositories.books_repository import BooksRepository
+
+    existing = await BooksRepository(ctx.session).find_existing_ids(book_ids)
+    kept = [str(b) for b in book_ids if str(b) in existing]
+    if len(kept) < len(book_ids):
+        log_json(
+            logger,
+            logging.WARNING,
+            "Dropped unknown book_ids from agent tool call",
+            dropped=[str(b) for b in book_ids if str(b) not in existing][:10],
+            kept=len(kept),
+        )
+    return kept or None
+
+
 async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     from app.services.rag.agent.config import CONTEXT_SWITCH_SCORE_THRESHOLD
 
     query = args.get("query", "")
     # Preserve None (agent omitted book_ids = global search) vs [] (agent passed empty = no books found).
-    book_ids = _extract_book_ids(args)
-    if book_ids is None and not ctx.is_global and ctx.book_id:
-        book_ids = [ctx.book_id]
+    book_ids = await _resolve_book_scope(_extract_book_ids(args), ctx)
 
     query_vector = await embed_query(query, ctx)
     if not query_vector:
@@ -606,42 +676,52 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
     ):
         top_score = max((r.get("score", 0.0) for r in results), default=0.0)
         if top_score < CONTEXT_SWITCH_SCORE_THRESHOLD:
+            # rag_summary_narrowing_enabled=false: re-search the whole library
+            # rather than rediscovering books via the summary index.
+            direct_mode = not getattr(ctx, "summary_narrowing_enabled", True)
             log_json(
                 logger,
                 logging.INFO,
-                "Context switch detected — rediscovering books via summaries",
+                "Context switch detected — broadening search",
                 top_score=round(top_score, 3),
                 threshold=CONTEXT_SWITCH_SCORE_THRESHOLD,
+                via="whole_library" if direct_mode else "summaries",
             )
-            new_book_ids = await _run_search_books_by_summary({"query": query}, ctx)
-            if new_book_ids:
-                broader = await vector_search(
-                    ctx, new_book_ids, query_vector=query_vector
+            if direct_mode:
+                new_book_ids = None
+                broader = await vector_search(ctx, None, query_vector=query_vector)
+            else:
+                new_book_ids = await _run_search_books_by_summary({"query": query}, ctx)
+                broader = (
+                    await vector_search(ctx, new_book_ids, query_vector=query_vector)
+                    if new_book_ids
+                    else []
                 )
-                if broader:
-                    existing_keys = {
-                        (r.get("book_id"), r.get("page_number"), r.get("chunk_index"))
-                        for r in results
-                    }
-                    new_chunks = [
-                        c
-                        for c in broader
-                        if (
-                            c.get("book_id"),
-                            c.get("page_number"),
-                            c.get("chunk_index"),
-                        )
-                        not in existing_keys
-                    ]
-                    results = results + new_chunks
-                    book_ids = list(dict.fromkeys((book_ids or []) + new_book_ids))
-                    log_json(
-                        logger,
-                        logging.INFO,
-                        "Context-switch re-search succeeded",
-                        new_books=len(new_book_ids),
-                        added_chunks=len(new_chunks),
+            if broader:
+                existing_keys = {
+                    (r.get("book_id"), r.get("page_number"), r.get("chunk_index"))
+                    for r in results
+                }
+                new_chunks = [
+                    c
+                    for c in broader
+                    if (
+                        c.get("book_id"),
+                        c.get("page_number"),
+                        c.get("chunk_index"),
                     )
+                    not in existing_keys
+                ]
+                results = results + new_chunks
+                if new_book_ids:
+                    book_ids = list(dict.fromkeys((book_ids or []) + new_book_ids))
+                log_json(
+                    logger,
+                    logging.INFO,
+                    "Context-switch re-search succeeded",
+                    new_books=len(new_book_ids) if new_book_ids else 0,
+                    added_chunks=len(new_chunks),
+                )
 
     # Knowledge-graph entity lookup (design v2 §6) — pure cache read + Neo4j fact
     # fetch, no LLM call. Rides this same search_chunks call rather than adding a
@@ -672,6 +752,7 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
         "Agent tool search_chunks",
         query=query[:60],
         book_count=len(book_ids) if book_ids is not None else 0,
+        book_ids=(book_ids or [])[:10],
         results=len(results),
     )
     return results
@@ -679,9 +760,7 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
 
 async def _run_search_keyword_phrase(args: dict, ctx: QueryContext) -> List[dict]:
     phrase = args.get("phrase") or ""
-    book_ids = _extract_book_ids(args)
-    if book_ids is None and not ctx.is_global and ctx.book_id:
-        book_ids = [ctx.book_id]
+    book_ids = await _resolve_book_scope(_extract_book_ids(args), ctx)
 
     results = await agent_keyword_search(ctx, phrase, book_ids)
 
@@ -691,6 +770,7 @@ async def _run_search_keyword_phrase(args: dict, ctx: QueryContext) -> List[dict
         "Agent tool search_keyword_phrase",
         phrase=phrase[:60],
         book_count=len(book_ids) if book_ids is not None else 0,
+        book_ids=(book_ids or [])[:10],
         results=len(results),
     )
     return results
@@ -701,9 +781,7 @@ async def _run_search_books_by_summary(args: dict, ctx: QueryContext) -> List[st
     from app.core.config import settings
 
     query = args.get("query", "")
-    char_book_ids = _extract_book_ids(args)
-    if char_book_ids is None and not ctx.is_global and ctx.book_id:
-        char_book_ids = [ctx.book_id]
+    char_book_ids = await _resolve_book_scope(_extract_book_ids(args), ctx)
 
     query_vector = await embed_query(query, ctx)
     if not query_vector:
@@ -747,9 +825,7 @@ async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
     from app.db.repositories.books_repository import BooksRepository
     from app.db.repositories.pages_repository import PagesRepository
 
-    book_ids = _extract_book_ids(args) or []
-    if not book_ids and not ctx.is_global and ctx.book_id:
-        book_ids = [ctx.book_id]
+    book_ids = await _resolve_book_scope(_extract_book_ids(args), ctx) or []
 
     if not book_ids:
         return {"context": "No book IDs provided.", "summaries": []}
@@ -910,6 +986,68 @@ async def _run_get_current_page(ctx: QueryContext) -> dict:
     return {"context": context}
 
 
+async def _title_is_common_word(word: str) -> bool:
+    """True when *word* is an everyday word rather than a distinctive title:
+    it appears in at least SINGLE_WORD_TITLE_MAX_BOOK_SHARE of the books that
+    have page text. Counts are cached in Redis (cache_ttl_title_word_share).
+    Any lookup failure returns True — the safe answer, matching the old
+    behavior of always dropping one-word title matches.
+    """
+    import hashlib
+
+    from app.db import session as db_session
+    from app.db.repositories.pages_repository import PagesRepository
+    from app.services.rag.agent.config import SINGLE_WORD_TITLE_MAX_BOOK_SHARE
+
+    word_key = cache_config.KEY_RAG_WORD_BOOK_COUNT.format(
+        hash=hashlib.md5(word.encode("utf-8"), usedforsecurity=False).hexdigest()
+    )
+    total_key = cache_config.KEY_RAG_BOOKS_WITH_TEXT
+    try:
+        mentioning = await cache_service.get(word_key)
+        total = await cache_service.get(total_key)
+        if mentioning is None or total is None:
+            # Own session: count_books_mentioning runs SET LOCAL
+            # statement_timeout, which must not leak into ctx.session.
+            # Read the factory at call time — it is None until init_db() runs
+            # at startup, so a module-level import would capture None.
+            async with db_session.async_session_factory() as session:
+                repo = PagesRepository(session)
+                if total is None:
+                    total = await repo.count_books_with_text()
+                    await cache_service.set(
+                        total_key, total, ttl=settings.cache_ttl_title_word_share
+                    )
+                if mentioning is None:
+                    mentioning = await repo.count_books_mentioning(word)
+                    await cache_service.set(
+                        word_key, mentioning, ttl=settings.cache_ttl_title_word_share
+                    )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.WARNING,
+            "Title word-frequency lookup failed; treating as common word",
+            word=word[:60],
+            error=str(exc) or type(exc).__name__,
+        )
+        return True
+
+    if not total:
+        return True
+    share = int(mentioning) / int(total)
+    log_json(
+        logger,
+        logging.INFO,
+        "One-word title frequency check",
+        word=word[:60],
+        books_mentioning=int(mentioning),
+        books_with_text=int(total),
+        share=round(share, 3),
+    )
+    return share >= SINGLE_WORD_TITLE_MAX_BOOK_SHARE
+
+
 async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
     question = args.get("question", "")
     if not hasattr(ctx, "_title_cache"):
@@ -930,10 +1068,12 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
     )
     result = books or []
 
-    # Filter out single-word false positive matches if the query is a multi-word search
+    # Filter out single-word false positive matches if the query is a multi-word
+    # search — but only when the title is an everyday word (e.g. ھايات). A
+    # distinctive one-word title (e.g. قۇتادغۇبىلىك) is a real match.
     if result and len(result) == 1 and len(result[0]["title"].split()) == 1:
         q_words = [w for w in question.strip().split() if len(w) >= 3]
-        if len(q_words) >= 3:
+        if len(q_words) >= 3 and await _title_is_common_word(result[0]["title"]):
             result = []
 
     # Fallback to custom fuzzy keyword matching if strict title in question matching returned nothing

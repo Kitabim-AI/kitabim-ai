@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 from google.adk import Agent
 
-from app.services.rag.agent.prompts import AGENT_SYSTEM_PROMPT
+from app.services.rag.agent.prompts import build_agent_system_prompt
 from app.services.rag.agent.tools import (
     search_chunks,
     search_keyword_phrase,
@@ -56,12 +56,18 @@ ALL_TOOLS = [
 def build_retrieval_agent(
     model: str,
     intent_signals: Optional[dict] = None,
+    summary_narrowing_enabled: bool = True,
 ) -> Agent:
     """Build the Retrieval Agent focused exclusively on tool execution and context gathering.
 
-    The Retrieval Agent uses AGENT_SYSTEM_PROMPT and tools, stopping once evidence is gathered.
+    The Retrieval Agent uses the retrieval system prompt and tools, stopping once
+    evidence is gathered. summary_narrowing_enabled=False (the
+    rag_summary_narrowing_enabled system_config) drops the search_books_by_summary
+    tool and uses the direct-chunk prompt variant.
     """
-    instructions = AGENT_SYSTEM_PROMPT
+    instructions = build_agent_system_prompt(
+        summary_narrowing=summary_narrowing_enabled
+    )
     if intent_signals:
         hints = []
         if intent_signals.get("dictionary_subtype"):
@@ -87,11 +93,17 @@ def build_retrieval_agent(
                 "\n\nStructured Intent Hints from Query Analysis:\n" + "\n".join(hints)
             )
 
+    tools = (
+        ALL_TOOLS
+        if summary_narrowing_enabled
+        else [t for t in ALL_TOOLS if t is not search_books_by_summary]
+    )
+
     agent = Agent(
         model=model,
         name="KitabimRetrievalAgent",
         description="Retrieves evidence from books, Quran, catalog, and dictionaries.",
         instruction=instructions,
-        tools=ALL_TOOLS,
+        tools=tools,
     )
     return agent
