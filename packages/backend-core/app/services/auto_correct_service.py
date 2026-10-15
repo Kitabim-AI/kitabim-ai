@@ -141,6 +141,14 @@ async def apply_auto_corrections_to_page(
 
         # Apply the correction
         start, end = issue.char_offset, issue.char_end
+        target_slice = page_text[start:end]
+        if target_slice != issue.word:
+            logger.warning(
+                f"Skipping auto-correction on page {page_id}: offset mismatch. "
+                f"Expected '{issue.word}', found '{target_slice}' at [{start}:{end}]."
+            )
+            continue
+
         page_text = page_text[:start] + corrected_word + page_text[end:]
         corrected_issue_ids.append(issue.id)
 

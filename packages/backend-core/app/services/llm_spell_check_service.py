@@ -7,13 +7,20 @@ job path (llm_spell_check_job) and the Gemini Batch API path
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from google.genai import types
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pipeline import PAGE_MILESTONE_IDLE, PAGE_MILESTONE_SUCCEEDED
 from app.core.prompts import LLM_SPELL_CHECK_PROMPT
+from app.db.models import Page, PageSpellIssue
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.llm.models import build_text_llm
+from app.utils.markdown import normalize_markdown
+from app.utils.text import normalize_uyghur_chars
 
 _MAX_LENGTH_DEVIATION_RATIO = 0.3
 
@@ -70,6 +77,42 @@ async def correct_page_text(
     corrected = await llm.ainvoke(
         prompt, config=types.GenerateContentConfig(temperature=0.0)
     )
-    corrected = corrected.strip()
+    corrected = normalize_markdown(corrected.strip())
+    corrected = normalize_uyghur_chars(corrected)
     _validate_correction(page_text, corrected)
     return corrected
+
+
+async def apply_llm_page_correction(
+    session: AsyncSession,
+    page: Page,
+    corrected_text: str,
+) -> bool:
+    """Applies verified LLM correction to a page:
+    - Normalizes markdown and Uyghur Unicode
+    - Validates correction guardrail
+    - Invalidates stale dictionary PageSpellIssue rows (offsets are now invalid)
+    - Resets spell_check_milestone to idle
+    - Preserves pre-correction text in prev_text
+    - Updates status and timestamps
+    """
+    cleaned = normalize_markdown(corrected_text.strip())
+    cleaned = normalize_uyghur_chars(cleaned)
+    _validate_correction(page.text or "", cleaned)
+
+    text_changed = page.text != cleaned
+    now = datetime.now(timezone.utc)
+
+    if text_changed:
+        page.prev_text = page.text
+        page.text = cleaned
+        # Invalidate stale dictionary spell check issues whose offsets are now wrong
+        await session.execute(
+            delete(PageSpellIssue).where(PageSpellIssue.page_id == page.id)
+        )
+        page.spell_check_milestone = PAGE_MILESTONE_IDLE
+
+    page.llm_spell_check_status = PAGE_MILESTONE_SUCCEEDED
+    page.llm_spell_check_at = now
+    page.last_updated = now
+    return text_changed

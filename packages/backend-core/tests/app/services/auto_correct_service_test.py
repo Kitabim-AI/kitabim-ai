@@ -256,3 +256,29 @@ async def test_find_pages_with_auto_correctable_issues_no_rows():
 
     pages = await find_pages_with_auto_correctable_issues(session)
     assert pages == []
+
+
+@pytest.mark.asyncio
+async def test_apply_auto_corrections_to_page_offset_mismatch_skips():
+    session = AsyncMock()
+    mock_page = MagicMock(spec=Page)
+    mock_page.id = 1
+    mock_page.text = "different text here"
+    mock_page_res = MagicMock()
+    mock_page_res.scalar_one_or_none.return_value = mock_page
+
+    issue = MagicMock(spec=PageSpellIssue)
+    issue.id = 1
+    issue.char_offset = 0
+    issue.char_end = 4
+    issue.word = "word"  # Doesn't match "diff" at [0:4]
+
+    mock_issues_res = MagicMock()
+    mock_issues_res.scalars.return_value.all.return_value = [issue]
+
+    session.execute.side_effect = [mock_page_res, mock_issues_res]
+
+    count = await apply_auto_corrections_to_page(session, 1, {"word": "fixed"})
+    assert count == 0
+    # Text should remain unchanged
+    assert mock_page.text == "different text here"
