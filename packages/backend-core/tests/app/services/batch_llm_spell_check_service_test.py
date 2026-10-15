@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,14 +16,6 @@ async def test_submit_batch_llm_spell_check_builds_jsonl_and_creates_job():
 
     page1 = Page(id=1, book_id="book-1", page_number=1, text="page one text")
     page2 = Page(id=2, book_id="book-1", page_number=2, text="page two text")
-
-    mock_pages_result = MagicMock()
-    mock_pages_result.scalars.return_value.all.return_value = [page1, page2]
-
-    mock_all_pages_result = MagicMock()
-    mock_all_pages_result.scalars.return_value.all.return_value = [page1, page2]
-
-    mock_session.execute.side_effect = [mock_pages_result, mock_all_pages_result]
 
     with (
         patch(
@@ -56,7 +49,9 @@ async def test_submit_batch_llm_spell_check_builds_jsonl_and_creates_job():
         mock_get_client.return_value = mock_client
 
         mock_repo = MagicMock()
-        mock_repo.set_llm_spell_check_status = AsyncMock(return_value=True)
+        mock_repo.get_pages_by_ids = AsyncMock(return_value=[page1, page2])
+        mock_repo.get_pages_by_book_id = AsyncMock(return_value=[page1, page2])
+        mock_repo.bulk_set_llm_spell_check_status = AsyncMock(return_value=None)
         mock_repo_cls.return_value = mock_repo
 
         job = await submit_batch_llm_spell_check(
@@ -69,7 +64,9 @@ async def test_submit_batch_llm_spell_check_builds_jsonl_and_creates_job():
         assert set(job.page_ids) == {1, 2}
         mock_upload.assert_called_once()
         mock_client.batches.create.assert_called_once()
-        assert mock_repo.set_llm_spell_check_status.call_count == 2
+        mock_repo.bulk_set_llm_spell_check_status.assert_called_once_with(
+            [1, 2], "in_progress"
+        )
 
         # Verify the uploaded JSONL used the correct custom_id -> page_id mapping
         uploaded_bytes = mock_upload.call_args[0][0]
@@ -89,13 +86,20 @@ async def test_poll_and_process_succeeded_job_applies_corrections_and_commits_pe
         page_ids=[1],
         status="running",
         model_name="gemini-3.1-flash-lite",
+        submitted_at=datetime.now(timezone.utc) - timedelta(hours=1),
     )
 
     mock_active_res = MagicMock()
     mock_active_res.scalars.return_value.all.return_value = [mock_job]
     mock_session.execute.return_value = mock_active_res
 
-    page = Page(id=1, book_id="book-1", page_number=1, text="original text")
+    page = Page(
+        id=1,
+        book_id="book-1",
+        page_number=1,
+        text="original text",
+        last_updated=datetime.now(timezone.utc) - timedelta(hours=2),
+    )
     mock_session.get = AsyncMock(return_value=page)
 
     with (
@@ -127,7 +131,7 @@ async def test_poll_and_process_succeeded_job_applies_corrections_and_commits_pe
         mock_get_client.return_value = mock_client
 
         mock_repo = MagicMock()
-        mock_repo.set_llm_spell_check_status = AsyncMock(return_value=True)
+        mock_repo.bulk_set_llm_spell_check_status = AsyncMock(return_value=None)
         mock_repo_cls.return_value = mock_repo
 
         processed = await poll_and_process_batch_llm_spell_check_jobs(mock_session)
@@ -135,7 +139,8 @@ async def test_poll_and_process_succeeded_job_applies_corrections_and_commits_pe
         assert processed == 1
         assert mock_job.status == "succeeded"
         assert page.text == "corrected text"
-        mock_repo.set_llm_spell_check_status.assert_any_call("book-1", 1, "succeeded")
+        assert page.prev_text == "original text"
+        assert page.llm_spell_check_status == "succeeded"
 
 
 @pytest.mark.asyncio
@@ -155,14 +160,6 @@ async def test_poll_and_process_failed_job_resets_all_pages_to_failed():
     mock_active_res.scalars.return_value.all.return_value = [mock_job]
     mock_session.execute.return_value = mock_active_res
 
-    page1 = Page(id=1, book_id="book-1", page_number=1, text="text 1")
-    page2 = Page(id=2, book_id="book-1", page_number=2, text="text 2")
-
-    async def mock_get(model, page_id):
-        return page1 if page_id == 1 else page2
-
-    mock_session.get = mock_get
-
     with (
         patch(
             "app.services.batch_llm_spell_check_service._get_genai_client"
@@ -178,16 +175,130 @@ async def test_poll_and_process_failed_job_resets_all_pages_to_failed():
         mock_get_client.return_value = mock_client
 
         mock_repo = MagicMock()
-        mock_repo.set_llm_spell_check_status = AsyncMock(return_value=True)
+        mock_repo.bulk_set_llm_spell_check_status = AsyncMock(return_value=None)
         mock_repo_cls.return_value = mock_repo
 
         processed = await poll_and_process_batch_llm_spell_check_jobs(mock_session)
 
         assert processed == 1
         assert mock_job.status == "failed"
-        calls = mock_repo.set_llm_spell_check_status.call_args_list
-        assert ("book-1", 1, "failed") in [c.args for c in calls]
-        assert ("book-1", 2, "failed") in [c.args for c in calls]
+        mock_repo.bulk_set_llm_spell_check_status.assert_called_once_with(
+            [1, 2], "failed"
+        )
+
+
+@pytest.mark.asyncio
+async def test_poll_and_process_download_failure_marks_job_failed():
+    mock_session = AsyncMock()
+
+    mock_job = BatchLlmSpellCheckJob(
+        id=3,
+        gemini_batch_id="batches/download-fail",
+        book_id="book-1",
+        page_ids=[1],
+        status="running",
+    )
+    mock_active_res = MagicMock()
+    mock_active_res.scalars.return_value.all.return_value = [mock_job]
+    mock_session.execute.return_value = mock_active_res
+
+    with (
+        patch(
+            "app.services.batch_llm_spell_check_service._get_genai_client"
+        ) as mock_get_client,
+        patch(
+            "app.services.batch_llm_spell_check_service.PagesRepository"
+        ) as mock_repo_cls,
+    ):
+        mock_client = MagicMock()
+        mock_batch_info = MagicMock()
+        mock_batch_info.state = "SUCCEEDED"
+        mock_dest = MagicMock()
+        mock_dest.file_name = "files/broken"
+        mock_dest.gcs_uri = None
+        mock_batch_info.dest = mock_dest
+        mock_client.batches.get.return_value = mock_batch_info
+        mock_client.files.download.side_effect = RuntimeError("network timeout")
+        mock_get_client.return_value = mock_client
+
+        mock_repo = MagicMock()
+        mock_repo.bulk_set_llm_spell_check_status = AsyncMock(return_value=None)
+        mock_repo_cls.return_value = mock_repo
+
+        processed = await poll_and_process_batch_llm_spell_check_jobs(mock_session)
+
+        assert processed == 1
+        assert mock_job.status == "failed"
+        assert "could not be downloaded" in mock_job.error
+        mock_repo.bulk_set_llm_spell_check_status.assert_called_once_with([1], "failed")
+
+
+@pytest.mark.asyncio
+async def test_poll_and_process_skips_overwrite_if_page_manually_updated():
+    mock_session = AsyncMock()
+
+    submitted_at = datetime.now(timezone.utc) - timedelta(hours=2)
+    mock_job = BatchLlmSpellCheckJob(
+        id=4,
+        gemini_batch_id="batches/race",
+        book_id="book-1",
+        page_ids=[1],
+        status="running",
+        submitted_at=submitted_at,
+    )
+    mock_active_res = MagicMock()
+    mock_active_res.scalars.return_value.all.return_value = [mock_job]
+    mock_session.execute.return_value = mock_active_res
+
+    # Page was updated 30 minutes ago, AFTER job submitted 2 hours ago
+    page = Page(
+        id=1,
+        book_id="book-1",
+        page_number=1,
+        text="manual edit text",
+        last_updated=datetime.now(timezone.utc) - timedelta(minutes=30),
+    )
+    mock_session.get = AsyncMock(return_value=page)
+
+    with (
+        patch(
+            "app.services.batch_llm_spell_check_service._get_genai_client"
+        ) as mock_get_client,
+        patch(
+            "app.services.batch_llm_spell_check_service.PagesRepository"
+        ) as mock_repo_cls,
+    ):
+        mock_client = MagicMock()
+        mock_batch_info = MagicMock()
+        mock_batch_info.state = "SUCCEEDED"
+        mock_dest = MagicMock()
+        mock_dest.file_name = "files/out"
+        mock_dest.gcs_uri = None
+        mock_batch_info.dest = mock_dest
+        mock_client.batches.get.return_value = mock_batch_info
+
+        output_line = json.dumps(
+            {
+                "custom_id": "1",
+                "response": {
+                    "candidates": [{"content": {"parts": [{"text": "batch output"}]}}]
+                },
+            }
+        )
+        mock_client.files.download.return_value = output_line.encode("utf-8")
+        mock_get_client.return_value = mock_client
+
+        mock_repo = MagicMock()
+        mock_repo.bulk_set_llm_spell_check_status = AsyncMock(return_value=None)
+        mock_repo_cls.return_value = mock_repo
+
+        processed = await poll_and_process_batch_llm_spell_check_jobs(mock_session)
+
+        assert processed == 1
+        assert mock_job.status == "succeeded"
+        # Manual edit was preserved!
+        assert page.text == "manual edit text"
+        assert page.llm_spell_check_status == "succeeded"
 
 
 @pytest.mark.asyncio
