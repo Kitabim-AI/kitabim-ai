@@ -393,6 +393,46 @@ async def test_update_book_details_strips_read_only_and_computed_fields():
 
 
 @pytest.mark.asyncio
+async def test_update_book_details_normalizes_categories():
+    """Category edits are normalized like migration 099: hidden zero-width
+    characters stripped, known variants mapped, duplicates removed."""
+    setup_paths()
+    from api.endpoints.books_router import update_book_details
+
+    mock_book = MagicMock()
+    mock_book.status = "ready"
+    mock_repo = MagicMock()
+    mock_repo.get = AsyncMock(return_value=mock_book)
+    mock_repo.update_one = AsyncMock(return_value=mock_book)
+    mock_cache = MagicMock()
+    mock_cache.delete = AsyncMock()
+    mock_cache.bump_namespace_version = AsyncMock()
+
+    with (
+        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.PagesRepository", return_value=MagicMock()),
+        patch("api.endpoints.books_router.cache_service", mock_cache),
+    ):
+        await update_book_details(
+            book_id="book-1",
+            book_update={
+                "categories": [
+                    "ئ\u200dىسلام",
+                    "ماقالىلار",
+                    "ماقالىلەر",
+                    ' "رومان" ',
+                    "",
+                ],
+            },
+            current_user=MagicMock(email="editor@example.com"),
+            session=AsyncMock(),
+        )
+
+    _, kwargs = mock_repo.update_one.call_args
+    assert kwargs["categories"] == ["ئىسلام", "ماقالىلەر", "رومان"]
+
+
+@pytest.mark.asyncio
 async def test_merge_graph_entities_endpoint():
     setup_paths()
     from api.endpoints.books_router import merge_graph_entities, MergeEntitiesRequest

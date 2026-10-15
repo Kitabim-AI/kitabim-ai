@@ -1,7 +1,7 @@
 """Tests for rag_eval_job (services/worker/jobs/rag_eval_job.py)"""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from services.worker.jobs.rag_eval_job import rag_eval_job
 from app.services.rag.judge import JudgeScores
@@ -46,8 +46,13 @@ async def test_rag_eval_job_success():
 
         await rag_eval_job(ctx, 42)
 
+    # usage_out collects the judge call's token usage for judge_cost_usd.
     mock_score.assert_awaited_once_with(
-        question="q", answer="a", context="c", model="gemini-judge-test"
+        question="q",
+        answer="a",
+        context="c",
+        model="gemini-judge-test",
+        usage_out=ANY,
     )
     mock_repo.update_one.assert_awaited_once_with(
         42,
@@ -55,6 +60,7 @@ async def test_rag_eval_job_success():
         answer_relevance_score=0.8,
         context_precision_score=0.7,
         eval_status="completed",
+        judge_cost_usd=ANY,
     )
     mock_session.commit.assert_awaited_once()
 
@@ -142,5 +148,5 @@ async def test_rag_eval_job_handles_missing_answer_and_context():
         await rag_eval_job(ctx, 1)
 
     mock_score.assert_awaited_once_with(
-        question="q", answer="", context="", model="model"
+        question="q", answer="", context="", model="model", usage_out=ANY
     )

@@ -10,6 +10,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.rag.retrieval import exact_phrase_chunk_search
 
 
+@pytest.fixture(autouse=True)
+def _db_session_factory():
+    """agent_keyword_search opens its own session via
+    app.db.session.async_session_factory, which is None until init_db() runs.
+    Provide a mock factory by default; tests that care patch it themselves."""
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    with patch("app.db.session.async_session_factory", factory):
+        yield
+
+
 def _doc(book_id, page, **kw):
     d = {
         "book_id": book_id,
@@ -40,15 +52,12 @@ async def test_exact_phrase_chunk_search_single_phrase_returns_leg_results():
 
 @pytest.mark.asyncio
 async def test_exact_phrase_chunk_search_multiple_phrases_are_anded():
-    """A chunk must contain ALL quoted phrases to survive — per the resolved
-    decision that multiple quoted phrases in one query are ANDed."""
+    """A page must contain ALL quoted phrases — per the resolved decision that
+    multiple quoted phrases in one query are ANDed. The AND runs in the
+    database (one query), not by intersecting each phrase's top-N in Python:
+    two top-10 lists rarely overlap even when many pages contain both."""
     chunks_repo = AsyncMock()
-    chunks_repo.keyword_search = AsyncMock(
-        side_effect=[
-            [_doc("b1", 1, rank=0.9), _doc("b1", 2, rank=0.5)],  # phrase 1 leg
-            [_doc("b1", 1, rank=0.7)],  # phrase 2 leg — only page 1 matches both
-        ]
-    )
+    chunks_repo.keyword_search = AsyncMock(return_value=[_doc("b1", 1, rank=0.7)])
 
     results = await exact_phrase_chunk_search(
         chunks_repo,
@@ -58,26 +67,28 @@ async def test_exact_phrase_chunk_search_multiple_phrases_are_anded():
         limit=10,
     )
 
-    assert chunks_repo.keyword_search.await_count == 2
+    chunks_repo.keyword_search.assert_awaited_once_with(
+        phrase="king Babur",
+        book_ids=None,
+        categories=None,
+        limit=10,
+        and_phrases=["Samarkand"],
+    )
     keys = {(d["book_id"], d["page_number"]) for d in results}
     assert keys == {("b1", 1)}
 
 
 @pytest.mark.asyncio
-async def test_exact_phrase_chunk_search_no_intersection_returns_empty():
+async def test_exact_phrase_chunk_search_no_page_with_all_phrases_returns_empty():
     chunks_repo = AsyncMock()
-    chunks_repo.keyword_search = AsyncMock(
-        side_effect=[
-            [_doc("b1", 1)],
-            [_doc("b1", 2)],
-        ]
-    )
+    chunks_repo.keyword_search = AsyncMock(return_value=[])
 
     results = await exact_phrase_chunk_search(
         chunks_repo, ["a", "b"], book_ids=None, categories=None, limit=10
     )
 
     assert results == []
+    assert chunks_repo.keyword_search.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -405,3 +416,140 @@ async def test_agent_keyword_search_empty_book_ids_list_broadens_to_global_scan(
 
     assert captured["book_ids"] is None
     assert result == [{"book_id": "b1", "page_number": 5, "text": "hit", "rank": 0.9}]
+
+
+@pytest.mark.asyncio
+async def test_agent_keyword_search_runs_on_its_own_session():
+    """keyword_search runs SET LOCAL work_mem/statement_timeout; on the shared
+    request session that would stay in force for every later query in the
+    turn (e.g. the next vector search). It must use a dedicated session."""
+    from app.services.rag.retrieval import agent_keyword_search
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+    from app.db.repositories.chunks_repository import ChunksRepository
+
+    ctx = MagicMock()
+    ctx.session = AsyncMock(name="request_session")
+    ctx.character_categories = []
+    own_session = AsyncMock(name="keyword_session")
+
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=own_session)
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    used_sessions = []
+
+    async def fake_keyword_search(
+        self, phrase, book_ids=None, categories=None, limit=10
+    ):
+        used_sessions.append(self.session)
+        return []
+
+    with (
+        patch.object(
+            SystemConfigsRepository, "get_value", AsyncMock(return_value="10")
+        ),
+        patch.object(ChunksRepository, "keyword_search", fake_keyword_search),
+        patch("app.db.session.async_session_factory", factory),
+    ):
+        await agent_keyword_search(ctx, "بابۇر", None)
+
+    assert used_sessions == [own_session]
+
+
+@pytest.mark.asyncio
+async def test_exact_phrase_chunk_search_three_phrases_use_one_query():
+    """One query per call also means no concurrent operations on the shared
+    session (asyncpg rejects those)."""
+    chunks_repo = AsyncMock()
+    chunks_repo.keyword_search = AsyncMock(return_value=[_doc("b1", 1, rank=0.5)])
+
+    results = await exact_phrase_chunk_search(
+        chunks_repo, ["a b", "c d", "e f"], book_ids=None, categories=None, limit=10
+    )
+
+    assert chunks_repo.keyword_search.await_count == 1
+    assert chunks_repo.keyword_search.await_args.kwargs["and_phrases"] == ["c d", "e f"]
+    assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_exact_phrase_retrieval_uses_its_own_session():
+    from app.services.chat.exact_phrase import run_exact_phrase_retrieval
+    from app.services.rag.phrase_intent import PhraseIntent
+    from app.db.repositories.chunks_repository import ChunksRepository
+
+    own_session = AsyncMock(name="exact_phrase_session")
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=own_session)
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    used = []
+
+    async def fake_keyword_search(
+        self, phrase, book_ids=None, categories=None, limit=10
+    ):
+        used.append(self.session)
+        return []
+
+    intent = MagicMock(spec=PhraseIntent)
+    intent.phrases = ["بابۇر شاھ"]
+    with (
+        patch.object(ChunksRepository, "keyword_search", fake_keyword_search),
+        patch("app.db.session.async_session_factory", factory),
+    ):
+        await run_exact_phrase_retrieval(
+            intent, book_ids=None, categories=None, limit=10
+        )
+
+    assert used == [own_session]
+
+
+def _book_chunks(book_id, sims):
+    return [
+        {
+            "book_id": book_id,
+            "page_number": i,
+            "similarity": s,
+            "text": f"{book_id}-{i}",
+        }
+        for i, s in enumerate(sims)
+    ]
+
+
+def test_select_balanced_chunks_three_books_each_get_floor_then_fill_by_score():
+    from app.services.rag.retrieval import select_balanced_chunks
+
+    strong = _book_chunks("A", [0.9 - i * 0.01 for i in range(25)])
+    weak_b = _book_chunks("B", [0.5 - i * 0.01 for i in range(10)])
+    weak_c = _book_chunks("C", [0.4 - i * 0.01 for i in range(10)])
+
+    picked = select_balanced_chunks([strong, weak_b, weak_c], top_k=25)
+
+    by_book = {b: sum(1 for c in picked if c["book_id"] == b) for b in "ABC"}
+    assert len(picked) == 25
+    assert by_book == {"A": 19, "B": 3, "C": 3}
+    sims = [c["similarity"] for c in picked]
+    assert sims == sorted(sims, reverse=True)
+
+
+def test_select_balanced_chunks_many_books_capped_at_top_k():
+    """A prolific author's 30 books used to yield up to 90 chunks."""
+    from app.services.rag.retrieval import select_balanced_chunks
+
+    books = [_book_chunks(f"b{i}", [0.3 + i * 0.01, 0.2, 0.1]) for i in range(30)]
+
+    picked = select_balanced_chunks(books, top_k=25)
+
+    assert len(picked) == 25
+    # One chunk per book, from the 25 books with the strongest best match.
+    assert len({c["book_id"] for c in picked}) == 25
+    assert {c["book_id"] for c in picked} == {f"b{i}" for i in range(5, 30)}
+
+
+def test_select_balanced_chunks_returns_everything_when_under_top_k():
+    from app.services.rag.retrieval import select_balanced_chunks
+
+    picked = select_balanced_chunks(
+        [_book_chunks("A", [0.9, 0.8]), _book_chunks("B", [0.7]), []], top_k=25
+    )
+
+    assert [c["text"] for c in picked] == ["A-0", "A-1", "B-0"]

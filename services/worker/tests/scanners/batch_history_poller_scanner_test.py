@@ -1,5 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
+
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from services.worker.scanners.batch_history_poller_scanner import (
     run_batch_history_poller_scanner,
 )
@@ -8,7 +10,11 @@ from services.worker.scanners.batch_history_poller_scanner import (
 @pytest.mark.asyncio
 async def test_run_batch_history_poller_scanner_success():
     ctx = {}
-    with patch("app.db.session.async_session_factory") as mock_session_factory:
+    with patch(
+        "app.db.session.async_session_factory"
+    ) as mock_session_factory, patch.object(
+        SystemConfigsRepository, "get_value", AsyncMock(return_value="true")
+    ):
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -26,7 +32,11 @@ async def test_run_batch_history_poller_scanner_success():
 @pytest.mark.asyncio
 async def test_run_batch_history_poller_scanner_no_jobs():
     ctx = {}
-    with patch("app.db.session.async_session_factory") as mock_session_factory:
+    with patch(
+        "app.db.session.async_session_factory"
+    ) as mock_session_factory, patch.object(
+        SystemConfigsRepository, "get_value", AsyncMock(return_value="true")
+    ):
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -44,7 +54,11 @@ async def test_run_batch_history_poller_scanner_no_jobs():
 @pytest.mark.asyncio
 async def test_run_batch_history_poller_scanner_exception_logged():
     ctx = {}
-    with patch("app.db.session.async_session_factory") as mock_session_factory:
+    with patch(
+        "app.db.session.async_session_factory"
+    ) as mock_session_factory, patch.object(
+        SystemConfigsRepository, "get_value", AsyncMock(return_value="true")
+    ):
         mock_session = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -58,3 +72,22 @@ async def test_run_batch_history_poller_scanner_exception_logged():
             await run_batch_history_poller_scanner(ctx)
 
             mock_poll.assert_called_once_with(mock_session)
+
+
+@pytest.mark.asyncio
+async def test_run_batch_history_poller_scanner_skips_when_disabled():
+    ctx = {}
+    with patch(
+        "app.db.session.async_session_factory"
+    ) as mock_session_factory, patch.object(
+        SystemConfigsRepository, "get_value", AsyncMock(return_value="false")
+    ):
+        mock_session_factory.return_value.__aenter__.return_value = AsyncMock()
+
+        with patch(
+            "services.worker.scanners.batch_history_poller_scanner.poll_and_process_batch_history_jobs",
+            new_callable=AsyncMock,
+        ) as mock_poll:
+            await run_batch_history_poller_scanner(ctx)
+
+            mock_poll.assert_not_called()

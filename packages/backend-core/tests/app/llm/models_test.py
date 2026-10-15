@@ -189,6 +189,7 @@ async def test_protected_llm_timeout_propagation(
     mock_generate_content = AsyncMock()
     mock_resp = MagicMock()
     mock_resp.text = "mocked response"
+    mock_resp.usage_metadata = None  # real responses carry ints or None
     mock_generate_content.return_value = mock_resp
     mock_client.aio.models.generate_content = mock_generate_content
     mock_get_client.return_value = mock_client
@@ -217,6 +218,7 @@ async def test_protected_llm_astream_timeout_propagation(
 ):
     mock_chunk = MagicMock()
     mock_chunk.text = "stream chunk"
+    mock_chunk.usage_metadata = None  # real chunks carry ints or None
 
     # Mock client and generate_content_stream
     mock_client = MagicMock()
@@ -376,6 +378,7 @@ async def test_protected_llm_timeout_fallback(
     mock_generate_content = AsyncMock()
     mock_resp = MagicMock()
     mock_resp.text = "mocked response"
+    mock_resp.usage_metadata = None  # real responses carry ints or None
     mock_generate_content.return_value = mock_resp
     mock_client.aio.models.generate_content = mock_generate_content
     mock_get_client.return_value = mock_client

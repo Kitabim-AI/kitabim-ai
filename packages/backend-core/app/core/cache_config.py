@@ -20,6 +20,10 @@ KEY_RAG_EMBEDDING = "rag:embedding:{hash}"
 KEY_RAG_SEARCH_SINGLE = "rag:search:{book_id}:{hash}"
 KEY_RAG_SEARCH_MULTI = "rag:search:multi:{book_ids_hash}:{hash}"
 KEY_RAG_SUMMARY_SEARCH = "rag:summary_search:{hash}"
+# Book counts for the one-word title filter (find_books_by_title): books whose
+# pages mention a word (prefix match), and books that have any page text.
+KEY_RAG_WORD_BOOK_COUNT = "rag:word_book_count:{hash}"
+KEY_RAG_BOOKS_WITH_TEXT = "rag:word_book_count:total"
 KEY_PROVERB = "proverb:{hash}"
 KEY_STATS = "stats:system"
 

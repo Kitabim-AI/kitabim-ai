@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import List, Optional
 
 from sqlalchemy import select, delete, func, text
@@ -10,6 +11,13 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Page, Book
 from app.db.repositories.base_repository import BaseRepository
+
+# Characters with meaning in to_tsquery syntax, plus quote/punctuation marks
+# that can wrap a title. Stripped before building a prefix query.
+_TSQUERY_UNSAFE = re.compile(r"[&|!():*<>'\\\"«»،؟.,;\-\[\]{}\s]")
+# Bounds the per-word book count used by the one-word title filter; the
+# caller treats a timeout as "common word".
+_WORD_BOOK_COUNT_TIMEOUT_MS = 2000
 
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 
@@ -149,6 +157,39 @@ class PagesRepository(BaseRepository[Page]):
             )
 
         return hits, total
+
+    async def count_books_with_text(self) -> int:
+        """Number of distinct books that have at least one page with text."""
+        result = await self.session.execute(
+            text(
+                "SELECT count(DISTINCT book_id) FROM pages "
+                "WHERE text IS NOT NULL AND text <> ''"
+            )
+        )
+        return int(result.scalar_one() or 0)
+
+    async def count_books_mentioning(self, word: str) -> int:
+        """Number of distinct books whose pages contain *word* or a suffixed
+        form of it (prefix match on pages.text_search, 'simple' config).
+
+        Raises ValueError when nothing usable remains after stripping tsquery
+        syntax, and lets a statement timeout propagate — callers treat both as
+        "common word". Runs SET LOCAL, so call it on a dedicated session.
+        """
+        token = _TSQUERY_UNSAFE.sub("", word or "")
+        if not token:
+            raise ValueError("no searchable token in word")
+        await self.session.execute(
+            text(f"SET LOCAL statement_timeout = '{_WORD_BOOK_COUNT_TIMEOUT_MS}'")
+        )
+        result = await self.session.execute(
+            text(
+                "SELECT count(DISTINCT book_id) FROM pages "
+                "WHERE text_search @@ to_tsquery('simple', :q)"
+            ),
+            {"q": f"{token}:*"},
+        )
+        return int(result.scalar_one() or 0)
 
     async def find_by_book(
         self, book_id: str, skip: int = 0, limit: int = 10000

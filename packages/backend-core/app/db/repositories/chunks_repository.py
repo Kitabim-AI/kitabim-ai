@@ -19,6 +19,13 @@ logger = logging.getLogger("app.db.repositories.chunks_repository")
 _KEYWORD_SEARCH_WORK_MEM = "128MB"
 _KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS = "5000"
 
+# HNSW returns at most hnsw.ef_search rows (pgvector default 40). The unscoped
+# similarity search filters TOC pages, the score threshold and character
+# categories *after* the index scan, so over-fetch generously and raise
+# ef_search to match. pgvector caps ef_search at 1000.
+_VECTOR_OVERFETCH_FACTOR = 8
+_HNSW_EF_SEARCH_MAX = 1000
+
 
 class ChunksRepository(BaseRepository[Chunk]):
     """
@@ -113,8 +120,9 @@ class ChunksRepository(BaseRepository[Chunk]):
             "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
 
-        # Over-fetch to compensate for TOC rows filtered out in the outer query.
-        inner_limit = limit * 3
+        # Over-fetch to compensate for TOC/threshold/category rows filtered out
+        # in the outer query (see _VECTOR_OVERFETCH_FACTOR).
+        inner_limit = min(int(limit) * _VECTOR_OVERFETCH_FACTOR, _HNSW_EF_SEARCH_MAX)
 
         # Build query using CTE approach: the inner CTE does pure vector search
         # (allowing the HNSW index to be used), then the outer query filters
@@ -211,6 +219,13 @@ class ChunksRepository(BaseRepository[Chunk]):
             if categories:
                 params["categories"] = categories
 
+        if book_ids is None:
+            # Int-validated, never user input — SET does not accept bind params.
+            # SET LOCAL scopes it to this transaction only.
+            await self.session.execute(
+                text(f"SET LOCAL hnsw.ef_search = {int(inner_limit)}")
+            )
+
         result = await self.session.execute(query, params)
         rows = result.fetchall()
 
@@ -234,6 +249,7 @@ class ChunksRepository(BaseRepository[Chunk]):
         book_ids: Optional[List[str]] = None,
         categories: Optional[List[str]] = None,
         limit: int = 10,
+        and_phrases: Optional[List[str]] = None,
     ) -> List[dict]:
         """
         Postgres full-text EXACT PHRASE search over `pages.text_search`
@@ -259,6 +275,15 @@ class ChunksRepository(BaseRepository[Chunk]):
         cat_filter = (
             "WHERE b.categories && CAST(:categories AS text[])" if categories else ""
         )
+        # and_phrases: a page must contain every phrase (tsquery &&). The AND
+        # runs here, before LIMIT — intersecting each phrase's own top-N
+        # afterwards misses pages, since two top-10 lists rarely overlap.
+        extra = list(and_phrases or [])
+        tsquery_expr = "phraseto_tsquery('simple', :phrase)" + "".join(
+            f" && phraseto_tsquery('simple', :and_phrase_{i})"
+            for i in range(len(extra))
+        )
+        extra_params = {f"and_phrase_{i}": p for i, p in enumerate(extra)}
 
         if book_ids is not None:
             if not book_ids:
@@ -269,10 +294,10 @@ class ChunksRepository(BaseRepository[Chunk]):
                         p.book_id,
                         p.page_number,
                         p.text,
-                        ts_rank(p.text_search, phraseto_tsquery('simple', :phrase)) AS rank
+                        ts_rank(p.text_search, ({tsquery_expr})) AS rank
                     FROM pages p
                     WHERE p.book_id = ANY(:book_ids)
-                      AND p.text_search @@ phraseto_tsquery('simple', :phrase)
+                      AND p.text_search @@ ({tsquery_expr})
                       AND p.is_toc IS NOT TRUE
                 )
                 SELECT
@@ -293,6 +318,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 "phrase": phrase,
                 "book_ids": [str(bid) for bid in book_ids],
                 "limit": limit,
+                **extra_params,
             }
             if categories:
                 params["categories"] = categories
@@ -303,9 +329,9 @@ class ChunksRepository(BaseRepository[Chunk]):
                         p.book_id,
                         p.page_number,
                         p.text,
-                        ts_rank(p.text_search, phraseto_tsquery('simple', :phrase)) AS rank
+                        ts_rank(p.text_search, ({tsquery_expr})) AS rank
                     FROM pages p
-                    WHERE p.text_search @@ phraseto_tsquery('simple', :phrase)
+                    WHERE p.text_search @@ ({tsquery_expr})
                       AND p.is_toc IS NOT TRUE
                 )
                 SELECT
@@ -322,7 +348,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 ORDER BY km.rank DESC
                 LIMIT :limit
             """)
-            params = {"phrase": phrase, "limit": limit}
+            params = {"phrase": phrase, "limit": limit, **extra_params}
             if categories:
                 params["categories"] = categories
 

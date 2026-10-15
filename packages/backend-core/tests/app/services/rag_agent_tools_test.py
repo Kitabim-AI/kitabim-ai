@@ -6,6 +6,20 @@ from app.db.repositories.books_repository import BooksRepository
 from app.db.repositories.book_summaries_repository import BookSummariesRepository
 
 
+@pytest.fixture(autouse=True)
+def _all_book_ids_exist():
+    """Global-chat tools validate book_ids against `books` (_resolve_book_scope).
+    Tests here use made-up IDs on a mocked session, so treat every ID as
+    existing by default; tests about unknown IDs patch find_existing_ids
+    themselves (the inner patch wins)."""
+
+    async def _identity(self, book_ids):
+        return {str(b) for b in book_ids}
+
+    with patch.object(BooksRepository, "find_existing_ids", _identity):
+        yield
+
+
 class FakeBook:
     def __init__(self, id, title, author, volume):
         self.id = id
@@ -772,3 +786,390 @@ async def test_search_keyword_phrase_tool_dispatches_to_retrieval():
     assert result["found_count"] == 1
     assert result["chunks"] == mock_results
     mock_search.assert_awaited_once_with(ctx, "ھوزۇرۇم", ["b1"])
+
+
+def _ctx_for_context_switch(summary_narrowing_enabled: bool):
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = True
+    ctx.book_id = None
+    ctx.context_book_ids = ["old-book"]
+    ctx.summary_narrowing_enabled = summary_narrowing_enabled
+    return ctx
+
+
+@pytest.mark.asyncio
+async def test_context_switch_direct_mode_broadens_to_whole_library():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
+    ctx = _ctx_for_context_switch(summary_narrowing_enabled=False)
+    calls = []
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        calls.append(book_ids)
+        if book_ids == ["old-book"]:
+            return [
+                {
+                    "book_id": "old-book",
+                    "page_number": 1,
+                    "chunk_index": 0,
+                    "score": 0.30,
+                }
+            ]
+        return [
+            {"book_id": "new-book", "page_number": 9, "chunk_index": 0, "score": 0.80}
+        ]
+
+    summary_mock = AsyncMock(return_value=["should-not-be-used"])
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(agent_tools, "_run_search_books_by_summary", summary_mock),
+        patch.object(
+            SystemConfigsRepository, "get_value", AsyncMock(return_value="10")
+        ),
+    ):
+        results = await agent_tools._run_search_chunks(
+            {"query": "q", "book_ids": ["old-book"]}, ctx
+        )
+
+    summary_mock.assert_not_awaited()
+    assert calls == [["old-book"], None]
+    assert {r["book_id"] for r in results} == {"old-book", "new-book"}
+
+
+@pytest.mark.asyncio
+async def test_context_switch_legacy_mode_still_uses_summary_rediscovery():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
+    ctx = _ctx_for_context_switch(summary_narrowing_enabled=True)
+    calls = []
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        calls.append(book_ids)
+        return [
+            {"book_id": "old-book", "page_number": 1, "chunk_index": 0, "score": 0.30}
+        ]
+
+    summary_mock = AsyncMock(return_value=["summary-book"])
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(agent_tools, "_run_search_books_by_summary", summary_mock),
+        patch.object(
+            SystemConfigsRepository, "get_value", AsyncMock(return_value="10")
+        ),
+    ):
+        await agent_tools._run_search_chunks(
+            {"query": "q", "book_ids": ["old-book"]}, ctx
+        )
+
+    summary_mock.assert_awaited_once()
+    assert calls == [["old-book"], ["summary-book"]]
+
+
+# ── Reader-mode scope clamp: reader chat may only touch the current book and
+# its sister volumes, whatever book_ids the agent passes. ────────────────────
+
+
+def _reader_ctx(book_id="cur"):
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = False
+    ctx.book_id = book_id
+    ctx.context_book_ids = [book_id]
+    ctx.summary_narrowing_enabled = False
+    return ctx
+
+
+async def _fake_sisters(self, book_id):
+    return [FakeBook("cur", "T", "A", 1), FakeBook("sis", "T", "A", 2)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "requested, expected",
+    [
+        (None, ["cur"]),
+        ([], ["cur"]),
+        (["other"], ["cur"]),
+        (["sis"], ["sis"]),
+        (["cur", "other", "sis"], ["cur", "sis"]),
+    ],
+)
+async def test_clamp_reader_scope(requested, expected):
+    from app.services.rag.agent.tools import _clamp_reader_scope
+
+    with patch.object(BooksRepository, "find_sister_volumes", _fake_sisters):
+        assert await _clamp_reader_scope(requested, _reader_ctx()) == expected
+
+
+@pytest.mark.asyncio
+async def test_clamp_reader_scope_skips_db_when_only_current_book():
+    from app.services.rag.agent.tools import _clamp_reader_scope
+
+    sisters = AsyncMock()
+    with patch.object(BooksRepository, "find_sister_volumes", sisters):
+        assert await _clamp_reader_scope(["cur"], _reader_ctx()) == ["cur"]
+    sisters.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_clamp_reader_scope_leaves_global_chat_untouched():
+    from app.services.rag.agent.tools import _clamp_reader_scope
+
+    ctx = _reader_ctx()
+    ctx.is_global = True
+    ctx.book_id = None
+    assert await _clamp_reader_scope([], ctx) == []
+    assert await _clamp_reader_scope(None, ctx) is None
+    assert await _clamp_reader_scope(["any"], ctx) == ["any"]
+
+
+@pytest.mark.asyncio
+async def test_reader_search_chunks_cannot_escape_to_whole_library():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
+    calls = []
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        calls.append(book_ids)
+        return []
+
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(BooksRepository, "find_sister_volumes", _fake_sisters),
+        patch.object(
+            SystemConfigsRepository, "get_value", AsyncMock(return_value="10")
+        ),
+    ):
+        await agent_tools._run_search_chunks(
+            {"query": "q", "book_ids": []}, _reader_ctx()
+        )
+        await agent_tools._run_search_chunks(
+            {"query": "q", "book_ids": ["other"]}, _reader_ctx()
+        )
+
+    assert calls == [["cur"], ["cur"]]
+
+
+@pytest.mark.asyncio
+async def test_reader_keyword_phrase_cannot_escape_to_whole_library():
+    from app.services.rag.agent import tools as agent_tools
+
+    keyword = AsyncMock(return_value=[])
+    with (
+        patch.object(agent_tools, "agent_keyword_search", keyword),
+        patch.object(BooksRepository, "find_sister_volumes", _fake_sisters),
+    ):
+        await agent_tools._run_search_keyword_phrase(
+            {"phrase": "x", "book_ids": []}, _reader_ctx()
+        )
+        await agent_tools._run_search_keyword_phrase(
+            {"phrase": "x", "book_ids": ["other", "sis"]}, _reader_ctx()
+        )
+
+    assert [c.args[2] for c in keyword.await_args_list] == [["cur"], ["sis"]]
+
+
+@pytest.mark.asyncio
+async def test_reader_get_book_summary_ignores_unrelated_books():
+    captured = {}
+
+    async def fake_get_summaries_for_books(self, book_ids, text_filter=None):
+        captured["ids"] = list(book_ids)
+        return []
+
+    pages_patch = patch(
+        "app.db.repositories.pages_repository.PagesRepository.find_first_pages_with_text",
+        AsyncMock(return_value=[]),
+    )
+    with (
+        patch.object(BooksRepository, "find_sister_volumes", _fake_sisters),
+        patch.object(
+            BookSummariesRepository,
+            "get_summaries_for_books",
+            fake_get_summaries_for_books,
+        ),
+        pages_patch,
+    ):
+        await _run_get_book_summary({"book_ids": ["other"]}, _reader_ctx())
+
+    assert set(captured["ids"]) == {"cur", "sis"}
+
+
+# ── Global chat: book IDs the agent invented (e.g. after a catalog result) must
+# not silently scope a search down to zero results. ──────────────────────────
+
+
+def _global_ctx():
+    ctx = MagicMock()
+    ctx.session = AsyncMock()
+    ctx.is_global = True
+    ctx.book_id = None
+    ctx.context_book_ids = []
+    ctx.summary_narrowing_enabled = False
+    return ctx
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "requested, known, expected",
+    [
+        (None, set(), None),
+        ([], set(), []),
+        (["real", "fake"], {"real"}, ["real"]),
+        (["fake"], set(), None),
+        (["قۇتادغۇبىلىك"], set(), None),
+    ],
+)
+async def test_resolve_book_scope_global_drops_unknown_ids(requested, known, expected):
+    from app.services.rag.agent.tools import _resolve_book_scope
+
+    async def fake_find_existing_ids(self, ids):
+        return {i for i in ids if i in known}
+
+    with patch.object(BooksRepository, "find_existing_ids", fake_find_existing_ids):
+        assert await _resolve_book_scope(requested, _global_ctx()) == expected
+
+
+@pytest.mark.asyncio
+async def test_global_search_chunks_with_invented_id_searches_whole_library():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.system_configs_repository import SystemConfigsRepository
+
+    calls = []
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        calls.append(book_ids)
+        return []
+
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(
+            BooksRepository, "find_existing_ids", AsyncMock(return_value=set())
+        ),
+        patch.object(
+            SystemConfigsRepository, "get_value", AsyncMock(return_value="10")
+        ),
+    ):
+        await agent_tools._run_search_chunks(
+            {"query": "q", "book_ids": ["invented-id"]}, _global_ctx()
+        )
+
+    assert calls == [None]
+
+
+# ── One-word title filter: keep distinctive one-word titles (e.g. قۇتادغۇبىلىك),
+# drop everyday words (e.g. ھايات) that match by accident. ─────────────────────
+
+_LONG_QUESTION = "قۇتادغۇبىلىكتە قىز پەرزەنت ھەققىدە قانداق سەلبى مەزمۇنلار بار؟"
+
+
+def _title_ctx():
+    ctx = _global_ctx()
+    res = MagicMock()
+    res.fetchall.return_value = []
+    ctx.session.execute = AsyncMock(return_value=res)
+    return ctx
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_common, expected_count", [(False, 1), (True, 0)])
+async def test_one_word_title_kept_unless_common(is_common, expected_count):
+    from app.services.rag.agent import tools as agent_tools
+
+    book = {"id": "kb1", "title": "قۇتادغۇبىلىك", "author": "A", "volume": None}
+    with (
+        patch.object(
+            agent_tools,
+            "find_books_by_title_in_question",
+            AsyncMock(return_value=[book]),
+        ),
+        patch.object(
+            agent_tools, "_title_is_common_word", AsyncMock(return_value=is_common)
+        ),
+    ):
+        result = await agent_tools._run_find_books_by_title(
+            {"question": _LONG_QUESTION}, _title_ctx()
+        )
+
+    assert len(result) == expected_count
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mentioning, total, expected",
+    [
+        (89, 633, False),
+        (308, 633, True),
+        (159, 633, True),
+        (158, 633, False),
+        (0, 0, True),
+    ],
+)
+async def test_title_is_common_word_uses_book_share(mentioning, total, expected):
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.pages_repository import PagesRepository
+
+    with (
+        patch.object(agent_tools.cache_service, "get", AsyncMock(return_value=None)),
+        patch.object(agent_tools.cache_service, "set", AsyncMock()),
+        patch.object(
+            PagesRepository,
+            "count_books_mentioning",
+            AsyncMock(return_value=mentioning),
+        ),
+        patch.object(
+            PagesRepository, "count_books_with_text", AsyncMock(return_value=total)
+        ),
+        patch("app.db.session.async_session_factory", MagicMock()),
+    ):
+        assert await agent_tools._title_is_common_word("word") is expected
+
+
+@pytest.mark.asyncio
+async def test_title_is_common_word_treats_lookup_failure_as_common():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.pages_repository import PagesRepository
+
+    with (
+        patch.object(agent_tools.cache_service, "get", AsyncMock(return_value=None)),
+        patch.object(
+            PagesRepository,
+            "count_books_mentioning",
+            AsyncMock(side_effect=TimeoutError("statement timeout")),
+        ),
+        patch.object(
+            PagesRepository, "count_books_with_text", AsyncMock(return_value=633)
+        ),
+        patch("app.db.session.async_session_factory", MagicMock()),
+    ):
+        assert await agent_tools._title_is_common_word("word") is True
+
+
+@pytest.mark.asyncio
+async def test_title_is_common_word_uses_cache():
+    from app.services.rag.agent import tools as agent_tools
+    from app.db.repositories.pages_repository import PagesRepository
+
+    mentioning = AsyncMock()
+
+    async def fake_get(key):
+        return 633 if key.endswith(":total") else 89
+
+    with (
+        patch.object(agent_tools.cache_service, "get", fake_get),
+        patch.object(PagesRepository, "count_books_mentioning", mentioning),
+    ):
+        assert await agent_tools._title_is_common_word("قۇتادغۇبىلىك") is False
+    mentioning.assert_not_awaited()

@@ -316,3 +316,45 @@ async def test_find_range_filters_by_page_number_bounds():
 
     pages = await repo.find_range("b1", 37, 38)
     assert [p.page_number for p in pages] == [37, 38]
+
+
+@pytest.mark.asyncio
+async def test_count_books_mentioning_uses_prefix_tsquery_and_timeout():
+    from app.db.repositories.pages_repository import PagesRepository
+
+    session = AsyncMock()
+    res = MagicMock()
+    res.scalar_one.return_value = 89
+    session.execute.return_value = res
+
+    count = await PagesRepository(session).count_books_mentioning("«قۇتادغۇبىلىك»")
+
+    assert count == 89
+    statements = [str(c.args[0]) for c in session.execute.await_args_list]
+    assert any("SET LOCAL statement_timeout" in s for s in statements)
+    final_sql = statements[-1]
+    final_params = session.execute.await_args_list[-1].args[1]
+    assert "to_tsquery('simple', :q)" in final_sql
+    assert final_params == {"q": "قۇتادغۇبىلىك:*"}
+
+
+@pytest.mark.asyncio
+async def test_count_books_mentioning_rejects_unusable_word():
+    from app.db.repositories.pages_repository import PagesRepository
+
+    session = AsyncMock()
+    with pytest.raises(ValueError):
+        await PagesRepository(session).count_books_mentioning(" & ! ")
+    session.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_count_books_with_text():
+    from app.db.repositories.pages_repository import PagesRepository
+
+    session = AsyncMock()
+    res = MagicMock()
+    res.scalar_one.return_value = 633
+    session.execute.return_value = res
+
+    assert await PagesRepository(session).count_books_with_text() == 633

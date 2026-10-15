@@ -68,7 +68,12 @@ class CatalogHandler:
         if matched_title:
             stmt = (
                 select(
-                    Book.title, Book.author, Book.volume, Book.total_pages, Book.status
+                    Book.id,
+                    Book.title,
+                    Book.author,
+                    Book.volume,
+                    Book.total_pages,
+                    Book.status,
                 )
                 .where(
                     Book.status != "error",
@@ -89,8 +94,11 @@ class CatalogHandler:
                     status_tag = (
                         f" [Status: {book.status}]" if book.status != "ready" else ""
                     )
+                    # BookID lets the agent scope search_chunks to this book —
+                    # without it the agent invents an ID and gets 0 results.
                     lines.append(
-                        f"- Title: {book.title}{volume}, Author: {author}{pages}{status_tag}"
+                        f"- BookID: {book.id}, Title: {book.title}{volume}, "
+                        f"Author: {author}{pages}{status_tag}"
                     )
                 return "\n".join(lines), len(books)
 
@@ -116,7 +124,12 @@ class CatalogHandler:
         if matched_author:
             stmt = (
                 select(
-                    Book.title, Book.author, Book.volume, Book.total_pages, Book.status
+                    Book.id,
+                    Book.title,
+                    Book.author,
+                    Book.volume,
+                    Book.total_pages,
+                    Book.status,
                 )
                 .where(
                     Book.status != "error",
@@ -133,7 +146,9 @@ class CatalogHandler:
                 status_tag = (
                     f" [Status: {book.status}]" if book.status != "ready" else ""
                 )
-                lines.append(f"- {book.title}{volume}{pages}{status_tag}")
+                lines.append(
+                    f"- BookID: {book.id}, {book.title}{volume}{pages}{status_tag}"
+                )
             return "\n".join(lines), len(books)
 
         # ── 3. Full catalog fallback ─────────────────────────────────────────

@@ -830,6 +830,18 @@ class BooksRepository(BaseRepository[Book]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def find_existing_ids(self, book_ids: List[str]) -> set[str]:
+        """Return the subset of book_ids that exist in `books`.
+
+        Used to drop book IDs the retrieval agent invented (e.g. a title passed
+        where an ID belongs) before they scope a search down to zero results.
+        """
+        if not book_ids:
+            return set()
+        stmt = select(Book.id).where(Book.id.in_([str(b) for b in book_ids]))
+        result = await self.session.execute(stmt)
+        return {str(row[0]) for row in result.fetchall()}
+
     async def find_titles_by_ids(self, book_ids: List[str]) -> List[dict]:
         """Return [{id, title, author, volume}] for the given book IDs, title-bearing rows only.
 

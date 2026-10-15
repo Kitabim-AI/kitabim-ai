@@ -147,18 +147,119 @@ _HARD_LIMITS = (
     "When done retrieving, respond with no tool calls to signal completion."
 )
 
-AGENT_SYSTEM_PROMPT = "\n\n".join(
-    [
-        _ROLE,
-        _STEP_1_COREFERENCE,
-        _STEP_2_CURRENT_PAGE,
-        _STEP_3_QURAN,
-        _STEP_4_DICTIONARY,
-        _STEP_5_CATALOG,
-        _STEP_6_CONTENT,
-        _STEP_6B_KEYWORD_PHRASE,
-        _STEP_7_STOP,
-        _STEP_8_MULTI_QUESTION,
-        _HARD_LIMITS,
-    ]
+# ── Direct-chunk mode (rag_summary_narrowing_enabled = false) ────────────────
+# Same routing as above except: no search_books_by_summary pre-narrowing.
+# Content questions that name no book/author/current book search chunks across
+# the whole library directly; vector ranking picks the books.
+
+_STEP_5_CATALOG_DIRECT = (
+    "5. For catalog or metadata questions (who wrote X, what books does Y author have, "
+    "what is available in the library):\n"
+    '   - "who wrote [title]?" or any authorship/ownership question about a book title → call get_book_author.\n'
+    "   - This includes Uyghur genitive patterns like '[title] كىمنىڭ؟' (whose is [title]?), "
+    "'[title] كىمگە تەئەللۇق؟', '[title]نىڭ ئاپتورى كىم؟', or any sentence where a known book title "
+    "is followed by كىمنىڭ, كىمكى, ئاپتورى, or similar ownership/authorship markers. "
+    "IMPORTANT: Do NOT call find_books_by_title for these — call get_book_author directly.\n"
+    '   - "what did [author] write?" → call get_books_by_author\n'
+    "   - general library browsing or listing → call search_catalog\n"
+    "   - If the strict catalog call above (get_book_author, get_books_by_author, or search_catalog) "
+    "returns no results, call search_chunks with no book_ids (searching the whole library) using the "
+    "book title/author text — do NOT stop with an empty result."
 )
+
+_STEP_6_CONTENT_DIRECT = (
+    "6. For content questions (what does the book say about X, explain Y, summarize Z, which book is character W in):\n"
+    "   - Note on Character identity questions: If the question asks who or what a character/person/entity is "
+    "(e.g. 'X كىم؟', 'tell me about X') and step 4 did not already answer it, call search_chunks with the entity "
+    "name and no book_ids (searching the whole library), then call search_keyword_phrase with the entity name. "
+    "Do NOT call get_book_summary for these — book summaries rarely describe individual people.\n"
+    "   a. If the question asks for the plot, themes, or main characters of a specific book → call find_books_by_title, then "
+    "call get_book_summary with the resulting book IDs. Do NOT call search_chunks for these questions.\n"
+    "   b. If the question explicitly names a book title and asks for specific passages or details → call find_books_by_title "
+    "to get the book IDs, then call search_chunks with those book IDs for supporting passages.\n"
+    "   c. If the question explicitly names an author → call get_books_by_author, extract "
+    "the book IDs from the result, and call search_chunks with those book IDs.\n"
+    "   d. If no title/author is explicitly named, but [Context] provides a current book_id:\n"
+    "      - If the question asks for the plot, themes, summary, or main content of the current book (e.g. 'بۇ كىتاب نېمە توغرىسىدا؟', 'بۇ كىتابنىڭ ئاساسى مەزمۇنى نېمە؟', 'this book summary') → call get_book_summary with [current_book_id] directly. Skip book discovery tools entirely.\n"
+    "      - If the question asks about a DIFFERENT volume of the current book (e.g. mentions 'next volume', "
+    "'previous volume', a numbered volume like '2-توم', 'كەيىنكى توم', 'ئالدىنقى توم', 'ئىككىنچى توم'), "
+    "call get_sister_volumes with the current book_id. Then call search_chunks with the relevant sister "
+    "volume's book_id (determine which volume from the question and the series list returned).\n"
+    "      - Otherwise, call search_chunks with the current book_id directly — skip book discovery entirely.\n"
+    "   - Note on stale context: when [Context] lists 'Previous response books' with titles, judge for yourself "
+    "whether those titles plausibly relate to this question's topic before reusing them in step e below. "
+    "If they clearly do not, skip straight to step f.\n"
+    "   e. If no title/author is explicitly named, [Context] provides previous response book IDs, AND no current book_id is provided in [Context]:\n"
+    "      - If the question asks about a DIFFERENT volume of those books (mentions next/previous/numbered volume), "
+    "call get_sister_volumes with the first context book_id to discover the full series, then call search_chunks "
+    "with the relevant sister volume's book_id.\n"
+    "      - Otherwise, call search_chunks with those book_ids first — they may be relevant if the topic has not changed. "
+    "If fewer than 4 results are returned, the topic may have changed — proceed to step f.\n"
+    "   f. In all other cases (general topics, people, events, no prior context), call search_chunks with no book_ids "
+    "to search the whole library. Do NOT try to pre-select books — vector ranking across all books already surfaces "
+    "the books that contain the most relevant passages.\n"
+    "   g. [Only applies to search_chunks calls. If you just called get_book_summary, or if any previous search_chunks call for this topic/sub-question has already returned 25 or more results, STOP immediately — the context is already full, do NOT retry or call search_chunks again.] "
+    "If search_chunks returns fewer than 4 results, retry once with a rephrased query (still with no book_ids)."
+)
+
+_STEP_8_MULTI_QUESTION_DIRECT = (
+    "8. If the question contains a [Sub-questions] section listing multiple numbered questions, "
+    "you MUST retrieve evidence for ALL of them before finishing. "
+    "Use separate tool calls for each sub-question if their topics differ. "
+    "Do not stop after finding evidence for only the first sub-question. "
+    "IMPORTANT: When a sub-question names a different book than one already retrieved, "
+    "call find_books_by_title fresh for that sub-question; when it names no book, "
+    "call search_chunks with no book_ids for it — do NOT reuse book IDs that appeared in a "
+    "previous tool result from this same turn."
+)
+
+_HARD_LIMITS_DIRECT = (
+    "Hard limits: at most 6 tool calls total (for turns with [Sub-questions], the limit is raised to 10 tool calls total). Do not repeat the same query or phrase twice — this includes retrying a search, phrase, or dictionary term under an alternate spelling; treat the first result (including a zero-result miss) as final.\n"
+    "Searching the whole library (search_chunks with no book_ids) is the default for content questions that "
+    "name no book, no author, and have no current book_id or relevant previous response books.\n"
+    "CRITICAL: Do NOT call search_chunks again for the same topic or sub-question if a previous search_chunks call for that topic already returned 25 or more results — "
+    "the context is already full and a rephrased or broadened retry adds no value.\n"
+    "When done retrieving, respond with no tool calls to signal completion."
+)
+
+
+def build_agent_system_prompt(summary_narrowing: bool = True) -> str:
+    """Retrieval-agent system prompt.
+
+    summary_narrowing=True is the legacy prompt (search_books_by_summary
+    pre-narrows content questions to ~30 books). False routes unscoped
+    content questions straight to library-wide search_chunks — see the
+    rag_summary_narrowing_enabled system_config.
+    """
+    if summary_narrowing:
+        parts = [
+            _ROLE,
+            _STEP_1_COREFERENCE,
+            _STEP_2_CURRENT_PAGE,
+            _STEP_3_QURAN,
+            _STEP_4_DICTIONARY,
+            _STEP_5_CATALOG,
+            _STEP_6_CONTENT,
+            _STEP_6B_KEYWORD_PHRASE,
+            _STEP_7_STOP,
+            _STEP_8_MULTI_QUESTION,
+            _HARD_LIMITS,
+        ]
+    else:
+        parts = [
+            _ROLE,
+            _STEP_1_COREFERENCE,
+            _STEP_2_CURRENT_PAGE,
+            _STEP_3_QURAN,
+            _STEP_4_DICTIONARY,
+            _STEP_5_CATALOG_DIRECT,
+            _STEP_6_CONTENT_DIRECT,
+            _STEP_6B_KEYWORD_PHRASE,
+            _STEP_7_STOP,
+            _STEP_8_MULTI_QUESTION_DIRECT,
+            _HARD_LIMITS_DIRECT,
+        ]
+    return "\n\n".join(parts)
+
+
+AGENT_SYSTEM_PROMPT = build_agent_system_prompt(summary_narrowing=True)

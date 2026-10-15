@@ -17,7 +17,7 @@ Two different mechanisms, depending on the task:
 ```
 packages/backend-core/app/core/prompts.py                    ← OCR, summary, judge, rerank, entity-resolution, query-rewrite, history-extraction prompts
 packages/backend-core/app/llm/models.py                      ← model construction + circuit breaker (generate_text, generate_text_with_image, build_text_llm, GeminiEmbeddings)
-packages/backend-core/app/services/rag/agent/prompts.py      ← AGENT_SYSTEM_PROMPT — retrieval agent's tool-calling instructions
+packages/backend-core/app/services/rag/agent/prompts.py      ← build_agent_system_prompt(summary_narrowing) / AGENT_SYSTEM_PROMPT — retrieval agent's tool-calling instructions
 packages/backend-core/app/services/chat/answer_prompts.py    ← build_answer_instructions() — final-answer synthesis instructions
 packages/backend-core/app/services/chat/orchestrator.py      ← ChatOrchestrator.stream_response — the sole chat pipeline, chains both agents
 packages/backend-core/app/services/chat/retrieval_agent.py   ← builds the retrieval Agent (AGENT_SYSTEM_PROMPT + intent-signal hints + tools)
@@ -41,7 +41,7 @@ There is **no** `services/rag/handlers/standard_rag.py` and no single `RAG_PROMP
 | `ENTITY_RESOLUTION_JUDGE_PROMPT` | `entity_resolution_service.py` | Same/different verdict for candidate duplicate knowledge-graph entities |
 | `QUERY_REWRITE_PROMPT` | `rewrite_query` agent tool (co-reference resolution) | Rewrite a pronoun-dependent follow-up into a standalone question |
 | `EXTRACTION_PROMPT_TEMPLATE` / `FACT_CLASSIFICATION_PROMPT_TEMPLATE` / `SYNTHESIS_PROMPT_TEMPLATE` | `HistoryExtractionService` | AI-driven history-dictionary term/fact extraction pipeline |
-| `AGENT_SYSTEM_PROMPT` (`services/rag/agent/prompts.py`) | `build_retrieval_agent()` → `KitabimRetrievalAgent` (ADK `Agent`) | Retrieval-agent tool-calling policy — which tool to call for which question shape, hard limits on tool-call count |
+| `build_agent_system_prompt(summary_narrowing)` / `AGENT_SYSTEM_PROMPT` (`services/rag/agent/prompts.py`) | `build_retrieval_agent()` → `KitabimRetrievalAgent` (ADK `Agent`) | Retrieval-agent tool-calling policy — which tool to call for which question shape, hard limits on tool-call count. Two variants, picked by the `rag_summary_narrowing_enabled` system config: `True` (= `AGENT_SYSTEM_PROMPT`, legacy summary-first book routing) and `False` (direct library-wide `search_chunks`; the `search_books_by_summary` tool is also removed from the agent). Steps 1–4, 6b and 7 are shared constants — editing them changes both variants; steps 5, 6, 8 and the hard limits have a `_DIRECT` twin that must be kept in sync by hand. |
 | `build_answer_instructions()` (`services/chat/answer_prompts.py`) | `build_answer_agent()` → `KitabimAnswerAgent` (ADK `Agent`) | Final-answer synthesis: citation format, Uyghur-only output, persona injection |
 
 **Dead constants — do not build new features on these without checking they're actually wired up first:**

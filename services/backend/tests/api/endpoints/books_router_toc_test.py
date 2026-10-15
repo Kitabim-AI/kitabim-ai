@@ -42,6 +42,8 @@ def make_user():
 async def test_set_page_toc_marks_and_deletes_chunks(monkeypatch):
     mock_pages_repo = AsyncMock()
     mock_pages_repo.set_is_toc.return_value = True
+    # Marking/unmarking a TOC page shifts where content starts.
+    mock_pages_repo.sync_content_page_offset.return_value = 3
     mock_chunks_repo = AsyncMock()
     mock_chunks_repo.delete_by_page.return_value = 4
 
@@ -65,7 +67,8 @@ async def test_set_page_toc_marks_and_deletes_chunks(monkeypatch):
         "b1", 5, True, "editor@example.com"
     )
     mock_chunks_repo.delete_by_page.assert_awaited_once_with("b1", 5)
-    assert result == {"status": "ok", "isToc": True}
+    mock_pages_repo.sync_content_page_offset.assert_awaited_once_with("b1")
+    assert result == {"status": "ok", "isToc": True, "contentPageOffset": 3}
     assert session.commit.called
 
 
@@ -73,6 +76,8 @@ async def test_set_page_toc_marks_and_deletes_chunks(monkeypatch):
 async def test_set_page_toc_unmark_does_not_touch_chunks(monkeypatch):
     mock_pages_repo = AsyncMock()
     mock_pages_repo.set_is_toc.return_value = True
+    # Marking/unmarking a TOC page shifts where content starts.
+    mock_pages_repo.sync_content_page_offset.return_value = 3
     mock_chunks_repo = AsyncMock()
 
     monkeypatch.setattr(
@@ -95,7 +100,8 @@ async def test_set_page_toc_unmark_does_not_touch_chunks(monkeypatch):
         "b1", 5, False, "editor@example.com"
     )
     mock_chunks_repo.delete_by_page.assert_not_called()
-    assert result == {"status": "ok", "isToc": False}
+    mock_pages_repo.sync_content_page_offset.assert_awaited_once_with("b1")
+    assert result == {"status": "ok", "isToc": False, "contentPageOffset": 3}
 
 
 @pytest.mark.asyncio
