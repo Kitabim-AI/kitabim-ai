@@ -215,6 +215,7 @@ class Page(Base):
     llm_spell_check_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    prev_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -261,6 +262,10 @@ class Page(Base):
         CheckConstraint(
             "status IN ('pending', 'ocr_processing', 'ocr_done', 'chunked', 'indexing', 'indexed', 'error')",
             name="pages_status_check",
+        ),
+        CheckConstraint(
+            "llm_spell_check_status IN ('idle', 'in_progress', 'succeeded', 'failed')",
+            name="pages_llm_spell_check_status_check",
         ),
     )
 
@@ -512,6 +517,13 @@ class BatchLlmSpellCheckJob(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('submitting', 'running', 'succeeded', 'failed', 'cancelled', 'expired')",
+            name="batch_llm_spell_check_jobs_status_check",
+        ),
     )
 
 
