@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone, timedelta
 import logging
 import re
 from typing import List, Optional
 
-from sqlalchemy import select, delete, func, text
+from sqlalchemy import select, delete, func, text, and_, or_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Page, Book
+from app.core.pipeline import (
+    PAGE_MILESTONE_IDLE,
+    PAGE_MILESTONE_IN_PROGRESS,
+    PAGE_MILESTONE_FAILED,
+    PAGE_MILESTONE_SUCCEEDED,
+)
 from app.db.repositories.base_repository import BaseRepository
 
 # Characters with meaning in to_tsquery syntax, plus quote/punctuation marks
@@ -398,7 +405,7 @@ class PagesRepository(BaseRepository[Page]):
         llm_spell_check_at when the run reaches a terminal state (success or
         failure) — not on transition to in_progress."""
         from sqlalchemy import update
-        from app.core.pipeline import PAGE_MILESTONE_SUCCEEDED, PAGE_MILESTONE_FAILED
+        from app.core.pipeline import PAGE_MILESTONE_FAILED
 
         values = {"llm_spell_check_status": status, "last_updated": func.now()}
         if status in (PAGE_MILESTONE_SUCCEEDED, PAGE_MILESTONE_FAILED):
@@ -450,6 +457,84 @@ class PagesRepository(BaseRepository[Page]):
 
         result = await self.session.execute(stmt)
         return result.scalar_one()
+
+    async def list_eligible_for_llm_spell_check(
+        self,
+        book_id: str,
+        force: bool = False,
+        stale_timeout_minutes: int = 60,
+    ) -> List[int]:
+        """Finds page IDs in a book eligible for LLM spell check.
+        Filters out null/empty text pages. If force is False, only includes
+        idle/failed pages, or in_progress pages that exceeded stale_timeout_minutes.
+        If force is True, includes all non-empty pages not currently active.
+        """
+        now = datetime.now(timezone.utc)
+        stale_threshold = now - timedelta(minutes=stale_timeout_minutes)
+
+        non_empty_cond = and_(
+            Page.text.is_not(None),
+            func.trim(Page.text) != "",
+        )
+
+        if force:
+            status_cond = or_(
+                Page.llm_spell_check_status != PAGE_MILESTONE_IN_PROGRESS,
+                Page.last_updated < stale_threshold,
+            )
+        else:
+            status_cond = or_(
+                Page.llm_spell_check_status.in_(
+                    [PAGE_MILESTONE_IDLE, PAGE_MILESTONE_FAILED]
+                ),
+                and_(
+                    Page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS,
+                    Page.last_updated < stale_threshold,
+                ),
+            )
+
+        stmt = (
+            select(Page.id)
+            .where(
+                Page.book_id == book_id,
+                non_empty_cond,
+                status_cond,
+            )
+            .order_by(Page.page_number)
+        )
+        res = await self.session.execute(stmt)
+        return [row[0] for row in res.fetchall()]
+
+    async def bulk_set_llm_spell_check_status(
+        self, page_ids: List[int], status: str
+    ) -> None:
+        """Update llm_spell_check_status for a batch of page IDs."""
+        if not page_ids:
+            return
+        stmt = (
+            update(Page)
+            .where(Page.id.in_(page_ids))
+            .values(
+                llm_spell_check_status=status,
+                last_updated=func.now(),
+            )
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+
+    async def get_pages_by_ids(self, page_ids: List[int]) -> List[Page]:
+        """Fetch pages by their primary key IDs ordered by page number."""
+        if not page_ids:
+            return []
+        stmt = select(Page).where(Page.id.in_(page_ids)).order_by(Page.page_number)
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+    async def get_pages_by_book_id(self, book_id: str) -> List[Page]:
+        """Fetch all pages for a book ordered by page number."""
+        stmt = select(Page).where(Page.book_id == book_id).order_by(Page.page_number)
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
 
 
 def get_pages_repository(session: AsyncSession) -> PagesRepository:
