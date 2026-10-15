@@ -59,7 +59,8 @@ async def correct_page_text(
     page_text: str,
     prev_page_text: Optional[str],
     next_page_text: Optional[str],
-    config_repo: SystemConfigsRepository,
+    config_repo: Optional[SystemConfigsRepository] = None,
+    model_name: Optional[str] = None,
 ) -> str:
     """Live path — one synchronous generate_content call. Used for every
     per-page trigger, and for per-book triggers when
@@ -69,11 +70,15 @@ async def correct_page_text(
     goes through the shared circuit breaker and rate limiter, per project
     convention for single-shot structured LLM calls.
     """
-    model = await config_repo.get_value(
-        "gemini_llm_spell_check_model", "gemini-3.1-flash-lite"
-    )
+    if model_name is None:
+        if config_repo is not None:
+            model_name = await config_repo.get_value(
+                "gemini_llm_spell_check_model", "gemini-3.1-flash-lite"
+            )
+        else:
+            model_name = "gemini-3.1-flash-lite"
     prompt = build_correction_prompt(page_text, prev_page_text, next_page_text)
-    llm = build_text_llm(model)
+    llm = build_text_llm(model_name)
     corrected = await llm.ainvoke(
         prompt, config=types.GenerateContentConfig(temperature=0.0)
     )

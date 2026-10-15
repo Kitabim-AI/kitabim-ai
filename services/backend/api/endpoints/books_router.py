@@ -6,6 +6,7 @@ import uuid
 import os
 import io
 import re
+import time
 import warnings
 from datetime import datetime, timezone
 from typing import Optional, List, Union
@@ -2289,6 +2290,7 @@ async def reprocess_summary(
 @router.post("/{book_id}/reprocess/llm-spell-check")
 async def reprocess_llm_spell_check(
     book_id: str,
+    force: bool = False,
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
@@ -2296,19 +2298,14 @@ async def reprocess_llm_spell_check(
     every eligible page in a book. Runs independently of the dictionary-based
     spell check pipeline; each trigger costs real Gemini API calls, hence
     require_admin. Branches on llm_spell_check_batch_enabled to choose the
-    live vs. Gemini Batch API path."""
+    live vs. Gemini Batch API path. Set force=True to reprocess succeeded pages."""
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    pages_res = await session.execute(
-        select(Page.id).where(
-            Page.book_id == book_id,
-            Page.llm_spell_check_status != PAGE_MILESTONE_IN_PROGRESS,
-        )
-    )
-    page_ids = [row[0] for row in pages_res.fetchall()]
+    pages_repo = PagesRepository(session)
+    page_ids = await pages_repo.list_eligible_for_llm_spell_check(book_id, force=force)
     if not page_ids:
         return {"status": "llm_spell_check_started", "queued": 0}
 
@@ -2333,13 +2330,8 @@ async def reprocess_llm_spell_check(
             )
         return {"status": "llm_spell_check_batch_submitted", "queued": len(page_ids)}
 
-    await session.execute(
-        update(Page)
-        .where(Page.id.in_(page_ids))
-        .values(
-            llm_spell_check_status=PAGE_MILESTONE_IN_PROGRESS,
-            last_updated=datetime.now(timezone.utc),
-        )
+    await pages_repo.bulk_set_llm_spell_check_status(
+        page_ids, PAGE_MILESTONE_IN_PROGRESS
     )
     await session.commit()
 
@@ -2350,11 +2342,15 @@ async def reprocess_llm_spell_check(
             arq.connections.RedisSettings.from_dsn(settings.redis_url)
         )
         try:
-            await redis_pool.enqueue_job(
+            job = await redis_pool.enqueue_job(
                 "llm_spell_check_job",
                 page_ids=page_ids,
-                _job_id=f"llm_spell_check:book:{book_id}",
+                _job_id=f"llm_spell_check:book:{book_id}:{int(time.time())}",
             )
+            if job is None:
+                raise RuntimeError(
+                    "arq dropped enqueue_job (job_id collision or redis issue)"
+                )
         finally:
             await redis_pool.aclose()
         log_json(
@@ -2373,14 +2369,7 @@ async def reprocess_llm_spell_check(
             book_id=book_id,
             error=str(exc),
         )
-        await session.execute(
-            update(Page)
-            .where(Page.id.in_(page_ids))
-            .values(
-                llm_spell_check_status=PAGE_MILESTONE_IDLE,
-                last_updated=datetime.now(timezone.utc),
-            )
-        )
+        await pages_repo.bulk_set_llm_spell_check_status(page_ids, PAGE_MILESTONE_IDLE)
         await session.commit()
         raise HTTPException(
             status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
@@ -2406,6 +2395,9 @@ async def trigger_llm_spell_check_page(
     if not page:
         raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
 
+    if not page.text or not page.text.strip():
+        raise HTTPException(status_code=400, detail="Page text is empty")
+
     if page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS:
         raise HTTPException(
             status_code=409, detail=t("errors.llm_spell_check_already_running")
@@ -2423,11 +2415,13 @@ async def trigger_llm_spell_check_page(
             arq.connections.RedisSettings.from_dsn(settings.redis_url)
         )
         try:
-            await redis_pool.enqueue_job(
+            job = await redis_pool.enqueue_job(
                 "llm_spell_check_job",
                 page_ids=[page.id],
-                _job_id=f"llm_spell_check:page:{page.id}",
+                _job_id=f"llm_spell_check:page:{page.id}:{int(time.time())}",
             )
+            if job is None:
+                raise RuntimeError("arq dropped enqueue_job")
         finally:
             await redis_pool.aclose()
         log_json(
