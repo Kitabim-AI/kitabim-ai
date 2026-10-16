@@ -25,6 +25,13 @@ RERANK_MAX_INPUT_CHUNKS = 50
 # Calibrated from observed scores: good match ≈ 0.65+, topic mismatch < 0.50.
 CONTEXT_SWITCH_SCORE_THRESHOLD = 0.55
 
+# ── Reader-mode sister-volume fallback ───────────────────────────────────────
+# Reader chat searches the open volume; this many of the best chunks from the
+# work's other volumes (same title+author) ride along so an answer that lives
+# in another volume can still be found. No score trigger: the open volume can
+# score well on a character's name without holding the event asked about.
+READER_SISTER_VOLUME_CHUNKS = 5
+
 # ── One-word title filter (find_books_by_title) ───────────────────────────────
 # A one-word title matched by a multi-word question is dropped only when the
 # word is an everyday word: it appears in at least this share of the books that

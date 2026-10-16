@@ -577,6 +577,59 @@ def _extract_book_ids(args: dict) -> Optional[List[str]]:
     return [str(raw).strip()]
 
 
+async def _reader_allowed_book_ids(ctx: QueryContext) -> frozenset:
+    """The current book plus its sister volumes, looked up once per request."""
+    allowed = getattr(ctx, "_reader_allowed_book_ids", None)
+    if not isinstance(allowed, frozenset):
+        from app.db.repositories.books_repository import BooksRepository
+
+        current = str(ctx.book_id)
+        sisters = await BooksRepository(ctx.session).find_sister_volumes(current)
+        allowed = frozenset({current, *(str(b.id) for b in sisters)})
+        ctx._reader_allowed_book_ids = allowed
+    return allowed
+
+
+async def _sister_volume_chunks(
+    ctx: QueryContext, query_vector: List[float]
+) -> List[dict]:
+    """Best chunks from the current book's other volumes, for reader chat.
+
+    Best-effort: a failed lookup returns [] so the current-volume results
+    still reach the answer.
+    """
+    from app.services.rag.agent.config import READER_SISTER_VOLUME_CHUNKS
+
+    try:
+        sister_ids = sorted(await _reader_allowed_book_ids(ctx) - {str(ctx.book_id)})
+        if not sister_ids:
+            return []
+        chunks = await vector_search(ctx, sister_ids, query_vector=query_vector)
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.WARNING,
+            "Reader sister-volume search failed",
+            book_id=ctx.book_id,
+            error=str(exc),
+        )
+        return []
+
+    top = sorted(chunks, key=lambda c: c.get("score", 0.0), reverse=True)[
+        :READER_SISTER_VOLUME_CHUNKS
+    ]
+    log_json(
+        logger,
+        logging.INFO,
+        "Reader sister-volume search",
+        book_id=ctx.book_id,
+        sister_count=len(sister_ids),
+        added=len(top),
+        top_score=round(top[0].get("score", 0.0), 3) if top else None,
+    )
+    return top
+
+
 async def _clamp_reader_scope(
     book_ids: Optional[List[str]], ctx: QueryContext
 ) -> Optional[List[str]]:
@@ -594,14 +647,7 @@ async def _clamp_reader_scope(
     if all(str(b) == current for b in book_ids):
         return [current]
 
-    allowed = getattr(ctx, "_reader_allowed_book_ids", None)
-    if not isinstance(allowed, frozenset):
-        from app.db.repositories.books_repository import BooksRepository
-
-        sisters = await BooksRepository(ctx.session).find_sister_volumes(current)
-        allowed = frozenset({current, *(str(b.id) for b in sisters)})
-        ctx._reader_allowed_book_ids = allowed
-
+    allowed = await _reader_allowed_book_ids(ctx)
     kept = list(dict.fromkeys(str(b) for b in book_ids if str(b) in allowed))
     dropped = [str(b) for b in book_ids if str(b) not in allowed]
     if dropped:
@@ -659,6 +705,13 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
         return []
 
     results = await vector_search(ctx, book_ids, query_vector=query_vector)
+
+    # Reader chat: the agent searches only the open volume unless the user names
+    # another one, but the answer may live in a later volume of the same work.
+    # Append the sister volumes' best chunks; the answer agent prefers the open
+    # volume and names the other volume when only it answers (answer_prompts).
+    if not ctx.is_global and ctx.book_id and book_ids == [str(ctx.book_id)]:
+        results = results + await _sister_volume_chunks(ctx, query_vector)
 
     # Transparent context-switch fallback: if the LLM passed book_ids that overlap
     # with the previous answer's book IDs and the similarity scores are weak
