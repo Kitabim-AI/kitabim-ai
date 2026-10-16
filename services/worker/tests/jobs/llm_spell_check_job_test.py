@@ -33,9 +33,8 @@ async def test_llm_spell_check_job_success_updates_status_and_text():
         await llm_spell_check_job(ctx, [1])
 
         assert page.text == "corrected text"
-        mock_repo.set_llm_spell_check_status.assert_called_once_with(
-            "book-1", 5, "succeeded"
-        )
+        assert page.prev_text == "original text"
+        assert page.llm_spell_check_status == "succeeded"
         mock_session.commit.assert_called()
 
 
@@ -43,7 +42,9 @@ async def test_llm_spell_check_job_success_updates_status_and_text():
 async def test_llm_spell_check_job_failure_isolated_per_page():
     ctx = {}
     mock_session = AsyncMock()
-    page_ok = Page(id=1, book_id="book-1", page_number=5, text="ok text")
+    page_ok = Page(
+        id=1, book_id="book-1", page_number=5, text="this is original text ok"
+    )
     page_fail = Page(id=2, book_id="book-1", page_number=6, text="fail text")
 
     async def mock_get(model, page_id):
@@ -63,9 +64,9 @@ async def test_llm_spell_check_job_failure_isolated_per_page():
     ):
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
-        async def correct_side_effect(text, prev, nxt, config_repo):
-            if text == "ok text":
-                return "corrected ok text"
+        async def correct_side_effect(text, prev=None, nxt=None, *args, **kwargs):
+            if text == "this is original text ok":
+                return "this is original text ok."
             raise ValueError("model failure")
 
         mock_correct.side_effect = correct_side_effect
@@ -77,11 +78,12 @@ async def test_llm_spell_check_job_failure_isolated_per_page():
 
         await llm_spell_check_job(ctx, [1, 2])
 
-        assert page_ok.text == "corrected ok text"
+        assert page_ok.text == "this is original text ok."
+        assert page_ok.prev_text == "this is original text ok"
+        assert page_ok.llm_spell_check_status == "succeeded"
         assert page_fail.text == "fail text"  # untouched on failure
 
         calls = mock_repo.set_llm_spell_check_status.call_args_list
-        assert ("book-1", 5, "succeeded") in [c.args for c in calls]
         assert ("book-1", 6, "failed") in [c.args for c in calls]
 
 
@@ -104,7 +106,7 @@ async def test_llm_spell_check_job_bounds_concurrency():
     in_flight = 0
     max_in_flight = 0
 
-    async def correct_side_effect(text, prev, nxt, config_repo):
+    async def correct_side_effect(text, prev=None, nxt=None, *args, **kwargs):
         nonlocal in_flight, max_in_flight
         in_flight += 1
         max_in_flight = max(max_in_flight, in_flight)

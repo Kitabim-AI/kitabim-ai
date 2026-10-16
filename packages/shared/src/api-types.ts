@@ -827,7 +827,7 @@ export interface paths {
          *     every eligible page in a book. Runs independently of the dictionary-based
          *     spell check pipeline; each trigger costs real Gemini API calls, hence
          *     require_admin. Branches on llm_spell_check_batch_enabled to choose the
-         *     live vs. Gemini Batch API path.
+         *     live vs. Gemini Batch API path. Set force=True to reprocess succeeded pages.
          */
         post: operations["reprocess_llm_spell_check_api_books__book_id__reprocess_llm_spell_check_post"];
         delete?: never;
@@ -836,7 +836,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/books/{book_id}/pages/{page_num}/llm-spell-check": {
+    "/api/books/{book_id}/pages/{page_num}/llm-spell-check/preview": {
         parameters: {
             query?: never;
             header?: never;
@@ -846,14 +846,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Trigger Llm Spell Check Page
-         * @description Manually trigger the on-demand Gemini-based LLM spell-check pass for a
-         *     single page. Always uses the live path regardless of
-         *     llm_spell_check_batch_enabled — matches how the embedding pipeline's
-         *     reactive per-chunk dispatch always stays interactive
-         *     (docs/main/EMBEDDING_DESIGN.md:13-14).
+         * Preview Llm Spell Check Page
+         * @description Run the LLM spell check on the editor's current (possibly unsaved)
+         *     page text and return the corrected text WITHOUT persisting anything.
+         *     The editor reviews the highlighted changes in edit mode and decides
+         *     whether to save via POST .../update.
          */
-        post: operations["trigger_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_post"];
+        post: operations["preview_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1008,6 +1007,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/{book_id}/download-ticket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Download Ticket
+         * @description Generate a high-speed download ticket or signed URL for downloading the book.
+         *     Returns a direct GCS signed URL if available, or a short-lived ticket URL.
+         */
+        post: operations["get_download_ticket_api_books__book_id__download_ticket_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{book_id}/download": {
         parameters: {
             query?: never;
@@ -1026,6 +1046,114 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/bookmarks/progress/{book_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Progress For Book Endpoint
+         * @description Fetch this user's saved page for a single book, used to resume on open
+         */
+        get: operations["get_progress_for_book_endpoint_api_bookmarks_progress__book_id__get"];
+        /**
+         * Upsert Progress Endpoint
+         * @description Silently save this user's current page for a book
+         */
+        put: operations["upsert_progress_endpoint_api_bookmarks_progress__book_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bookmarks/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Progress Endpoint
+         * @description List this user's books with saved progress, most recent first (Continue Reading tab)
+         */
+        get: operations["list_progress_endpoint_api_bookmarks_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bookmarks/{book_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Bookmark Endpoint
+         * @description Create a whole-page or passage bookmark
+         */
+        post: operations["create_bookmark_endpoint_api_bookmarks__book_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bookmarks/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Bookmarks Endpoint
+         * @description List this user's bookmarks, optionally scoped to one book
+         */
+        get: operations["list_bookmarks_endpoint_api_bookmarks__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bookmarks/{bookmark_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Bookmark Endpoint
+         * @description Delete a bookmark owned by this user
+         */
+        delete: operations["delete_bookmark_endpoint_api_bookmarks__bookmark_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename Bookmark Endpoint
+         * @description Rename a bookmark owned by this user
+         */
+        patch: operations["rename_bookmark_endpoint_api_bookmarks__bookmark_id__patch"];
         trace?: never;
     };
     "/api/chat/usage": {
@@ -1784,6 +1912,28 @@ export interface paths {
          * @description Delete a dictionary entry (Admin only).
          */
         delete: operations["delete_dictionary_entry_api_dictionary__entry_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dictionary/words-bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Words Bundle
+         * @description Returns a gzip-compressed UTF-8 newline-delimited wordlist of all valid words.
+         *
+         *     Used by desktop OCR client to perform fast, offline de-hyphenation.
+         */
+        get: operations["get_words_bundle_api_dictionary_words_bundle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3283,6 +3433,15 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** CreateBookmarkRequest */
+        CreateBookmarkRequest: {
+            /** Page Number */
+            page_number: number;
+            /** Name */
+            name: string;
+            /** Quote Text */
+            quote_text?: string | null;
+        };
         /** CreateConversationRequest */
         CreateConversationRequest: {
             /** Book Id */
@@ -3466,6 +3625,11 @@ export interface components {
         IgnoreIssuesRequest: {
             /** Issue Ids */
             issue_ids: number[];
+        };
+        /** LlmSpellCheckPreviewRequest */
+        LlmSpellCheckPreviewRequest: {
+            /** Text */
+            text: string;
         };
         /** MergeEntitiesRequest */
         MergeEntitiesRequest: {
@@ -3713,6 +3877,25 @@ export interface components {
             answerRelevanceScore?: number | null;
             /** Contextprecisionscore */
             contextPrecisionScore?: number | null;
+            /**
+             * Inputtokens
+             * @default 0
+             */
+            inputTokens: number | null;
+            /**
+             * Outputtokens
+             * @default 0
+             */
+            outputTokens: number | null;
+            /**
+             * Costusd
+             * @default 0
+             */
+            costUsd: number | null;
+            /** Answer */
+            answer?: string | null;
+            /** Retrievedcontext */
+            retrievedContext?: string | null;
         };
         /**
          * RagQuestionToggle
@@ -3764,6 +3947,11 @@ export interface components {
             pages_with_issues: number[];
             /** First Issue Page */
             first_issue_page: number;
+        };
+        /** RenameBookmarkRequest */
+        RenameBookmarkRequest: {
+            /** Name */
+            name: string;
         };
         /** RenameEntityRequest */
         RenameEntityRequest: {
@@ -3900,6 +4088,11 @@ export interface components {
             is_active?: boolean | null;
             /** Description */
             description?: string | null;
+        };
+        /** UpsertProgressRequest */
+        UpsertProgressRequest: {
+            /** Page Number */
+            page_number: number;
         };
         /**
          * UserPublic
@@ -5223,7 +5416,9 @@ export interface operations {
     };
     reprocess_llm_spell_check_api_books__book_id__reprocess_llm_spell_check_post: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path: {
                 book_id: string;
@@ -5252,7 +5447,7 @@ export interface operations {
             };
         };
     };
-    trigger_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_post: {
+    preview_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_preview_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5262,7 +5457,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmSpellCheckPreviewRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5519,7 +5718,7 @@ export interface operations {
             };
         };
     };
-    download_book_api_books__book_id__download_get: {
+    get_download_ticket_api_books__book_id__download_ticket_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5529,6 +5728,268 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_book_api_books__book_id__download_get: {
+        parameters: {
+            query?: {
+                ticket?: string | null;
+            };
+            header?: never;
+            path: {
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_progress_for_book_endpoint_api_bookmarks_progress__book_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_progress_endpoint_api_bookmarks_progress__book_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertProgressRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_progress_endpoint_api_bookmarks_progress_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_bookmark_endpoint_api_bookmarks__book_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBookmarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_bookmarks_endpoint_api_bookmarks__get: {
+        parameters: {
+            query?: {
+                book_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_bookmark_endpoint_api_bookmarks__bookmark_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bookmark_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_bookmark_endpoint_api_bookmarks__bookmark_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bookmark_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameBookmarkRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -6763,6 +7224,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_words_bundle_api_dictionary_words_bundle_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

@@ -6,6 +6,7 @@ import uuid
 import os
 import io
 import re
+import time
 import warnings
 from datetime import datetime, timezone
 from typing import Optional, List, Union
@@ -61,6 +62,7 @@ from app.services.storage_service import storage
 from app.utils.categories import normalize_categories
 from app.services.chunking_service import chunking_service
 from app.services.batch_llm_spell_check_service import submit_batch_llm_spell_check
+from app.services.llm_spell_check_service import correct_page_text
 from app.utils.markdown import normalize_markdown, strip_markdown
 from app.llm.models import GeminiEmbeddings
 from auth.dependencies import (
@@ -2289,6 +2291,7 @@ async def reprocess_summary(
 @router.post("/{book_id}/reprocess/llm-spell-check")
 async def reprocess_llm_spell_check(
     book_id: str,
+    force: bool = False,
     current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):
@@ -2296,19 +2299,14 @@ async def reprocess_llm_spell_check(
     every eligible page in a book. Runs independently of the dictionary-based
     spell check pipeline; each trigger costs real Gemini API calls, hence
     require_admin. Branches on llm_spell_check_batch_enabled to choose the
-    live vs. Gemini Batch API path."""
+    live vs. Gemini Batch API path. Set force=True to reprocess succeeded pages."""
     books_repo = BooksRepository(session)
     book = await books_repo.get(book_id)
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    pages_res = await session.execute(
-        select(Page.id).where(
-            Page.book_id == book_id,
-            Page.llm_spell_check_status != PAGE_MILESTONE_IN_PROGRESS,
-        )
-    )
-    page_ids = [row[0] for row in pages_res.fetchall()]
+    pages_repo = PagesRepository(session)
+    page_ids = await pages_repo.list_eligible_for_llm_spell_check(book_id, force=force)
     if not page_ids:
         return {"status": "llm_spell_check_started", "queued": 0}
 
@@ -2333,13 +2331,8 @@ async def reprocess_llm_spell_check(
             )
         return {"status": "llm_spell_check_batch_submitted", "queued": len(page_ids)}
 
-    await session.execute(
-        update(Page)
-        .where(Page.id.in_(page_ids))
-        .values(
-            llm_spell_check_status=PAGE_MILESTONE_IN_PROGRESS,
-            last_updated=datetime.now(timezone.utc),
-        )
+    await pages_repo.bulk_set_llm_spell_check_status(
+        page_ids, PAGE_MILESTONE_IN_PROGRESS
     )
     await session.commit()
 
@@ -2350,11 +2343,15 @@ async def reprocess_llm_spell_check(
             arq.connections.RedisSettings.from_dsn(settings.redis_url)
         )
         try:
-            await redis_pool.enqueue_job(
+            job = await redis_pool.enqueue_job(
                 "llm_spell_check_job",
                 page_ids=page_ids,
-                _job_id=f"llm_spell_check:book:{book_id}",
+                _job_id=f"llm_spell_check:book:{book_id}:{int(time.time())}",
             )
+            if job is None:
+                raise RuntimeError(
+                    "arq dropped enqueue_job (job_id collision or redis issue)"
+                )
         finally:
             await redis_pool.aclose()
         log_json(
@@ -2373,14 +2370,7 @@ async def reprocess_llm_spell_check(
             book_id=book_id,
             error=str(exc),
         )
-        await session.execute(
-            update(Page)
-            .where(Page.id.in_(page_ids))
-            .values(
-                llm_spell_check_status=PAGE_MILESTONE_IDLE,
-                last_updated=datetime.now(timezone.utc),
-            )
-        )
+        await pages_repo.bulk_set_llm_spell_check_status(page_ids, PAGE_MILESTONE_IDLE)
         await session.commit()
         raise HTTPException(
             status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
@@ -2389,73 +2379,76 @@ async def reprocess_llm_spell_check(
     return {"status": "llm_spell_check_started", "queued": len(page_ids)}
 
 
-@router.post("/{book_id}/pages/{page_num}/llm-spell-check")
-async def trigger_llm_spell_check_page(
+class LlmSpellCheckPreviewRequest(BaseModel):
+    text: str
+
+
+@router.post("/{book_id}/pages/{page_num}/llm-spell-check/preview")
+async def preview_llm_spell_check_page(
     book_id: str,
     page_num: int,
-    current_user: User = Depends(require_admin),
+    request: LlmSpellCheckPreviewRequest,
+    current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
-    """Manually trigger the on-demand Gemini-based LLM spell-check pass for a
-    single page. Always uses the live path regardless of
-    llm_spell_check_batch_enabled — matches how the embedding pipeline's
-    reactive per-chunk dispatch always stays interactive
-    (docs/main/EMBEDDING_DESIGN.md:13-14)."""
+    """Run the LLM spell check on the editor's current (possibly unsaved)
+    page text and return the corrected text WITHOUT persisting anything.
+    The editor reviews the highlighted changes in edit mode and decides
+    whether to save via POST .../update."""
+    if not request.text or not request.text.strip():
+        raise HTTPException(
+            status_code=400, detail=t("errors.llm_spell_check_empty_text")
+        )
+
     pages_repo = PagesRepository(session)
     page = await pages_repo.find_one(book_id, page_num)
     if not page:
         raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
 
-    if page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS:
-        raise HTTPException(
-            status_code=409, detail=t("errors.llm_spell_check_already_running")
-        )
-
-    await pages_repo.set_llm_spell_check_status(
-        book_id, page_num, PAGE_MILESTONE_IN_PROGRESS
-    )
-    await session.commit()
+    prev_page = await pages_repo.find_one(book_id, page_num - 1)
+    next_page = await pages_repo.find_one(book_id, page_num + 1)
 
     try:
-        import arq
-
-        redis_pool = await arq.create_pool(
-            arq.connections.RedisSettings.from_dsn(settings.redis_url)
+        corrected = await correct_page_text(
+            request.text,
+            prev_page.text if prev_page else None,
+            next_page.text if next_page else None,
+            config_repo=SystemConfigsRepository(session),
         )
-        try:
-            await redis_pool.enqueue_job(
-                "llm_spell_check_job",
-                page_ids=[page.id],
-                _job_id=f"llm_spell_check:page:{page.id}",
-            )
-        finally:
-            await redis_pool.aclose()
+    except ValueError as exc:
         log_json(
             logger,
-            logging.INFO,
-            "manually enqueued llm_spell_check_job for single page",
+            logging.WARNING,
+            "llm spell check preview rejected by guardrail",
             book_id=book_id,
             page=page_num,
-            user=current_user.email,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=422, detail=t("errors.llm_spell_check_invalid_output")
         )
     except Exception as exc:
         log_json(
             logger,
             logging.ERROR,
-            "failed to enqueue llm_spell_check_job for single page",
+            "llm spell check preview failed",
             book_id=book_id,
             page=page_num,
             error=str(exc),
         )
-        await pages_repo.set_llm_spell_check_status(
-            book_id, page_num, PAGE_MILESTONE_IDLE
-        )
-        await session.commit()
         raise HTTPException(
-            status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
+            status_code=502, detail=t("errors.llm_spell_check_enqueue_failed")
         )
 
-    return {"status": "llm_spell_check_started"}
+    log_json(
+        logger,
+        logging.INFO,
+        "llm spell check preview generated",
+        book_id=book_id,
+        page=page_num,
+        user=current_user.email,
+    )
+    return {"corrected_text": corrected}
 
 
 @router.post("/{book_id}/retry-failed")
@@ -2628,6 +2621,12 @@ async def update_page_text(
     page.is_indexed = (not text_changed) and page.is_indexed
     page.last_updated = datetime.now(timezone.utc)
     page.updated_by = current_user.email
+
+    # Editor reviewed an LLM spell-check preview in edit mode before saving —
+    # mark the page so a non-forced book-level LLM run skips it.
+    if payload.get("llm_spell_checked") is True:
+        page.llm_spell_check_status = PAGE_MILESTONE_SUCCEEDED
+        page.llm_spell_check_at = datetime.now(timezone.utc)
 
     # If text changed, invalidate stale spell check issues (offsets are now invalid)
     if text_changed:

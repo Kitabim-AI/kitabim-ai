@@ -7,6 +7,7 @@ batch_history_extraction_service.py.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -29,7 +30,7 @@ from app.db.models import BatchLlmSpellCheckJob, Page
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.llm_spell_check_service import (
-    _validate_correction,
+    apply_llm_page_correction,
     build_correction_prompt,
 )
 from app.services.storage_service import storage
@@ -60,14 +61,15 @@ async def submit_batch_llm_spell_check(
     to in_progress."""
     job_uuid = str(uuid.uuid4())
     model_name = await _get_llm_spell_check_model(session)
+    pages_repo = PagesRepository(session)
 
-    pages_res = await session.execute(select(Page).where(Page.id.in_(page_ids)))
-    pages_by_id = {p.id: p for p in pages_res.scalars().all()}
+    pages = await pages_repo.get_pages_by_ids(page_ids)
+    pages_by_id = {p.id: p for p in pages}
     if not pages_by_id:
         raise ValueError(f"No pages found for ids {page_ids}")
 
-    all_pages_res = await session.execute(select(Page).where(Page.book_id == book_id))
-    pages_by_number = {p.page_number: p for p in all_pages_res.scalars().all()}
+    all_pages = await pages_repo.get_pages_by_book_id(book_id)
+    pages_by_number = {p.page_number: p for p in all_pages}
 
     requests_jsonl = []
     for page_id, page in pages_by_id.items():
@@ -93,14 +95,17 @@ async def submit_batch_llm_spell_check(
     gcs_input_uri = storage.get_gs_uri(remote_input_path)
 
     client = _get_genai_client()
-    uploaded_file = client.files.upload(
+    uploaded_file = await asyncio.to_thread(
+        client.files.upload,
         file=io.BytesIO(jsonl_bytes),
         config=types.UploadFileConfig(
             display_name=f"batch_llm_spell_check_{job_uuid}", mime_type="jsonl"
         ),
     )
 
-    batch_job = client.batches.create(model=model_name, src=uploaded_file.name)
+    batch_job = await asyncio.to_thread(
+        client.batches.create, model=model_name, src=uploaded_file.name
+    )
 
     now = datetime.now(timezone.utc)
     job_record = BatchLlmSpellCheckJob(
@@ -115,11 +120,9 @@ async def submit_batch_llm_spell_check(
     )
     session.add(job_record)
 
-    pages_repo = PagesRepository(session)
-    for page in pages_by_id.values():
-        await pages_repo.set_llm_spell_check_status(
-            page.book_id, page.page_number, PAGE_MILESTONE_IN_PROGRESS
-        )
+    await pages_repo.bulk_set_llm_spell_check_status(
+        list(pages_by_id.keys()), PAGE_MILESTONE_IN_PROGRESS
+    )
 
     await session.commit()
     await session.refresh(job_record)
@@ -141,7 +144,7 @@ async def poll_and_process_batch_llm_spell_check_jobs(session: AsyncSession) -> 
     corrections to pages.text, and updates job/page statuses."""
     active_jobs_res = await session.execute(
         select(BatchLlmSpellCheckJob).where(
-            BatchLlmSpellCheckJob.status.in_(["submitting", "running"])
+            BatchLlmSpellCheckJob.status.in_(["submitting", "submitted", "running"])
         )
     )
     active_jobs = list(active_jobs_res.scalars().all())
@@ -154,7 +157,9 @@ async def poll_and_process_batch_llm_spell_check_jobs(session: AsyncSession) -> 
 
     for job in active_jobs:
         try:
-            batch_info = client.batches.get(name=job.gemini_batch_id)
+            batch_info = await asyncio.to_thread(
+                client.batches.get, name=job.gemini_batch_id
+            )
             state_str = str(batch_info.state).upper()
 
             if "SUCCEEDED" in state_str:
@@ -169,59 +174,117 @@ async def poll_and_process_batch_llm_spell_check_jobs(session: AsyncSession) -> 
                         try:
                             result_bytes = await storage.read_bytes(parts[1])
                         except Exception as e:
-                            logger.warning(f"Could not read gcs_uri output: {e}")
+                            log_json(
+                                logger,
+                                logging.WARNING,
+                                "could not read gcs_uri output",
+                                uri=gcs_output_uri,
+                                error=str(e),
+                            )
                 elif output_file_name:
                     try:
-                        result_bytes = client.files.download(file=output_file_name)
+                        result_bytes = await asyncio.to_thread(
+                            client.files.download, file=output_file_name
+                        )
                     except Exception as e:
-                        logger.error(f"Failed to download batch output file: {e}")
+                        log_json(
+                            logger,
+                            logging.ERROR,
+                            "failed to download batch output file",
+                            file=output_file_name,
+                            error=str(e),
+                        )
+
+                if result_bytes is None:
+                    # Download failure must fail the job, not succeed it
+                    error_msg = (
+                        "Batch succeeded in Gemini but output could not be downloaded"
+                    )
+                    await pages_repo.bulk_set_llm_spell_check_status(
+                        job.page_ids, PAGE_MILESTONE_FAILED
+                    )
+                    job.status = "failed"
+                    job.error = error_msg
+                    job.completed_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    processed_count += 1
+                    log_json(
+                        logger,
+                        logging.ERROR,
+                        "batch output download failed",
+                        job_id=job.id,
+                        error=error_msg,
+                    )
+                    continue
 
                 succeeded_page_ids: set[int] = set()
-                if result_bytes:
-                    lines = result_bytes.decode("utf-8").strip().split("\n")
-                    for line in lines:
-                        if not line.strip():
+                lines = result_bytes.decode("utf-8").strip().split("\n")
+                for line in lines:
+                    if not line.strip():
+                        continue
+                    try:
+                        item = json.loads(line)
+                        page_id = int(item.get("custom_id"))
+                        page = await session.get(Page, page_id)
+                        if page is None:
                             continue
-                        try:
-                            item = json.loads(line)
-                            page_id = int(item.get("custom_id"))
-                            page = await session.get(Page, page_id)
-                            if page is None:
-                                continue
-                            text = (
-                                item.get("response", {})
-                                .get("candidates", [{}])[0]
-                                .get("content", {})
-                                .get("parts", [{}])[0]
-                                .get("text", "")
-                            ).strip()
-                            _validate_correction(page.text or "", text)
-                            page.text = text
-                            await pages_repo.set_llm_spell_check_status(
-                                page.book_id,
-                                page.page_number,
-                                PAGE_MILESTONE_SUCCEEDED,
-                            )
-                            succeeded_page_ids.add(page_id)
-                            # Commit per page — a scanner-tick eviction mid-loop
-                            # shouldn't roll back already-applied corrections.
-                            await session.commit()
-                        except Exception as parse_err:
-                            await session.rollback()
-                            logger.warning(
-                                f"Error parsing batch llm spell check output line: {parse_err}"
-                            )
 
-                for page_id in job.page_ids:
-                    if page_id in succeeded_page_ids:
-                        continue
-                    page = await session.get(Page, page_id)
-                    if page is None:
-                        continue
-                    await pages_repo.set_llm_spell_check_status(
-                        page.book_id, page.page_number, PAGE_MILESTONE_FAILED
+                        # Guard against overwriting concurrent manual edits during 24h batch
+                        if job.submitted_at and page.last_updated:
+                            sub_at = (
+                                job.submitted_at
+                                if job.submitted_at.tzinfo
+                                else job.submitted_at.replace(tzinfo=timezone.utc)
+                            )
+                            page_upd = (
+                                page.last_updated
+                                if page.last_updated.tzinfo
+                                else page.last_updated.replace(tzinfo=timezone.utc)
+                            )
+                            if page_upd > sub_at:
+                                log_json(
+                                    logger,
+                                    logging.WARNING,
+                                    "skipping batch spell check overwrite due to subsequent manual page edit",
+                                    page_id=page.id,
+                                    submitted_at=sub_at.isoformat(),
+                                    last_updated=page_upd.isoformat(),
+                                )
+                                page.llm_spell_check_status = PAGE_MILESTONE_SUCCEEDED
+                                page.llm_spell_check_at = datetime.now(timezone.utc)
+                                succeeded_page_ids.add(page_id)
+                                await session.commit()
+                                continue
+
+                        text = (
+                            item.get("response", {})
+                            .get("candidates", [{}])[0]
+                            .get("content", {})
+                            .get("parts", [{}])[0]
+                            .get("text", "")
+                        ).strip()
+
+                        await apply_llm_page_correction(session, page, text)
+                        succeeded_page_ids.add(page_id)
+                        # Commit per page so scanner eviction doesn't discard progress
+                        await session.commit()
+                    except Exception as parse_err:
+                        await session.rollback()
+                        log_json(
+                            logger,
+                            logging.WARNING,
+                            "error parsing batch llm spell check output line",
+                            job_id=job.id,
+                            error=str(parse_err),
+                        )
+
+                failed_page_ids = [
+                    pid for pid in job.page_ids if pid not in succeeded_page_ids
+                ]
+                if failed_page_ids:
+                    await pages_repo.bulk_set_llm_spell_check_status(
+                        failed_page_ids, PAGE_MILESTONE_FAILED
                     )
-                    await session.commit()
 
                 job.status = "succeeded"
                 job.completed_at = datetime.now(timezone.utc)
@@ -234,17 +297,13 @@ async def poll_and_process_batch_llm_spell_check_jobs(session: AsyncSession) -> 
                     "Batch LLM Spell Check job completed",
                     job_id=job.id,
                     succeeded=len(succeeded_page_ids),
-                    failed=len(job.page_ids) - len(succeeded_page_ids),
+                    failed=len(failed_page_ids),
                 )
 
             elif any(s in state_str for s in ["FAILED", "CANCELLED", "EXPIRED"]):
-                for page_id in job.page_ids:
-                    page = await session.get(Page, page_id)
-                    if page is None:
-                        continue
-                    await pages_repo.set_llm_spell_check_status(
-                        page.book_id, page.page_number, PAGE_MILESTONE_FAILED
-                    )
+                await pages_repo.bulk_set_llm_spell_check_status(
+                    job.page_ids, PAGE_MILESTONE_FAILED
+                )
                 job.status = "failed"
                 job.error = f"Gemini Batch job ended with state {state_str}"
                 job.completed_at = datetime.now(timezone.utc)

@@ -358,3 +358,54 @@ async def test_count_books_with_text():
     session.execute.return_value = res
 
     assert await PagesRepository(session).count_books_with_text() == 633
+
+
+@pytest.mark.asyncio
+async def test_list_eligible_for_llm_spell_check():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+    mock_res = MagicMock()
+    mock_res.fetchall.return_value = [(10,), (11,)]
+    session.execute.return_value = mock_res
+
+    ids = await repo.list_eligible_for_llm_spell_check("b1", force=False)
+    assert ids == [10, 11]
+    assert session.execute.called
+
+
+@pytest.mark.asyncio
+async def test_bulk_set_llm_spell_check_status():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+
+    await repo.bulk_set_llm_spell_check_status([1, 2, 3], "in_progress")
+    assert session.execute.called
+
+
+@pytest.mark.asyncio
+async def test_get_pages_by_ids():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.all.return_value = [
+        Page(id=1, book_id="b1", page_number=1),
+        Page(id=2, book_id="b1", page_number=2),
+    ]
+    session.execute.return_value = mock_res
+
+    pages = await repo.get_pages_by_ids([1, 2])
+    assert len(pages) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_pages_by_book_id():
+    session = AsyncMock()
+    repo = PagesRepository(session)
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.all.return_value = [
+        Page(id=1, book_id="b1", page_number=1)
+    ]
+    session.execute.return_value = mock_res
+
+    pages = await repo.get_pages_by_book_id("b1")
+    assert len(pages) == 1

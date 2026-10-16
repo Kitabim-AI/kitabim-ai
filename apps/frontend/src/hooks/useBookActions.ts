@@ -119,34 +119,6 @@ export const useBookActions = (
     });
   };
 
-  const handleLlmSpellCheckPage = (bookId: string, pageNum: number) => {
-    setModal({
-      isOpen: true,
-      title: t('modal.llmSpellCheckPage.title') || 'LLM ئارقىلىق كوررېكتورلاش',
-      message: t('modal.llmSpellCheckPage.message', { pageNum }) || `بۇ بەتنى LLM ئارقىلىق كوررېكتورلامسىز؟`,
-      type: 'confirm',
-      confirmText: t('modal.llmSpellCheckPage.confirm') || 'كوررېكتورلاش',
-      onConfirm: async () => {
-        setModal(prev => ({ ...prev, isOpen: false }));
-        try {
-          await PersistenceService.triggerLlmSpellCheckPage(bookId, pageNum);
-          refreshLibrary();
-          addNotification(
-            t('common.llmSpellCheckPageStarted', { pageNum }) || `بەت ${pageNum} تەكشۈرۈلۈۋاتىدۇ`,
-            'success'
-          );
-        } catch (err) {
-          console.error("Failed to trigger LLM spell check", err);
-          addNotification(
-            t('common.llmSpellCheckPageError', { pageNum }) || `بەت ${pageNum} نى تەكشۈرەلمىدى`,
-            'error'
-          );
-        }
-      }
-    });
-  };
-
-
   const handleToggleToc = (bookId: string, pageNum: number, nextIsToc: boolean) => {
     const copy = nextIsToc ? 'markAsToc' : 'unmarkAsToc';
     setModal({
@@ -212,9 +184,9 @@ export const useBookActions = (
   };
 
 
-  const handleUpdatePage = async (bookId: string, pageNum: number, newText: string, setEditingPageNum: any) => {
+  const handleUpdatePage = async (bookId: string, pageNum: number, newText: string, setEditingPageNum: any, llmSpellChecked: boolean = false) => {
     try {
-      await PersistenceService.updatePage(bookId, pageNum, newText);
+      await PersistenceService.updatePage(bookId, pageNum, newText, llmSpellChecked);
 
       setSelectedBook(prev => {
         if (!prev || prev.id !== bookId) return prev;
@@ -606,7 +578,6 @@ export const useBookActions = (
     handleRetryFailedPages,
     handleReprocessStep,
     handleReProcessPage,
-    handleLlmSpellCheckPage,
     handleToggleToc,
     handleTriggerSpellCheck,
     handleUpdatePage,

@@ -44,6 +44,19 @@ async def test_circuit_breaker_transient_error_ignored():
     assert info["failure_count"] == 0
     assert info["state"] == "closed"
 
+    # 1b. Test transient 504 DEADLINE_EXCEEDED error is ignored
+    async def raise_504():
+        raise ValueError(
+            "504 DEADLINE_EXCEEDED. {'error': {'code': 504, 'message': 'Deadline expired before operation could complete.'}}"
+        )
+
+    with pytest.raises(ValueError, match="DEADLINE_EXCEEDED"):
+        await breaker.call(raise_504, ignore_on_failure=is_transient_error)
+
+    info = await breaker.get_info()
+    assert info["failure_count"] == 0
+    assert info["state"] == "closed"
+
     # 2. Test timeout error is NOT ignored (counts as failure)
     async def raise_timeout():
         raise TimeoutError("LLM did not respond within 120.0s")

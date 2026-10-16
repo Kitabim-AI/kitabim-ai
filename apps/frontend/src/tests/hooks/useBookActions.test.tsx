@@ -16,7 +16,6 @@ vi.mock('@/src/services/persistenceService', () => ({
     resetPage: vi.fn(),
     setPageToc: vi.fn(),
     reprocessLlmSpellCheck: vi.fn(),
-    triggerLlmSpellCheckPage: vi.fn(),
   }
 }));
 
@@ -265,7 +264,7 @@ test('useBookActions updates page text and saves corrections', async () => {
     await result.current.handleUpdatePage('1', 1, 'New Text', setEditingPageNum);
   });
 
-  expect(PersistenceService.updatePage).toHaveBeenCalledWith('1', 1, 'New Text');
+  expect(PersistenceService.updatePage).toHaveBeenCalledWith('1', 1, 'New Text', false);
   expect(setEditingPageNum).toHaveBeenCalledWith(null);
   expect(setSelectedBook).toHaveBeenCalled();
   expect(refreshLibrary).toHaveBeenCalled();
@@ -347,42 +346,13 @@ test('useBookActions dispatches LLM spell check reprocess through handleReproces
   expect(PersistenceService.reprocessLlmSpellCheck).toHaveBeenCalledWith('1');
 });
 
-test('useBookActions triggers per-page LLM spell check without blanking page text', async () => {
-  vi.mocked(PersistenceService.triggerLlmSpellCheckPage).mockResolvedValue(undefined);
-  const { result, setModal, setSelectedBook, setBooks } = createHook();
+test('handleUpdatePage forwards the llmSpellChecked flag', async () => {
+  vi.mocked(PersistenceService.updatePage).mockResolvedValue(undefined);
+  const { result } = createHook();
 
-  act(() => {
-    result.current.handleLlmSpellCheckPage('1', 3);
-  });
-
-  expect(setModal).toHaveBeenCalledWith(expect.objectContaining({
-    isOpen: true,
-    type: 'confirm',
-  }));
-
-  const config = setModal.mock.calls[0][0];
   await act(async () => {
-    await config.onConfirm();
+    await result.current.handleUpdatePage('1', 1, 'New Text', vi.fn(), true);
   });
 
-  expect(PersistenceService.triggerLlmSpellCheckPage).toHaveBeenCalledWith('1', 3);
-  // Must NOT optimistically blank/mutate page text the way handleReProcessPage does.
-  expect(setSelectedBook).not.toHaveBeenCalled();
-  expect(setBooks).not.toHaveBeenCalled();
-});
-
-test('useBookActions surfaces an error notification when LLM spell check trigger fails', async () => {
-  vi.mocked(PersistenceService.triggerLlmSpellCheckPage).mockRejectedValue(new Error('boom'));
-  const { result, setModal } = createHook();
-
-  act(() => {
-    result.current.handleLlmSpellCheckPage('1', 3);
-  });
-
-  const config = setModal.mock.calls[0][0];
-  await act(async () => {
-    await config.onConfirm();
-  });
-
-  expect(PersistenceService.triggerLlmSpellCheckPage).toHaveBeenCalledWith('1', 3);
+  expect(PersistenceService.updatePage).toHaveBeenCalledWith('1', 1, 'New Text', true);
 });

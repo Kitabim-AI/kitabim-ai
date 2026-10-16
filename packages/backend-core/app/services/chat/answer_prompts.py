@@ -13,12 +13,30 @@ _MULTI_VOLUME_INSTRUCTION = (
 )
 
 
+def _current_volume_instruction(
+    current_book_id: str, current_volume: Optional[int]
+) -> str:
+    volume = f", Volume {current_volume}" if current_volume is not None else ""
+    return (
+        f"Reader mode: the user is currently reading [BookID: {current_book_id}{volume}]. "
+        "The context may also contain passages from other volumes of the same work "
+        "(same Book and Author, different BookID and Volume).\n"
+        f"   - If passages with BookID: {current_book_id} answer the question, answer from them.\n"
+        "   - If only passages from another volume answer it, first say in one short sentence "
+        "that the volume being read does not cover it, then answer from the other volume and "
+        "name that volume in the text and citation (e.g. '4-توم').\n"
+        "   - Do NOT say the book has no answer when another volume of the same work answers it."
+    )
+
+
 def build_answer_instructions(
     strict_no_answer: bool = False,
     suppress_page_notice: bool = False,
     persona_prompt: Optional[str] = None,
     is_global: bool = False,
     has_categories: bool = False,
+    current_book_id: Optional[str] = None,
+    current_volume: Optional[int] = None,
 ) -> str:
     """Build answer generation system prompt for the Answer Agent"""
     prefix = ""
@@ -132,6 +150,11 @@ def build_answer_instructions(
             "Markdown structural characters (e.g., **, -, >, #) are permitted as formatting; only content words and text must be in Uyghur."
         ),
     ]
+
+    if not is_global and current_book_id:
+        instructions.append(
+            _current_volume_instruction(current_book_id, current_volume)
+        )
 
     if suppress_page_notice:
         instructions.append(

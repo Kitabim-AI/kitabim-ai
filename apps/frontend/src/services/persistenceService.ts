@@ -294,19 +294,19 @@ export const PersistenceService = {
     }
   },
 
-  async triggerLlmSpellCheckPage(bookId: string, pageNum: number): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/llm-spell-check`, {
+  async previewLlmSpellCheck(bookId: string, pageNum: number, text: string, signal?: AbortSignal): Promise<string> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/llm-spell-check/preview`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+      signal,
     });
     if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Admin access required");
-      }
-      if (response.status === 409) {
-        throw new Error("LLM spell check is already running for this page");
-      }
-      throw new Error("Failed to start LLM spell check for page");
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to run LLM spell check");
     }
+    const data = await response.json();
+    return data.corrected_text;
   },
 
   async reprocessGraph(bookId: string, scope: 'fiction' | 'nonfiction'): Promise<void> {
@@ -375,11 +375,11 @@ export const PersistenceService = {
     return response.json();
   },
 
-  async updatePage(bookId: string, pageNum: number, text: string): Promise<void> {
+  async updatePage(bookId: string, pageNum: number, text: string, llmSpellChecked: boolean = false): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/update`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text, llm_spell_checked: llmSpellChecked })
     });
     if (!response.ok) {
       throw new Error("Failed to update page text");

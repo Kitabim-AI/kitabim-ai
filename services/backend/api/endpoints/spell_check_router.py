@@ -6,6 +6,7 @@ All endpoints require editor or admin role.
 
 from __future__ import annotations
 
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,6 +28,8 @@ from app.db.repositories.auto_correct_rules_repository import (
 from app.models.user import User
 from app.services.spell_check_service import run_spell_check_for_page, score_confidence
 from auth.dependencies import require_editor
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -419,8 +422,19 @@ async def apply_spell_corrections(
 
     # Apply updates to the Page object
     page_text = page.text or ""
-    for start, end, corrected, _ in replacements:
+    applied_ids = []
+    for start, end, corrected, issue_id in replacements:
+        target_slice = page_text[start:end]
+        issue = issues_by_id.get(issue_id)
+        expected_word = issue.word if issue else None
+        if expected_word and target_slice != expected_word:
+            logger.warning(
+                f"Skipping spell correction on page {page.id}: offset mismatch. "
+                f"Expected '{expected_word}', found '{target_slice}' at [{start}:{end}]."
+            )
+            continue
         page_text = page_text[:start] + corrected + page_text[end:]
+        applied_ids.append(issue_id)
 
     page.text = page_text
     page.is_indexed = False
@@ -430,8 +444,7 @@ async def apply_spell_corrections(
     page.last_updated = func.now()
 
     # Mark issues as corrected
-    corrected_ids = [r[3] for r in replacements]
-    for issue_id in corrected_ids:
+    for issue_id in applied_ids:
         issue = issues_by_id.get(issue_id)
         if issue:
             issue.status = "corrected"
@@ -454,7 +467,7 @@ async def apply_spell_corrections(
     if processed_auto_corrections:
         await invalidate_frequent_corrections_cache()
 
-    return {"applied": len(corrected_ids)}
+    return {"applied": len(applied_ids)}
 
 
 @router.post("/{book_id}/spell-check/trigger")

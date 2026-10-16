@@ -88,6 +88,11 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Gemini model used for LLM-based spell correction, both live and batch paths",
         },
         {
+            "key": "gemini_llm_spell_check_timeout",
+            "value": "180",
+            "description": "Timeout in seconds for Gemini LLM spell check generation API calls.",
+        },
+        {
             "key": "ocr_batch_enabled",
             "value": "true",
             "description": "Globally enable/disable Gemini Batch API for OCR page processing. Set to 'true' to use Batch API (50% cost discount) or 'false' for online real-time OCR.",

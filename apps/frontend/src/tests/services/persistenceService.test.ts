@@ -28,23 +28,52 @@ describe('PersistenceService LLM spell check methods', () => {
     await expect(PersistenceService.reprocessLlmSpellCheck('book-1')).rejects.toThrow();
   });
 
-  test('triggerLlmSpellCheckPage posts to the correct endpoint', async () => {
-    vi.mocked(authFetch).mockResolvedValue({ ok: true } as Response);
+  test('previewLlmSpellCheck posts text and returns corrected_text', async () => {
+    vi.mocked(authFetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({ corrected_text: 'fixed' }),
+    } as any);
+    const controller = new AbortController();
 
-    await PersistenceService.triggerLlmSpellCheckPage('book-1', 5);
+    const result = await PersistenceService.previewLlmSpellCheck('book-1', 5, 'draft', controller.signal);
 
+    expect(result).toBe('fixed');
     expect(authFetch).toHaveBeenCalledWith(
-      '/api/books/book-1/pages/5/llm-spell-check',
-      { method: 'POST' }
+      '/api/books/book-1/pages/5/llm-spell-check/preview',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'draft' }),
+        signal: controller.signal,
+      }
     );
   });
 
-  test('triggerLlmSpellCheckPage throws on 409 already-running response', async () => {
-    vi.mocked(authFetch).mockResolvedValue({ ok: false, status: 409 } as Response);
+  test('previewLlmSpellCheck throws the backend detail on error', async () => {
+    vi.mocked(authFetch).mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: async () => ({ detail: 'translated guardrail error' }),
+    } as any);
 
     await expect(
-      PersistenceService.triggerLlmSpellCheckPage('book-1', 5)
-    ).rejects.toThrow();
+      PersistenceService.previewLlmSpellCheck('book-1', 5, 'draft')
+    ).rejects.toThrow('translated guardrail error');
+  });
+
+  test('updatePage sends llm_spell_checked flag', async () => {
+    vi.mocked(authFetch).mockResolvedValue({ ok: true } as Response);
+
+    await PersistenceService.updatePage('book-1', 2, 'text', true);
+
+    expect(authFetch).toHaveBeenCalledWith(
+      '/api/books/book-1/pages/2/update',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'text', llm_spell_checked: true }),
+      }
+    );
   });
 });
 

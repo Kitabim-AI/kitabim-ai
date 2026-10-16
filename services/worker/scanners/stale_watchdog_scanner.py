@@ -13,7 +13,13 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import update, func, select
 
 from app.db import session as db_session
-from app.db.models import Book, Page, BatchOCRJob, BatchEmbeddingJob
+from app.db.models import (
+    Book,
+    Page,
+    BatchOCRJob,
+    BatchEmbeddingJob,
+    BatchLlmSpellCheckJob,
+)
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 from app.utils.circuit_breaker import get_redis
@@ -32,10 +38,10 @@ async def run_stale_watchdog(ctx) -> None:
     async with db_session.async_session_factory() as session:
         from sqlalchemy import or_, case
 
-        # Pages locked by an in-flight Gemini Batch OCR or Batch Embedding job can
-        # legitimately stay "in_progress" for up to timeout_hours (default 24h) —
-        # the batch poller's own timeout handles their recovery, so exempt them
-        # here to avoid the two timeout mechanisms fighting each other.
+        # Pages locked by an in-flight Gemini Batch OCR, Batch Embedding, or Batch
+        # LLM Spell Check job can legitimately stay "in_progress" for up to timeout_hours
+        # (default 24h) — the batch poller's own timeout handles their recovery, so
+        # exempt them here to avoid the two timeout mechanisms fighting each other.
         batch_ocr_result = await session.execute(
             select(BatchOCRJob.page_ids).where(
                 BatchOCRJob.status.in_(["submitting", "submitted", "running"])
@@ -46,10 +52,16 @@ async def run_stale_watchdog(ctx) -> None:
                 BatchEmbeddingJob.status.in_(["submitting", "submitted", "running"])
             )
         )
+        batch_spell_result = await session.execute(
+            select(BatchLlmSpellCheckJob.page_ids).where(
+                BatchLlmSpellCheckJob.status.in_(["submitting", "submitted", "running"])
+            )
+        )
         active_batch_page_ids = {
             pid
             for (page_ids,) in list(batch_ocr_result.fetchall())
             + list(batch_embed_result.fetchall())
+            + list(batch_spell_result.fetchall())
             for pid in page_ids
         }
 
@@ -169,6 +181,26 @@ async def run_stale_watchdog(ctx) -> None:
         book_result = await session.execute(book_stmt)
         reset_book_ids = [row[0] for row in book_result.fetchall()]
 
+        # Reset stale pages stuck in llm_spell_check_status == "in_progress" (excluding active batch jobs)
+        stale_llm_query = select(Page.id).where(
+            Page.llm_spell_check_status == "in_progress",
+            Page.last_updated < max_duration_threshold,
+        )
+        if active_batch_page_ids:
+            stale_llm_query = stale_llm_query.where(~Page.id.in_(active_batch_page_ids))
+
+        stale_llm_res = await session.execute(stale_llm_query)
+        reset_llm_spell_page_ids = [row[0] for row in stale_llm_res.fetchall()]
+        if reset_llm_spell_page_ids:
+            await session.execute(
+                update(Page)
+                .where(Page.id.in_(reset_llm_spell_page_ids))
+                .values(
+                    llm_spell_check_status="failed",
+                    last_updated=now,
+                )
+            )
+
         await session.commit()
 
     if reset_ids:
@@ -187,3 +219,11 @@ async def run_stale_watchdog(ctx) -> None:
         )
     else:
         log_json(logger, logging.DEBUG, "stale watchdog: no stale books found")
+
+    if reset_llm_spell_page_ids:
+        log_json(
+            logger,
+            logging.WARNING,
+            "stale watchdog reset stuck llm spell check pages",
+            count=len(reset_llm_spell_page_ids),
+        )

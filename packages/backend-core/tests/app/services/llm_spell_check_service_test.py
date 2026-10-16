@@ -68,6 +68,10 @@ async def test_correct_page_text_reads_model_from_system_configs():
         )
         mock_build_llm.assert_called_once_with("gemini-3.1-flash-lite")
         mock_llm.ainvoke.assert_called_once()
+        assert (
+            mock_llm.ainvoke.call_args.kwargs.get("timeout_config_key")
+            == "gemini_llm_spell_check_timeout"
+        )
 
 
 @pytest.mark.asyncio
@@ -82,3 +86,74 @@ async def test_correct_page_text_raises_on_empty_model_output():
 
         with pytest.raises(ValueError):
             await correct_page_text("original page text", None, None, mock_config_repo)
+
+
+@pytest.mark.asyncio
+async def test_correct_page_text_normalizes_uyghur_and_markdown():
+    from app.services.llm_spell_check_service import correct_page_text
+
+    mock_config_repo = AsyncMock()
+    mock_config_repo.get_value.return_value = "gemini-3.1-flash-lite"
+
+    with patch("app.services.llm_spell_check_service.build_text_llm") as mock_build_llm:
+        mock_llm = AsyncMock()
+        # Arabic Teh Marbuta (\u0629) should be normalized to Uyghur E (\u06D5)
+        mock_llm.ainvoke.return_value = "بۇ بىر كىتاب\u0629"
+        mock_build_llm.return_value = mock_llm
+
+        res = await correct_page_text("بۇ بىر كىتابى", None, None, mock_config_repo)
+        assert "\u0629" not in res
+        assert "\u06d5" in res
+
+
+@pytest.mark.asyncio
+async def test_apply_llm_page_correction_updates_text_and_clears_issues():
+    from app.services.llm_spell_check_service import apply_llm_page_correction
+    from app.db.models import Page
+    from app.core.pipeline import PAGE_MILESTONE_IDLE, PAGE_MILESTONE_SUCCEEDED
+
+    session = AsyncMock()
+    page = Page(
+        id=123,
+        book_id="b1",
+        page_number=5,
+        text="بۇ بىر ياخشى كىتاپ",
+        spell_check_milestone="succeeded",
+        llm_spell_check_status="in_progress",
+    )
+
+    changed = await apply_llm_page_correction(session, page, "بۇ بىر ياخشى كىتاب")
+
+    assert changed is True
+    assert page.prev_text == "بۇ بىر ياخشى كىتاپ"
+    assert page.text == "بۇ بىر ياخشى كىتاب"
+    assert page.spell_check_milestone == PAGE_MILESTONE_IDLE
+    assert page.llm_spell_check_status == PAGE_MILESTONE_SUCCEEDED
+    assert page.llm_spell_check_at is not None
+    assert session.execute.called
+
+
+@pytest.mark.asyncio
+async def test_apply_llm_page_correction_no_change_when_text_identical():
+    from app.services.llm_spell_check_service import apply_llm_page_correction
+    from app.db.models import Page
+    from app.core.pipeline import PAGE_MILESTONE_SUCCEEDED
+
+    session = AsyncMock()
+    page = Page(
+        id=123,
+        book_id="b1",
+        page_number=5,
+        text="بۇ بىر ياخشى كىتاب",
+        spell_check_milestone="succeeded",
+        llm_spell_check_status="in_progress",
+        prev_text=None,
+    )
+
+    changed = await apply_llm_page_correction(session, page, "بۇ بىر ياخشى كىتاب")
+
+    assert changed is False
+    assert page.prev_text is None
+    assert page.spell_check_milestone == "succeeded"
+    assert page.llm_spell_check_status == PAGE_MILESTONE_SUCCEEDED
+    assert not session.execute.called
