@@ -1517,3 +1517,73 @@ def test_preview_llm_spell_check_requires_editor():
     )
     dependency_calls = [d.call for d in route.dependant.dependencies]
     assert require_editor in dependency_calls
+
+
+async def _call_update_page_text(payload, page):
+    from api.endpoints.books_router import update_page_text  # type: ignore[import]
+
+    mock_pages_repo = MagicMock()
+    mock_pages_repo.find_one = AsyncMock(return_value=page)
+    mock_books_repo = MagicMock()
+    mock_books_repo.update_one = AsyncMock()
+    mock_configs_repo = MagicMock()
+    mock_configs_repo.get_value = AsyncMock(return_value="gemini-embedding-2")
+    mock_cache = MagicMock()
+    mock_cache.delete = AsyncMock()
+    mock_cache.delete_pattern = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+
+    with (
+        patch(
+            "api.endpoints.books_router.PagesRepository", return_value=mock_pages_repo
+        ),
+        patch(
+            "api.endpoints.books_router.BooksRepository", return_value=mock_books_repo
+        ),
+        patch(
+            "api.endpoints.books_router.SystemConfigsRepository",
+            return_value=mock_configs_repo,
+        ),
+        patch("api.endpoints.books_router.cache_service", mock_cache),
+        patch(
+            "app.services.book_milestone_service.BookMilestoneService.update_book_milestones",
+            new_callable=AsyncMock,
+        ),
+    ):
+        # Empty text takes the no-chunking branch, so no embedding calls are made.
+        return await update_page_text(
+            book_id="book-1",
+            page_num=3,
+            payload=payload,
+            current_user=mock_user,
+            session=AsyncMock(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_page_text_marks_llm_checked_when_flag_true():
+    setup_paths()
+    page = MagicMock()
+    page.text = "old"
+    page.llm_spell_check_status = "idle"
+    page.llm_spell_check_at = None
+
+    await _call_update_page_text({"text": "", "llm_spell_checked": True}, page)
+
+    assert page.llm_spell_check_status == "succeeded"
+    assert page.llm_spell_check_at is not None
+
+
+@pytest.mark.asyncio
+async def test_update_page_text_leaves_llm_status_without_flag():
+    setup_paths()
+    page = MagicMock()
+    page.text = "old"
+    page.llm_spell_check_status = "idle"
+    page.llm_spell_check_at = None
+
+    await _call_update_page_text({"text": ""}, page)
+
+    assert page.llm_spell_check_status == "idle"
+    assert page.llm_spell_check_at is None

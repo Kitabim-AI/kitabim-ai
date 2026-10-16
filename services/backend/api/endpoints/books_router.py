@@ -2696,6 +2696,12 @@ async def update_page_text(
     page.last_updated = datetime.now(timezone.utc)
     page.updated_by = current_user.email
 
+    # Editor reviewed an LLM spell-check preview in edit mode before saving —
+    # mark the page so a non-forced book-level LLM run skips it.
+    if payload.get("llm_spell_checked") is True:
+        page.llm_spell_check_status = PAGE_MILESTONE_SUCCEEDED
+        page.llm_spell_check_at = datetime.now(timezone.utc)
+
     # If text changed, invalidate stale spell check issues (offsets are now invalid)
     if text_changed:
         from app.db.models import PageSpellIssue
