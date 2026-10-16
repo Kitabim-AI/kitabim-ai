@@ -225,6 +225,15 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
               style={contentStyle}
               dir="rtl"
             />
+            {llmCheck.isChecking && (
+              <div
+                role="status"
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl bg-white/70 dark:bg-slate-900/70 backdrop-blur-[1px]"
+              >
+                <Loader2 size={32} className="animate-spin text-[#0369a1] dark:text-[#38bdf8]" />
+                <span className="text-sm font-bold text-[#0369a1] dark:text-[#38bdf8]">{t('reader.llmSpellCheckRunning')}</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <button

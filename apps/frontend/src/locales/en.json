@@ -353,6 +353,7 @@
     "llmSpellCheckTitle": "Run LLM-based spell check on this page",
     "llmSpellCheckChanged": "{{count}} word(s) changed — review the highlighted words, then Save or Cancel",
     "llmSpellCheckNoChanges": "No changes suggested",
+    "llmSpellCheckRunning": "Checking spelling with AI…",
     "reprocess": {
       "title": "Reprocess Page",
       "message": "This page has your edits. Reprocessing will lose them. Are you sure?",

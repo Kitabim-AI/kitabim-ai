@@ -359,3 +359,20 @@ test('Save after AI check reports llmSpellChecked=true', async () => {
 
   expect(onSave).toHaveBeenCalledWith(true);
 });
+
+test('AI check shows a page overlay spinner while running', async () => {
+  let resolve!: (v: string) => void;
+  vi.mocked(PersistenceService.previewLlmSpellCheck).mockImplementation(
+    () => new Promise<string>((r) => { resolve = r; })
+  );
+  render(<EditingHarness initial="Sample page content for test" />);
+
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
+
+  expect(await screen.findByRole('status')).toHaveTextContent('reader.llmSpellCheckRunning');
+
+  resolve('Sample page text for test');
+  await screen.findAllByTestId('llm-changed-word');
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+});
