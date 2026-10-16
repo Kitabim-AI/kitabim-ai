@@ -2114,7 +2114,7 @@
           "books"
         ],
         "summary": "Reprocess Llm Spell Check",
-        "description": "Manually trigger the on-demand Gemini-based LLM spell-check pass for\nevery eligible page in a book. Runs independently of the dictionary-based\nspell check pipeline; each trigger costs real Gemini API calls, hence\nrequire_admin. Branches on llm_spell_check_batch_enabled to choose the\nlive vs. Gemini Batch API path.",
+        "description": "Manually trigger the on-demand Gemini-based LLM spell-check pass for\nevery eligible page in a book. Runs independently of the dictionary-based\nspell check pipeline; each trigger costs real Gemini API calls, hence\nrequire_admin. Branches on llm_spell_check_batch_enabled to choose the\nlive vs. Gemini Batch API path. Set force=True to reprocess succeeded pages.",
         "operationId": "reprocess_llm_spell_check_api_books__book_id__reprocess_llm_spell_check_post",
         "security": [
           {
@@ -2129,6 +2129,16 @@
             "schema": {
               "type": "string",
               "title": "Book Id"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
             }
           }
         ],
@@ -2154,14 +2164,14 @@
         }
       }
     },
-    "/api/books/{book_id}/pages/{page_num}/llm-spell-check": {
+    "/api/books/{book_id}/pages/{page_num}/llm-spell-check/preview": {
       "post": {
         "tags": [
           "books"
         ],
-        "summary": "Trigger Llm Spell Check Page",
-        "description": "Manually trigger the on-demand Gemini-based LLM spell-check pass for a\nsingle page. Always uses the live path regardless of\nllm_spell_check_batch_enabled \u2014 matches how the embedding pipeline's\nreactive per-chunk dispatch always stays interactive\n(docs/main/EMBEDDING_DESIGN.md:13-14).",
-        "operationId": "trigger_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_post",
+        "summary": "Preview Llm Spell Check Page",
+        "description": "Run the LLM spell check on the editor's current (possibly unsaved)\npage text and return the corrected text WITHOUT persisting anything.\nThe editor reviews the highlighted changes in edit mode and decides\nwhether to save via POST .../update.",
+        "operationId": "preview_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_preview_post",
         "security": [
           {
             "HTTPBearer": []
@@ -2187,6 +2197,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmSpellCheckPreviewRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2593,6 +2613,52 @@
         }
       }
     },
+    "/api/books/{book_id}/download-ticket": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Download Ticket",
+        "description": "Generate a high-speed download ticket or signed URL for downloading the book.\nReturns a direct GCS signed URL if available, or a short-lived ticket URL.",
+        "operationId": "get_download_ticket_api_books__book_id__download_ticket_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/{book_id}/download": {
       "get": {
         "tags": [
@@ -2614,6 +2680,378 @@
             "schema": {
               "type": "string",
               "title": "Book Id"
+            }
+          },
+          {
+            "name": "ticket",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ticket"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bookmarks/progress/{book_id}": {
+      "put": {
+        "tags": [
+          "bookmarks"
+        ],
+        "summary": "Upsert Progress Endpoint",
+        "description": "Silently save this user's current page for a book",
+        "operationId": "upsert_progress_endpoint_api_bookmarks_progress__book_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertProgressRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "bookmarks"
+        ],
+        "summary": "Get Progress For Book Endpoint",
+        "description": "Fetch this user's saved page for a single book, used to resume on open",
+        "operationId": "get_progress_for_book_endpoint_api_bookmarks_progress__book_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bookmarks/progress": {
+      "get": {
+        "tags": [
+          "bookmarks"
+        ],
+        "summary": "List Progress Endpoint",
+        "description": "List this user's books with saved progress, most recent first (Continue Reading tab)",
+        "operationId": "list_progress_endpoint_api_bookmarks_progress_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bookmarks/{book_id}": {
+      "post": {
+        "tags": [
+          "bookmarks"
+        ],
+        "summary": "Create Bookmark Endpoint",
+        "description": "Create a whole-page or passage bookmark",
+        "operationId": "create_bookmark_endpoint_api_bookmarks__book_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBookmarkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bookmarks/": {
+      "get": {
+        "tags": [
+          "bookmarks"
+        ],
+        "summary": "List Bookmarks Endpoint",
+        "description": "List this user's bookmarks, optionally scoped to one book",
+        "operationId": "list_bookmarks_endpoint_api_bookmarks__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bookmarks/{bookmark_id}": {
+      "patch": {
+        "tags": [
+          "bookmarks"
+        ],
+        "summary": "Rename Bookmark Endpoint",
+        "description": "Rename a bookmark owned by this user",
+        "operationId": "rename_bookmark_endpoint_api_bookmarks__bookmark_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bookmark_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bookmark Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameBookmarkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "bookmarks"
+        ],
+        "summary": "Delete Bookmark Endpoint",
+        "description": "Delete a bookmark owned by this user",
+        "operationId": "delete_bookmark_endpoint_api_bookmarks__bookmark_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bookmark_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bookmark Id"
             }
           }
         ],
@@ -4586,6 +5024,26 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dictionary/words-bundle": {
+      "get": {
+        "tags": [
+          "dictionary"
+        ],
+        "summary": "Get Words Bundle",
+        "description": "Returns a gzip-compressed UTF-8 newline-delimited wordlist of all valid words.\n\nUsed by desktop OCR client to perform fast, offline de-hyphenation.",
+        "operationId": "get_words_bundle_api_dictionary_words_bundle_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -8530,6 +8988,35 @@
         ],
         "title": "CreateAutoCorrectRuleRequest"
       },
+      "CreateBookmarkRequest": {
+        "properties": {
+          "page_number": {
+            "type": "integer",
+            "title": "Page Number"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "quote_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_number",
+          "name"
+        ],
+        "title": "CreateBookmarkRequest"
+      },
       "CreateConversationRequest": {
         "properties": {
           "book_id": {
@@ -9061,6 +9548,19 @@
           "issue_ids"
         ],
         "title": "IgnoreIssuesRequest"
+      },
+      "LlmSpellCheckPreviewRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "LlmSpellCheckPreviewRequest"
       },
       "MergeEntitiesRequest": {
         "properties": {
@@ -9792,6 +10292,28 @@
             ],
             "title": "Costusd",
             "default": 0.0
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "retrievedContext": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrievedcontext"
           }
         },
         "type": "object",
@@ -9936,6 +10458,19 @@
           "first_issue_page"
         ],
         "title": "RandomBookOut"
+      },
+      "RenameBookmarkRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "RenameBookmarkRequest"
       },
       "RenameEntityRequest": {
         "properties": {
@@ -10365,6 +10900,19 @@
         },
         "type": "object",
         "title": "UpdateAutoCorrectRuleRequest"
+      },
+      "UpsertProgressRequest": {
+        "properties": {
+          "page_number": {
+            "type": "integer",
+            "title": "Page Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_number"
+        ],
+        "title": "UpsertProgressRequest"
       },
       "UserPublic": {
         "properties": {

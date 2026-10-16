@@ -40,7 +40,7 @@ Several pipeline stages are gated by boolean flags in `system_configs` (checked 
 | `embed_batch_enabled` | `false` | `embedding_scanner` — submits a `batch_embedding_jobs` row via the Gemini Batch API instead of dispatching `embedding_job` when `"true"` |
 | `history_extraction_enabled` | `true` | `history_extraction_job` — returns `{"status": "skipped", ...}` without processing if not `"true"`; also gates `POST /api/admin/books/{book_id}/extract-history`, which returns `400` if the flag isn't `"true"` |
 | `history_batch_enabled` | `false` | `history_extraction_job` — submits a `batch_history_extraction_jobs` row via the Gemini Batch API instead of extracting inline when `"true"` |
-| `llm_spell_check_batch_enabled` | `false` | `POST /{book_id}/reprocess/llm-spell-check` (the book-wide trigger only) — submits a `batch_llm_spell_check_jobs` row via the Gemini Batch API instead of running `llm_spell_check_job` live when `"true"`; also gates whether `batch_llm_spell_check_poller_scanner` finds anything to do. The single-page trigger (`POST /{book_id}/pages/{page_num}/llm-spell-check`) always uses the live path regardless of this flag. |
+| `llm_spell_check_batch_enabled` | `false` | `POST /{book_id}/reprocess/llm-spell-check` (the book-wide trigger only) — submits a `batch_llm_spell_check_jobs` row via the Gemini Batch API instead of running `llm_spell_check_job` live when `"true"`; also gates whether `batch_llm_spell_check_poller_scanner` finds anything to do. The per-page edit-mode preview (`POST /{book_id}/pages/{page_num}/llm-spell-check/preview`) ignores this flag and never uses the job. |
 
 > **Knowledge graph extraction is off by default in a fresh environment.** It must be explicitly enabled via `system_configs` before `graph_scanner` or the "Reprocess Graph" admin action will do anything.
 
@@ -206,9 +206,10 @@ See [SPELLCHECK_DESIGN.md](SPELLCHECK_DESIGN.md) for the full auto-correct algor
 
 A second, independent spell-check mechanism alongside the dictionary-based `spell_check_job`/`auto_correct_job` pair above — context-aware Gemini correction of real-word errors that a dictionary lookup can't catch, run on demand rather than automatically. Like `history_extraction_job`, it has **no scanner that claims idle work for it** and does **not** use the `ocr`/`chunking`/`embedding`/`spell_check` milestone columns, `retry_count`, or `PipelineEvent` rows at all — it is entirely out-of-band from the state machine described in this document and never gates chunking or book readiness.
 
-Two admin-only endpoints in `books_router.py` trigger it directly:
+One admin-only endpoint in `books_router.py` triggers it directly:
 - `POST /{book_id}/reprocess/llm-spell-check` — every page on the book not already `llm_spell_check_status='in_progress'`. Live path by default; if `llm_spell_check_batch_enabled` is `"true"`, submits a `batch_llm_spell_check_jobs` row via the Gemini Batch API instead.
-- `POST /{book_id}/pages/{page_num}/llm-spell-check` — a single page. Always uses the live path regardless of `llm_spell_check_batch_enabled`; returns `409` if that page is already `in_progress`.
+
+A single page is checked differently: an editor in page edit mode calls `POST /{book_id}/pages/{page_num}/llm-spell-check/preview`, which runs `correct_page_text()` synchronously inside the request and returns the corrected text **without persisting anything** — no job is enqueued and no status changes. The editor reviews highlighted changes and saves via `POST .../update` (with `llm_spell_checked: true`, which sets `llm_spell_check_status='succeeded'`) or cancels.
 
 The live job (`llm_spell_check_job`) processes its given `page_ids` concurrently (`MAX_PARALLEL_LLM_SPELL_CHECK`, default 6) via `correct_page_text()`, which sends one page's text plus its neighboring pages' text as context through `build_text_llm`/`ProtectedLLM` (the shared circuit-breaker/rate-limiter path, not a raw `genai.Client` call) using the `gemini_llm_spell_check_model` system_config (default `gemini-3.1-flash-lite`). A cheap guardrail (`_validate_correction`) rejects empty output or output whose length deviates more than 30% from the original, shared by both the live and batch paths. Unlike every other pipeline job, it takes no `MultiPageLock` — its only concurrency guard is the endpoint's `in_progress` pre-check.
 
@@ -273,7 +274,7 @@ flowchart TD
     SPELL_FAIL["spell_check / failed"]
     EXHAUSTED["ocr/chunking/embedding failed<br/>retry_count >= max<br/>(book-wide status=error;<br/>OCR only lands here via repeated<br/>PDF download failures — a per-page<br/>Gemini OCR error always soft-skips<br/>to OCR_OK at exhaustion instead)"]
     HISTORY_NOTE["history_extraction_job<br/>(admin-triggered only — POST /api/admin/books/{id}/extract-history)<br/>Uses batch_history_extraction_jobs /<br/>history_dictionary_staging / history_dictionary.<br/>NOT part of this milestone state machine —<br/>no page/book milestone column involved.<br/>See HistoryExtractionJob section above."]
-    LLM_SPELL_NOTE["llm_spell_check_job<br/>(admin-triggered only — POST /{id}/reprocess/llm-spell-check<br/>or /{id}/pages/{n}/llm-spell-check)<br/>Own pages.llm_spell_check_status column, not one of the<br/>four milestones above. No PipelineEvent, no retry_count,<br/>no scanner claim, not reset by StaleWatchdog.<br/>See LLMSpellCheckJob section above."]
+    LLM_SPELL_NOTE["llm_spell_check_job<br/>(admin-triggered only — POST /{id}/reprocess/llm-spell-check;<br/>per-page edit-mode preview bypasses this job)<br/>Own pages.llm_spell_check_status column, not one of the<br/>four milestones above. No PipelineEvent, no retry_count,<br/>no scanner claim, not reset by StaleWatchdog.<br/>See LLMSpellCheckJob section above."]
 
     OCR_IDLE -->|OcrScanner: claim| OCR_IP
     OCR_IP -->|"Gemini call succeeds, or retries exhausted (soft-skip)"| OCR_OK
