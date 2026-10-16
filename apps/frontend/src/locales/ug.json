@@ -354,8 +354,8 @@
     "llmSpellCheck": "LLM دە كوررېكتورلاش",
     "llmSpellCheckTitle": "بۇ بەتتە LLM ئارقىلىق كوررېكتورلۇق ئېلىپ بېرىش",
     "llmSpellCheckChanged": "{{count}} word(s) changed — review the highlighted words, then Save or Cancel",
-    "llmSpellCheckNoChanges": "No changes suggested",
-    "llmSpellCheckRunning": "Checking spelling with AI…",
+    "llmSpellCheckNoChanges": "سۈنئىي ئىدراك ئىملا خاتالىقى بايقىمىدى",
+    "llmSpellCheckRunning": "سۈنئىي ئىدراكتا ئىملا تەكشۈرۈلىۋاتىدۇ",
     "reprocess": {
       "title": "قايتا تونۇتۇش",
       "message": "بۇ بەتتە سىزنىڭ تەھرىرىڭىز بار. قايتا تونۇتسىڭىز تەھرىرىڭىز يوقىلىدۇ. جەزملەشتۈرەمسىز؟",
