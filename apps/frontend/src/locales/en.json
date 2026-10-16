@@ -353,6 +353,8 @@
     "unmarkAsTocTitle": "Remove Table of Contents flag from this page",
     "llmSpellCheck": "LLM Check",
     "llmSpellCheckTitle": "Run LLM-based spell check on this page",
+    "llmSpellCheckChanged": "{{count}} word(s) changed — review the highlighted words, then Save or Cancel",
+    "llmSpellCheckNoChanges": "No changes suggested",
     "reprocess": {
       "title": "Reprocess Page",
       "message": "This page has your edits. Reprocessing will lose them. Are you sure?",

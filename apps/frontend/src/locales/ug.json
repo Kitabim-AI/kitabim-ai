@@ -355,6 +355,8 @@
     "unmarkAsTocTitle": "بۇ بەتتىن مۇندەرىجە بەلگىسىنى ئېلىپ تاشلاش",
     "llmSpellCheck": "LLM دە كوررېكتورلاش",
     "llmSpellCheckTitle": "بۇ بەتتە LLM ئارقىلىق كوررېكتورلۇق ئېلىپ بېرىش",
+    "llmSpellCheckChanged": "{{count}} word(s) changed — review the highlighted words, then Save or Cancel",
+    "llmSpellCheckNoChanges": "No changes suggested",
     "reprocess": {
       "title": "قايتا تونۇتۇش",
       "message": "بۇ بەتتە سىزنىڭ تەھرىرىڭىز بار. قايتا تونۇتسىڭىز تەھرىرىڭىز يوقىلىدۇ. جەزملەشتۈرەمسىز؟",

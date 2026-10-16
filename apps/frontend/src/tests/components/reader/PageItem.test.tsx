@@ -4,11 +4,16 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { PageItem } from '@/src/components/reader/PageItem';
 import { I18nContext } from '@/src/i18n/I18nContext';
 import * as AuthModule from '@/src/hooks/useAuth';
+import { PersistenceService } from '@/src/services/persistenceService';
 
 vi.mock('@/src/hooks/useAuth', () => ({
   useAuth: vi.fn(),
   useIsEditor: vi.fn(),
   useIsAdmin: vi.fn(),
+}));
+
+vi.mock('@/src/services/persistenceService', () => ({
+  PersistenceService: { previewLlmSpellCheck: vi.fn() },
 }));
 
 const mockPage = {
@@ -84,7 +89,7 @@ test('PageItem calls onSave and onCancel when buttons are clicked', () => {
   renderPageItem({ isEditing: true, onSave, onCancel });
 
   fireEvent.click(screen.getByText('common.save'));
-  expect(onSave).toHaveBeenCalledTimes(1);
+  expect(onSave).toHaveBeenCalledWith(false);
 
   fireEvent.click(screen.getByText('common.cancel'));
   expect(onCancel).toHaveBeenCalledTimes(1);
@@ -198,33 +203,6 @@ test('PageItem calls onHighlightApplied once a highlightQuote match is applied',
   expect(document.querySelector('mark')).not.toBeNull();
 });
 
-test('PageItem shows LLM spell check button for admin users', () => {
-  vi.mocked(AuthModule.useIsAdmin).mockReturnValue(true);
-  const onLlmSpellCheck = vi.fn();
-  renderPageItem({ page: { ...mockPage }, onLlmSpellCheck });
-
-  const button = screen.getByTitle('reader.llmSpellCheckTitle');
-  fireEvent.click(button);
-  expect(onLlmSpellCheck).toHaveBeenCalledTimes(1);
-});
-
-test('PageItem hides LLM spell check button when onLlmSpellCheck is not provided', () => {
-  renderPageItem({ page: { ...mockPage }, onLlmSpellCheck: undefined });
-
-  expect(screen.queryByTitle('reader.llmSpellCheckTitle')).not.toBeInTheDocument();
-});
-
-test('PageItem disables LLM spell check button while llmSpellCheckStatus is in_progress', () => {
-  const onLlmSpellCheck = vi.fn();
-  renderPageItem({
-    page: { ...mockPage, llmSpellCheckStatus: 'in_progress' },
-    onLlmSpellCheck,
-  });
-
-  const button = screen.getByTitle('reader.llmSpellCheckTitle');
-  expect(button).toBeDisabled();
-});
-
 test('PageItem shows an outline bookmark icon for readers when the page has no bookmark', () => {
   renderPageItem({ page: { ...mockPage, pageNumber: 5 }, bookmarks: [] });
   expect(screen.getByTitle('bookmarks.bookmarkPage')).toBeInTheDocument();
@@ -307,3 +285,77 @@ test('PageItem guests do not see the page bookmark button or quote bookmark butt
   expect(screen.queryByTitle('bookmarks.bookmarkQuote')).not.toBeInTheDocument();
 });
 
+const EditingHarness: React.FC<{ initial: string; onSave?: (c: boolean) => void; onCancel?: () => void }> = ({
+  initial, onSave = vi.fn(), onCancel = vi.fn(),
+}) => {
+  const [text, setText] = React.useState(initial);
+  return (
+    <I18nContext.Provider value={i18nValue}>
+      <PageItem
+        page={mockPage}
+        isActive
+        isEditing
+        fontSize={18}
+        bookId="book-1"
+        onSetActive={vi.fn()}
+        onEdit={vi.fn()}
+        onReprocess={vi.fn()}
+        tempText={text}
+        onTempTextChange={setText}
+        onSave={onSave}
+        onCancel={onCancel}
+        isLoading={false}
+      />
+    </I18nContext.Provider>
+  );
+};
+
+test('PageItem does not show the LLM check button in view mode', () => {
+  renderPageItem({ isEditing: false, bookId: 'book-1' });
+  expect(screen.queryByTitle('reader.llmSpellCheckTitle')).not.toBeInTheDocument();
+});
+
+test('AI check replaces textarea text and highlights changed words', async () => {
+  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page text for test');
+  render(<EditingHarness initial="Sample page content for test" />);
+
+  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
+
+  const marks = await screen.findAllByTestId('llm-changed-word');
+  expect(marks).toHaveLength(1);
+  expect(marks[0]).toHaveTextContent('text');
+  expect(screen.getByRole('textbox')).toHaveValue('Sample page text for test');
+  expect(screen.getByText('reader.llmSpellCheckChanged')).toBeInTheDocument();
+});
+
+test('AI check with no changes shows the no-changes message', async () => {
+  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page content for test');
+  render(<EditingHarness initial="Sample page content for test" />);
+
+  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
+
+  expect(await screen.findByText('reader.llmSpellCheckNoChanges')).toBeInTheDocument();
+  expect(screen.queryByTestId('llm-changed-word')).not.toBeInTheDocument();
+});
+
+test('AI check failure shows the error and keeps the text', async () => {
+  vi.mocked(PersistenceService.previewLlmSpellCheck).mockRejectedValue(new Error('translated error'));
+  render(<EditingHarness initial="Sample page content for test" />);
+
+  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
+
+  expect(await screen.findByText('translated error')).toBeInTheDocument();
+  expect(screen.getByRole('textbox')).toHaveValue('Sample page content for test');
+});
+
+test('Save after AI check reports llmSpellChecked=true', async () => {
+  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page text for test');
+  const onSave = vi.fn();
+  render(<EditingHarness initial="Sample page content for test" onSave={onSave} />);
+
+  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
+  await screen.findAllByTestId('llm-changed-word');
+  fireEvent.click(screen.getByText('common.save'));
+
+  expect(onSave).toHaveBeenCalledWith(true);
+});

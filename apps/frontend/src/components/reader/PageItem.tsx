@@ -12,6 +12,9 @@ import { ShareSearchResultModal } from '../share/ShareSearchResultModal';
 import { BookmarkPrompt } from './BookmarkPrompt';
 
 import { normalizeArabic } from '../../utils/quranUtils';
+import { useLlmSpellCheckPreview } from '../../hooks/useLlmSpellCheckPreview';
+import { diffChangedWordRanges } from '../../utils/wordDiff';
+import { ChangedWordsLayer } from './ChangedWordsLayer';
 
 interface PageItemProps {
   page: any;
@@ -25,11 +28,10 @@ interface PageItemProps {
   onReprocess: () => void;
   onSetStartPage?: () => void;
   onToggleToc?: (nextIsToc: boolean) => void;
-  onLlmSpellCheck?: () => void;
 
   tempText: string;
   onTempTextChange: (text: string) => void;
-  onSave: () => void;
+  onSave: (llmSpellChecked: boolean) => void;
   onCancel: () => void;
   isLoading: boolean;
   isSaving?: boolean;
@@ -50,7 +52,7 @@ interface PageItemProps {
 }
 
 export const PageItem: React.FC<PageItemProps> = React.memo(({
-  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc, onLlmSpellCheck,
+  page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc,
   tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick,
   bookId, bookTitle, bookAuthor, highlightQuote, onHighlightApplied,
   bookmarks = [], onCreateBookmark, onRenameBookmark, onDeleteBookmark,
@@ -110,6 +112,24 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
     [fontSize, contentFontFamily]
   );
 
+  const llmCheck = useLlmSpellCheckPreview(bookId, page.pageNumber, tempText, onTempTextChange);
+  const { reset: resetLlmCheck } = llmCheck;
+  React.useEffect(() => {
+    if (!isEditing) resetLlmCheck();
+  }, [isEditing, resetLlmCheck]);
+
+  const toEditorText = React.useCallback(
+    (s: string) => (contentFontClassName === 'reader-font-adobe' ? normalizeArabic(s) : s),
+    [contentFontClassName]
+  );
+  const editorValue = toEditorText(tempText);
+  const changedRanges = React.useMemo(
+    () => (llmCheck.baselineText === null ? [] : diffChangedWordRanges(toEditorText(llmCheck.baselineText), editorValue)),
+    [llmCheck.baselineText, editorValue, toEditorText]
+  );
+  const highlightLayerRef = React.useRef<HTMLDivElement>(null);
+  const isHighlighting = llmCheck.baselineText !== null;
+
   const displayText = React.useMemo(
     () => (contentFontClassName === 'reader-font-adobe' ? normalizeArabic(page.text || '') : (page.text || "...")),
     [contentFontClassName, page.text]
@@ -143,19 +163,6 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
                 >
                   {(page?.isToc ?? page?.is_toc) ? <ListX size={14} /> : <ListTree size={14} />}
                   <span className="hidden sm:inline">{(page?.isToc ?? page?.is_toc) ? t('reader.unmarkAsToc') : t('reader.markAsToc')}</span>
-                </button>
-              )}
-              {onLlmSpellCheck && (
-                <button
-                  onClick={onLlmSpellCheck}
-                  disabled={(page?.llmSpellCheckStatus ?? page?.llm_spell_check_status) === 'in_progress'}
-                  className="flex items-center justify-center sm:justify-start gap-1.5 h-8 w-8 sm:w-auto sm:px-3 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold uppercase"
-                  title={t('reader.llmSpellCheckTitle')}
-                >
-                  {(page?.llmSpellCheckStatus ?? page?.llm_spell_check_status) === 'in_progress'
-                    ? <Loader2 size={14} className="animate-spin" />
-                    : <Sparkles size={14} />}
-                  <span className="hidden sm:inline">{t('reader.llmSpellCheck')}</span>
                 </button>
               )}
             </div>
@@ -197,31 +204,65 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
       {isEditing ? (
         <div className="flex-1 flex flex-col gap-4 min-h-0">
           <div ref={containerRef} className="relative flex-1 flex flex-col min-h-[300px]">
-            <textarea 
+            {isHighlighting && (
+              <ChangedWordsLayer
+                ref={highlightLayerRef}
+                text={editorValue}
+                ranges={changedRanges}
+                className={`p-4 uyghur-text border-2 border-transparent rounded-xl bg-white dark:bg-slate-800 leading-relaxed ${contentFontClassName || ''}`}
+                style={contentStyle}
+              />
+            )}
+            <textarea
               ref={textareaRef}
-              value={contentFontClassName === 'reader-font-adobe' ? normalizeArabic(tempText) : tempText} 
-              onChange={(e) => onTempTextChange(contentFontClassName === 'reader-font-adobe' ? normalizeArabic(e.target.value) : e.target.value)} 
-              className={`flex-1 w-full h-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none bg-white dark:bg-slate-800 text-[#1a1a1a] dark:text-slate-100 relative z-10 custom-scrollbar leading-relaxed ${contentFontClassName || ''}`}
+              value={editorValue}
+              onChange={(e) => onTempTextChange(contentFontClassName === 'reader-font-adobe' ? normalizeArabic(e.target.value) : e.target.value)}
+              onScroll={(e) => {
+                if (highlightLayerRef.current) highlightLayerRef.current.scrollTop = e.currentTarget.scrollTop;
+              }}
+              readOnly={llmCheck.isChecking}
+              className={`flex-1 w-full h-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none ${isHighlighting ? 'bg-transparent' : 'bg-white dark:bg-slate-800'} text-[#1a1a1a] dark:text-slate-100 relative z-10 custom-scrollbar leading-relaxed ${contentFontClassName || ''}`}
               style={contentStyle}
               dir="rtl"
             />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <button
-              onClick={onSave}
-              disabled={isSaving}
+              onClick={() => onSave(isHighlighting)}
+              disabled={isSaving || llmCheck.isChecking}
               className="px-6 py-2 bg-[#0369a1] text-white rounded-xl text-sm hover:bg-[#0284c7] transition-all flex items-center gap-2 disabled:opacity-50"
             >
               {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
               {t('common.save')}
             </button>
             <button
-              onClick={onCancel}
+              onClick={() => { resetLlmCheck(); onCancel(); }}
               disabled={isSaving}
               className="px-6 py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl text-sm transition-all disabled:opacity-30"
             >
               {t('common.cancel')}
             </button>
+            {bookId && (
+              <button
+                onClick={() => { void llmCheck.runCheck(); }}
+                disabled={isSaving || llmCheck.isChecking || !tempText.trim()}
+                title={t('reader.llmSpellCheckTitle')}
+                className="px-4 py-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl text-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {llmCheck.isChecking ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {t('reader.llmSpellCheck')}
+              </button>
+            )}
+            {llmCheck.error && (
+              <span className="text-sm text-red-600 dark:text-red-400">{llmCheck.error}</span>
+            )}
+            {!llmCheck.error && isHighlighting && (
+              <span className="text-sm text-slate-500 dark:text-slate-400">
+                {changedRanges.length === 0
+                  ? t('reader.llmSpellCheckNoChanges')
+                  : t('reader.llmSpellCheckChanged', { count: changedRanges.length })}
+              </span>
+            )}
           </div>
         </div>
       ) : (
