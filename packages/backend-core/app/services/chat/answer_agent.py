@@ -14,6 +14,8 @@ def build_answer_agent(
     is_global: bool = False,
     has_categories: bool = False,
     strict_no_answer: bool = False,
+    current_book_id: Optional[str] = None,
+    current_volume: Optional[int] = None,
 ) -> Agent:
     """Build the Answer Agent for synthesizing answers from graded observations."""
     base_instructions = build_answer_instructions(
@@ -22,6 +24,8 @@ def build_answer_agent(
         persona_prompt=persona_prompt,
         is_global=is_global,
         has_categories=has_categories,
+        current_book_id=current_book_id,
+        current_volume=current_volume,
     )
 
     full_instructions = (

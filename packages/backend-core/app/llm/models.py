@@ -213,15 +213,19 @@ class DegenerateOcrOutputError(Exception):
 
 
 def is_transient_error(exc: Exception) -> bool:
-    """Check if the exception represents a transient API error (429, 503, overloaded)."""
+    """Check if the exception represents a transient API error (429, 503, 504, overloaded)."""
     err_msg = str(exc)
     return any(
         x in err_msg or x in err_msg.lower()
         for x in [
             "429",
             "503",
+            "504",
             "overloaded",
             "resource_exhausted",
+            "deadline_exceeded",
+            "deadline expired",
+            "gateway timeout",
         ]
     )
 
@@ -487,9 +491,14 @@ class ProtectedLLM:
         if timeout is None:
             if timeout_config_key:
                 default_val = (
-                    300.0
-                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
-                    else 30.0
+                    180.0
+                    if "spell" in timeout_config_key
+                    else (
+                        300.0
+                        if "summary" in timeout_config_key
+                        or "ocr" in timeout_config_key
+                        else 30.0
+                    )
                 )
                 timeout = await get_system_config_timeout(
                     timeout_config_key, default_val
@@ -553,9 +562,14 @@ class ProtectedLLM:
         if timeout is None:
             if timeout_config_key:
                 default_val = (
-                    300.0
-                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
-                    else 30.0
+                    180.0
+                    if "spell" in timeout_config_key
+                    else (
+                        300.0
+                        if "summary" in timeout_config_key
+                        or "ocr" in timeout_config_key
+                        else 30.0
+                    )
                 )
                 timeout = await get_system_config_timeout(
                     timeout_config_key, default_val

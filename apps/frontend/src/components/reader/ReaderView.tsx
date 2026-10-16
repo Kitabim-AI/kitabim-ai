@@ -17,7 +17,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNotification } from '../../context/NotificationContext';
 import { useAppContext } from '../../context/AppContext';
-import { useAuth, useIsEditor, useIsAdmin } from '../../hooks/useAuth';
+import { useAuth, useIsEditor } from '../../hooks/useAuth';
 import { useBookmarks } from '../../hooks/useBookmarks';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
@@ -57,7 +57,6 @@ export const ReaderView: React.FC = () => {
 
   const { t } = useI18n();
   const isEditor = useIsEditor();
-  const isAdmin = useIsAdmin();
   const { isAuthenticated, user } = useAuth();
   const { bookmarks, create: createBookmark, rename: renameBookmark, remove: removeBookmark } = useBookmarks(selectedBook.id);
   const isGuest = !isAuthenticated;
@@ -378,10 +377,10 @@ export const ReaderView: React.FC = () => {
 
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleUpdatePage = async (id: string, num: number, text: string) => {
+  const handleUpdatePage = async (id: string, num: number, text: string, llmSpellChecked: boolean = false) => {
     setIsSaving(true);
     try {
-      await bookActions.handleUpdatePage(id, num, text, setEditingPageNum);
+      await bookActions.handleUpdatePage(id, num, text, setEditingPageNum, llmSpellChecked);
     } finally {
       setIsSaving(false);
     }
@@ -669,10 +668,9 @@ export const ReaderView: React.FC = () => {
                 }}
                 onSetStartPage={isEditor ? (pageNum) => handleSetStartPage(pageNum) : undefined}
                 onToggleToc={isEditor ? (pageNum, nextIsToc) => bookActions.handleToggleToc(selectedBook.id, pageNum, nextIsToc) : undefined}
-                onLlmSpellCheck={isAdmin ? (pageNum) => bookActions.handleLlmSpellCheckPage(selectedBook.id, pageNum) : undefined}
                 onTempTextChange={setTempPageText}
-                onSave={(pageNum, text) => {
-                  handleUpdatePage(selectedBook.id, pageNum, text);
+                onSave={(pageNum, text, llmSpellChecked) => {
+                  handleUpdatePage(selectedBook.id, pageNum, text, llmSpellChecked === true);
                 }}
                 onCancel={() => setEditingPageNum(null)}
                 isSaving={isSaving}
@@ -714,11 +712,10 @@ export const ReaderView: React.FC = () => {
                         onReprocess={() => bookActions.handleReProcessPage(selectedBook.id, page.pageNumber)}
                         onSetStartPage={isEditor ? () => handleSetStartPage(page.pageNumber) : undefined}
                         onToggleToc={isEditor ? (nextIsToc) => bookActions.handleToggleToc(selectedBook.id, page.pageNumber, nextIsToc) : undefined}
-                        onLlmSpellCheck={isAdmin ? () => bookActions.handleLlmSpellCheckPage(selectedBook.id, page.pageNumber) : undefined}
                         tempText={tempPageText}
                         onTempTextChange={setTempPageText}
-                        onSave={() => {
-                          handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText);
+                        onSave={(llmSpellChecked) => {
+                          handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText, llmSpellChecked === true);
                           window.scrollTo(0, 0);
                         }}
                         onCancel={() => {

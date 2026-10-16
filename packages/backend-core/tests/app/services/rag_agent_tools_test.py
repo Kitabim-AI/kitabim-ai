@@ -957,7 +957,117 @@ async def test_reader_search_chunks_cannot_escape_to_whole_library():
             {"query": "q", "book_ids": ["other"]}, _reader_ctx()
         )
 
-    assert calls == [["cur"], ["cur"]]
+    # Each current-book search is paired with a sister-volume search; nothing
+    # ever widens to the whole library (None / []) or to an unrelated book.
+    assert calls == [["cur"], ["sis"], ["cur"], ["sis"]]
+
+
+@pytest.mark.asyncio
+async def test_reader_search_chunks_appends_top_sister_volume_chunks():
+    """The answer may live in another volume of the same work (a character dies
+    in volume 4 while the reader has volume 1 open): reader chat searches the
+    current volume and adds the best sister-volume chunks after its results."""
+    from app.services.rag.agent import tools as agent_tools
+    from app.services.rag.agent.config import READER_SISTER_VOLUME_CHUNKS
+
+    sister_chunks = [
+        {"book_id": "sis", "volume": 2, "page": p, "text": f"s{p}", "score": s}
+        for p, s in enumerate([0.5, 0.9, 0.7, 0.6, 0.8, 0.4, 0.3])
+    ]
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        if book_ids == ["cur"]:
+            return [{"book_id": "cur", "volume": 1, "page": 1, "score": 0.6}]
+        return sister_chunks
+
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(BooksRepository, "find_sister_volumes", _fake_sisters),
+    ):
+        results = await agent_tools._run_search_chunks(
+            {"query": "q", "book_ids": ["cur"]}, _reader_ctx()
+        )
+
+    assert results[0]["book_id"] == "cur"
+    added = results[1:]
+    assert len(added) == READER_SISTER_VOLUME_CHUNKS
+    assert [c["score"] for c in added] == sorted(
+        (c["score"] for c in sister_chunks), reverse=True
+    )[:READER_SISTER_VOLUME_CHUNKS]
+
+
+@pytest.mark.asyncio
+async def test_reader_search_chunks_no_sister_search_when_agent_targets_sister():
+    """When the agent already scoped the search to a sister volume (user asked
+    about another volume), no extra sister search is added."""
+    from app.services.rag.agent import tools as agent_tools
+
+    calls = []
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        calls.append(book_ids)
+        return []
+
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(BooksRepository, "find_sister_volumes", _fake_sisters),
+    ):
+        await agent_tools._run_search_chunks(
+            {"query": "q", "book_ids": ["sis"]}, _reader_ctx()
+        )
+
+    assert calls == [["sis"]]
+
+
+@pytest.mark.asyncio
+async def test_reader_search_chunks_single_volume_book_skips_sister_search():
+    from app.services.rag.agent import tools as agent_tools
+
+    calls = []
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        calls.append(book_ids)
+        return [{"book_id": "cur", "score": 0.7}]
+
+    async def only_current(self, book_id):
+        return [FakeBook("cur", "T", "A", None)]
+
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(BooksRepository, "find_sister_volumes", only_current),
+    ):
+        results = await agent_tools._run_search_chunks({"query": "q"}, _reader_ctx())
+
+    assert calls == [["cur"]]
+    assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_reader_search_chunks_sister_lookup_failure_keeps_current_results():
+    from app.services.rag.agent import tools as agent_tools
+
+    async def fake_vector_search(ctx_, book_ids, query_vector=None):
+        return [{"book_id": "cur", "score": 0.7}]
+
+    with (
+        patch.object(agent_tools, "embed_query", AsyncMock(return_value=[0.1])),
+        patch.object(agent_tools, "vector_search", fake_vector_search),
+        patch.object(agent_tools, "graph_entity_lookup", AsyncMock(return_value=[])),
+        patch.object(
+            BooksRepository,
+            "find_sister_volumes",
+            AsyncMock(side_effect=RuntimeError("db down")),
+        ),
+    ):
+        results = await agent_tools._run_search_chunks({"query": "q"}, _reader_ctx())
+
+    assert results == [{"book_id": "cur", "score": 0.7}]
 
 
 @pytest.mark.asyncio

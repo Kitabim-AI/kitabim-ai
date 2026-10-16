@@ -82,9 +82,14 @@ class StructuredChain:
                 from app.llm.models import get_system_config_timeout
 
                 default_val = (
-                    300.0
-                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
-                    else 30.0
+                    180.0
+                    if "spell" in timeout_config_key
+                    else (
+                        300.0
+                        if "summary" in timeout_config_key
+                        or "ocr" in timeout_config_key
+                        else 30.0
+                    )
                 )
                 timeout = await get_system_config_timeout(
                     timeout_config_key, default_val

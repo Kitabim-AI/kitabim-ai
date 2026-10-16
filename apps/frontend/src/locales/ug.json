@@ -55,8 +55,6 @@
     "resetFailedSuccess": "{{count}} بەت OCR غا قايتا تەڭشەلدى.",
     "noFailedPages": "بۇ كىتابتا مەغلۇپ بەت تېپىلمىدى.",
     "pageResetSuccess": "{{pageNum}}-بەت دەسلەپلەندى.",
-    "llmSpellCheckPageStarted": "{{pageNum}}-بەت ئۈچۈن LLM ئارقىلىق كوررېكتورلاش باشلاندى",
-    "llmSpellCheckPageError": "{{pageNum}}-بەت ئۈچۈن LLM ئارقىلىق كوررېكتورلاشنى قوزغىتالمىدى",
     "pageResetError": "{{pageNum}}-بەتنى دەسلەپلىيەلمىدى. قايتا سىناڭ.",
     "pageUpdated": "{{pageNum}}-بەت يېڭىلاندى.",
     "pageTocMarked": "{{pageNum}}-بەت مۇندەرىجە بېتى قىلىپ بەلگىلەندى.",
@@ -355,6 +353,7 @@
     "unmarkAsTocTitle": "بۇ بەتتىن مۇندەرىجە بەلگىسىنى ئېلىپ تاشلاش",
     "llmSpellCheck": "LLM دە كوررېكتورلاش",
     "llmSpellCheckTitle": "بۇ بەتتە LLM ئارقىلىق كوررېكتورلۇق ئېلىپ بېرىش",
+    "llmSpellCheckRunning": "LLM دە ئىملا تەكشۈرۈلىۋاتىدۇ...",
     "reprocess": {
       "title": "قايتا تونۇتۇش",
       "message": "بۇ بەتتە سىزنىڭ تەھرىرىڭىز بار. قايتا تونۇتسىڭىز تەھرىرىڭىز يوقىلىدۇ. جەزملەشتۈرەمسىز؟",
@@ -908,11 +907,6 @@
     },
     "reprocessLlmSpellCheck": {
       "title": "LLM ئارقىلىق كوررېكتورلاش"
-    },
-    "llmSpellCheckPage": {
-      "title": "LLM ئارقىلىق كوررېكتورلاش",
-      "message": "{{pageNum}}-بەتتە LLM ئارقىلىق كوررېكتورلاش ئېلىپ بېرىلسۇنمۇ؟",
-      "confirm": "كوررېكتورلاش"
     },
     "reprocessGraph": {
       "title": "بىلىم گىرافىنى قايتا قۇرۇش"

@@ -30,11 +30,10 @@ interface VirtualScrollReaderProps {
   onEdit?: (pageNum: number, text: string) => void;
   onReprocess?: (pageNum: number) => void;
   onTempTextChange?: (text: string) => void;
-  onSave?: (pageNum: number, text: string) => void;
+  onSave?: (pageNum: number, text: string, llmSpellChecked: boolean) => void;
   onCancel?: () => void;
   onSetStartPage?: (pageNum: number) => void;
   onToggleToc?: (pageNum: number, nextIsToc: boolean) => void;
-  onLlmSpellCheck?: (pageNum: number) => void;
   isSaving?: boolean;
   selectedBookPages?: any[];
   contentPageOffset?: number;
@@ -69,7 +68,6 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   onCancel,
   onSetStartPage,
   onToggleToc,
-  onLlmSpellCheck,
   isSaving = false,
   selectedBookPages = [],
   contentPageOffset,
@@ -367,17 +365,13 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     onToggleToc?.(pageNum, nextIsToc);
   }, [onToggleToc]);
 
-  const handlePageLlmSpellCheck = useCallback((pageNum: number) => {
-    onLlmSpellCheck?.(pageNum);
-  }, [onLlmSpellCheck]);
-
-  const handlePageSave = useCallback((pageNum: number, text: string) => {
+  const handlePageSave = useCallback((pageNum: number, text: string, llmSpellChecked: boolean) => {
     setPages(prev => {
       const existing = prev.get(pageNum);
       if (!existing) return prev;
       return new Map(prev).set(pageNum, { ...existing, text });
     });
-    onSave?.(pageNum, text);
+    onSave?.(pageNum, text, llmSpellChecked);
   }, [onSave]);
 
   const handlePageCancel = useCallback(() => {
@@ -436,10 +430,9 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   onReprocess={() => handlePageReprocess(pageNum)}
                   onSetStartPage={onSetStartPage ? () => handlePageSetStartPage(pageNum) : undefined}
                   onToggleToc={onToggleToc ? (nextIsToc) => handlePageToggleToc(pageNum, nextIsToc) : undefined}
-                  onLlmSpellCheck={onLlmSpellCheck ? () => handlePageLlmSpellCheck(pageNum) : undefined}
                   tempText={isEditingThisPage ? tempPageText : ''}
                   onTempTextChange={onTempTextChange}
-                  onSave={() => handlePageSave(pageNum, tempPageText)}
+                  onSave={(llmSpellChecked) => handlePageSave(pageNum, tempPageText, llmSpellChecked)}
                   onCancel={handlePageCancel}
                   isLoading={page.status === 'processing' || page.status === 'indexing'}
                   isSaving={isSaving}

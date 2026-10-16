@@ -719,6 +719,8 @@ class ChatOrchestrator:
                 persona_prompt=ctx.persona_prompt,
                 is_global=request_dto.is_global,
                 has_categories=bool(ctx.character_categories),
+                current_book_id=ctx.book_id,
+                current_volume=book.volume if book else None,
             )
 
             answer_session_recent_events_str = await configs_repo.get_value(

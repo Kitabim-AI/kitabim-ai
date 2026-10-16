@@ -22,3 +22,27 @@ def test_build_answer_instructions_strict_no_answer_unaffected():
     # confirm this change doesn't accidentally affect it.
     instructions = build_answer_instructions(strict_no_answer=True)
     assert "verbatim" not in instructions
+
+
+def test_reader_mode_prefers_current_volume_then_names_other_volume():
+    """Reader chat gets sister-volume passages alongside the open volume's: the
+    answer must come from the open volume when it can, and otherwise say the
+    open volume doesn't cover it and cite the other volume explicitly."""
+    instructions = build_answer_instructions(
+        is_global=False, current_book_id="cur123", current_volume=1
+    )
+
+    assert "BookID: cur123" in instructions
+    assert "Volume 1" in instructions
+    assert "other volume" in instructions.lower()
+
+
+def test_current_volume_rule_absent_in_global_chat():
+    instructions = build_answer_instructions(
+        is_global=True, current_book_id="cur123", current_volume=1
+    )
+    assert "BookID: cur123" not in instructions
+
+
+def test_current_volume_rule_absent_without_current_book():
+    assert "currently reading" not in build_answer_instructions(is_global=False)

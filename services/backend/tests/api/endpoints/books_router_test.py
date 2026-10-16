@@ -1077,92 +1077,6 @@ async def test_reprocess_llm_spell_check_book_not_found():
 
 
 @pytest.mark.asyncio
-async def test_trigger_llm_spell_check_page_enqueues_and_returns_started():
-    setup_paths()
-    from api.endpoints.books_router import trigger_llm_spell_check_page  # type: ignore[import]
-
-    mock_session = AsyncMock()
-    mock_user = MagicMock()
-    mock_user.email = "admin@example.com"
-
-    mock_page = MagicMock()
-    mock_page.id = 42
-    mock_page.llm_spell_check_status = "idle"
-
-    mock_repo = MagicMock()
-    mock_repo.find_one = AsyncMock(return_value=mock_page)
-    mock_repo.set_llm_spell_check_status = AsyncMock(return_value=True)
-
-    mock_pool = AsyncMock()
-
-    with (
-        patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo),
-        patch("arq.create_pool", new_callable=AsyncMock, return_value=mock_pool),
-    ):
-        result = await trigger_llm_spell_check_page(
-            book_id="some-book-id",
-            page_num=5,
-            current_user=mock_user,
-            session=mock_session,
-        )
-
-    assert result["status"] == "llm_spell_check_started"
-    mock_pool.enqueue_job.assert_called_once()
-    call_kwargs = mock_pool.enqueue_job.call_args
-    assert call_kwargs.kwargs["page_ids"] == [42]
-
-
-@pytest.mark.asyncio
-async def test_trigger_llm_spell_check_page_409_when_already_running():
-    setup_paths()
-    from api.endpoints.books_router import trigger_llm_spell_check_page  # type: ignore[import]
-
-    mock_session = AsyncMock()
-    mock_user = MagicMock()
-    mock_user.email = "admin@example.com"
-
-    mock_page = MagicMock()
-    mock_page.llm_spell_check_status = "in_progress"
-
-    mock_repo = MagicMock()
-    mock_repo.find_one = AsyncMock(return_value=mock_page)
-
-    with patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo):
-        with pytest.raises(HTTPException) as excinfo:
-            await trigger_llm_spell_check_page(
-                book_id="some-book-id",
-                page_num=5,
-                current_user=mock_user,
-                session=mock_session,
-            )
-
-    assert excinfo.value.status_code == 409
-
-
-@pytest.mark.asyncio
-async def test_trigger_llm_spell_check_page_404_when_not_found():
-    setup_paths()
-    from api.endpoints.books_router import trigger_llm_spell_check_page  # type: ignore[import]
-
-    mock_session = AsyncMock()
-    mock_user = MagicMock()
-
-    mock_repo = MagicMock()
-    mock_repo.find_one = AsyncMock(return_value=None)
-
-    with patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo):
-        with pytest.raises(HTTPException) as excinfo:
-            await trigger_llm_spell_check_page(
-                book_id="some-book-id",
-                page_num=999,
-                current_user=mock_user,
-                session=mock_session,
-            )
-
-    assert excinfo.value.status_code == 404
-
-
-@pytest.mark.asyncio
 async def test_get_download_ticket_returns_ticket_url():
     setup_paths()
     from api.endpoints.books_router import get_download_ticket
@@ -1298,3 +1212,292 @@ async def test_download_book_with_invalid_ticket_raises_401():
         )
 
     assert excinfo.value.status_code == 401
+
+
+def _preview_page(text="old", page_id=7):
+    page = MagicMock()
+    page.id = page_id
+    page.text = text
+    page.llm_spell_check_status = "idle"
+    return page
+
+
+@pytest.mark.asyncio
+async def test_preview_llm_spell_check_returns_corrected_text_without_writes():
+    setup_paths()
+    from api.endpoints.books_router import (  # type: ignore[import]
+        preview_llm_spell_check_page,
+        LlmSpellCheckPreviewRequest,
+    )
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+
+    page = _preview_page(text="saved text")
+    prev_page = _preview_page(text="previous page")
+    next_page = _preview_page(text="next page")
+
+    async def find_one(book_id, page_num):
+        return {4: prev_page, 5: page, 6: next_page}.get(page_num)
+
+    mock_repo = MagicMock()
+    mock_repo.find_one = AsyncMock(side_effect=find_one)
+
+    with (
+        patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.SystemConfigsRepository"),
+        patch(
+            "api.endpoints.books_router.correct_page_text",
+            new_callable=AsyncMock,
+            return_value="corrected text",
+        ) as mock_correct,
+    ):
+        result = await preview_llm_spell_check_page(
+            book_id="book-1",
+            page_num=5,
+            request=LlmSpellCheckPreviewRequest(text="unsaved edits"),
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert result == {"corrected_text": "corrected text"}
+    args = mock_correct.call_args.args
+    assert args[0] == "unsaved edits"  # textarea text, not the saved page text
+    assert args[1] == "previous page"
+    assert args[2] == "next page"
+    # Nothing persisted
+    assert page.text == "saved text"
+    assert page.llm_spell_check_status == "idle"
+    mock_session.commit.assert_not_called()
+    mock_session.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_preview_llm_spell_check_handles_missing_neighbors():
+    setup_paths()
+    from api.endpoints.books_router import (  # type: ignore[import]
+        preview_llm_spell_check_page,
+        LlmSpellCheckPreviewRequest,
+    )
+
+    page = _preview_page()
+
+    async def find_one(book_id, page_num):
+        return page if page_num == 1 else None
+
+    mock_repo = MagicMock()
+    mock_repo.find_one = AsyncMock(side_effect=find_one)
+
+    with (
+        patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.SystemConfigsRepository"),
+        patch(
+            "api.endpoints.books_router.correct_page_text",
+            new_callable=AsyncMock,
+            return_value="x",
+        ) as mock_correct,
+    ):
+        await preview_llm_spell_check_page(
+            book_id="book-1",
+            page_num=1,
+            request=LlmSpellCheckPreviewRequest(text="text"),
+            current_user=MagicMock(),
+            session=AsyncMock(),
+        )
+
+    args = mock_correct.call_args.args
+    assert args[1] is None
+    assert args[2] is None
+
+
+@pytest.mark.asyncio
+async def test_preview_llm_spell_check_400_on_empty_text():
+    setup_paths()
+    from api.endpoints.books_router import (  # type: ignore[import]
+        preview_llm_spell_check_page,
+        LlmSpellCheckPreviewRequest,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await preview_llm_spell_check_page(
+            book_id="book-1",
+            page_num=1,
+            request=LlmSpellCheckPreviewRequest(text="   \n "),
+            current_user=MagicMock(),
+            session=AsyncMock(),
+        )
+
+    assert excinfo.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_preview_llm_spell_check_404_when_page_missing():
+    setup_paths()
+    from api.endpoints.books_router import (  # type: ignore[import]
+        preview_llm_spell_check_page,
+        LlmSpellCheckPreviewRequest,
+    )
+
+    mock_repo = MagicMock()
+    mock_repo.find_one = AsyncMock(return_value=None)
+
+    with patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo):
+        with pytest.raises(HTTPException) as excinfo:
+            await preview_llm_spell_check_page(
+                book_id="book-1",
+                page_num=999,
+                request=LlmSpellCheckPreviewRequest(text="text"),
+                current_user=MagicMock(),
+                session=AsyncMock(),
+            )
+
+    assert excinfo.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_preview_llm_spell_check_422_when_guardrail_rejects():
+    setup_paths()
+    from api.endpoints.books_router import (  # type: ignore[import]
+        preview_llm_spell_check_page,
+        LlmSpellCheckPreviewRequest,
+    )
+
+    mock_repo = MagicMock()
+    mock_repo.find_one = AsyncMock(return_value=_preview_page())
+
+    with (
+        patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.SystemConfigsRepository"),
+        patch(
+            "api.endpoints.books_router.correct_page_text",
+            new_callable=AsyncMock,
+            side_effect=ValueError("LLM spell check returned empty output"),
+        ),
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            await preview_llm_spell_check_page(
+                book_id="book-1",
+                page_num=2,
+                request=LlmSpellCheckPreviewRequest(text="text"),
+                current_user=MagicMock(),
+                session=AsyncMock(),
+            )
+
+    assert excinfo.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_preview_llm_spell_check_502_when_llm_call_fails():
+    setup_paths()
+    from api.endpoints.books_router import (  # type: ignore[import]
+        preview_llm_spell_check_page,
+        LlmSpellCheckPreviewRequest,
+    )
+
+    mock_repo = MagicMock()
+    mock_repo.find_one = AsyncMock(return_value=_preview_page())
+
+    with (
+        patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo),
+        patch("api.endpoints.books_router.SystemConfigsRepository"),
+        patch(
+            "api.endpoints.books_router.correct_page_text",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("circuit open"),
+        ),
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            await preview_llm_spell_check_page(
+                book_id="book-1",
+                page_num=2,
+                request=LlmSpellCheckPreviewRequest(text="text"),
+                current_user=MagicMock(),
+                session=AsyncMock(),
+            )
+
+    assert excinfo.value.status_code == 502
+
+
+def test_preview_llm_spell_check_requires_editor():
+    setup_paths()
+    from api.endpoints import books_router  # type: ignore[import]
+    from auth.dependencies import require_editor  # type: ignore[import]
+
+    route = next(
+        r
+        for r in books_router.router.routes
+        if getattr(r, "path", "").endswith("/pages/{page_num}/llm-spell-check/preview")
+    )
+    dependency_calls = [d.call for d in route.dependant.dependencies]
+    assert require_editor in dependency_calls
+
+
+async def _call_update_page_text(payload, page):
+    from api.endpoints.books_router import update_page_text  # type: ignore[import]
+
+    mock_pages_repo = MagicMock()
+    mock_pages_repo.find_one = AsyncMock(return_value=page)
+    mock_books_repo = MagicMock()
+    mock_books_repo.update_one = AsyncMock()
+    mock_configs_repo = MagicMock()
+    mock_configs_repo.get_value = AsyncMock(return_value="gemini-embedding-2")
+    mock_cache = MagicMock()
+    mock_cache.delete = AsyncMock()
+    mock_cache.delete_pattern = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+
+    with (
+        patch(
+            "api.endpoints.books_router.PagesRepository", return_value=mock_pages_repo
+        ),
+        patch(
+            "api.endpoints.books_router.BooksRepository", return_value=mock_books_repo
+        ),
+        patch(
+            "api.endpoints.books_router.SystemConfigsRepository",
+            return_value=mock_configs_repo,
+        ),
+        patch("api.endpoints.books_router.cache_service", mock_cache),
+        patch(
+            "app.services.book_milestone_service.BookMilestoneService.update_book_milestones",
+            new_callable=AsyncMock,
+        ),
+    ):
+        # Empty text takes the no-chunking branch, so no embedding calls are made.
+        return await update_page_text(
+            book_id="book-1",
+            page_num=3,
+            payload=payload,
+            current_user=mock_user,
+            session=AsyncMock(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_page_text_marks_llm_checked_when_flag_true():
+    setup_paths()
+    page = MagicMock()
+    page.text = "old"
+    page.llm_spell_check_status = "idle"
+    page.llm_spell_check_at = None
+
+    await _call_update_page_text({"text": "", "llm_spell_checked": True}, page)
+
+    assert page.llm_spell_check_status == "succeeded"
+    assert page.llm_spell_check_at is not None
+
+
+@pytest.mark.asyncio
+async def test_update_page_text_leaves_llm_status_without_flag():
+    setup_paths()
+    page = MagicMock()
+    page.text = "old"
+    page.llm_spell_check_status = "idle"
+    page.llm_spell_check_at = None
+
+    await _call_update_page_text({"text": ""}, page)
+
+    assert page.llm_spell_check_status == "idle"
+    assert page.llm_spell_check_at is None
