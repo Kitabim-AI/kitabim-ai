@@ -1,6 +1,8 @@
 export interface ChangedRange {
   start: number;
   end: number;
+  /** The baseline words this run of changes replaced; '' for a pure insertion. */
+  original: string;
 }
 
 interface Token {
@@ -19,12 +21,13 @@ const tokenize = (s: string): Token[] => {
   return tokens;
 };
 
+type DiffOp = { kind: 'same' | 'del' | 'ins'; token: Token };
+
 /**
- * Character ranges in `current` of words that were inserted or changed
- * relative to `baseline` (word-level LCS). Deleted words have no position in
- * `current` and are not reported.
+ * Word-level LCS edit script for the part of `current` that differs from
+ * `baseline` (common prefix/suffix are trimmed and not included).
  */
-export const diffChangedWordRanges = (baseline: string, current: string): ChangedRange[] => {
+const diffWordOps = (baseline: string, current: string): DiffOp[] => {
   if (baseline === current) return [];
   const a = tokenize(baseline);
   const b = tokenize(current);
@@ -51,20 +54,48 @@ export const diffChangedWordRanges = (baseline: string, current: string): Change
     }
   }
 
-  const ranges: ChangedRange[] = [];
+  const ops: DiffOp[] = [];
   let i = 0;
   let j = 0;
   while (i < a2.length && j < b2.length) {
     if (a2[i].text === b2[j].text) {
+      ops.push({ kind: 'same', token: b2[j] });
       i++;
       j++;
     } else if (dp[(i + 1) * cols + j] >= dp[i * cols + j + 1]) {
+      ops.push({ kind: 'del', token: a2[i] });
       i++;
     } else {
-      ranges.push({ start: b2[j].start, end: b2[j].end });
+      ops.push({ kind: 'ins', token: b2[j] });
       j++;
     }
   }
-  for (; j < b2.length; j++) ranges.push({ start: b2[j].start, end: b2[j].end });
+  for (; i < a2.length; i++) ops.push({ kind: 'del', token: a2[i] });
+  for (; j < b2.length; j++) ops.push({ kind: 'ins', token: b2[j] });
+  return ops;
+};
+
+/**
+ * Character ranges in `current` of words that were inserted or changed
+ * relative to `baseline` (word-level LCS), each carrying the baseline words it
+ * replaced. Adjacent changed words share one run of originals. Deleted words
+ * have no position in `current` and are not reported.
+ */
+export const diffChangedWordRanges = (baseline: string, current: string): ChangedRange[] => {
+  const ranges: ChangedRange[] = [];
+  let removed: string[] = [];
+  let added: Token[] = [];
+  const flush = () => {
+    const original = removed.join(' ');
+    for (const token of added) ranges.push({ start: token.start, end: token.end, original });
+    removed = [];
+    added = [];
+  };
+  for (const op of diffWordOps(baseline, current)) {
+    if (op.kind === 'same') flush();
+    else if (op.kind === 'del') removed.push(op.token.text);
+    else added.push(op.token);
+  }
+  flush();
   return ranges;
 };

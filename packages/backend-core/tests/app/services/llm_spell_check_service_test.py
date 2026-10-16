@@ -68,6 +68,10 @@ async def test_correct_page_text_reads_model_from_system_configs():
         )
         mock_build_llm.assert_called_once_with("gemini-3.1-flash-lite")
         mock_llm.ainvoke.assert_called_once()
+        assert (
+            mock_llm.ainvoke.call_args.kwargs.get("timeout_config_key")
+            == "gemini_llm_spell_check_timeout"
+        )
 
 
 @pytest.mark.asyncio

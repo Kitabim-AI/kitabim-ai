@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { PageItem } from '@/src/components/reader/PageItem';
 import { I18nContext } from '@/src/i18n/I18nContext';
@@ -325,17 +325,79 @@ test('AI check replaces textarea text and highlights changed words', async () =>
   expect(marks).toHaveLength(1);
   expect(marks[0]).toHaveTextContent('text');
   expect(screen.getByRole('textbox')).toHaveValue('Sample page text for test');
-  expect(screen.getByText('reader.llmSpellCheckChanged')).toBeInTheDocument();
 });
 
-test('AI check with no changes shows the no-changes message', async () => {
-  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page content for test');
+// jsdom has no layout: give every highlighted <mark> a 100x20 box at the
+// origin so pointer hit-testing over the textarea can be exercised.
+const mockMarkBoxes = () =>
+  vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+    const box = { left: 0, right: 100, top: 0, bottom: 20, width: 100, height: 20, x: 0, y: 0 };
+    return (this.tagName === 'MARK' ? [box] : []) as unknown as DOMRectList;
+  });
+
+test('hovering a replaced word shows the original word; save keeps only the replacement', async () => {
+  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page text for test');
+  const onSave = vi.fn();
+  const boxes = mockMarkBoxes();
+  render(<EditingHarness initial="Sample page content for test" onSave={onSave} />);
+
+  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
+  await screen.findAllByTestId('llm-changed-word');
+  const textbox = screen.getByRole('textbox');
+
+  fireEvent.mouseMove(textbox, { clientX: 50, clientY: 10 });
+  expect(screen.getByTestId('llm-original-tooltip')).toHaveTextContent('content');
+
+  fireEvent.mouseMove(textbox, { clientX: 500, clientY: 500 });
+  expect(screen.queryByTestId('llm-original-tooltip')).not.toBeInTheDocument();
+
+  fireEvent.mouseMove(textbox, { clientX: 50, clientY: 10 });
+  fireEvent.mouseLeave(textbox);
+  expect(screen.queryByTestId('llm-original-tooltip')).not.toBeInTheDocument();
+  boxes.mockRestore();
+
+  fireEvent.click(screen.getByText('common.save'));
+  expect(onSave).toHaveBeenCalledWith(true);
+  expect(textbox).toHaveValue('Sample page text for test');
+});
+
+test('placing the text cursor in a replaced word shows the original word', async () => {
+  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page text for test');
   render(<EditingHarness initial="Sample page content for test" />);
 
   fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
+  await screen.findAllByTestId('llm-changed-word');
+  const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
 
-  expect(await screen.findByText('reader.llmSpellCheckNoChanges')).toBeInTheDocument();
+  const inWord = 'Sample page te'.length;
+  textbox.setSelectionRange(inWord, inWord);
+  fireEvent.select(textbox);
+  expect(screen.getByTestId('llm-original-tooltip')).toHaveTextContent('content');
+
+  textbox.setSelectionRange(0, 0);
+  fireEvent.select(textbox);
+  expect(screen.queryByTestId('llm-original-tooltip')).not.toBeInTheDocument();
+});
+
+test('no original-word tooltip before an AI check', () => {
+  const boxes = mockMarkBoxes();
+  render(<EditingHarness initial="Sample page content for test" />);
+  fireEvent.mouseMove(screen.getByRole('textbox'), { clientX: 50, clientY: 10 });
+  expect(screen.queryByTestId('llm-original-tooltip')).not.toBeInTheDocument();
+  boxes.mockRestore();
+});
+
+test('AI check with no changes highlights nothing and keeps the text', async () => {
+  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page content for test');
+  render(<EditingHarness initial="Sample page content for test" />);
+
+  const button = screen.getByTitle('reader.llmSpellCheckTitle');
+  fireEvent.click(button);
+
+  await waitFor(() => expect(button).not.toBeDisabled());
+  expect(PersistenceService.previewLlmSpellCheck).toHaveBeenCalled();
   expect(screen.queryByTestId('llm-changed-word')).not.toBeInTheDocument();
+  expect(screen.getByRole('textbox')).toHaveValue('Sample page content for test');
 });
 
 test('AI check failure shows the error and keeps the text', async () => {

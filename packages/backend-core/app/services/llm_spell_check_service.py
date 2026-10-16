@@ -80,7 +80,9 @@ async def correct_page_text(
     prompt = build_correction_prompt(page_text, prev_page_text, next_page_text)
     llm = build_text_llm(model_name)
     corrected = await llm.ainvoke(
-        prompt, config=types.GenerateContentConfig(temperature=0.0)
+        prompt,
+        config=types.GenerateContentConfig(temperature=0.0),
+        timeout_config_key="gemini_llm_spell_check_timeout",
     )
     corrected = normalize_markdown(corrected.strip())
     corrected = normalize_uyghur_chars(corrected)

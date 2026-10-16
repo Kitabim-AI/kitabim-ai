@@ -23,6 +23,7 @@ export const ChangedWordsLayer = React.forwardRef<HTMLDivElement, ChangedWordsLa
         <mark
           key={`m${idx}`}
           data-testid="llm-changed-word"
+          data-range-index={idx}
           className="bg-amber-300/70 dark:bg-amber-500/40 text-transparent rounded-sm"
         >
           {text.slice(r.start, r.end)}

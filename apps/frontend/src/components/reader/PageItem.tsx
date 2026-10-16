@@ -130,6 +130,51 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
   const highlightLayerRef = React.useRef<HTMLDivElement>(null);
   const isHighlighting = llmCheck.baselineText !== null;
 
+  // Original-word tooltip over a replaced word. The textarea sits above the
+  // highlight layer, so hits are found by testing the pointer against the
+  // layer's <mark> boxes; the caret inside a replaced word (touch, keyboard)
+  // shows it too. Hover wins over the caret.
+  type OriginalTip = { original: string; top: number; left: number };
+  const [hoverTip, setHoverTip] = React.useState<OriginalTip | null>(null);
+  const [caretTip, setCaretTip] = React.useState<OriginalTip | null>(null);
+  const originalTip = hoverTip ?? caretTip;
+
+  const tipAt = React.useCallback((idx: number, box: DOMRect | DOMRectReadOnly): OriginalTip | null => {
+    const original = changedRanges[idx]?.original;
+    const container = containerRef.current;
+    if (!original || !container) return null;
+    const c = container.getBoundingClientRect();
+    return { original, top: box.top - c.top, left: box.left - c.left + box.width / 2 };
+  }, [changedRanges]);
+
+  const handleEditorMouseMove = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+    const marks = highlightLayerRef.current?.querySelectorAll<HTMLElement>('mark[data-range-index]');
+    if (!marks) return;
+    for (const mark of Array.from(marks)) {
+      for (const box of Array.from(mark.getClientRects())) {
+        if (e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom) {
+          setHoverTip(tipAt(Number(mark.dataset.rangeIndex), box));
+          return;
+        }
+      }
+    }
+    setHoverTip(null);
+  };
+
+  const handleEditorSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    const { selectionStart, selectionEnd } = e.currentTarget;
+    const idx = selectionStart === selectionEnd
+      ? changedRanges.findIndex(r => selectionStart >= r.start && selectionStart <= r.end)
+      : -1;
+    const mark = idx < 0 ? null : highlightLayerRef.current?.querySelector<HTMLElement>(`mark[data-range-index="${idx}"]`);
+    setCaretTip(mark ? tipAt(idx, mark.getClientRects()[0] ?? mark.getBoundingClientRect()) : null);
+  };
+
+  React.useEffect(() => {
+    setHoverTip(null);
+    setCaretTip(null);
+  }, [changedRanges]);
+
   const displayText = React.useMemo(
     () => (contentFontClassName === 'reader-font-adobe' ? normalizeArabic(page.text || '') : (page.text || "...")),
     [contentFontClassName, page.text]
@@ -219,12 +264,28 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
               onChange={(e) => onTempTextChange(contentFontClassName === 'reader-font-adobe' ? normalizeArabic(e.target.value) : e.target.value)}
               onScroll={(e) => {
                 if (highlightLayerRef.current) highlightLayerRef.current.scrollTop = e.currentTarget.scrollTop;
+                setHoverTip(null);
+                setCaretTip(null);
               }}
+              onMouseMove={isHighlighting ? handleEditorMouseMove : undefined}
+              onMouseLeave={() => setHoverTip(null)}
+              onSelect={isHighlighting ? handleEditorSelect : undefined}
               readOnly={llmCheck.isChecking}
               className={`flex-1 w-full h-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none ${isHighlighting ? 'bg-transparent' : 'bg-white dark:bg-slate-800'} text-[#1a1a1a] dark:text-slate-100 relative z-10 custom-scrollbar leading-relaxed ${contentFontClassName || ''}`}
               style={contentStyle}
               dir="rtl"
             />
+            {originalTip && (
+              <div
+                data-testid="llm-original-tooltip"
+                role="tooltip"
+                dir="rtl"
+                className={`absolute z-30 -translate-x-1/2 -translate-y-full -mt-1.5 px-3 py-1 rounded-lg bg-slate-900 dark:bg-slate-700 text-white dark:text-slate-100 text-sm whitespace-nowrap shadow-lg pointer-events-none uyghur-text ${contentFontClassName || ''}`}
+                style={{ top: originalTip.top, left: originalTip.left }}
+              >
+                {originalTip.original}
+              </div>
+            )}
             {llmCheck.isChecking && (
               <div
                 role="status"
@@ -264,13 +325,6 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
             )}
             {llmCheck.error && (
               <span className="text-sm text-red-600 dark:text-red-400">{llmCheck.error}</span>
-            )}
-            {!llmCheck.error && isHighlighting && (
-              <span className="text-sm text-slate-500 dark:text-slate-400">
-                {changedRanges.length === 0
-                  ? t('reader.llmSpellCheckNoChanges')
-                  : t('reader.llmSpellCheckChanged', { count: changedRanges.length })}
-              </span>
             )}
           </div>
         </div>
