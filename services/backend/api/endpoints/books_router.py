@@ -62,6 +62,7 @@ from app.services.storage_service import storage
 from app.utils.categories import normalize_categories
 from app.services.chunking_service import chunking_service
 from app.services.batch_llm_spell_check_service import submit_batch_llm_spell_check
+from app.services.llm_spell_check_service import correct_page_text
 from app.utils.markdown import normalize_markdown, strip_markdown
 from app.llm.models import GeminiEmbeddings
 from auth.dependencies import (
@@ -2450,6 +2451,78 @@ async def trigger_llm_spell_check_page(
         )
 
     return {"status": "llm_spell_check_started"}
+
+
+class LlmSpellCheckPreviewRequest(BaseModel):
+    text: str
+
+
+@router.post("/{book_id}/pages/{page_num}/llm-spell-check/preview")
+async def preview_llm_spell_check_page(
+    book_id: str,
+    page_num: int,
+    request: LlmSpellCheckPreviewRequest,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Run the LLM spell check on the editor's current (possibly unsaved)
+    page text and return the corrected text WITHOUT persisting anything.
+    The editor reviews the highlighted changes in edit mode and decides
+    whether to save via POST .../update."""
+    if not request.text or not request.text.strip():
+        raise HTTPException(
+            status_code=400, detail=t("errors.llm_spell_check_empty_text")
+        )
+
+    pages_repo = PagesRepository(session)
+    page = await pages_repo.find_one(book_id, page_num)
+    if not page:
+        raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
+
+    prev_page = await pages_repo.find_one(book_id, page_num - 1)
+    next_page = await pages_repo.find_one(book_id, page_num + 1)
+
+    try:
+        corrected = await correct_page_text(
+            request.text,
+            prev_page.text if prev_page else None,
+            next_page.text if next_page else None,
+            config_repo=SystemConfigsRepository(session),
+        )
+    except ValueError as exc:
+        log_json(
+            logger,
+            logging.WARNING,
+            "llm spell check preview rejected by guardrail",
+            book_id=book_id,
+            page=page_num,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=422, detail=t("errors.llm_spell_check_invalid_output")
+        )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.ERROR,
+            "llm spell check preview failed",
+            book_id=book_id,
+            page=page_num,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=502, detail=t("errors.llm_spell_check_enqueue_failed")
+        )
+
+    log_json(
+        logger,
+        logging.INFO,
+        "llm spell check preview generated",
+        book_id=book_id,
+        page=page_num,
+        user=current_user.email,
+    )
+    return {"corrected_text": corrected}
 
 
 @router.post("/{book_id}/retry-failed")
