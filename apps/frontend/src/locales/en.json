@@ -55,8 +55,6 @@
     "noFailedPages": "No failed pages found for this book.",
     "pageResetSuccess": "Page {{pageNum}} reset and queued for re-processing.",
     "pageResetError": "Failed to reset page {{pageNum}}. Please try again.",
-    "llmSpellCheckPageStarted": "LLM spell check started for page {{pageNum}}",
-    "llmSpellCheckPageError": "Failed to start LLM spell check for page {{pageNum}}",
     "pageUpdated": "Page {{pageNum}} updated.",
     "pageTocMarked": "Page {{pageNum}} marked as Table of Contents.",
     "pageTocUnmarked": "Page {{pageNum}} unmarked as Table of Contents.",
@@ -891,11 +889,6 @@
     },
     "reprocessLlmSpellCheck": {
       "title": "Reprocess LLM Spell Check"
-    },
-    "llmSpellCheckPage": {
-      "title": "LLM Spell Check",
-      "message": "Run the LLM-based spell check on page {{pageNum}}?",
-      "confirm": "Check"
     },
     "reprocessGraph": {
       "title": "Reprocess Knowledge Graph"

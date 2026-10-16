@@ -69,7 +69,7 @@ vi.mock('@/src/components/reader/PageItem', () => ({
     <div>
       <div>{page.text}</div>
       {!isEditing && <button onClick={onEdit}>edit-{page.pageNumber}</button>}
-      {isEditing && <button onClick={onSave}>save-{page.pageNumber}</button>}
+      {isEditing && <button onClick={() => onSave(false)}>save-{page.pageNumber}</button>}
       {isEditing && <button onClick={onCancel}>cancel-{page.pageNumber}</button>}
       <button onClick={onReprocess}>reprocess-{page.pageNumber}</button>
       <div data-testid={`share-props-${page.pageNumber}`}>
@@ -254,7 +254,7 @@ test('ReaderView saves and cancels page edits in full document mode', async () =
   fireEvent.click(await screen.findByText('save-1'));
 
   await waitFor(() => {
-    expect(context.bookActions.handleUpdatePage).toHaveBeenCalledWith('1', 1, 'Page 1 content', expect.any(Function));
+    expect(context.bookActions.handleUpdatePage).toHaveBeenCalledWith('1', 1, 'Page 1 content', expect.any(Function), false);
   });
 
   fireEvent.click(screen.getByText('cancel-1'));
@@ -289,7 +289,7 @@ test('ReaderView saves page edits and handles reprocess in virtual scroll mode',
   fireEvent.click(screen.getByText('virtual-save-1'));
 
   await waitFor(() => {
-    expect(context.bookActions.handleUpdatePage).toHaveBeenCalledWith('1', 1, 'Page 1 updated', expect.any(Function));
+    expect(context.bookActions.handleUpdatePage).toHaveBeenCalledWith('1', 1, 'Page 1 updated', expect.any(Function), false);
   });
 
   // Test virtual reprocess
