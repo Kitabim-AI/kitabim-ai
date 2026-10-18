@@ -1,7 +1,4 @@
 surya-ocr==0.22.1
-savitr>=0.3.0; sys_platform == 'darwin' and platform_machine == 'arm64'
-# mlx-vlm 0.7.x silently breaks savitr: OCR returns only "<div><img/></div>" with no error
-mlx-vlm>=0.6.17,<0.7; sys_platform == 'darwin' and platform_machine == 'arm64'
 pymupdf
 pillow
 beautifulsoup4
@@ -12,3 +9,9 @@ uvicorn
 httpx
 pytest
 pytest-asyncio
+
+# Optional Apple Silicon MLX acceleration (Savitr OCR)
+# Uncomment to enable Savitr engine (requires macOS ARM64):
+# savitr>=0.2.0,<0.3.0
+# mlx-vlm>=0.6.17,<0.7
+
