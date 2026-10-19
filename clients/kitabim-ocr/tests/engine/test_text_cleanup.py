@@ -1,11 +1,6 @@
-import pytest
-
 from engine.text_cleanup import (
     add_word_spans,
     clean_uyghur_text,
-    correct_uyghur_ocr_orthography,
-    dehyphenate_uyghur_text,
-    spaced_hyphen_candidates,
     has_repeated_word_span,
     is_block_repetition_loop,
     is_degenerate_ocr_output,
@@ -234,7 +229,7 @@ def test_clean_uyghur_text_preserves_poem_lines_exactly():
     assert len(poem_lines) == 4
     assert "غېبى جانان" in poem_lines[0]
     assert "مېنى كىم كۆرسە" in poem_lines[1]
-    assert "غېرىپ بولدى ئەزىز باشىم" in poem_lines[2]
+    assert "غېرىب بولدى ئەزىز باشىم" in poem_lines[2]
 
     # Prose lines must also stay exactly as they appear - never merged
     prose = (
@@ -242,38 +237,6 @@ def test_clean_uyghur_text_preserves_poem_lines_exactly():
         "ۋە ئاخىرقى قۇرمۇ مۇشۇ ئابزاسقا تەۋە بولىدۇ."
     )
     assert clean_uyghur_text(prose) == prose
-
-
-def test_correct_uyghur_ocr_orthography():
-    assert (
-        correct_uyghur_ocr_orthography("مەكتەب ۋە مەكتەبلەر") == "مەكتەپ ۋە مەكتەپلەر"
-    )
-    assert (
-        correct_uyghur_ocr_orthography("مەنسەب ۋە مەنسەبدار") == "مەنسەپ ۋە مەنسەپدار"
-    )
-    assert correct_uyghur_ocr_orthography("تەلەب قىلدى") == "تەلەپ قىلدى"
-    assert correct_uyghur_ocr_orthography("كەسىبداشلار كەسىبى") == "كەسىپداشلار كەسىبى"
-    assert (
-        correct_uyghur_ocr_orthography("ئەدەبسىز ئەدەبىيات ئەدەبىي")
-        == "ئەدەپسىز ئەدەبىيات ئەدەبىي"
-    )
-    assert (
-        correct_uyghur_ocr_orthography("غېرىب غېرىبلىق غېرىبى")
-        == "غېرىپ غېرىپلىق غېرىبى"
-    )
-    assert (
-        correct_uyghur_ocr_orthography("ئەجەب ئىش ۋە ئەجەبلەنمەك")
-        == "ئەجەپ ئىش ۋە ئەجەبلەنمەك"
-    )
-    assert (
-        correct_uyghur_ocr_orthography("خازاندىن لالىزارىمنى") == "خازاندىن لالىزارىمنى"
-    )
-    assert (
-        correct_uyghur_ocr_orthography("خازاندىن لالىزار ئەيلىدى")
-        == "خازاندىن لالەزار ئەيلىدى"
-    )
-    assert correct_uyghur_ocr_orthography("دىل ئازار قىلدىمۇم") == "دىل ئازار قىلدىمۇ؟"
-    assert correct_uyghur_ocr_orthography("") == ""
 
 
 def test_is_key_value_line():
@@ -356,45 +319,6 @@ def test_clean_uyghur_text_preserves_dash_attribution_lines_exactly():
     assert clean_uyghur_text(dialogue) == dialogue
 
 
-def test_dehyphenate_uyghur_text_merges_split_word_when_valid():
-    valid = {"ئۇرۇقى", "ئاز-ئازدىن"}
-    # w1-w2 split across newline
-    text_nl = "تېرىقچىلىق ئۇ-\nرۇقى تېپىلدى."
-    cleaned, count = dehyphenate_uyghur_text(text_nl, valid)
-    assert count == 1
-    assert cleaned == "تېرىقچىلىق ئۇرۇقى تېپىلدى."
-
-    # w1-w2 inline
-    text_inline = "تېرىقچىلىق ئۇ-رۇقى تېپىلدى."
-    cleaned_inline, count_inline = dehyphenate_uyghur_text(text_inline, valid)
-    assert count_inline == 1
-    assert cleaned_inline == "تېرىقچىلىق ئۇرۇقى تېپىلدى."
-
-
-def test_dehyphenate_uyghur_text_preserves_compound_words():
-    valid = {"ئاز-ئازدىن"}
-    text = "سۇنى ئاز-ئازدىن ئىچىش كېرەك."
-    cleaned, count = dehyphenate_uyghur_text(text, valid)
-    assert count == 0
-    assert cleaned == text
-
-
-def test_dehyphenate_uyghur_text_preserves_unknown_merged_word():
-    # If the merged word is not in valid dictionary, do not merge
-    valid = {"باشقا"}
-    text = "بۇ نائەلۇم-سۆز بولىدۇ."
-    cleaned, count = dehyphenate_uyghur_text(text, valid)
-    assert count == 0
-    assert cleaned == text
-
-
-def test_clean_uyghur_text_with_valid_words():
-    valid = {"دورىلارنى", "ئاز-ئازدىن"}
-    raw = "تەبىئىي دو-رىلارنى ئىستېمال قىلىپ ئاز-ئازدىن ساقىيدى."
-    res = clean_uyghur_text(raw, valid_words=valid)
-    assert res == "تەبىئىي دورىلارنى ئىستېمال قىلىپ ئاز-ئازدىن ساقىيدى."
-
-
 def test_has_repeated_word_span_detects_short_decoder_loop():
     # Real Surya full-page output: a 2-line block where the model re-emitted
     # its last line before drifting into the footnote's text.
@@ -462,94 +386,3 @@ def test_has_repeated_word_span_detects_cross_block_duplicate_in_combined_block(
     assert (
         has_repeated_word_span(last_block, min_words=8, seen_spans=seen_spans) is True
     )
-
-
-# ── Line-break join cases ─────────────────────────────────────────────────────
-# Each case: (text, words in the dictionary, expected output). Rule: join when
-# "p1p2" is a dictionary word and "p1-p2" is not, for a hyphen glued to both
-# words or followed by a line break. Spaced hyphens inside a line stay.
-_LINE_BREAK_JOINS = [
-    ("ھەز-رىتى", {"ھەزرىتى"}, "ھەزرىتى"),
-    ("ھەز\u2013رىتى", {"ھەزرىتى"}, "ھەزرىتى"),
-    ("ھەز-\nرىتى", {"ھەزرىتى"}, "ھەزرىتى"),
-    ("ھەز -\n رىتى", {"ھەزرىتى"}, "ھەزرىتى"),
-    ("بۇلار-\nغا", {"بۇلار", "غا", "بۇلارغا"}, "بۇلارغا"),
-    ("ئۈمىد-لىك", {"ئۈمىدلىك"}, "ئۈمىدلىك"),
-]
-
-_LINE_BREAK_KEEPS = [
-    # Spaced hyphen or dash inside a line: real pair, "-دە" particle, or punctuation.
-    ("ھەز - رىتى", {"ھەزرىتى"}),
-    ("ھەز -رىتى", {"ھەزرىتى"}),
-    ("ھەز- رىتى", {"ھەزرىتى"}),
-    ("ئىكەن — دە", {"ئىكەندە"}),
-    ("پاك - پاكىز", {"پاكپاكىز"}),
-    # The hyphenated form is itself a dictionary word: a real compound.
-    ("ئاز-ئازدىن", {"ئاز-ئازدىن", "ئازئازدىن"}),
-    # The glued form isn't a dictionary word.
-    ("نائەلۇم-\nسۆز", {"سۆز"}),
-    # Numbers are not word pieces.
-    ("1906-يىلى", {"يىلى", "1906يىلى"}),
-    # Only hyphens are handled: periods and a hyphen misread as "د" are left as is.
-    ("خىرا. جىتىنىڭ", {"خىراجىتىنىڭ"}),
-    ("ئارقىد-لىق", {"ئارقىلىق"}),
-]
-
-
-@pytest.mark.parametrize("text,words,expected", _LINE_BREAK_JOINS)
-def test_dehyphenate_joins_line_break_variants(text, words, expected):
-    cleaned, count = dehyphenate_uyghur_text(f"بۇ {text} بولدى", words.__contains__)
-    assert cleaned == f"بۇ {expected} بولدى"
-    assert count == 1
-
-
-@pytest.mark.parametrize("text,words", _LINE_BREAK_KEEPS)
-def test_dehyphenate_keeps_real_word_pairs(text, words):
-    sentence = f"بۇ {text} بولدى"
-    cleaned, count = dehyphenate_uyghur_text(sentence, words.__contains__)
-    assert cleaned == sentence
-    assert count == 0
-
-
-# ── Spaced hyphens: joined only when the page shows the word ending a line ───
-
-
-@pytest.mark.parametrize(
-    "text", ["ھەز - رىتى", "ھەز -رىتى", "ھەز- رىتى", "ھەز \u2014 رىتى"]
-)
-def test_dehyphenate_joins_spaced_hyphen_at_line_end(text):
-    cleaned, count = dehyphenate_uyghur_text(
-        f"بۇ {text} بولدى", {"ھەزرىتى"}, line_end_words={"ھەز"}
-    )
-    assert cleaned == "بۇ ھەزرىتى بولدى"
-    assert count == 1
-
-
-def test_dehyphenate_keeps_spaced_hyphen_not_at_line_end():
-    text = "ئۆي پاك - پاكىز بولدى، ھەز - رىتى"
-    words = {"پاكپاكىز", "ھەزرىتى"}
-    cleaned, count = dehyphenate_uyghur_text(text, words, line_end_words={"ھەز"})
-    assert cleaned == "ئۆي پاك - پاكىز بولدى، ھەزرىتى"
-    assert count == 1
-    # Without layout information spaced hyphens are never joined.
-    assert dehyphenate_uyghur_text(text, words) == (text, 0)
-
-
-def test_dehyphenate_spaced_line_end_still_needs_dictionary():
-    # Real compound whose hyphen falls at a line end: "p1-p2" is a word.
-    text = "ئاز - ئازدىن"
-    words = {"ئاز-ئازدىن", "ئازئازدىن"}
-    assert dehyphenate_uyghur_text(text, words, line_end_words={"ئاز"}) == (text, 0)
-    # Glued form isn't a word.
-    assert dehyphenate_uyghur_text(
-        "قەدىر - قىممىتى", set(), line_end_words={"قەدىر"}
-    ) == (
-        "قەدىر - قىممىتى",
-        0,
-    )
-
-
-def test_spaced_hyphen_candidates_lists_dictionary_backed_pairs():
-    text = "ھەز - رىتى ۋە پاك - پاكىز، ئاز - ئازدىن، نائەلۇم - سۆز، ئۇ-رۇقى"
-    words = {"ھەزرىتى", "پاكپاكىز", "ئاز-ئازدىن", "ئازئازدىن", "ئۇرۇقى"}
-    assert spaced_hyphen_candidates(text, words) == ["ھەز", "پاك"]

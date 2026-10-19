@@ -10,10 +10,8 @@ from PIL import Image
 @pytest.fixture(autouse=True)
 def reset_singleton():
     svc._surya_predictor = None
-    svc._savitr_predictor = None
     yield
     svc._surya_predictor = None
-    svc._savitr_predictor = None
 
 
 def _fake_png_bytes() -> bytes:
@@ -34,29 +32,6 @@ async def test_get_recognition_predictor_surya_constructs_once_and_caches():
 
 
 @pytest.mark.asyncio
-async def test_get_recognition_predictor_savitr_constructs_and_caches():
-    with (
-        patch("engine.recognize.is_apple_silicon", return_value=True),
-        patch("engine.savitr_engine.SavitrPredictor") as mock_cls,
-    ):
-        mock_cls.return_value = "savitr-instance"
-        p1 = await svc.get_recognition_predictor(engine="savitr")
-        p2 = await svc.get_recognition_predictor(engine="savitr")
-    assert p1 == "savitr-instance"
-    assert p1 is p2
-    mock_cls.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_get_recognition_predictor_savitr_raises_on_non_apple_silicon():
-    with patch("engine.recognize.is_apple_silicon", return_value=False):
-        with pytest.raises(
-            RuntimeError, match="Savitr OCR is optimized for Apple Silicon"
-        ):
-            await svc.get_recognition_predictor(engine="savitr")
-
-
-@pytest.mark.asyncio
 async def test_get_recognition_predictor_unknown_engine_raises_value_error():
     with pytest.raises(ValueError, match="Unknown OCR engine"):
         await svc.get_recognition_predictor(engine="nonexistent")
@@ -71,16 +46,6 @@ def test_recognize_page_calls_predictor_full_page_and_returns_first_result():
 
     mock_predictor.assert_called_once_with(["fake-image"], full_page=True)
     assert result is mock_result
-
-
-def test_recognize_page_with_savitr_predictor():
-    mock_predictor = MagicMock(spec=svc.SavitrPredictor)
-    mock_predictor.recognize_image.return_value = ("<p>test</p>", 1.0)
-
-    result = svc.recognize_page(mock_predictor, image="fake-image")
-
-    mock_predictor.recognize_image.assert_called_once_with("fake-image")
-    assert result == ("<p>test</p>", 1.0)
 
 
 def test_label_sets_are_disjoint():
@@ -175,39 +140,6 @@ def test_process_page_sync_keeps_list_group_paragraphs():
         markdown, _ = svc._process_page_sync(img, MagicMock())
 
     assert markdown == "ئابزاس تېكىستى.\n\n1) نۇقتا."
-
-
-def test_process_page_sync_with_savitr_predictor():
-    img = Image.new("RGB", (200, 200))
-    mock_predictor = MagicMock(spec=svc.SavitrPredictor)
-    mock_predictor.recognize_image.return_value = (
-        "<h1>چوڭ ماۋزۇ</h1><p>بۇ ئادەتتىكى تېكىست.</p><table><tr><td>باب بىر</td><td>3</td></tr></table>",
-        1.0,
-    )
-
-    markdown, mean_conf = svc._process_page_sync(img, mock_predictor)
-    assert "# چوڭ ماۋزۇ" in markdown
-    assert "بۇ ئادەتتىكى تېكىست." in markdown
-    assert mean_conf == 1.0
-
-
-def test_process_savitr_html_nested_containers_no_duplication():
-    nested_html = """
-    <div>
-        <div>
-            <p>مەسئۇل مۇھەررىرى: ئابلىكىم ھەسەن</p>
-            <p>مەسئۇل كۇررېكتورى: دىليار تۇرسۇن</p>
-        </div>
-        <h2>گۈلنىڭ ئېچىلىشى قىيىن</h2>
-        <p>(رومان)</p>
-    </div>
-    """
-    result = svc._process_savitr_html(nested_html)
-    assert result.count("مەسئۇل مۇھەررىرى: ئابلىكىم ھەسەن") == 1
-    assert result.count("مەسئۇل كۇررېكتورى: دىليار تۇرسۇن") == 1
-    assert result.count("گۈلنىڭ ئېچىلىشى قىيىن") == 1
-    assert "## گۈلنىڭ ئېچىلىشى قىيىن" in result
-    assert result.count("(رومان)") == 1
 
 
 def test_process_page_sync_skips_discarded_and_errored_blocks():
@@ -1389,55 +1321,3 @@ def _ocr_mock_page():
     pix.tobytes.return_value = _fake_png_bytes()
     page.get_pixmap.return_value = pix
     return page
-
-
-@pytest.mark.asyncio
-async def test_ocr_page_joins_spaced_hyphen_confirmed_at_line_end():
-    with (
-        patch(
-            "engine.recognize._process_page_sync",
-            return_value=("ئەھۋالى ھەز - رىتى، پاك - پاكىز", 0.9),
-        ),
-        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
-        patch("engine.recognize.get_line_detector", return_value=MagicMock()),
-        patch(
-            "engine.recognize.read_line_end_words", return_value={"ھەز"}
-        ) as mock_read,
-    ):
-        result = await svc.ocr_page(
-            _ocr_mock_page(), MagicMock(), valid_words={"ھەزرىتى", "پاكپاكىز"}
-        )
-
-    assert result == "ئەھۋالى ھەزرىتى، پاك - پاكىز"
-    mock_read.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_ocr_page_skips_line_end_check_without_spaced_candidates():
-    with (
-        patch(
-            "engine.recognize._process_page_sync",
-            return_value=("ئادەتتىكى تېكىست", 0.9),
-        ),
-        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
-        patch("engine.recognize.read_line_end_words") as mock_read,
-    ):
-        await svc.ocr_page(_ocr_mock_page(), MagicMock(), valid_words={"ھەزرىتى"})
-
-    mock_read.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_ocr_page_keeps_text_when_line_end_check_fails():
-    with (
-        patch("engine.recognize._process_page_sync", return_value=("ھەز - رىتى", 0.9)),
-        patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
-        patch(
-            "engine.recognize.get_line_detector", side_effect=RuntimeError("no model")
-        ),
-    ):
-        result = await svc.ocr_page(
-            _ocr_mock_page(), MagicMock(), valid_words={"ھەزرىتى"}
-        )
-
-    assert result == "ھەز - رىتى"

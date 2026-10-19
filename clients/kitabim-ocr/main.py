@@ -78,19 +78,11 @@ def cmd_push(workdir_path: Path, base_url: str) -> None:
     print(result)
 
 
-def cmd_setup_savitr(output_path: str | None = None, q_bits: int = 4) -> None:
-    from engine.savitr_engine import convert_surya_mlx_model
-
-    print(f"Converting Surya OCR base model to MLX ({q_bits}-bit)...")
-    dest = convert_surya_mlx_model(output_dir=output_path, q_bits=q_bits)
-    print(f"Savitr MLX model is ready at: {dest}")
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kitabim OCR Desktop Client")
     parser.add_argument(
         "--engine",
-        choices=["surya", "savitr"],
+        choices=["surya"],
         default=None,
         help="OCR engine to use (default: configured in .env or 'surya')",
     )
@@ -112,7 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     app_parser.add_argument(
         "--engine",
-        choices=["surya", "savitr"],
+        choices=["surya"],
         default=argparse.SUPPRESS,
         help="OCR engine to use (default: configured in .env or 'surya')",
     )
@@ -135,17 +127,6 @@ def build_parser() -> argparse.ArgumentParser:
     push_parser.add_argument("workdir")
     push_parser.add_argument("--base-url", required=True)
 
-    setup_parser = sub.add_parser(
-        "setup-savitr",
-        help="Convert base Surya model (datalab-to/surya-ocr-2) to MLX format for Apple Silicon",
-    )
-    setup_parser.add_argument(
-        "--output", default=None, help="Output directory for MLX model"
-    )
-    setup_parser.add_argument(
-        "--q-bits", type=int, default=4, help="Quantization bits (default: 4)"
-    )
-
     return parser
 
 
@@ -163,8 +144,6 @@ def main() -> None:
         cmd_preview(Path(args.workdir), args.base_url)
     elif command == "push":
         cmd_push(Path(args.workdir), args.base_url)
-    elif command == "setup-savitr":
-        cmd_setup_savitr(output_path=args.output, q_bits=args.q_bits)
 
 
 if __name__ == "__main__":

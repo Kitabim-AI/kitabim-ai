@@ -4,10 +4,7 @@ present on main). Two changes from the original: no app.core.config
 dependency (two local constants instead), and no `correction_pairs`
 parameter (that comes from a DB table this standalone client can't reach;
 Kitabim's own auto_correct_scanner already applies the same corrections
-post-ingestion regardless of OCR engine).
-
-Extended to support both standard Surya OCR and Apple Silicon MLX-optimized
-Savitr OCR via a configurable engine switch."""
+post-ingestion regardless of OCR engine)."""
 
 from __future__ import annotations
 
@@ -35,24 +32,17 @@ from engine.config import (
     get_configured_max_retries,
     get_configured_page_timeout,
     get_configured_zoom_factor,
-    get_savitr_model_path,
-    is_apple_silicon,
     is_bleed_through_suppression_enabled,
     is_dot_enhancement_enabled,
 )
-from engine.dictionary import get_valid_words
-from engine.line_ends import get_line_detector, read_line_end_words
-from engine.savitr_engine import SavitrPredictor
 from engine.text_cleanup import (
     add_word_spans,
     clean_uyghur_text,
-    dehyphenate_uyghur_text,
     has_repeated_word_span,
     is_block_repetition_loop,
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
     is_isolated_page_number,
-    spaced_hyphen_candidates,
 )
 
 logger = logging.getLogger("kitabim_ocr_client.engine.recognize")
@@ -120,49 +110,18 @@ def get_adaptive_page_zoom(
 
 
 _surya_predictor: Any = None
-_savitr_predictor: Any = None
 _predictor_lock = asyncio.Lock()
 _executor: ThreadPoolExecutor | None = None
-_savitr_executor: ThreadPoolExecutor | None = None
-
-
-def _get_savitr_executor() -> ThreadPoolExecutor:
-    global _savitr_executor
-    if _savitr_executor is None:
-        _savitr_executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="savitr_mlx"
-        )
-    return _savitr_executor
 
 
 async def get_recognition_predictor(engine: str | None = None) -> Any:
     """Return the initialized OCR predictor for the requested or configured engine.
 
-    Supported engines: 'surya' (default) and 'savitr' (MLX on Apple Silicon).
+    Supported engines: 'surya' (default).
     """
-    global _surya_predictor, _savitr_predictor
+    global _surya_predictor
 
     target_engine = (engine or get_configured_engine()).strip().lower()
-
-    if target_engine == "savitr":
-        if _savitr_predictor is not None:
-            return _savitr_predictor
-        async with _predictor_lock:
-            if _savitr_predictor is None:
-                if not is_apple_silicon():
-                    raise RuntimeError(
-                        "Savitr OCR is optimized for Apple Silicon (macOS arm64). "
-                        "Please use engine 'surya' on this machine."
-                    )
-                from engine.savitr_engine import SavitrPredictor
-
-                model_path = get_savitr_model_path()
-                loop = asyncio.get_running_loop()
-                savitr_exec = _get_savitr_executor()
-                _savitr_predictor = await loop.run_in_executor(
-                    savitr_exec, partial(SavitrPredictor, model_path=model_path)
-                )
-        return _savitr_predictor
 
     if target_engine == "surya":
         if _surya_predictor is not None:
@@ -177,14 +136,10 @@ async def get_recognition_predictor(engine: str | None = None) -> Any:
                 )
         return _surya_predictor
 
-    raise ValueError(
-        f"Unknown OCR engine '{target_engine}'. Expected 'surya' or 'savitr'."
-    )
+    raise ValueError(f"Unknown OCR engine '{target_engine}'. Expected 'surya'.")
 
 
 def recognize_page(predictor: Any, image: Image.Image) -> Any:
-    if isinstance(predictor, SavitrPredictor):
-        return predictor.recognize_image(image)
     return predictor([image], full_page=True)[0]
 
 
@@ -304,7 +259,7 @@ def _block_html_to_markdown(html: str, label: str | None = None) -> str:
         return f"{'#' * level} {_html_to_text(html)}"
     if "<li" in html or "<tr" in html:
         # TOC-style "| title | page |" rows only for TOC/table blocks; plain
-        # lists keep their items as printed. No label (Savitr) keeps rows.
+        # lists keep their items as printed.
         format_rows = label is None or label in _ROW_FORMAT_LABELS
         return _mixed_list_html_to_markdown(html, format_rows)
 
@@ -333,88 +288,6 @@ def _block_html_to_markdown(html: str, label: str | None = None) -> str:
         return lines[0]
 
     return "\n".join(lines)
-
-
-_BLOCK_TAGS = frozenset(
-    {
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "p",
-        "table",
-        "ul",
-        "ol",
-        "div",
-        "blockquote",
-        "aside",
-        "section",
-        "article",
-        "header",
-        "footer",
-    }
-)
-
-
-def _process_savitr_html(html: str) -> str:
-    html = html.strip()
-    if not html:
-        return ""
-    soup = BeautifulSoup(html, "html.parser")
-
-    blocks: list[str] = []
-
-    def _extract_blocks(node: Any) -> None:
-        if isinstance(node, str):
-            text = node.strip()
-            if text:
-                blocks.append(text)
-            return
-
-        tag_name = getattr(node, "name", None)
-        if not tag_name:
-            return
-
-        if tag_name in ("h1", "h2", "h3", "h4", "h5", "h6"):
-            level = int(tag_name[1])
-            text = node.get_text(separator=" ", strip=True)
-            if text:
-                blocks.append(f"{'#' * level} {text}")
-            return
-
-        if tag_name in ("table", "ul", "ol"):
-            text = _block_html_to_markdown(str(node))
-            if text.strip():
-                blocks.append(text.strip())
-            return
-
-        has_block_child = any(
-            hasattr(child, "name") and child.name in _BLOCK_TAGS
-            for child in getattr(node, "children", [])
-        )
-        if has_block_child:
-            for child in node.children:
-                _extract_blocks(child)
-        else:
-            if hasattr(node, "find_all"):
-                for br in node.find_all("br"):
-                    br.replace_with("\n")
-                raw_text = node.get_text()
-            else:
-                raw_text = str(node).strip()
-            lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
-            if lines:
-                blocks.append("\n".join(lines))
-
-    root = soup.body if soup.body else soup
-    for child in root.children:
-        _extract_blocks(child)
-
-    if not blocks:
-        return _html_to_text(html)
-    return "\n\n".join(blocks)
 
 
 def suppress_bleed_through(img: Image.Image) -> Image.Image:
@@ -728,11 +601,6 @@ def _process_page_sync(
     image: Image.Image,
     recognition_predictor: Any,
 ) -> tuple[str, float]:
-    if isinstance(recognition_predictor, SavitrPredictor):
-        html_or_text, mean_confidence = recognition_predictor.recognize_image(image)
-        markdown = _process_savitr_html(html_or_text)
-        return markdown, mean_confidence
-
     result = recognize_page(recognition_predictor, image)
     img_w, img_h = image.size
     non_marginalia_blocks = [
@@ -918,35 +786,6 @@ def _process_page_sync(
     return markdown, mean_confidence
 
 
-async def _join_line_end_spaced_hyphens(
-    text: str,
-    image: Image.Image,
-    recognition_predictor: Any,
-    words: set[str],
-    executor: ThreadPoolExecutor,
-) -> str:
-    """Join spaced hyphens ("ھەز - رىتى") the page image shows at a line end.
-
-    Only runs the line detection + line-end recognition when the page has a
-    spaced pair the dictionary would join; on any failure the text is kept.
-    """
-    if not spaced_hyphen_candidates(text, words):
-        return text
-    loop = asyncio.get_running_loop()
-    try:
-        line_end_words = await loop.run_in_executor(
-            executor,
-            lambda: read_line_end_words(
-                image, get_line_detector(), recognition_predictor
-            ),
-        )
-    except Exception as exc:
-        logger.warning("Line-end check failed, keeping spaced hyphens: %s", exc)
-        return text
-    joined, _ = dehyphenate_uyghur_text(text, words, line_end_words=line_end_words)
-    return joined
-
-
 async def ocr_page(
     page: fitz.Page,
     recognition_predictor: Any,
@@ -957,19 +796,8 @@ async def ocr_page(
     max_retries: int | None = None,
     valid_words: set[str] | None = None,
 ) -> str:
-    words_dict = valid_words
-    if words_dict is None:
-        try:
-            words_dict = get_valid_words()
-        except Exception as err:
-            logger.debug("Could not load dictionary words: %s", err)
-            words_dict = None
-
-    if isinstance(recognition_predictor, SavitrPredictor):
-        executor = _get_savitr_executor()
-    else:
-        workers = min(max(1, max_parallel_pages), MAX_SURYA_PARALLEL_PAGES)
-        executor = _get_executor(workers)
+    workers = min(max(1, max_parallel_pages), MAX_SURYA_PARALLEL_PAGES)
+    executor = _get_executor(workers)
     loop = asyncio.get_running_loop()
 
     effective_timeout = (
@@ -1024,12 +852,6 @@ async def ocr_page(
                 )
 
             cleaned = clean_uyghur_text(markdown)
-            if words_dict:
-                cleaned, _ = dehyphenate_uyghur_text(cleaned, words_dict)
-                if not isinstance(recognition_predictor, SavitrPredictor):
-                    cleaned = await _join_line_end_spaced_hyphens(
-                        cleaned, image, recognition_predictor, words_dict, executor
-                    )
             if is_degenerate_ocr_output(cleaned):
                 raise LowConfidenceOcrError(
                     f"OCR output looks like a runaway repetition/reasoning-leak "

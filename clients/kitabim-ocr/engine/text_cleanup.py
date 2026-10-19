@@ -6,7 +6,6 @@ source functions change - the source of truth is the main repo."""
 import re
 import unicodedata
 from collections import Counter
-from typing import Callable
 
 _PRES_FORM_MAP: dict[int, str] = {}
 for _cp in range(0xFB50, 0xFE00):
@@ -37,44 +36,6 @@ def normalize_uyghur_chars(text: str) -> str:
         .replace("\u200b", "")  # Remove Zero-width space
         .replace("ـ", "")  # Remove Tatweel/Kashida
     )
-
-
-_UYGHUR_VOWELS = r"[اەېىوئۆۇۈ]"
-
-_ORTHOGRAPHY_CORRECTIONS: list[tuple[re.Pattern[str], str]] = [
-    # Multilingual OCR models (like Surya) frequently substitute Arabic final beh
-    # for Uyghur peh in common vocabulary loanwords. In Uyghur morphophonology,
-    # stem-final peh only voices to beh when followed by a vowel suffix; when
-    # followed by a consonant suffix or word end, it is always peh.
-    (re.compile(r"\bمەكتەب(?!" + _UYGHUR_VOWELS + r")"), "مەكتەپ"),
-    (re.compile(r"\bمەنسەب(?!" + _UYGHUR_VOWELS + r")"), "مەنسەپ"),
-    (re.compile(r"\bتەلەب(?!" + _UYGHUR_VOWELS + r")"), "تەلەپ"),
-    (re.compile(r"\bكەسىب(?!" + _UYGHUR_VOWELS + r")"), "كەسىپ"),
-    (re.compile(r"\bئەدەب(?!" + _UYGHUR_VOWELS + r")"), "ئەدەپ"),
-    (re.compile(r"\bغېرىب(?!" + _UYGHUR_VOWELS + r")"), "غېرىپ"),
-    (re.compile(r"\bئەجەب\b"), "ئەجەپ"),
-    (re.compile(r"\bلالىزار(?!" + _UYGHUR_VOWELS + r")"), "لالەزار"),
-    # OCR models frequently mistake the terminal Uyghur question mark '؟'
-    # following the interrogative suffix 'مۇ' for the Arabic letter mim ('م'),
-    # producing '...مۇم' instead of '...مۇ؟' (e.g. 'قىلدىمۇم' -> 'قىلدىمۇ؟').
-    (
-        re.compile(r"(?<!ئۇ)(?<!ئو)(?<=\w)مۇم(?:\s*؟)?(?=[.,،!»\"”\)\s]|$)"),
-        "مۇ؟",
-    ),
-]
-
-
-def correct_uyghur_ocr_orthography(text: str) -> str:
-    """Post-correct common OCR orthographic errors caused by Arabic/Persian bias.
-
-    Multilingual models like Surya frequently confuse Arabic final beh with Uyghur peh
-    in standard Uyghur loanwords, or mistake vowels in common compounds (e.g. Lalazar).
-    """
-    if not text:
-        return ""
-    for pattern, repl in _ORTHOGRAPHY_CORRECTIONS:
-        text = pattern.sub(repl, text)
-    return text
 
 
 _OCR_MARKER_RE = re.compile(r"\s*\[(?:Header|Footer)\].*", re.IGNORECASE)
@@ -298,137 +259,17 @@ def is_metadata_or_key_value_block(lines: list[str]) -> bool:
     return kv_count >= 2 and (kv_count / total) >= 0.30
 
 
-# ── Uyghur Line-Break De-Hyphenation ──────────────────────────────────────────
-
-_UYGHUR_CHAR_CLASS = (
-    r"[\u0621-\u064A\u0671-\u06D5\u06EE-\u06EF\uFB50-\uFDFF\uFE70-\uFEFF]"
-)
-_HYPHEN_CHARS = ("-", "\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u00ad")
-# A hyphen between two Uyghur words, either glued to both ("ھەز-رىتى") or at a
-# line end ("ھەز-\nرىتى", "ھەز -\nرىتى"). A spaced hyphen inside a line
-# ("ھەز - رىتى") is left alone: it is as often a real pair, a "-دە" particle or
-# a punctuation dash as a split word, and the words table can't tell them apart.
-_LINE_BREAK_RE = re.compile(
-    rf"(?<!{_UYGHUR_CHAR_CLASS})({_UYGHUR_CHAR_CLASS}+)"
-    rf"(?:[\-\u2010\u2011\u2012\u2013\u2014\u00ad]"
-    rf"|[\t ]*[\-\u2010\u2011\u2012\u2013\u2014\u00ad][\t ]*[\r\n]+[\t ]*)"
-    rf"({_UYGHUR_CHAR_CLASS}+)"
-)
-
-
-# A hyphen or dash with a space on at least one side, inside a line
-# ("ھەز - رىتى"). Joined only when the page image shows the left piece ending a
-# printed line with a hyphen (see engine.line_ends): in running text such a dash
-# is as often a real pair, a "-دە" particle or punctuation.
-_SPACED_HYPHEN_RE = re.compile(
-    rf"(?<!{_UYGHUR_CHAR_CLASS})({_UYGHUR_CHAR_CLASS}+)"
-    rf"(?:[\t ]+[\-\u2010\u2011\u2012\u2013\u2014\u00ad][\t ]*"
-    rf"|[\-\u2010\u2011\u2012\u2013\u2014\u00ad][\t ]+)"
-    rf"({_UYGHUR_CHAR_CLASS}+)"
-)
-
-
-def spaced_hyphen_candidates(
-    text: str, is_valid_word: Callable[[str], bool] | set[str]
-) -> list[str]:
-    """Left pieces of spaced-hyphen pairs the dictionary would join.
-
-    Lets the caller skip the (slow) line-end layout check on pages with none.
-    """
-    validator = _as_validator(is_valid_word)
-    return [
-        m.group(1)
-        for m in _SPACED_HYPHEN_RE.finditer(text)
-        if _resolve_line_break(m, validator) is not None
-    ]
-
-
-def _as_validator(
-    is_valid_word: Callable[[str], bool] | set[str],
-) -> Callable[[str], bool]:
-    if isinstance(is_valid_word, (set, frozenset)):
-        return is_valid_word.__contains__
-    return is_valid_word
-
-
-def _line_break_lookup_words(match: re.Match) -> set[str]:
-    """Every word _resolve_line_break looks up for this match."""
-    left, right = match.groups()
-    return {f"{left}-{right}", left + right}
-
-
-def _resolve_line_break(
-    match: re.Match, is_valid_word: Callable[[str], bool]
-) -> str | None:
-    """Return the joined word, or None to keep the hyphen.
-
-    Joins when "p1p2" is a dictionary word and "p1-p2" is not (which protects
-    real compounds like "ئاز-ئازدىن").
-    """
-    left, right = match.groups()
-    if not is_valid_word(f"{left}-{right}") and is_valid_word(left + right):
-        return left + right
-    return None
-
-
-def dehyphenate_uyghur_text(
-    text: str,
-    is_valid_word: Callable[[str], bool] | set[str],
-    line_end_words: set[str] | None = None,
-) -> tuple[str, int]:
-    """De-hyphenate words split by a line-end hyphen, checked against the dictionary.
-
-    A hyphen glued to both words or followed by a line break is removed when
-    "p1p2" is a dictionary word and "p1-p2" is not. A spaced hyphen inside a
-    line ("p1 - p2") is joined on the same condition only when p1 is in
-    line_end_words, i.e. the page shows p1 ending a printed line with a hyphen.
-
-    Returns:
-        (cleaned_text, replacement_count)
-    """
-    if not text or not any(h in text for h in _HYPHEN_CHARS):
-        return text, 0
-
-    validator = _as_validator(is_valid_word)
-    count = 0
-
-    def _replace(match: re.Match) -> str:
-        nonlocal count
-        joined = _resolve_line_break(match, validator)
-        if joined is None:
-            return match.group(0)
-        count += 1
-        return joined
-
-    def _replace_spaced(match: re.Match) -> str:
-        if match.group(1) not in line_end_words:
-            return match.group(0)
-        return _replace(match)
-
-    text = _LINE_BREAK_RE.sub(_replace, text)
-    if line_end_words:
-        text = _SPACED_HYPHEN_RE.sub(_replace_spaced, text)
-    return text, count
-
-
-def clean_uyghur_text(text: str, valid_words: set[str] | None = None) -> str:
+def clean_uyghur_text(text: str) -> str:
     if not text:
         return ""
 
     # 1. Normalize characters
     text = normalize_uyghur_chars(text)
 
-    # 2. Correct common OCR Arabic-bias orthographic substitutions
-    text = correct_uyghur_ocr_orthography(text)
-
-    # 3. De-hyphenate line-break split words if valid words dictionary is provided
-    if valid_words:
-        text, _ = dehyphenate_uyghur_text(text, valid_words)
-
-    # 4. Strip OCR markers
+    # 2. Strip OCR markers
     text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
 
-    # 5. Strip header and footer page numbers
+    # 3. Strip header and footer page numbers
     text = strip_page_numbers(text)
 
     # Lines are kept exactly as OCR'd within each block - never reflowed/
