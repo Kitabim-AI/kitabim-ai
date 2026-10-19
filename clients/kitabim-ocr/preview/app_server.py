@@ -2562,7 +2562,7 @@ _APP_HTML = """<!doctype html>
 def get_app_html(lang: str = "ug", engine: Optional[str] = None) -> str:
     i18n_json = get_translations_json(lang)
     engine_name = (engine or get_configured_engine()).strip().lower()
-    engine_label = "Savitr OCR (MLX)" if engine_name == "savitr" else "Surya OCR"
+    engine_label = "Chandra OCR (vLLM)" if "vllm" in engine_name else "Chandra OCR"
     return _APP_HTML.replace("__I18N_JSON__", i18n_json).replace(
         "__OCR_ENGINE_LABEL__", engine_label
     )

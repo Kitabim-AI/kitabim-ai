@@ -28,21 +28,18 @@ from engine.config import (
     DEFAULT_OCR_CONCURRENCY,
     DEFAULT_OCR_MAX_RETRIES,
     DEFAULT_OCR_PAGE_ZOOM_FACTOR,
-    MAX_SURYA_CONCURRENCY,
-    apply_surya_token_limits,
+    MAX_CHANDRA_CONCURRENCY,
     get_configured_concurrency,
     get_configured_engine,
     get_configured_max_retries,
     get_configured_page_timeout,
     get_configured_zoom_factor,
-    get_savitr_model_path,
-    is_apple_silicon,
     is_bleed_through_suppression_enabled,
     is_dot_enhancement_enabled,
 )
 from engine.dictionary import get_valid_words
 from engine.line_ends import get_line_detector, read_line_end_words
-from engine.savitr_engine import SavitrPredictor
+from engine.chandra_engine import ChandraPredictor
 from engine.text_cleanup import (
     add_word_spans,
     clean_uyghur_text,
@@ -57,8 +54,10 @@ from engine.text_cleanup import (
 
 logger = logging.getLogger("kitabim_ocr_client.engine.recognize")
 
-# Apply sane ceiling for Surya token generation if not overridden in env
-apply_surya_token_limits()
+# Aliases for backward compatibility
+SavitrPredictor = ChandraPredictor
+MAX_SURYA_CONCURRENCY = MAX_CHANDRA_CONCURRENCY
+
 
 # Local equivalents of packages/backend-core's OCR_MAX_RETRIES /
 # OCR_PAGE_ZOOM_FACTOR env-configured settings (poc/easy-ocr-v2 only -
@@ -119,77 +118,60 @@ def get_adaptive_page_zoom(
     return base_zoom
 
 
+_chandra_predictor: Any = None
 _surya_predictor: Any = None
 _savitr_predictor: Any = None
 _predictor_lock = asyncio.Lock()
 _executor: ThreadPoolExecutor | None = None
-_savitr_executor: ThreadPoolExecutor | None = None
+_chandra_executor: ThreadPoolExecutor | None = None
 
 
-def _get_savitr_executor() -> ThreadPoolExecutor:
-    global _savitr_executor
-    if _savitr_executor is None:
-        _savitr_executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="savitr_mlx"
+def _get_chandra_executor() -> ThreadPoolExecutor:
+    global _chandra_executor
+    if _chandra_executor is None:
+        _chandra_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="chandra"
         )
-    return _savitr_executor
+    return _chandra_executor
+
+
+# Backward-compatible alias
+_get_savitr_executor = _get_chandra_executor
 
 
 async def get_recognition_predictor(engine: str | None = None) -> Any:
     """Return the initialized OCR predictor for the requested or configured engine.
 
-    Supported engines: 'surya' (default) and 'savitr' (MLX on Apple Silicon).
+    Supported engines: 'chandra' (default).
     """
-    global _surya_predictor, _savitr_predictor
+    global _chandra_predictor, _surya_predictor, _savitr_predictor
 
     target_engine = (engine or get_configured_engine()).strip().lower()
 
-    if target_engine == "savitr":
-        if _savitr_predictor is not None:
-            return _savitr_predictor
+    if target_engine == "chandra":
+        if _chandra_predictor is not None:
+            return _chandra_predictor
         async with _predictor_lock:
-            if _savitr_predictor is None:
-                if not is_apple_silicon():
-                    raise RuntimeError(
-                        "Savitr OCR is optimized for Apple Silicon (macOS arm64). "
-                        "Please use engine 'surya' on this machine."
-                    )
-                from engine.savitr_engine import SavitrPredictor
-
-                model_path = get_savitr_model_path()
+            if _chandra_predictor is None:
                 loop = asyncio.get_running_loop()
-                savitr_exec = _get_savitr_executor()
-                _savitr_predictor = await loop.run_in_executor(
-                    savitr_exec, partial(SavitrPredictor, model_path=model_path)
+                chandra_exec = _get_chandra_executor()
+                _chandra_predictor = await loop.run_in_executor(
+                    chandra_exec, partial(ChandraPredictor)
                 )
-        return _savitr_predictor
+        return _chandra_predictor
 
-    if target_engine == "surya":
-        if _surya_predictor is not None:
-            return _surya_predictor
-        async with _predictor_lock:
-            if _surya_predictor is None:
-                from surya.recognition import RecognitionPredictor
-
-                loop = asyncio.get_running_loop()
-                _surya_predictor = await loop.run_in_executor(
-                    None, RecognitionPredictor
-                )
-        return _surya_predictor
-
-    raise ValueError(
-        f"Unknown OCR engine '{target_engine}'. Expected 'surya' or 'savitr'."
-    )
+    raise ValueError(f"Unknown OCR engine '{target_engine}'. Expected 'chandra'.")
 
 
 def recognize_page(predictor: Any, image: Image.Image) -> Any:
-    if isinstance(predictor, SavitrPredictor):
+    if isinstance(predictor, ChandraPredictor):
         return predictor.recognize_image(image)
     return predictor([image], full_page=True)[0]
 
 
 DEFAULT_MAX_PARALLEL_PAGES = DEFAULT_OCR_CONCURRENCY
-MAX_SURYA_PARALLEL_PAGES = MAX_SURYA_CONCURRENCY
+MAX_CHANDRA_PARALLEL_PAGES = MAX_CHANDRA_CONCURRENCY
+MAX_SURYA_PARALLEL_PAGES = MAX_CHANDRA_PARALLEL_PAGES
 
 
 def _get_executor(max_workers: int | None = None) -> ThreadPoolExecutor:
@@ -197,9 +179,9 @@ def _get_executor(max_workers: int | None = None) -> ThreadPoolExecutor:
     workers = (
         max_workers
         if max_workers is not None
-        else get_configured_concurrency(max_limit=MAX_SURYA_PARALLEL_PAGES)
+        else get_configured_concurrency(max_limit=MAX_CHANDRA_PARALLEL_PAGES)
     )
-    target_workers = min(max(1, workers), MAX_SURYA_PARALLEL_PAGES)
+    target_workers = min(max(1, workers), MAX_CHANDRA_PARALLEL_PAGES)
     if _executor is None or getattr(_executor, "_max_workers", 0) != target_workers:
         if _executor is not None:
             _executor.shutdown(wait=False)
@@ -358,7 +340,7 @@ _BLOCK_TAGS = frozenset(
 )
 
 
-def _process_savitr_html(html: str) -> str:
+def _process_chandra_html(html: str) -> str:
     html = html.strip()
     if not html:
         return ""
@@ -415,6 +397,9 @@ def _process_savitr_html(html: str) -> str:
     if not blocks:
         return _html_to_text(html)
     return "\n\n".join(blocks)
+
+
+_process_savitr_html = _process_chandra_html
 
 
 def suppress_bleed_through(img: Image.Image) -> Image.Image:
@@ -728,9 +713,12 @@ def _process_page_sync(
     image: Image.Image,
     recognition_predictor: Any,
 ) -> tuple[str, float]:
-    if isinstance(recognition_predictor, SavitrPredictor):
+    if isinstance(recognition_predictor, ChandraPredictor):
         html_or_text, mean_confidence = recognition_predictor.recognize_image(image)
-        markdown = _process_savitr_html(html_or_text)
+        if html_or_text.strip().startswith("<") and "</" in html_or_text:
+            markdown = _process_chandra_html(html_or_text)
+        else:
+            markdown = html_or_text
         return markdown, mean_confidence
 
     result = recognize_page(recognition_predictor, image)
@@ -965,10 +953,10 @@ async def ocr_page(
             logger.debug("Could not load dictionary words: %s", err)
             words_dict = None
 
-    if isinstance(recognition_predictor, SavitrPredictor):
-        executor = _get_savitr_executor()
+    if isinstance(recognition_predictor, ChandraPredictor):
+        executor = _get_chandra_executor()
     else:
-        workers = min(max(1, max_parallel_pages), MAX_SURYA_PARALLEL_PAGES)
+        workers = min(max(1, max_parallel_pages), MAX_CHANDRA_PARALLEL_PAGES)
         executor = _get_executor(workers)
     loop = asyncio.get_running_loop()
 
@@ -1026,7 +1014,7 @@ async def ocr_page(
             cleaned = clean_uyghur_text(markdown)
             if words_dict:
                 cleaned, _ = dehyphenate_uyghur_text(cleaned, words_dict)
-                if not isinstance(recognition_predictor, SavitrPredictor):
+                if not isinstance(recognition_predictor, ChandraPredictor):
                     cleaned = await _join_line_end_spaced_hyphens(
                         cleaned, image, recognition_predictor, words_dict, executor
                     )

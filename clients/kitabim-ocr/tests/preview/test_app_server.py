@@ -53,22 +53,22 @@ def test_state_defaults_to_landing(tmp_path: Path):
     assert data["stage"] == "landing"
     assert data["error"] is None
     assert data["sessionId"] is None
-    assert data["engine"] == "surya"
-    assert data["concurrency"] == 4
+    assert data["engine"] == "chandra"
+    assert data["concurrency"] == 1
     assert data["activeSessionId"] is None
     assert data["queuedSessions"] == []
 
 
-def test_state_with_savitr_engine(tmp_path: Path):
-    app = create_landing_app(MagicMock(), tmp_path / "work", engine="savitr")
+def test_state_with_chandra_engine(tmp_path: Path):
+    app = create_landing_app(MagicMock(), tmp_path / "work", engine="chandra")
     client = TestClient(app)
 
     response = client.get("/api/state")
     assert response.status_code == 200
-    assert response.json()["engine"] == "savitr"
+    assert response.json()["engine"] == "chandra"
 
     html_resp = client.get("/")
-    assert "Savitr OCR (MLX)" in html_resp.text
+    assert "Chandra OCR" in html_resp.text
 
 
 def test_reset_from_landing_is_a_no_op(tmp_path: Path):
@@ -674,7 +674,8 @@ async def test_upload_can_queue_multiple_books_without_409(tmp_path: Path):
                 assert "queuePosition" in s
                 assert s["uploaded"] is False
 
-        pause_event.set()
+            pause_event.set()
+            await app.state.app_state.queue_manager.wait_all()
 
 
 async def test_reset_while_processing_does_not_resurrect_stage_to_review(
@@ -729,6 +730,7 @@ async def test_reset_while_processing_does_not_resurrect_stage_to_review(
 
             # The reset must stick: no resurrection to 'review' just because
             # the abandoned job happened to finish afterwards.
+            await app.state.app_state.queue_manager.wait_all()
             state = (await ac.get("/api/state")).json()
             assert state["stage"] == "landing"
             assert state["activeSessionId"] is None
@@ -967,9 +969,9 @@ def test_create_landing_app_concurrency_from_env(tmp_path: Path, monkeypatch):
     assert res.json()["concurrency"] == 2
 
 
-def test_create_landing_app_clamps_surya_concurrency_to_four(tmp_path: Path):
+def test_create_landing_app_clamps_chandra_concurrency_to_four(tmp_path: Path):
     app = create_landing_app(
-        MagicMock(), tmp_path / "work", engine="surya", concurrency=8
+        MagicMock(), tmp_path / "work", engine="chandra", concurrency=8
     )
     client = TestClient(app)
     res = client.get("/api/state")
@@ -1316,23 +1318,23 @@ async def test_background_completion_preserves_landing_stage(tmp_path: Path):
     app = create_landing_app(MagicMock(), work_root)
     state = app.state.app_state
 
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        # User clicks resume
-        await ac.post("/api/sessions/bg-book/resume")
-        # Then user navigates back to landing
-        await ac.post("/api/reset")
-        assert state.stage == "landing"
-        assert state.workdir is None
+    with (
+        patch(
+            "preview.app_server.get_recognition_predictor",
+            AsyncMock(return_value="pred"),
+        ),
+        patch("preview.app_server.ocr_page", AsyncMock(return_value="OCR Text")),
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            # User clicks resume
+            await ac.post("/api/sessions/bg-book/resume")
+            # Then user navigates back to landing
+            await ac.post("/api/reset")
+            assert state.stage == "landing"
+            assert state.workdir is None
 
-        with (
-            patch(
-                "preview.app_server.get_recognition_predictor",
-                AsyncMock(return_value="pred"),
-            ),
-            patch("preview.app_server.ocr_page", AsyncMock(return_value="OCR Text")),
-        ):
             await state.queue_manager.wait_all()
 
         # Completing in background while user is on landing MUST NOT kick stage to review

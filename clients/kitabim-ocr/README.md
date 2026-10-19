@@ -1,100 +1,159 @@
 # Kitabim OCR Client
 
-Standalone desktop tool: runs OCR locally on your own hardware (supporting both
-standard Surya OCR and Apple Silicon MLX-optimized Savitr OCR — no Docker, full
-GPU/CPU/Neural Engine access), lets you preview and redo pages before committing,
-then pushes finished text to Kitabim over its public API. Kitabim's own OCR stage
-(Gemini, in `services/worker`) is unaffected — this tool only ever talks to
-Kitabim's HTTP API as an authenticated editor/admin user.
+A standalone desktop tool for running high-accuracy OCR locally on your own hardware using **Chandra OCR** (`datalab-to/chandra-ocr-2`).
 
-## Setup
+The client provides an interactive browser-based review and correction interface with side-by-side page comparison, Table of Contents (TOC) tagging, sequential batch queueing, and one-click synchronization with the Kitabim API.
 
-    python3 -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
+> [!NOTE]
+> This tool runs entirely on your host machine without Docker containerization to give the OCR engine direct, unconstrained access to Apple Silicon (Metal Performance Shaders / MPS), Nvidia GPUs (CUDA), or multi-core CPUs. Kitabim's server-side background OCR pipeline remains independent.
 
-### Apple Silicon Acceleration (Savitr OCR)
+---
 
-On Apple Silicon (M1/M2/M3/M4 Macs), you can use **Savitr**, an MLX-accelerated
-Surya OCR engine (~3-4x faster inference using unified memory):
+## Features
 
-    pip install savitr
+- **Chandra OCR Engine**: Powered by `datalab-to/chandra-ocr-2` for state-of-the-art layout parsing, HTML/Markdown structural extraction, and high-accuracy text recognition.
+- **Dual Inference Backends**:
+  - `hf` (default): Hugging Face Transformers with PyTorch MPS (Apple Silicon), CUDA, or CPU.
+  - `vllm`: Fast vLLM inference engine for local vLLM server setups.
+- **Interactive Review UI**:
+  - Side-by-side original page image vs recognized text editor.
+  - Real-time page status indicators (`pending`, `processing`, `ocrd`, `reviewed`, `failed`).
+  - Table of Contents (`is_toc`) designation for book outline generation.
+  - Per-page re-OCR action for manual retries or prompt tweaks.
+  - Multi-language UI support: Uyghur (Arabic script), Uyghur Latin (ULY), English, and Chinese.
+- **Sequential Background Queue**:
+  - Automatically processes multi-book workloads sequentially without exhausting GPU or unified system memory.
+  - Resilient local work directories (`book.json`, cached page renders) that survive application restarts.
+- **Kitabim API Integration**:
+  - Search and download books directly from your Kitabim library.
+  - Push newly OCR'd books or individual page corrections back to Kitabim over its authenticated REST API.
 
-Because base Surya (`datalab-to/surya-ocr-2`) is published in PyTorch format, convert it once to 4-bit MLX format:
+---
 
-    python main.py setup-savitr
+## Hardware Requirements
 
-Or using `mlx_vlm` directly:
+- **Apple Silicon (macOS)**: M1 / M2 / M3 / M4 with 16GB+ unified memory recommended.
+- **Linux / Windows with Nvidia GPU**: CUDA-compatible GPU with 12GB+ VRAM recommended.
+- **CPU Only**: Multi-core x86_64 / ARM64 processor (slower inference, suitable for testing).
 
-    python -m mlx_vlm convert --hf-path datalab-to/surya-ocr-2 --mlx-path ~/.cache/savitr/surya-mlx-4bit -q --q-bits 4
+---
 
-Then configure `KITABIM_OCR_ENGINE=savitr` in `.env` or pass `--engine savitr`.
+## Installation
 
-## OCR Engine Selection
+1. Navigate to the client directory:
+   ```bash
+   cd clients/kitabim-ocr
+   ```
 
-You can choose between two OCR engines:
-- `surya` (default): Standard Surya OCR using PyTorch / MPS / CPU.
-- `savitr`: Apple Silicon MLX-accelerated Surya OCR runtime.
+2. Create and activate a Python virtual environment:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
 
-Set the engine in `.env`:
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-    KITABIM_OCR_ENGINE=surya   # or savitr
+---
 
-Or pass it via the CLI:
+## Pre-downloading Model Weights (Optional)
 
-    python main.py app --engine savitr
+By default, weights are downloaded automatically on first run. You can pre-download and verify the Chandra OCR model weights ahead of time:
 
-Optional custom Savitr model weights path:
+```bash
+# PyTorch / Hugging Face backend (default)
+python main.py setup-chandra
 
-    SAVITR_MODEL_PATH=models/surya-mlx-4bit
+# Or for vLLM backend:
+python main.py setup-chandra --method vllm
+```
 
-## Concurrency Configuration
+---
 
-Parallel page processing is enabled for Surya OCR by default with a concurrency of 4 (`KITABIM_OCR_CONCURRENCY=4`), capped at a maximum of 4 parallel pages for stability on CPU/MPS/GPU hardware.
+## Configuration
 
-Set concurrency in `.env`:
+Configuration is managed via environment variables or a local `.env` file in `clients/kitabim-ocr/`. Copy the example template to get started:
 
-    KITABIM_OCR_CONCURRENCY=4   # Default: 4 (max: 4 for Surya; 1 disables concurrency)
+```bash
+cp .env.example .env
+```
 
-Or pass it via the CLI:
+### Environment Variables
 
-    python main.py app --concurrency 4
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `KITABIM_BASE_URL` | `https://kitabim.ai/api` | Kitabim API endpoint to synchronize with. |
+| `KITABIM_WORK_DIR` | `~/kitabim-ocr-work` | Path where local book sessions and image caches are saved. |
+| `KITABIM_OCR_ENGINE` | `chandra` | Active OCR engine (`chandra`). |
+| `KITABIM_CHANDRA_METHOD` | `hf` | Inference backend: `hf` (PyTorch Transformers) or `vllm`. |
+| `KITABIM_CHANDRA_MODEL_CHECKPOINT` | `datalab-to/chandra-ocr-2` | Hugging Face model checkpoint repository name or local path. |
+| `KITABIM_CHANDRA_PROMPT_TYPE` | `ocr_layout` | Prompt mode: `ocr_layout` (tables, layout blocks) or `ocr` (pure text). |
+| `KITABIM_CHANDRA_PROMPT_GUIDANCE` | *(Uyghur script instructions)* | Language guidance injected into prompt (set to `none` to disable). |
+| `KITABIM_CHANDRA_REPETITION_PENALTY` | `1.05` | Repetition penalty to prevent VLM token looping. |
+| `KITABIM_OCR_CONCURRENCY` | `1` | Concurrent pages processed per book (clamped 1–4 to prevent OOM). |
+| `KITABIM_OCR_PAGE_TIMEOUT` | `300.0` | Timeout in seconds per page (set to `0` to disable). |
+| `KITABIM_OCR_MAX_RETRIES` | `2` | Number of automatic retries on transient page failures. |
 
-## Starting the app
+---
 
-Set the required variables, either in your shell:
+## Starting the Application
 
-    export KITABIM_BASE_URL=https://kitabim.ai/api    # Kitabim backend to talk to
-    export KITABIM_WORK_DIR=~/kitabim-ocr-work        # where local OCR sessions are stored
+Once your `.env` is configured, start the interactive web application:
 
-or once, in a `.env` file next to `main.py` (copy `.env.example` to `.env`
-and fill it in) so you don't have to re-export them every session — a
-shell-exported value always wins if both are set. Neither variable is a
-secret (the actual login token lives separately, in
-`~/.config/kitabim-ocr-client/`), so `.env` is safe to use for this; it's
-already gitignored.
+```bash
+python main.py
+```
 
-    python main.py
+This starts the local FastAPI server at `http://127.0.0.1:8765` and automatically opens it in your default web browser.
 
-This starts a local server on `http://127.0.0.1:8765` and opens it in
-your default browser automatically. The landing page lets you search for
-and pick an existing Kitabim book to correct, or upload a new local PDF
-to OCR from scratch — progress and the review UI (redo pages, push to
-Kitabim) both happen in the same browser tab, so no further commands are
-needed once it's running. `KITABIM_WORK_DIR` is where each book's local
-OCR session (images, extracted text, review state) is stored between
-runs, so interrupted sessions resume instead of restarting.
+### Using the Web UI
 
-The first action that needs Kitabim access (a book search or a push)
-triggers a one-time browser-based login — no separate login command or
-API key required. Leave the app running in its terminal; press `Ctrl+C`
-to stop it.
+1. **Start New Book**: Upload a local PDF or search for an existing book in your Kitabim library.
+2. **Monitor Progress**: Watch pages process through the sequential background queue.
+3. **Review & Edit**: Compare the extracted text side-by-side with high-resolution page images, flag Table of Contents pages, or re-run OCR on specific pages.
+4. **Push to Kitabim**: Click **Push to Kitabim** to synchronize the reviewed text and structure directly to the platform.
 
-## Other commands
+---
 
-    python main.py preview <workdir>                 # reopen a previous session directly
-    python main.py push <workdir> --base-url https://kitabim.ai/api
+## Command-Line Usage
 
-See `docs/superpowers/specs/2026-08-30-surya-ocr-client-design.md` and
-`docs/superpowers/specs/2026-08-30-surya-ocr-client-landing-page-design.md`
-in the main kitabim-ai repo for the full design.
+The CLI supports direct actions for automation and headless environments:
+
+### 1. Launch Web Application
+```bash
+python main.py app [--engine chandra] [--concurrency 1]
+```
+
+### 2. Open an Existing Session in Preview UI
+```bash
+python main.py preview ~/kitabim-ocr-work/my-book-session/ --base-url https://kitabim.ai/api
+```
+
+### 3. Push a Completed Session Headlessly
+```bash
+python main.py push ~/kitabim-ocr-work/my-book-session/ --base-url https://kitabim.ai/api
+```
+
+### 4. Verify & Setup Chandra Model
+```bash
+python main.py setup-chandra [--method hf|vllm] [--model-checkpoint datalab-to/chandra-ocr-2]
+```
+
+---
+
+## Development & Testing
+
+Run the test suite using `pytest`:
+
+```bash
+# Run all tests
+pytest tests/
+
+# Run engine tests only
+pytest tests/engine/
+
+# Run web preview app tests
+pytest tests/preview/
+```

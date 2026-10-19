@@ -78,27 +78,31 @@ def cmd_push(workdir_path: Path, base_url: str) -> None:
     print(result)
 
 
-def cmd_setup_savitr(output_path: str | None = None, q_bits: int = 4) -> None:
-    from engine.savitr_engine import convert_surya_mlx_model
+def cmd_setup_chandra(method: str | None = None) -> None:
+    from engine.chandra_engine import ChandraPredictor
 
-    print(f"Converting Surya OCR base model to MLX ({q_bits}-bit)...")
-    dest = convert_surya_mlx_model(output_dir=output_path, q_bits=q_bits)
-    print(f"Savitr MLX model is ready at: {dest}")
+    print("Initializing and verifying Chandra OCR model weights...")
+    predictor = ChandraPredictor(method=method)
+    print(f"Chandra OCR is ready (method: {predictor.method})")
+
+
+# Alias for backward compatibility
+cmd_setup_savitr = cmd_setup_chandra
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kitabim OCR Desktop Client")
     parser.add_argument(
         "--engine",
-        choices=["surya", "savitr"],
+        choices=["chandra"],
         default=None,
-        help="OCR engine to use (default: configured in .env or 'surya')",
+        help="OCR engine to use (default: configured in .env or 'chandra')",
     )
     parser.add_argument(
         "--concurrency",
         type=int,
         default=None,
-        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya)",
+        help="Number of pages to process concurrently (default: configured in .env or 1; max 4 for Chandra)",
     )
     sub = parser.add_subparsers(dest="command", required=False)
 
@@ -112,15 +116,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     app_parser.add_argument(
         "--engine",
-        choices=["surya", "savitr"],
+        choices=["chandra"],
         default=argparse.SUPPRESS,
-        help="OCR engine to use (default: configured in .env or 'surya')",
+        help="OCR engine to use (default: configured in .env or 'chandra')",
     )
     app_parser.add_argument(
         "--concurrency",
         type=int,
         default=argparse.SUPPRESS,
-        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya)",
+        help="Number of pages to process concurrently (default: configured in .env or 1; max 4 for Chandra)",
     )
 
     preview_parser = sub.add_parser(
@@ -136,14 +140,20 @@ def build_parser() -> argparse.ArgumentParser:
     push_parser.add_argument("--base-url", required=True)
 
     setup_parser = sub.add_parser(
+        "setup-chandra",
+        help="Pre-download and cache Chandra OCR model weights",
+    )
+    setup_parser.add_argument(
+        "--method",
+        choices=["hf", "vllm"],
+        default=None,
+        help="Inference method ('hf' or 'vllm', default: configured in .env or 'hf')",
+    )
+
+    # Deprecated alias subparser for setup-savitr
+    sub.add_parser(
         "setup-savitr",
-        help="Convert base Surya model (datalab-to/surya-ocr-2) to MLX format for Apple Silicon",
-    )
-    setup_parser.add_argument(
-        "--output", default=None, help="Output directory for MLX model"
-    )
-    setup_parser.add_argument(
-        "--q-bits", type=int, default=4, help="Quantization bits (default: 4)"
+        help="Deprecated alias for setup-chandra",
     )
 
     return parser
@@ -163,8 +173,10 @@ def main() -> None:
         cmd_preview(Path(args.workdir), args.base_url)
     elif command == "push":
         cmd_push(Path(args.workdir), args.base_url)
+    elif command == "setup-chandra":
+        cmd_setup_chandra(method=getattr(args, "method", None))
     elif command == "setup-savitr":
-        cmd_setup_savitr(output_path=args.output, q_bits=args.q_bits)
+        cmd_setup_chandra()
 
 
 if __name__ == "__main__":

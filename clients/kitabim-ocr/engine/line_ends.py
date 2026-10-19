@@ -1,11 +1,4 @@
-"""Which words end a printed line with a hyphen, read from the page image.
-
-Surya's full-page OCR reflows each block into running text, so a line-end
-hyphen ("ھەز-" / "رىتى" on the next line) comes back as "ھەز - رىتى" and can't
-be told apart from a real pair or a dash. Surya's text-line detector still sees
-the printed lines: reading just the end of each line (its left edge, since
-Uyghur runs right to left) tells us which words were split by a line break.
-"""
+"""Which words end a printed line with a hyphen, read from the page image."""
 
 from __future__ import annotations
 
@@ -18,17 +11,9 @@ from PIL import Image
 
 from engine.text_cleanup import normalize_uyghur_chars
 
-# Part of each line, from its left (end) edge, sent for recognition. Narrower
-# strips push the recognizer toward Arabic/Persian letter forms and the whole
-# line makes it drop the end; 0.6 read the most line ends correctly on a test
-# page. The cut-off first word is ignored.
 _LINE_END_FRACTION = 0.6
-# Lines narrower than this share of the widest line (page numbers, headers,
-# short last lines of a paragraph) can't end with a split word.
 _MIN_LINE_WIDTH_FRACTION = 0.25
 _HYPHENS = "-\u2010\u2011\u2012\u2013\u2014\u00ad\u0640"
-# Arabic heh (U+0647) never occurs in Uyghur text; on a line-end crop it is
-# the recognizer's reading of Uyghur ae (U+06D5), e.g. "خه-" for "خە-".
 _ARABIC_HEH = "\u0647"
 _UYGHUR_AE = "\u06d5"
 _TRAILING_HYPHEN_RE = re.compile(rf"[\s{re.escape(_HYPHENS)}]+$")
@@ -38,19 +23,50 @@ _detector_lock = threading.Lock()
 
 
 def get_line_detector() -> Any:
-    """Return the process-wide Surya text-line detector, loading it on first use."""
+    """Return the line detector if available, or None."""
     global _detector
     with _detector_lock:
         if _detector is None:
-            from surya.detection import DetectionPredictor
+            try:
+                from surya.detection import DetectionPredictor
 
-            _detector = DetectionPredictor.local()
+                _detector = DetectionPredictor.local()
+            except ImportError:
+                _detector = None
     return _detector
 
 
 def read_line_end_words(image: Image.Image, detector: Any, recognizer: Any) -> set[str]:
     """Return the normalized words that end a printed line with a hyphen."""
-    from surya.layout.schema import LayoutBox, LayoutResult
+    if detector is None or recognizer is None:
+        return set()
+
+    try:
+        from surya.layout.schema import LayoutBox, LayoutResult
+    except ImportError:
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class LayoutBox:
+            polygon: list[float]
+            label: str = "Text"
+            raw_label: str = "Text"
+            position: int = 0
+            count: int = 60
+            bbox: list[float] = field(init=False)
+
+            def __post_init__(self):
+                self.bbox = [
+                    self.polygon[0],
+                    self.polygon[1],
+                    self.polygon[2],
+                    self.polygon[3],
+                ]
+
+        @dataclass
+        class LayoutResult:
+            bboxes: list[LayoutBox]
+            image_bbox: list[float]
 
     lines = detector([image])[0].bboxes
     if not lines:

@@ -9,9 +9,11 @@ from PIL import Image
 
 @pytest.fixture(autouse=True)
 def reset_singleton():
+    svc._chandra_predictor = None
     svc._surya_predictor = None
     svc._savitr_predictor = None
     yield
+    svc._chandra_predictor = None
     svc._surya_predictor = None
     svc._savitr_predictor = None
 
@@ -23,37 +25,14 @@ def _fake_png_bytes() -> bytes:
 
 
 @pytest.mark.asyncio
-async def test_get_recognition_predictor_surya_constructs_once_and_caches():
-    with patch("surya.recognition.RecognitionPredictor") as mock_cls:
-        mock_cls.return_value = "predictor-instance"
-        p1 = await svc.get_recognition_predictor(engine="surya")
-        p2 = await svc.get_recognition_predictor(engine="surya")
-    assert p1 == "predictor-instance"
-    assert p1 is p2
-    mock_cls.assert_called_once_with()
-
-
-@pytest.mark.asyncio
-async def test_get_recognition_predictor_savitr_constructs_and_caches():
-    with (
-        patch("engine.recognize.is_apple_silicon", return_value=True),
-        patch("engine.savitr_engine.SavitrPredictor") as mock_cls,
-    ):
-        mock_cls.return_value = "savitr-instance"
-        p1 = await svc.get_recognition_predictor(engine="savitr")
-        p2 = await svc.get_recognition_predictor(engine="savitr")
-    assert p1 == "savitr-instance"
+async def test_get_recognition_predictor_chandra_constructs_once_and_caches():
+    with patch("engine.recognize.ChandraPredictor") as mock_cls:
+        mock_cls.return_value = "chandra-instance"
+        p1 = await svc.get_recognition_predictor(engine="chandra")
+        p2 = await svc.get_recognition_predictor(engine="chandra")
+    assert p1 == "chandra-instance"
     assert p1 is p2
     mock_cls.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_get_recognition_predictor_savitr_raises_on_non_apple_silicon():
-    with patch("engine.recognize.is_apple_silicon", return_value=False):
-        with pytest.raises(
-            RuntimeError, match="Savitr OCR is optimized for Apple Silicon"
-        ):
-            await svc.get_recognition_predictor(engine="savitr")
 
 
 @pytest.mark.asyncio
@@ -73,8 +52,8 @@ def test_recognize_page_calls_predictor_full_page_and_returns_first_result():
     assert result is mock_result
 
 
-def test_recognize_page_with_savitr_predictor():
-    mock_predictor = MagicMock(spec=svc.SavitrPredictor)
+def test_recognize_page_with_chandra_predictor():
+    mock_predictor = MagicMock(spec=svc.ChandraPredictor)
     mock_predictor.recognize_image.return_value = ("<p>test</p>", 1.0)
 
     result = svc.recognize_page(mock_predictor, image="fake-image")
@@ -177,9 +156,9 @@ def test_process_page_sync_keeps_list_group_paragraphs():
     assert markdown == "ئابزاس تېكىستى.\n\n1) نۇقتا."
 
 
-def test_process_page_sync_with_savitr_predictor():
+def test_process_page_sync_with_chandra_predictor():
     img = Image.new("RGB", (200, 200))
-    mock_predictor = MagicMock(spec=svc.SavitrPredictor)
+    mock_predictor = MagicMock(spec=svc.ChandraPredictor)
     mock_predictor.recognize_image.return_value = (
         "<h1>چوڭ ماۋزۇ</h1><p>بۇ ئادەتتىكى تېكىست.</p><table><tr><td>باب بىر</td><td>3</td></tr></table>",
         1.0,
