@@ -10,14 +10,31 @@ from PIL import Image
 @pytest.fixture(autouse=True)
 def reset_singleton():
     svc._surya_predictor = None
+    if hasattr(svc, "_paddle_predictor"):
+        svc._paddle_predictor = None
     yield
     svc._surya_predictor = None
+    if hasattr(svc, "_paddle_predictor"):
+        svc._paddle_predictor = None
 
 
 def _fake_png_bytes() -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", (10, 10)).save(buf, format="PNG")
     return buf.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_get_recognition_predictor_paddleocr_constructs_once_and_caches():
+    mock_module = MagicMock()
+    mock_ppstructure = MagicMock(return_value="paddle-instance")
+    mock_module.PPStructure = mock_ppstructure
+    with patch.dict("sys.modules", {"paddleocr": mock_module}):
+        p1 = await svc.get_recognition_predictor(engine="paddleocr")
+        p2 = await svc.get_recognition_predictor(engine="paddleocr")
+    assert p1 == "paddle-instance"
+    assert p1 is p2
+    mock_ppstructure.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -35,6 +52,56 @@ async def test_get_recognition_predictor_surya_constructs_once_and_caches():
 async def test_get_recognition_predictor_unknown_engine_raises_value_error():
     with pytest.raises(ValueError, match="Unknown OCR engine"):
         await svc.get_recognition_predictor(engine="nonexistent")
+
+
+def test_process_page_paddleocr_sync_formats_markdown_and_confidence():
+    mock_predictor = MagicMock()
+    mock_predictor.return_value = [
+        {
+            "type": "Header",
+            "bbox": [10, 10, 200, 30],
+            "res": [([[10, 10, 200, 10, 200, 30, 10, 30]], ("Header Title", 0.95))],
+        },
+        {
+            "type": "Title",
+            "bbox": [50, 40, 300, 70],
+            "res": [([[50, 40, 300, 40, 300, 70, 50, 70]], ("باب بىرىنچى", 0.98))],
+        },
+        {
+            "type": "Text",
+            "bbox": [50, 80, 400, 150],
+            "res": [
+                ([[50, 80, 400, 80, 400, 110, 50, 110]], ("بۇ بىرىنچى جۈملە.", 0.92)),
+                (
+                    [[50, 115, 400, 115, 400, 145, 50, 145]],
+                    ("بۇ ئىككىنچى جۈملە.", 0.96),
+                ),
+            ],
+        },
+        {
+            "type": "Table",
+            "bbox": [50, 160, 400, 250],
+            "res": {
+                "html": "<html><body><table><tr><td>تېما</td><td>12</td></tr></table></body></html>"
+            },
+        },
+        {
+            "type": "Footer",
+            "bbox": [180, 280, 220, 295],
+            "res": [([[180, 280, 220, 280, 220, 295, 180, 295]], ("42", 0.99))],
+        },
+    ]
+
+    img = Image.new("RGB", (500, 300), color="white")
+    markdown, confidence = svc._process_page_paddleocr_sync(img, mock_predictor)
+
+    assert "# باب بىرىنچى" in markdown
+    assert "بۇ بىرىنچى جۈملە." in markdown
+    assert "بۇ ئىككىنچى جۈملە." in markdown
+    assert "| تېما | 12 |" in markdown
+    assert "Header Title" not in markdown
+    assert "42" not in markdown
+    assert 0.90 <= confidence <= 0.99
 
 
 def test_recognize_page_calls_predictor_full_page_and_returns_first_result():
