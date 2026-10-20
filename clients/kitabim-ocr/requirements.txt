@@ -1,3 +1,5 @@
+paddlepaddle
+paddleocr>=2.6.0
 surya-ocr==0.22.1
 pymupdf
 pillow
