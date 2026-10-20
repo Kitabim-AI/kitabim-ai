@@ -1,52 +1,17 @@
 # Kitabim OCR Client
 
-Standalone desktop tool: runs OCR locally on your own hardware (supporting both
-standard Surya OCR and Apple Silicon MLX-optimized Savitr OCR — no Docker, full
-GPU/CPU/Neural Engine access), lets you preview and redo pages before committing,
-then pushes finished text to Kitabim over its public API. Kitabim's own OCR stage
-(Gemini, in `services/worker`) is unaffected — this tool only ever talks to
-Kitabim's HTTP API as an authenticated editor/admin user.
+Standalone desktop tool: runs OCR locally on your own hardware (supporting
+Surya OCR — no Docker, full GPU/CPU access), lets you preview and redo pages
+before committing, then pushes finished text to Kitabim over its public API.
+Kitabim's own OCR stage (Gemini, in `services/worker`) is unaffected — this
+tool only ever talks to Kitabim's HTTP API as an authenticated editor/admin
+user.
 
 ## Setup
 
     python3 -m venv .venv
     source .venv/bin/activate
     pip install -r requirements.txt
-
-### Apple Silicon Acceleration (Savitr OCR)
-
-On Apple Silicon (M1/M2/M3/M4 Macs), you can use **Savitr**, an MLX-accelerated
-Surya OCR engine (~3-4x faster inference using unified memory):
-
-    pip install savitr
-
-Because base Surya (`datalab-to/surya-ocr-2`) is published in PyTorch format, convert it once to 4-bit MLX format:
-
-    python main.py setup-savitr
-
-Or using `mlx_vlm` directly:
-
-    python -m mlx_vlm convert --hf-path datalab-to/surya-ocr-2 --mlx-path ~/.cache/savitr/surya-mlx-4bit -q --q-bits 4
-
-Then configure `KITABIM_OCR_ENGINE=savitr` in `.env` or pass `--engine savitr`.
-
-## OCR Engine Selection
-
-You can choose between two OCR engines:
-- `surya` (default): Standard Surya OCR using PyTorch / MPS / CPU.
-- `savitr`: Apple Silicon MLX-accelerated Surya OCR runtime.
-
-Set the engine in `.env`:
-
-    KITABIM_OCR_ENGINE=surya   # or savitr
-
-Or pass it via the CLI:
-
-    python main.py app --engine savitr
-
-Optional custom Savitr model weights path:
-
-    SAVITR_MODEL_PATH=models/surya-mlx-4bit
 
 ## Concurrency Configuration
 

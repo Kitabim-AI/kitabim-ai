@@ -10,8 +10,3 @@ httpx
 pytest
 pytest-asyncio
 
-# Optional Apple Silicon MLX acceleration (Savitr OCR)
-# Uncomment to enable Savitr engine (requires macOS ARM64):
-# savitr>=0.2.0,<0.3.0
-# mlx-vlm>=0.6.17,<0.7
-

@@ -59,16 +59,16 @@ def test_state_defaults_to_landing(tmp_path: Path):
     assert data["queuedSessions"] == []
 
 
-def test_state_with_savitr_engine(tmp_path: Path):
-    app = create_landing_app(MagicMock(), tmp_path / "work", engine="savitr")
+def test_landing_html_contains_surya_ocr_engine_label(tmp_path: Path):
+    app = create_landing_app(MagicMock(), tmp_path / "work", engine="surya")
     client = TestClient(app)
 
     response = client.get("/api/state")
     assert response.status_code == 200
-    assert response.json()["engine"] == "savitr"
+    assert response.json()["engine"] == "surya"
 
     html_resp = client.get("/")
-    assert "Savitr OCR (MLX)" in html_resp.text
+    assert "Surya OCR" in html_resp.text
 
 
 def test_reset_from_landing_is_a_no_op(tmp_path: Path):

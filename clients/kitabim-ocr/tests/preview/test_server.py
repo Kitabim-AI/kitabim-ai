@@ -89,7 +89,7 @@ def test_redo_pages_route_passes_the_configured_engine(tmp_path: Path, monkeypat
     wd = _workdir(tmp_path)
     app = create_app(wd, client=None)
     client = TestClient(app)
-    monkeypatch.setenv("KITABIM_OCR_ENGINE", "savitr")
+    monkeypatch.setenv("KITABIM_OCR_ENGINE", "surya")
 
     with patch(
         "preview.server.redo_pages_response", AsyncMock(return_value=[])
@@ -98,7 +98,7 @@ def test_redo_pages_route_passes_the_configured_engine(tmp_path: Path, monkeypat
 
     assert response.status_code == 200
     mock_redo.assert_called_once()
-    assert mock_redo.call_args.kwargs.get("engine") == "savitr"
+    assert mock_redo.call_args.kwargs.get("engine") == "surya"
 
 
 def test_redo_pages_uses_the_workdirs_shared_save_lock(tmp_path: Path):

@@ -56,21 +56,21 @@ def test_cmd_app_starts_server_with_env_config(monkeypatch, tmp_path):
     monkeypatch.setenv("KITABIM_WORK_DIR", "/tmp/work")
 
     with patch("main.serve_app") as mock_serve_app:
-        main.cmd_app(engine="savitr")
+        main.cmd_app(engine="surya")
 
     mock_serve_app.assert_called_once()
     client_arg, work_root_arg = mock_serve_app.call_args.args
     assert isinstance(client_arg, main.KitabimClient)
     assert client_arg.base_url == "http://localhost:8000"
     assert work_root_arg == Path("/tmp/work")
-    assert mock_serve_app.call_args.kwargs.get("engine") == "savitr"
+    assert mock_serve_app.call_args.kwargs.get("engine") == "surya"
 
 
 def test_build_parser_engine_option():
     parser = main.build_parser()
-    args = parser.parse_args(["app", "--engine", "savitr"])
+    args = parser.parse_args(["app", "--engine", "surya"])
     assert args.command == "app"
-    assert args.engine == "savitr"
+    assert args.engine == "surya"
 
 
 def test_build_parser_concurrency_option():
@@ -96,10 +96,10 @@ def test_build_parser_concurrency_and_engine_before_subcommand():
     # A value passed before the subcommand must not be discarded by the
     # app subparser's own (unset) default for the same option.
     parser = main.build_parser()
-    args = parser.parse_args(["--concurrency", "2", "--engine", "savitr", "app"])
+    args = parser.parse_args(["--concurrency", "2", "--engine", "surya", "app"])
     assert args.command == "app"
     assert args.concurrency == 2
-    assert args.engine == "savitr"
+    assert args.engine == "surya"
 
 
 def test_build_parser_concurrency_and_engine_after_subcommand_still_win():
@@ -108,17 +108,15 @@ def test_build_parser_concurrency_and_engine_after_subcommand_still_win():
         [
             "--concurrency",
             "1",
-            "--engine",
-            "surya",
             "app",
             "--concurrency",
             "3",
             "--engine",
-            "savitr",
+            "surya",
         ]
     )
     assert args.concurrency == 3
-    assert args.engine == "savitr"
+    assert args.engine == "surya"
 
 
 def test_cmd_app_loads_config_from_dotenv_file(monkeypatch, tmp_path):
@@ -200,22 +198,3 @@ def test_cmd_push_resubmits_as_new_book_when_book_deleted_on_cloud(tmp_path: Pat
     reloaded = main.OcrWorkDir.load(workdir_path)
     assert reloaded.book_id == "new_cloud_id"
     assert reloaded.uploaded is True
-
-
-def test_build_parser_setup_savitr_command():
-    parser = main.build_parser()
-    args = parser.parse_args(
-        ["setup-savitr", "--output", "/tmp/model", "--q-bits", "8"]
-    )
-    assert args.command == "setup-savitr"
-    assert args.output == "/tmp/model"
-    assert args.q_bits == 8
-
-
-def test_cmd_setup_savitr_invokes_converter():
-    with patch(
-        "engine.savitr_engine.convert_surya_mlx_model", return_value="/custom/model"
-    ) as mock_conv:
-        main.cmd_setup_savitr(output_path="/custom/model", q_bits=4)
-
-    mock_conv.assert_called_once_with(output_dir="/custom/model", q_bits=4)
