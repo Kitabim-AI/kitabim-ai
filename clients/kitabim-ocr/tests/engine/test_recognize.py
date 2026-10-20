@@ -104,6 +104,45 @@ def test_process_page_paddleocr_sync_formats_markdown_and_confidence():
     assert 0.90 <= confidence <= 0.99
 
 
+def test_process_page_paddleocr_sync_formats_ppstructurev3_layout_blocks():
+    class DummyLayoutBlock:
+        def __init__(self, label: str, bbox: list[int], content: str):
+            self.label = label
+            self.bbox = bbox
+            self.content = content
+
+    block1 = DummyLayoutBlock("doc_title", [50, 40, 300, 70], "كىرىش سۆز")
+    block2 = DummyLayoutBlock("text", [50, 80, 400, 150], "بۇ مېنىڭ كىتابىم.")
+    block3 = DummyLayoutBlock(
+        "table",
+        [50, 160, 400, 250],
+        "<html><body><table><tr><td>سان</td><td>5</td></tr></table></body></html>",
+    )
+    block4 = DummyLayoutBlock("header", [10, 10, 200, 30], "باش قىسمى")
+    block5 = DummyLayoutBlock("footer", [180, 280, 220, 295], "15")
+
+    mock_res = {
+        "parsing_res_list": [block1, block2, block3, block4, block5],
+        "overall_ocr_res": {
+            "rec_texts": ["كىرىش سۆز", "بۇ مېنىڭ كىتابىم."],
+            "rec_scores": [0.95, 0.91],
+        },
+    }
+
+    mock_predictor = MagicMock()
+    mock_predictor.return_value = [mock_res]
+
+    img = Image.new("RGB", (500, 300), color="white")
+    markdown, confidence = svc._process_page_paddleocr_sync(img, mock_predictor)
+
+    assert "# كىرىش سۆز" in markdown
+    assert "بۇ مېنىڭ كىتابىم." in markdown
+    assert "| سان | 5 |" in markdown
+    assert "باش قىسمى" not in markdown
+    assert "15" not in markdown
+    assert 0.90 <= confidence <= 0.96
+
+
 def test_recognize_page_calls_predictor_full_page_and_returns_first_result():
     mock_predictor = MagicMock()
     mock_result = MagicMock()

@@ -449,7 +449,7 @@ def is_hallucinated_arabic_block(text: str) -> bool:
     vowel_ratio = uyghur_vowels / len(letters)
 
     arabic_particles = len(_COMMON_ARABIC_WORDS.findall(text))
-    if vowel_ratio < 0.08 and (arabic_particles >= 2 or "ة" in text or "ه" in text):
+    if vowel_ratio < 0.08 and arabic_particles >= 2:
         return True
     return False
 

@@ -652,19 +652,123 @@ def _format_paddleocr_regions(image: Image.Image, regions: Any) -> tuple[str, fl
     if not regions or not isinstance(regions, list):
         return "", 0.0
 
-    if regions and isinstance(regions[0], dict):
-        first = regions[0]
-        if "parsing_res_list" in first or "overall_ocr_res" in first:
-            parsing_list = first.get("parsing_res_list") or []
-            if parsing_list:
-                regions = parsing_list
-            elif "overall_ocr_res" in first:
-                ocr_res = first.get("overall_ocr_res") or {}
-                rec_texts = ocr_res.get("rec_texts", [])
-                rec_scores = ocr_res.get("rec_scores", [])
-                if rec_texts:
-                    mean_conf = sum(rec_scores) / len(rec_scores) if rec_scores else 0.0
-                    return "\n\n".join(rec_texts), mean_conf
+    first_item = (
+        regions[0] if isinstance(regions, (list, tuple)) and len(regions) > 0 else None
+    )
+
+    # Handle PPStructureV3 (LayoutParsingResultV2 or dict with parsing_res_list / overall_ocr_res)
+    has_parsing = (
+        isinstance(first_item, dict)
+        and ("parsing_res_list" in first_item or "overall_ocr_res" in first_item)
+    ) or (
+        first_item is not None
+        and (
+            hasattr(first_item, "parsing_res_list")
+            or hasattr(first_item, "overall_ocr_res")
+        )
+    )
+
+    if has_parsing:
+        img_w, img_h = image.size
+        pp_blocks: list[str] = []
+        pp_footnotes: list[str] = []
+        pp_confidences: list[float] = []
+
+        overall_ocr = (
+            first_item.get("overall_ocr_res")
+            if isinstance(first_item, dict)
+            else getattr(first_item, "overall_ocr_res", None)
+        )
+        if overall_ocr:
+            rec_scores = (
+                overall_ocr.get("rec_scores", [])
+                if isinstance(overall_ocr, dict)
+                else getattr(overall_ocr, "rec_scores", [])
+            )
+            for s in rec_scores:
+                try:
+                    pp_confidences.append(float(s))
+                except (ValueError, TypeError):
+                    pass
+
+        parsing_list = (
+            first_item.get("parsing_res_list")
+            if isinstance(first_item, dict)
+            else getattr(first_item, "parsing_res_list", None)
+        )
+
+        if parsing_list:
+            for item in parsing_list:
+                label = getattr(item, "label", None) or (
+                    item.get("label") if isinstance(item, dict) else ""
+                )
+                label = str(label).lower()
+                bbox = getattr(item, "bbox", None) or (
+                    item.get("bbox") if isinstance(item, dict) else [0, 0, 0, 0]
+                )
+                content = getattr(item, "content", None) or (
+                    item.get("content") if isinstance(item, dict) else ""
+                )
+                content = str(content).strip() if content else ""
+
+                if not content:
+                    continue
+
+                if label in ("header", "figure"):
+                    continue
+
+                block_dict = {"bbox": bbox}
+                if _is_vertical_marginalia_block(
+                    block_dict, float(img_w), float(img_h)
+                ):
+                    continue
+
+                if label == "footer":
+                    if is_isolated_page_number(content):
+                        continue
+                    pp_footnotes.append(content)
+                    continue
+
+                if label in ("title", "doc_title", "paragraph_title", "section_title"):
+                    if not is_block_repetition_loop(
+                        content
+                    ) and not is_hallucinated_arabic_block(content):
+                        pp_blocks.append(f"# {content}")
+                    continue
+
+                if label == "table":
+                    if "<table" in content.lower():
+                        table_md = _block_html_to_markdown(content, label="Table")
+                    else:
+                        table_md = content
+                    if table_md.strip():
+                        pp_blocks.append(table_md.strip())
+                    continue
+
+                if not is_block_repetition_loop(
+                    content
+                ) and not is_hallucinated_arabic_block(content):
+                    pp_blocks.append(content)
+
+            pp_blocks.extend(pp_footnotes)
+            markdown = "\n\n".join(pp_blocks)
+            mean_conf = (
+                sum(pp_confidences) / len(pp_confidences) if pp_confidences else 0.0
+            )
+            return markdown, mean_conf
+
+        elif overall_ocr:
+            rec_texts = (
+                overall_ocr.get("rec_texts", [])
+                if isinstance(overall_ocr, dict)
+                else getattr(overall_ocr, "rec_texts", [])
+            )
+            if rec_texts:
+                markdown = "\n\n".join(t.strip() for t in rec_texts if t.strip())
+                mean_conf = (
+                    sum(pp_confidences) / len(pp_confidences) if pp_confidences else 0.0
+                )
+                return markdown, mean_conf
 
     img_w, img_h = image.size
     blocks: list[str] = []
