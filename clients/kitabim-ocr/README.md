@@ -1,8 +1,8 @@
 # Kitabim OCR Client
 
 Standalone desktop tool: runs OCR locally on your own hardware (supporting
-Surya OCR — no Docker, full GPU/CPU access), lets you preview and redo pages
-before committing, then pushes finished text to Kitabim over its public API.
+PaddleOCR PP-Structure by default, with Surya OCR as a fallback — no Docker, full GPU/CPU access),
+lets you preview and redo pages before committing, then pushes finished text to Kitabim over its public API.
 Kitabim's own OCR stage (Gemini, in `services/worker`) is unaffected — this
 tool only ever talks to Kitabim's HTTP API as an authenticated editor/admin
 user.
@@ -13,13 +13,23 @@ user.
     source .venv/bin/activate
     pip install -r requirements.txt
 
+## Engine Configuration
+
+PaddleOCR is the default OCR engine. You can select the OCR engine in `.env`:
+
+    KITABIM_OCR_ENGINE=paddleocr   # Default: paddleocr (options: paddleocr, surya)
+
+Or via the CLI:
+
+    python main.py app --engine paddleocr
+
 ## Concurrency Configuration
 
-Parallel page processing is enabled for Surya OCR by default with a concurrency of 4 (`KITABIM_OCR_CONCURRENCY=4`), capped at a maximum of 4 parallel pages for stability on CPU/MPS/GPU hardware.
+Parallel page processing is enabled by default with a concurrency of 4 (`KITABIM_OCR_CONCURRENCY=4`), clamped to at most 4 parallel pages when using the Surya engine for stability.
 
 Set concurrency in `.env`:
 
-    KITABIM_OCR_CONCURRENCY=4   # Default: 4 (max: 4 for Surya; 1 disables concurrency)
+    KITABIM_OCR_CONCURRENCY=4   # Default: 4 (max 4 for Surya; 1 disables concurrency)
 
 Or pass it via the CLI:
 

@@ -2,7 +2,7 @@
   "navbar": {
     "brand_title": "Kitabim OCR",
     "badge": "Client",
-    "model_status": "Surya OCR",
+    "model_status": "PaddleOCR",
     "api_status": "Kitabim API",
     "step_choose": "1. Choose Book",
     "step_process": "2. OCR Monitor",
@@ -13,7 +13,7 @@
   "nav": {
     "brand_title": "Kitabim OCR",
     "badge": "Client",
-    "model_status": "Surya OCR",
+    "model_status": "PaddleOCR",
     "api_status": "Kitabim API",
     "step_choose": "1. Choose Book",
     "step_process": "2. OCR Monitor",
@@ -24,7 +24,7 @@
   "header": {
     "brand_title": "Kitabim OCR",
     "badge": "Client",
-    "model_status": "Surya OCR",
+    "model_status": "PaddleOCR",
     "api_status": "Kitabim API",
     "step_choose": "1. Choose Book",
     "step_process": "2. OCR Monitor",
@@ -80,7 +80,7 @@
   },
   "upload": {
     "drop_title": "Drag & drop local PDF file or choose file",
-    "drop_subtitle": "Surya OCR engine recognizes full-page documents using your GPU/CPU",
+    "drop_subtitle": "PaddleOCR engine recognizes full-page documents using your GPU/CPU",
     "btn_start": "Start OCR",
     "starting": "Starting...",
     "toast_queued": "Book added to queue (Position: #{pos})"
@@ -89,7 +89,7 @@
     "btn_back_home": "Back to Home",
     "running_in_background": "Running in background",
     "title": "Processing document...",
-    "subtitle": "Surya OCR engine is recognizing pages in order",
+    "subtitle": "PaddleOCR engine is recognizing pages in order",
     "matrix_title": "Page Matrix Status:",
     "status_pending": "Pending",
     "status_processing": "Processing...",

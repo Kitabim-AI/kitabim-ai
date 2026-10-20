@@ -2,7 +2,7 @@
   "navbar": {
     "brand_title": "Kitabim OCR",
     "badge": "يەرلىك نۇسخا",
-    "model_status": "Surya OCR",
+    "model_status": "PaddleOCR",
     "api_status": "Kitabim API",
     "step_choose": "1. كىتاب قوشۇش",
     "step_process": "2. OCR",
@@ -13,7 +13,7 @@
   "nav": {
     "brand_title": "Kitabim OCR",
     "badge": "يەرلىك نۇسخا",
-    "model_status": "Surya OCR",
+    "model_status": "PaddleOCR",
     "api_status": "Kitabim API",
     "step_choose": "1. كىتاب قوشۇش",
     "step_process": "2. OCR",
@@ -24,7 +24,7 @@
   "header": {
     "brand_title": "Kitabim OCR",
     "badge": "يەرلىك نۇسخا",
-    "model_status": "Surya OCR",
+    "model_status": "PaddleOCR",
     "api_status": "Kitabim API",
     "step_choose": "1. كىتاب قوشۇش",
     "step_process": "2. OCR",
@@ -80,7 +80,7 @@
   },
   "upload": {
     "drop_title": "يەرلىكتىكى PDF ھۆججىتىنى سۆرەپ ئەكىلىڭ ياكى تاللاڭ",
-    "drop_subtitle": "Surya OCR موتورى كومپيۇتېرىڭىزنىڭ GPU/CPU كۈچى بىلەن تولۇق بەت ھۆججەتنى تونۇيدۇ",
+    "drop_subtitle": "PaddleOCR موتورى كومپيۇتېرىڭىزنىڭ GPU/CPU كۈچى بىلەن تولۇق بەت ھۆججەتنى تونۇيدۇ",
     "btn_start": "OCR نى باشلاش",
     "starting": "قوزغىلىۋاتىدۇ...",
     "toast_queued": "كىتاب نۆۋەتكە قوشۇلدى (نۆۋەت نومۇرى: #{pos})"
@@ -89,7 +89,7 @@
     "btn_back_home": "باش بەتكە قايتىش",
     "running_in_background": "ئارقا سەھنىدە ئىشلەۋاتىدۇ",
     "title": "ھۆججەت بىر تەرەپ قىلىنىۋاتىدۇ...",
-    "subtitle": "Surya OCR موتورى بەتلەرنى تەرتىپ بويىچە ئوقۇۋاتىدۇ",
+    "subtitle": "PaddleOCR موتورى بەتلەرنى تەرتىپ بويىچە ئوقۇۋاتىدۇ",
     "matrix_title": "بەتلەرنىڭ ھالىتى:",
     "status_pending": "كۈتۈۋاتىدۇ",
     "status_processing": "تونۇۋاتىدۇ...",
