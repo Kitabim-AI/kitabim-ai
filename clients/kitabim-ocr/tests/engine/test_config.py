@@ -16,11 +16,8 @@ from engine.config import (
     get_configured_max_retries,
     get_configured_page_timeout,
     get_configured_zoom_factor,
-    get_savitr_model_path,
-    is_apple_silicon,
     is_bleed_through_suppression_enabled,
     is_dot_enhancement_enabled,
-    is_savitr_available,
     resolve_concurrency,
 )
 
@@ -33,20 +30,20 @@ def test_get_configured_engine_defaults_to_surya(monkeypatch):
 
 
 def test_get_configured_engine_from_kitabim_ocr_engine_env(monkeypatch):
-    monkeypatch.setenv("KITABIM_OCR_ENGINE", "savitr")
+    monkeypatch.setenv("KITABIM_OCR_ENGINE", "surya")
     monkeypatch.delenv("OCR_ENGINE", raising=False)
-    assert get_configured_engine() == "savitr"
+    assert get_configured_engine() == "surya"
 
 
 def test_get_configured_engine_from_ocr_engine_env(monkeypatch):
     monkeypatch.delenv("KITABIM_OCR_ENGINE", raising=False)
-    monkeypatch.setenv("OCR_ENGINE", "SAVITR")
-    assert get_configured_engine() == "savitr"
+    monkeypatch.setenv("OCR_ENGINE", "SURYA")
+    assert get_configured_engine() == "surya"
 
 
 def test_get_configured_engine_kitabim_takes_precedence(monkeypatch):
     monkeypatch.setenv("KITABIM_OCR_ENGINE", "surya")
-    monkeypatch.setenv("OCR_ENGINE", "savitr")
+    monkeypatch.setenv("OCR_ENGINE", "unsupported")
     assert get_configured_engine() == "surya"
 
 
@@ -56,27 +53,10 @@ def test_get_configured_engine_invalid_raises_value_error(monkeypatch):
         get_configured_engine()
 
 
-def test_get_savitr_model_path(monkeypatch):
-    monkeypatch.delenv("SAVITR_MODEL_PATH", raising=False)
-    monkeypatch.delenv("SAVITR_BASE_PATH", raising=False)
-    assert get_savitr_model_path() is None
-
-    monkeypatch.setenv("SAVITR_MODEL_PATH", "/custom/path/model")
-    assert get_savitr_model_path() == "/custom/path/model"
-
-    monkeypatch.delenv("SAVITR_MODEL_PATH", raising=False)
-    monkeypatch.setenv("SAVITR_BASE_PATH", "/base/path/model")
-    assert get_savitr_model_path() == "/base/path/model"
-
-
-def test_is_apple_silicon_bool():
-    result = is_apple_silicon()
-    assert isinstance(result, bool)
-
-
-def test_is_savitr_available_bool():
-    result = is_savitr_available()
-    assert isinstance(result, bool)
+def test_get_configured_engine_savitr_raises_value_error(monkeypatch):
+    monkeypatch.setenv("KITABIM_OCR_ENGINE", "savitr")
+    with pytest.raises(ValueError, match="Unsupported OCR engine 'savitr'"):
+        get_configured_engine()
 
 
 def test_get_configured_concurrency_defaults_to_four(monkeypatch):
@@ -130,8 +110,8 @@ def test_resolve_concurrency_clamps_surya_to_max(monkeypatch):
 
 
 def test_resolve_concurrency_floors_non_surya_at_one_without_capping(monkeypatch):
-    assert resolve_concurrency("savitr", 16) == 16
-    assert resolve_concurrency("savitr", -3) == 1
+    assert resolve_concurrency("other", 16) == 16
+    assert resolve_concurrency("other", -3) == 1
 
 
 def test_resolve_concurrency_blank_engine_resolves_to_configured_default(monkeypatch):
@@ -139,9 +119,9 @@ def test_resolve_concurrency_blank_engine_resolves_to_configured_default(monkeyp
     # the same way as the actually configured default engine, not silently
     # assume 'surya' or skip clamping — this matches
     # get_recognition_predictor's own `engine or get_configured_engine()`.
-    monkeypatch.setenv("KITABIM_OCR_ENGINE", "savitr")
-    assert resolve_concurrency(None, 16) == 16
-    assert resolve_concurrency("", 16) == 16
+    monkeypatch.delenv("KITABIM_OCR_ENGINE", raising=False)
+    assert resolve_concurrency(None, 16) == MAX_SURYA_CONCURRENCY
+    assert resolve_concurrency("", 16) == MAX_SURYA_CONCURRENCY
 
     monkeypatch.setenv("KITABIM_OCR_ENGINE", "surya")
     assert resolve_concurrency(None, 16) == MAX_SURYA_CONCURRENCY
@@ -150,7 +130,7 @@ def test_resolve_concurrency_blank_engine_resolves_to_configured_default(monkeyp
 def test_resolve_concurrency_reads_env_when_requested_is_none(monkeypatch):
     monkeypatch.setenv("KITABIM_OCR_CONCURRENCY", "16")
     assert resolve_concurrency("surya", None) == MAX_SURYA_CONCURRENCY
-    assert resolve_concurrency("savitr", None) == 16
+    assert resolve_concurrency("other", None) == 16
 
 
 def test_get_configured_page_timeout_defaults_to_120(monkeypatch):
