@@ -53,7 +53,7 @@ def test_state_defaults_to_landing(tmp_path: Path):
     assert data["stage"] == "landing"
     assert data["error"] is None
     assert data["sessionId"] is None
-    assert data["engine"] == "surya"
+    assert data["engine"] == "paddleocr"
     assert data["concurrency"] == 4
     assert data["activeSessionId"] is None
     assert data["queuedSessions"] == []
@@ -978,7 +978,7 @@ def test_create_landing_app_clamps_surya_concurrency_to_four(tmp_path: Path):
 
 
 def test_api_set_concurrency(tmp_path: Path):
-    app = create_landing_app(MagicMock(), tmp_path / "work")
+    app = create_landing_app(MagicMock(), tmp_path / "work", engine="surya")
     client = TestClient(app)
 
     res = client.post("/api/concurrency", json={"concurrency": 3})

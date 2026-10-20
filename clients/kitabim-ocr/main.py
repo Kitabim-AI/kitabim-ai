@@ -82,9 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kitabim OCR Desktop Client")
     parser.add_argument(
         "--engine",
-        choices=["surya"],
+        choices=["paddleocr", "surya"],
         default=None,
-        help="OCR engine to use (default: configured in .env or 'surya')",
+        help="OCR engine to use (default: configured in .env or 'paddleocr')",
     )
     parser.add_argument(
         "--concurrency",
@@ -104,9 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     app_parser.add_argument(
         "--engine",
-        choices=["surya"],
+        choices=["paddleocr", "surya"],
         default=argparse.SUPPRESS,
-        help="OCR engine to use (default: configured in .env or 'surya')",
+        help="OCR engine to use (default: configured in .env or 'paddleocr')",
     )
     app_parser.add_argument(
         "--concurrency",

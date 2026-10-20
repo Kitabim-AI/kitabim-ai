@@ -2561,7 +2561,8 @@ _APP_HTML = """<!doctype html>
 
 def get_app_html(lang: str = "ug", engine: Optional[str] = None) -> str:
     i18n_json = get_translations_json(lang)
-    engine_label = "Surya OCR"
+    resolved_engine = (engine or get_configured_engine()).strip().lower()
+    engine_label = "PaddleOCR" if resolved_engine == "paddleocr" else "Surya OCR"
     return _APP_HTML.replace("__I18N_JSON__", i18n_json).replace(
         "__OCR_ENGINE_LABEL__", engine_label
     )

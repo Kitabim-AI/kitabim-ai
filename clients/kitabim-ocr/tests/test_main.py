@@ -18,6 +18,18 @@ def test_build_parser_app_command():
     assert args.command == "app"
 
 
+def test_parser_accepts_paddleocr_engine():
+    parser = main.build_parser()
+    args = parser.parse_args(["app", "--engine", "paddleocr"])
+    assert args.engine == "paddleocr"
+
+
+def test_parser_accepts_surya_engine():
+    parser = main.build_parser()
+    args = parser.parse_args(["app", "--engine", "surya"])
+    assert args.engine == "surya"
+
+
 def test_build_parser_preview_command():
     parser = main.build_parser()
     args = parser.parse_args(["preview", "workdir"])
