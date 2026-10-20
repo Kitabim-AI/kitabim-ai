@@ -22,14 +22,20 @@ from engine.config import (
 )
 
 
-def test_get_configured_engine_defaults_to_surya(monkeypatch):
+def test_get_configured_engine_defaults_to_paddleocr(monkeypatch):
     monkeypatch.delenv("KITABIM_OCR_ENGINE", raising=False)
     monkeypatch.delenv("OCR_ENGINE", raising=False)
     assert get_configured_engine() == DEFAULT_OCR_ENGINE
-    assert get_configured_engine() == "surya"
+    assert get_configured_engine() == "paddleocr"
 
 
 def test_get_configured_engine_from_kitabim_ocr_engine_env(monkeypatch):
+    monkeypatch.setenv("KITABIM_OCR_ENGINE", "paddleocr")
+    monkeypatch.delenv("OCR_ENGINE", raising=False)
+    assert get_configured_engine() == "paddleocr"
+
+
+def test_get_configured_engine_surya_override(monkeypatch):
     monkeypatch.setenv("KITABIM_OCR_ENGINE", "surya")
     monkeypatch.delenv("OCR_ENGINE", raising=False)
     assert get_configured_engine() == "surya"
@@ -37,14 +43,14 @@ def test_get_configured_engine_from_kitabim_ocr_engine_env(monkeypatch):
 
 def test_get_configured_engine_from_ocr_engine_env(monkeypatch):
     monkeypatch.delenv("KITABIM_OCR_ENGINE", raising=False)
-    monkeypatch.setenv("OCR_ENGINE", "SURYA")
-    assert get_configured_engine() == "surya"
+    monkeypatch.setenv("OCR_ENGINE", "PADDLEOCR")
+    assert get_configured_engine() == "paddleocr"
 
 
 def test_get_configured_engine_kitabim_takes_precedence(monkeypatch):
-    monkeypatch.setenv("KITABIM_OCR_ENGINE", "surya")
+    monkeypatch.setenv("KITABIM_OCR_ENGINE", "paddleocr")
     monkeypatch.setenv("OCR_ENGINE", "unsupported")
-    assert get_configured_engine() == "surya"
+    assert get_configured_engine() == "paddleocr"
 
 
 def test_get_configured_engine_invalid_raises_value_error(monkeypatch):
@@ -120,11 +126,13 @@ def test_resolve_concurrency_blank_engine_resolves_to_configured_default(monkeyp
     # assume 'surya' or skip clamping — this matches
     # get_recognition_predictor's own `engine or get_configured_engine()`.
     monkeypatch.delenv("KITABIM_OCR_ENGINE", raising=False)
-    assert resolve_concurrency(None, 16) == MAX_SURYA_CONCURRENCY
-    assert resolve_concurrency("", 16) == MAX_SURYA_CONCURRENCY
+    # Default is paddleocr, so requested 16 is not clamped to MAX_SURYA_CONCURRENCY
+    assert resolve_concurrency(None, 16) == 16
+    assert resolve_concurrency("", 16) == 16
 
     monkeypatch.setenv("KITABIM_OCR_ENGINE", "surya")
     assert resolve_concurrency(None, 16) == MAX_SURYA_CONCURRENCY
+    assert resolve_concurrency("", 16) == MAX_SURYA_CONCURRENCY
 
 
 def test_resolve_concurrency_reads_env_when_requested_is_none(monkeypatch):

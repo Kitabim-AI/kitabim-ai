@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 from typing import Literal
 
-DEFAULT_OCR_ENGINE = "surya"
-SUPPORTED_OCR_ENGINES = ("surya",)
-OcrEngineName = Literal["surya"]
+DEFAULT_OCR_ENGINE = "paddleocr"
+SUPPORTED_OCR_ENGINES = ("paddleocr", "surya")
+OcrEngineName = Literal["paddleocr", "surya"]
 DEFAULT_OCR_CONCURRENCY = 4
 MAX_SURYA_CONCURRENCY = 4
 DEFAULT_OCR_PAGE_TIMEOUT: float = 120.0
@@ -20,7 +20,7 @@ def get_configured_engine(default: str = DEFAULT_OCR_ENGINE) -> str:
     """Read configured OCR engine name from environment variables.
 
     Checks KITABIM_OCR_ENGINE first, then OCR_ENGINE.
-    Returns normalized lowercase engine name ('surya').
+    Returns normalized lowercase engine name ('paddleocr' or 'surya').
     """
     engine = (
         (
