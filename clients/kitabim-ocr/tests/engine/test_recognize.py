@@ -436,6 +436,98 @@ def test_is_phantom_bleed_through_block():
     assert svc._is_phantom_bleed_through_block(phantom_block, gray_arr) is True
 
 
+def test_suppress_bleed_through_cleans_scanned_page_with_high_bg_val():
+    import numpy as np
+
+    # Scanned page where background is 254 (due to scanner level / margins)
+    # but faint verso bleed-through is present at 215 across > 5% of the page
+    arr = np.full((100, 100), 254, dtype=np.uint8)
+    arr[10:30, 10:30] = 40  # Real text (400 pixels)
+    arr[40:70, 40:70] = 215  # Faint bleed-through (900 pixels = 9%)
+    img = Image.fromarray(arr, mode="L")
+
+    cleaned = svc.suppress_bleed_through(img)
+    clean_arr = np.array(cleaned)
+
+    # Real text remains dark
+    assert np.mean(clean_arr[10:30, 10:30]) < 60
+    # Bleed-through is eliminated to 255
+    assert np.all(clean_arr[40:70, 40:70] == 255)
+
+
+def test_suppress_bleed_through_strips_speckled_contours_and_keeps_solid_dots():
+    import numpy as np
+
+    arr = np.full((100, 100), 255, dtype=np.uint8)
+    # Solid 4x4 diacritical dot (real front-side ink)
+    arr[15:19, 15:19] = 10
+    # Faint background bleed-through region (> 3% of page in [160, 243])
+    arr[40:70, 40:70] = 210
+    # Isolated 1-pixel dark bleed-through speckles (luminance 90) surrounded by paper
+    arr[80, 80] = 90
+    arr[85, 85] = 85
+    arr[90, 90] = 95
+    img = Image.fromarray(arr, mode="L")
+
+    cleaned = svc.suppress_bleed_through(img)
+    clean_arr = np.array(cleaned)
+
+    # Solid 4x4 dot remains dark
+    assert np.mean(clean_arr[15:19, 15:19]) < 20
+    # Isolated 1px bleed-through speckles are washed out to 255
+    assert clean_arr[80, 80] == 255
+    assert clean_arr[85, 85] == 255
+    assert clean_arr[90, 90] == 255
+
+
+def test_is_phantom_bleed_through_block_ignores_border_overlap_with_neighbor():
+    import numpy as np
+
+    # Page background 254, real ink contrast ref ~ 180
+    gray_arr = np.full((200, 200), 254, dtype=np.uint8)
+    # Real text starts at y=100, and a few character tips graze y=98
+    gray_arr[100:130, 40:160] = 40
+    gray_arr[98:100, 50:55] = 50
+
+    # Phantom block bbox is [20, 20] to [180, 100], touching the character tips at the bottom edge
+    phantom_block = MagicMock()
+    phantom_block.polygon = [[20, 20], [180, 20], [180, 100], [20, 100]]
+    phantom_block.label = "SectionHeader"
+
+    # With edge inset, the border overlap does not contaminate the block's contrast
+    assert (
+        svc._is_phantom_bleed_through_block(
+            phantom_block, gray_arr, ink_contrast_reference=180.0
+        )
+        is True
+    )
+
+
+def test_page_ink_contrast_reference_resists_majority_phantom_blocks_on_sparse_page():
+    import numpy as np
+
+    # Sparse page (e.g. chapter end) with 1 real block (contrast ~214) and 2 phantom blocks (contrast ~34)
+    gray_arr = np.full((200, 200), 254, dtype=np.uint8)
+    gray_arr[10:40, 20:180] = 40  # 1 real block
+    gray_arr[70:100, 20:180] = 220  # phantom block 1
+    gray_arr[130:160, 20:180] = 220  # phantom block 2
+
+    b_real = MagicMock(polygon=[[20, 10], [180, 10], [180, 40], [20, 40]], label="Text")
+    b_ph1 = MagicMock(
+        polygon=[[20, 70], [180, 70], [180, 100], [20, 100]], label="SectionHeader"
+    )
+    b_ph2 = MagicMock(
+        polygon=[[20, 130], [180, 130], [180, 160], [20, 160]], label="Footnote"
+    )
+
+    paper = svc._page_paper_level(gray_arr)
+    ref = svc._page_ink_contrast_reference([b_real, b_ph1, b_ph2], gray_arr, paper)
+
+    assert svc._is_phantom_bleed_through_block(b_real, gray_arr, ref) is False
+    assert svc._is_phantom_bleed_through_block(b_ph1, gray_arr, ref) is True
+    assert svc._is_phantom_bleed_through_block(b_ph2, gray_arr, ref) is True
+
+
 def _light_print_block(order: int, y: int, html: str) -> MagicMock:
     block = MagicMock()
     block.reading_order = order
