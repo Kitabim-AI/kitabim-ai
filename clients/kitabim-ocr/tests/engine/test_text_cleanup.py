@@ -5,6 +5,7 @@ from engine.text_cleanup import (
     is_block_repetition_loop,
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
+    is_hallucinated_ghost_text,
     is_key_value_line,
     is_metadata_or_key_value_block,
     is_poem_block,
@@ -143,6 +144,40 @@ def test_is_hallucinated_arabic_block_false_for_genuine_uyghur():
         "يىراقتىن، يىراق كۆكتىن بىر جۈپ يۇلتۇزنى كۆردۈم. يۇلتۇز شۇنچە روشەن كۆرۈندى."
     )
     assert is_hallucinated_arabic_block(uyghur) is False
+
+
+def test_is_hallucinated_ghost_text_flags_pseudo_uyghur_bleed_through():
+    syllable_loop = (
+        "نەچەچە قىلتقامه - نەقەغ رختسملىملىم تىك مەنه قىلشىم لىخنامه\n"
+        "رامه مە ن قەغ نەقىمى املى مىقامه قىلىملىم مە ن قىلىمىم مىلىشى اميليم"
+    )
+    assert is_hallucinated_ghost_text(syllable_loop) is True
+
+    repeated_word_block = "نەچچە ئالىقاندا - نەشەر رىخى بىلىملىرى مىنىڭ ئەرشى بىلىملىرى لىغىنى بىلىملىرى . نەشەر رىخى بىلىملىرى"
+    assert is_hallucinated_ghost_text(repeated_word_block) is True
+
+
+def test_is_hallucinated_ghost_text_false_for_genuine_uyghur():
+    normal = (
+        "ئەي زېرەك، ئەقىللىق ئوغلۇم، ئىستىكىم ئەۋلادلىرىم ئۈچۈن تېگىشلىك سۆزلىرىمنى "
+        "يادىكار قالدۇرۇش ئىدى. ئەقلىم قارشى قوپۇپ ئېيتتىكى : ئەي يۈسۈپ دىققەت قىلغىن."
+    )
+    assert is_hallucinated_ghost_text(normal) is False
+
+    # Genuine line from Romance of the Three Kingdoms with '-ىشىش' reciprocal verbal nouns
+    reciprocal_line = (
+        "كېيىن، مۇقەررەر بىرلىشىش، ئۇزۇن بىرلىشىشتىن كېيىن، چوقۇم بۆلۈنۈش بولۇپ كەلدى"
+    )
+    assert is_hallucinated_ghost_text(reciprocal_line) is False
+
+    # Poem stanza with recurring refrain (radif) across lines
+    radif_poem = (
+        "ئىلىم بىلەن يورۇيدۇ بۇ گۈزەل جاھان،\n"
+        "ئەقىل بىلەن يورۇيدۇ بۇ گۈزەل جاھان،\n"
+        "ئەمگەك بىلەن يورۇيدۇ بۇ گۈزەل جاھان،\n"
+        "ھىممەت بىلەن يورۇيدۇ بۇ گۈزەل جاھان."
+    )
+    assert is_hallucinated_ghost_text(radif_poem) is False
 
 
 def test_is_degenerate_ocr_output_flags_multiword_loops():

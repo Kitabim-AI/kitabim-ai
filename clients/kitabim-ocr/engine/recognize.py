@@ -42,6 +42,7 @@ from engine.text_cleanup import (
     is_block_repetition_loop,
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
+    is_hallucinated_ghost_text,
     is_isolated_page_number,
 )
 
@@ -61,7 +62,9 @@ OCR_PAGE_ZOOM_FACTOR = get_configured_zoom_factor(DEFAULT_OCR_PAGE_ZOOM_FACTOR)
 
 FOOTNOTE_LABELS = frozenset({"Footnote"})
 DISCARD_LABELS = frozenset({"PageHeader"})
-_PHANTOM_CHECK_LABELS = frozenset({"Text", "PageFooter"})
+_PHANTOM_CHECK_LABELS = frozenset(
+    {"Text", "PageFooter", "SectionHeader", "Title", "Caption", "Footnote", "List-item"}
+)
 _ROW_FORMAT_LABELS = frozenset({"TableOfContents", "Table"})
 # A neighbour of a looping block is only swapped for its block-mode re-read
 # when that re-read recovers this much more text (i.e. the full-page pass
@@ -291,13 +294,19 @@ def _block_html_to_markdown(html: str, label: str | None = None) -> str:
 
 
 def suppress_bleed_through(img: Image.Image) -> Image.Image:
-    """Normalize paper background and suppress faint reverse-side bleed-through/show-through.
+    """Auto-detect page scan profile and adaptively suppress bleed-through or enhance faded ink.
 
-    In scanned physical book pages, printed text on the verso side shines through as
-    faint, low-contrast markings near the paper background level. Real printed ink
-    strokes are significantly darker (< 120-140 luminance).
-    By mapping intensities in the faint bleed-through range to clean white (255)
-    and stretching ink contrast, ghost text is eliminated before OCR recognition.
+    Detects three scan regimes from the page's background level (`bg_val`) and the
+    10th-percentile luminance of foreground ink pixels (`ink_p10`):
+    1. Clean digital/white page (`bg_val >= 248`, `faint_bleed_fraction < 0.014`,
+       `ink_p10 < 70`): returned untouched.
+    2. Light / faded scan (`ink_p10 >= 70`): foreground ink itself is mid-gray
+       (e.g. 90-215 luminance) while verso show-through sits near the paper level
+       (>= 226). Avoids speckle-mask erosion that would erase real light strokes,
+       clips only faint near-paper show-through, and stretches faded ink to dark contrast.
+    3. Dark-ink scan with bleed-through (`ink_p10 < 70`): front-side ink has a solid
+       dark core while reverse-side bleed-through appears as lighter markings/speckles;
+       applies speckle-mask filtering and background clipping to remove verso text.
     """
     if img.mode not in ("L", "RGB", "RGBA"):
         img = img.convert("RGB")
@@ -314,24 +323,85 @@ def suppress_bleed_through(img: Image.Image) -> Image.Image:
     bg_val = float(np.percentile(gray, 90))
     if bg_val < 140.0:
         return img
-    # For clean white / digital pages where background is already nearly pure white (>= 248.0),
-    # there is no bleed-through to suppress, and aggressive white_point clipping can erode thin
-    # anti-aliased font strokes (such as digits '6' and '0').
-    if bg_val >= 248.0:
+
+    # Measure foreground ink darkness from pixels in the foreground ink range (< 160),
+    # excluding background-adjacent verso bleed-through (>= 160).
+    ink_pixels = gray[gray < 160.0]
+    ink_p10 = float(np.percentile(ink_pixels, 10)) if ink_pixels.size > 0 else 0.0
+
+    # Light / faded scan regime: foreground ink core is mid-gray (>= 70) rather than black.
+    # Stretch faded strokes toward black and clip only very faint near-paper show-through
+    # without eroding thin gray letter loops/dots via speckle_mask.
+    if ink_p10 >= 70.0:
+        white_point = max(ink_p10 + 60.0, min(226.0, bg_val - 26.0))
+        black_point = max(35.0, min(95.0, ink_p10 - 20.0))
+        scale = 255.0 / max(1.0, white_point - black_point)
+        if arr.ndim == 3 and arr.shape[2] == 4:
+            rgb = arr[:, :, :3].astype(np.float32)
+            adjusted_rgb = np.clip((rgb - black_point) * scale, 0, 255).astype(np.uint8)
+            return Image.fromarray(np.dstack((adjusted_rgb, arr[:, :, 3])))
+        return Image.fromarray(
+            np.clip((arr.astype(np.float32) - black_point) * scale, 0, 255).astype(
+                np.uint8
+            )
+        )
+
+    # Check for faint bleed-through / show-through in the background-adjacent range.
+    # On clean digital/white pages, almost all pixels are pure background with only a tiny
+    # border of anti-aliased edge pixels (< 1.2%). Scanned pages with verso show-through have
+    # a larger pixel population in this faint range (typically 1.8%-6% depending on margin width).
+    faint_bleed_fraction = float(
+        np.mean((gray >= 160.0) & (gray <= max(160.0, bg_val - 12.0)))
+    )
+    if bg_val >= 248.0 and faint_bleed_fraction < 0.014:
         return img
 
-    white_point = max(175.0, min(235.0, bg_val - 38.0))
+    ink_shift = max(0.0, ink_p10 - 30.0)
+    white_point = max(
+        175.0,
+        min(200.0 + ink_shift * 0.6, bg_val - max(28.0, 50.0 - ink_shift * 0.5)),
+    )
     black_point = 40.0
+
+    # Scanned bleed-through often contains thin 1-pixel contour speckles with dark
+    # raw values (70-190) surrounded by white paper, whereas real front-side strokes
+    # and diacritical dots have a solid dark core (min_blur < speckle_threshold).
+    # Scale blur radius with image width so 1500px+ PDF renders match 1000px crops.
+    blur_radius = max(1.0, min(2.0, gray.shape[1] / 1000.0))
+    gray_u8 = Image.fromarray(np.clip(gray, 0, 255).astype(np.uint8))
+    b3_img = gray_u8.filter(ImageFilter.BoxBlur(blur_radius))
+    blur3 = np.array(b3_img, dtype=np.float32)
+    min_blur3 = np.array(b3_img.filter(ImageFilter.MinFilter(3)), dtype=np.float32)
+    speckle_threshold = max(115.0, ink_p10 + 75.0)
+    speckle_mask = min_blur3 >= speckle_threshold
 
     scale = 255.0 / (white_point - black_point)
     if arr.ndim == 3 and arr.shape[2] == 4:
         rgb = arr[:, :, :3].astype(np.float32)
-        adjusted_rgb = np.clip((rgb - black_point) * scale, 0, 255).astype(np.uint8)
+        effective_rgb = np.where(
+            speckle_mask[:, :, None], np.maximum(rgb, blur3[:, :, None]), rgb
+        )
+        adjusted_rgb = np.clip((effective_rgb - black_point) * scale, 0, 255).astype(
+            np.uint8
+        )
         adjusted = np.dstack((adjusted_rgb, arr[:, :, 3]))
+    elif arr.ndim == 3:
+        rgb = arr.astype(np.float32)
+        effective_rgb = np.where(
+            speckle_mask[:, :, None], np.maximum(rgb, blur3[:, :, None]), rgb
+        )
+        adjusted = np.clip((effective_rgb - black_point) * scale, 0, 255).astype(
+            np.uint8
+        )
     else:
-        adjusted = np.clip(
-            (arr.astype(np.float32) - black_point) * scale, 0, 255
-        ).astype(np.uint8)
+        effective_gray = np.where(
+            speckle_mask,
+            np.maximum(arr.astype(np.float32), blur3),
+            arr.astype(np.float32),
+        )
+        adjusted = np.clip((effective_gray - black_point) * scale, 0, 255).astype(
+            np.uint8
+        )
 
     return Image.fromarray(adjusted)
 
@@ -367,12 +437,19 @@ def _block_ink_contrast(
         if crop.size < 50:
             return None
 
-        # In sparse text blocks (e.g. 1-2 lines inside a large bounding box),
-        # ink pixels may make up less than 2% of the crop area. A fixed 5th percentile
-        # lands on the blank paper background, falsely classifying real text as bleed-through.
-        # Use an adaptive percentile that scales down with crop size to sample actual stroke pixels.
-        percentile_level = min(1.0, max(0.2, 50.0 / crop.size))
-        return paper_level - float(np.percentile(crop, percentile_level))
+        # Inset crop boundaries slightly to avoid sampling stray dark ink from
+        # adjacent text blocks whose ascenders/descenders graze the bounding box edges.
+        bh, bw = crop.shape[:2]
+        pad_y = min(6, int(bh * 0.05)) if bh >= 20 else 0
+        pad_x = min(6, int(bw * 0.03)) if bw >= 30 else 0
+        inner_crop = (
+            crop[pad_y : bh - pad_y, pad_x : bw - pad_x]
+            if (bh > 2 * pad_y and bw > 2 * pad_x)
+            else crop
+        )
+
+        percentile_level = min(1.0, max(0.5, 50.0 / inner_crop.size))
+        return paper_level - float(np.percentile(inner_crop, percentile_level))
     except Exception:
         return None
 
@@ -384,15 +461,16 @@ def _page_paper_level(image_gray: np.ndarray) -> float:
 def _page_ink_contrast_reference(
     blocks: list[Any], image_gray: np.ndarray, paper_level: float
 ) -> float:
-    """Typical ink contrast on this page: the median block contrast, so a light
-    (faded) print run is judged against its own ink, not against dark print."""
+    """Typical ink contrast on this page: the 75th-percentile block contrast, so a
+    light (faded) print run is judged against its own ink while sparse pages with
+    multiple bleed-through blocks still anchor to real front-side ink."""
     contrasts = [
         c
         for b in blocks
         if (c := _block_ink_contrast(b, image_gray, paper_level)) is not None
     ]
     if contrasts:
-        return float(np.median(contrasts))
+        return float(np.percentile(contrasts, 75))
     return paper_level - float(np.percentile(image_gray, 0.5))
 
 
@@ -680,6 +758,7 @@ def _process_page_sync(
                 txt.strip()
                 and not is_block_repetition_loop(txt)
                 and not is_hallucinated_arabic_block(txt)
+                and not is_hallucinated_ghost_text(txt)
             ):
                 blocks.append(txt)
         else:
@@ -708,6 +787,7 @@ def _process_page_sync(
                     txt.strip()
                     and not is_block_repetition_loop(txt)
                     and not is_hallucinated_arabic_block(txt)
+                    and not is_hallucinated_ghost_text(txt)
                 ):
                     blocks.append(txt)
 
@@ -721,6 +801,7 @@ def _process_page_sync(
                 txt.strip()
                 and not is_block_repetition_loop(txt)
                 and not is_hallucinated_arabic_block(txt)
+                and not is_hallucinated_ghost_text(txt)
             ):
                 footnotes.append(txt)
             continue
@@ -728,10 +809,12 @@ def _process_page_sync(
         if getattr(block, "label", "") != "Text":
             flush_group()
             txt = _block_html_to_markdown(block.html, block.label)
+            is_table_like = block.label in _ROW_FORMAT_LABELS
             if (
                 txt.strip()
                 and not is_block_repetition_loop(txt)
                 and not is_hallucinated_arabic_block(txt)
+                and (is_table_like or not is_hallucinated_ghost_text(txt))
             ):
                 blocks.append(txt)
             continue
