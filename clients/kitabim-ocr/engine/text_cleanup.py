@@ -454,6 +454,59 @@ def is_hallucinated_arabic_block(text: str) -> bool:
     return False
 
 
+def is_hallucinated_ghost_text(text: str) -> bool:
+    """Detect if a block is pseudo-Uyghur hallucination from bleed-through or visual noise.
+
+    When Surya decodes faint show-through, it often hallucinates garbled pseudo-Uyghur words
+    with severe internal syllable repetition loops (e.g. 'رختسملىملىم', 'قىلىمىلىم', 'رەسمىلىملىم')
+    or heavily repeated words across a short block (e.g. 4 copies of 'بىلىملىرى' in 15 words).
+    """
+    if not text:
+        return False
+    words = [
+        re.sub(r"^[^\w\u0600-\u06FF]+|[^\w\u0600-\u06FF]+$", "", w)
+        for w in text.split()
+    ]
+    words = [w for w in words if len(w) >= 2]
+    if len(words) < 4:
+        return False
+
+    # Check 1: Syllable repetition loops inside words (e.g. ملىملىم, قىلىملىم, نەچەچە)
+    # Require a 3-letter repeat (e.g. لىملىم) or a 3x repeat of 2-3 letters, or non-standard
+    # Arabic/Persian final 'ه' (U+0647) combined with a 2-letter repeat, so genuine Uyghur
+    # reciprocal verbs (-ىشىش / -ۈشۈش like 'بىرلىشىش') and '-نىنى' suffixes are never flagged.
+    repetition_word_count = 0
+    for w in words:
+        if re.search(r"([\u0600-\u06FF]{3})\1", w):
+            repetition_word_count += 1
+        elif re.search(r"([\u0600-\u06FF]{2,3})[\u0600-\u06FF]*\1\1", w):
+            repetition_word_count += 1
+        elif re.search(r"([\u0600-\u06FF]{2})\1", w) and not re.search(
+            r"(?:ىشىش|ۈشۈش|نىنى|دادا|قارار)", w
+        ):
+            repetition_word_count += 1
+
+    if repetition_word_count >= 2 and (repetition_word_count / len(words)) >= 0.20:
+        return True
+
+    # Poetic verses legitimately repeat refrain (radif) words across lines.
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if len(lines) >= 2 and is_poem_block(lines):
+        return False
+
+    # Check 2: Heavy word duplication in short/medium blocks
+    counts = Counter(words)
+    _, top_count = counts.most_common(1)[0]
+    if top_count >= 3 and (top_count / len(words)) >= 0.22:
+        return True
+
+    # Check 3: Abnormally low vocabulary diversity
+    if len(words) >= 8 and (len(counts) / len(words)) < 0.60:
+        return True
+
+    return False
+
+
 _MAX_SANE_OCR_CHARS = 10000
 
 

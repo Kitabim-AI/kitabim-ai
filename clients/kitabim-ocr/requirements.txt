@@ -1,4 +1,4 @@
-surya-ocr==0.22.1
+surya-ocr==0.23.0
 pymupdf
 pillow
 beautifulsoup4
