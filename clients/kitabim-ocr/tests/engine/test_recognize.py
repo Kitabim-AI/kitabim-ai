@@ -1389,6 +1389,73 @@ def test_suppress_bleed_through_preserves_clean_white_pages():
     assert processed is img
 
 
+def test_suppress_bleed_through_enhances_light_faded_scan_without_eroding_strokes():
+    import numpy as np
+
+    # Light-printed scan: paper=254, darkest ink strokes=110, thin letter loops=175,
+    # faint reverse-side show-through=238
+    arr = np.full((200, 200, 3), 254, dtype=np.uint8)
+    arr[30:50, 30:120] = 110  # main faded ink core (ink_p10 = 110 >= 70)
+    arr[60:62, 40:100] = 175  # thin 2px letter loop / connecting stroke
+    arr[120:140, 40:140] = 238  # faint reverse-side show-through
+
+    processed = svc.suppress_bleed_through(Image.fromarray(arr))
+    out = np.array(processed)
+
+    # Faded main ink (110) is darkened significantly toward black (< 40)
+    assert float(out[40, 60, 0]) < 40.0
+    # Thin letter loop (175) is preserved and darkened (< 160), NOT erased to 255
+    assert float(out[60, 70, 0]) < 160.0
+    # Faint reverse-side show-through (238) is clipped to pure white (255)
+    assert int(out[130, 80, 0]) == 255
+
+
+def test_suppress_bleed_through_removes_verso_on_dark_ink_scan():
+    import numpy as np
+
+    # Dark-ink scan with heavy verso bleed-through: paper=252, front ink=10,
+    # verso bleed-through=205, and 1px dark speckle=125
+    arr = np.full((200, 200, 3), 252, dtype=np.uint8)
+    arr[30:50, 30:120] = 10  # solid dark front-side ink (ink_p10 = 10 < 70)
+    arr[100:130, 40:150] = 205  # reverse-side bleed-through band
+    arr[160, 160] = 125  # isolated 1px bleed-through speckle
+
+    processed = svc.suppress_bleed_through(Image.fromarray(arr))
+    out = np.array(processed)
+
+    # Dark front-side ink stays pure black (0)
+    assert int(out[40, 60, 0]) == 0
+    # Reverse-side bleed-through (205) and 1px speckle (125) are suppressed to clean white (255)
+    assert int(out[115, 80, 0]) == 255
+    assert int(out[160, 160, 0]) == 255
+
+
+def test_suppress_bleed_through_real_fixtures():
+    from pathlib import Path
+    import numpy as np
+
+    repo_root = Path(__file__).resolve().parents[4]
+    bleed_path = repo_root / "tests" / "fixtures" / "bleed_through_page.png"
+    light_path = repo_root / "tests" / "fixtures" / "light_page.png"
+    if not (bleed_path.exists() and light_path.exists()):
+        pytest.skip("Real scan fixtures not present")
+
+    # 1. bleed_through_page.png: top bleed-through margin (y=30..180) is washed out toward white
+    bleed_img = Image.open(bleed_path)
+    bleed_out = np.array(svc.suppress_bleed_through(bleed_img).convert("L"))
+    assert float(np.mean(bleed_out[30:180, 100:900] >= 250)) > 0.97
+
+    # 2. light_page.png: faded ink strokes are darkened (not erased) while blank gap stays clean white
+    light_img = Image.open(light_path)
+    light_raw = np.array(light_img.convert("L"))
+    light_out = np.array(svc.suppress_bleed_through(light_img).convert("L"))
+    # Faded foreground ink pixels (originally 100..150, mean ~128) are darkened significantly (< 75)
+    faded_ink_mask = (light_raw >= 100) & (light_raw <= 150)
+    assert float(np.mean(light_out[faded_ink_mask])) < 75.0
+    # Faint show-through in the middle gap (y=1500..1850) is clipped to clean white
+    assert float(np.mean(light_out[1500:1850, 200:1400] >= 250)) > 0.99
+
+
 def test_block_ink_contrast_sparse_text_block():
     import numpy as np
 

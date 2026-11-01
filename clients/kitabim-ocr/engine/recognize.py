@@ -294,13 +294,19 @@ def _block_html_to_markdown(html: str, label: str | None = None) -> str:
 
 
 def suppress_bleed_through(img: Image.Image) -> Image.Image:
-    """Normalize paper background and suppress faint reverse-side bleed-through/show-through.
+    """Auto-detect page scan profile and adaptively suppress bleed-through or enhance faded ink.
 
-    In scanned physical book pages, printed text on the verso side shines through as
-    faint, low-contrast markings near the paper background level. Real printed ink
-    strokes are significantly darker (< 120-140 luminance).
-    By mapping intensities in the faint bleed-through range to clean white (255)
-    and stretching ink contrast, ghost text is eliminated before OCR recognition.
+    Detects three scan regimes from the page's background level (`bg_val`) and the
+    10th-percentile luminance of foreground ink pixels (`ink_p10`):
+    1. Clean digital/white page (`bg_val >= 248`, `faint_bleed_fraction < 0.014`,
+       `ink_p10 < 70`): returned untouched.
+    2. Light / faded scan (`ink_p10 >= 70`): foreground ink itself is mid-gray
+       (e.g. 90-215 luminance) while verso show-through sits near the paper level
+       (>= 226). Avoids speckle-mask erosion that would erase real light strokes,
+       clips only faint near-paper show-through, and stretches faded ink to dark contrast.
+    3. Dark-ink scan with bleed-through (`ink_p10 < 70`): front-side ink has a solid
+       dark core while reverse-side bleed-through appears as lighter markings/speckles;
+       applies speckle-mask filtering and background clipping to remove verso text.
     """
     if img.mode not in ("L", "RGB", "RGBA"):
         img = img.convert("RGB")
@@ -318,6 +324,28 @@ def suppress_bleed_through(img: Image.Image) -> Image.Image:
     if bg_val < 140.0:
         return img
 
+    # Measure foreground ink darkness from pixels in the foreground ink range (< 160),
+    # excluding background-adjacent verso bleed-through (>= 160).
+    ink_pixels = gray[gray < 160.0]
+    ink_p10 = float(np.percentile(ink_pixels, 10)) if ink_pixels.size > 0 else 0.0
+
+    # Light / faded scan regime: foreground ink core is mid-gray (>= 70) rather than black.
+    # Stretch faded strokes toward black and clip only very faint near-paper show-through
+    # without eroding thin gray letter loops/dots via speckle_mask.
+    if ink_p10 >= 70.0:
+        white_point = max(ink_p10 + 60.0, min(226.0, bg_val - 26.0))
+        black_point = max(35.0, min(95.0, ink_p10 - 20.0))
+        scale = 255.0 / max(1.0, white_point - black_point)
+        if arr.ndim == 3 and arr.shape[2] == 4:
+            rgb = arr[:, :, :3].astype(np.float32)
+            adjusted_rgb = np.clip((rgb - black_point) * scale, 0, 255).astype(np.uint8)
+            return Image.fromarray(np.dstack((adjusted_rgb, arr[:, :, 3])))
+        return Image.fromarray(
+            np.clip((arr.astype(np.float32) - black_point) * scale, 0, 255).astype(
+                np.uint8
+            )
+        )
+
     # Check for faint bleed-through / show-through in the background-adjacent range.
     # On clean digital/white pages, almost all pixels are pure background with only a tiny
     # border of anti-aliased edge pixels (< 1.2%). Scanned pages with verso show-through have
@@ -328,19 +356,24 @@ def suppress_bleed_through(img: Image.Image) -> Image.Image:
     if bg_val >= 248.0 and faint_bleed_fraction < 0.014:
         return img
 
-    white_point = max(175.0, min(200.0, bg_val - 50.0))
+    ink_shift = max(0.0, ink_p10 - 30.0)
+    white_point = max(
+        175.0,
+        min(200.0 + ink_shift * 0.6, bg_val - max(28.0, 50.0 - ink_shift * 0.5)),
+    )
     black_point = 40.0
 
     # Scanned bleed-through often contains thin 1-pixel contour speckles with dark
     # raw values (70-190) surrounded by white paper, whereas real front-side strokes
-    # and diacritical dots have a solid dark core (min_blur < 115).
+    # and diacritical dots have a solid dark core (min_blur < speckle_threshold).
     # Scale blur radius with image width so 1500px+ PDF renders match 1000px crops.
     blur_radius = max(1.0, min(2.0, gray.shape[1] / 1000.0))
     gray_u8 = Image.fromarray(np.clip(gray, 0, 255).astype(np.uint8))
     b3_img = gray_u8.filter(ImageFilter.BoxBlur(blur_radius))
     blur3 = np.array(b3_img, dtype=np.float32)
     min_blur3 = np.array(b3_img.filter(ImageFilter.MinFilter(3)), dtype=np.float32)
-    speckle_mask = min_blur3 >= 115.0
+    speckle_threshold = max(115.0, ink_p10 + 75.0)
+    speckle_mask = min_blur3 >= speckle_threshold
 
     scale = 255.0 / (white_point - black_point)
     if arr.ndim == 3 and arr.shape[2] == 4:
