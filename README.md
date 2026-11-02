@@ -327,6 +327,37 @@ Production releases use automated GCP Compute Engine deployment scripts.
 
 ---
 
+## Subdirectories & System Boundaries
+
+- [apps](./apps/README.md) - Client web applications including the React 19 single-page application (`apps/frontend`).
+- [clients](./clients/README.md) - Standalone desktop OCR clients (`clients/kitabim-ocr`) running local Surya OCR inference.
+- [packages](./packages/README.md) - Shared monorepo packages, including the core backend library (`packages/backend-core`) and shared TypeScript interfaces (`packages/shared`).
+- [services](./services/README.md) - Core backend runtime services: the FastAPI HTTP service (`services/backend`) and the ARQ background worker (`services/worker`).
+- [deploy](./deploy/README.md) - Local Docker Compose and production GCP deployment automation scripts.
+- [docker](./docker/README.md) - Container initialization assets including PostgreSQL database schema and vector extension configurations.
+- [diagrams](./diagrams/README.md) - Interactive Archify architecture, pipeline sequence, workflow, and lifecycle HTML diagrams.
+
+## Global Invariants
+
+- **PostgreSQL as Source of Truth**: All book milestone states, page contents, users, and relational data reside in PostgreSQL with strict transactional guarantees.
+- **Pipeline Order & Idempotency**: Document processing enforces ordered pipeline milestones (`OCR → Chunking → Embedding → Spell-Check → Summary`), with stage handoffs executed via transactional outbox (`pipeline_events`).
+- **Prompt Language Policy**: All LLM system prompts in the codebase are authored strictly in English with Uyghur Arabic script output directives.
+- **Authentication & RBAC**: API endpoints enforce JWT authentication and role-based permissions (`admin`, `editor`, `reader`), restricting unauthenticated guest readers to preview boundaries.
+
+## Global Side Effects
+
+- **PostgreSQL**: Writes and updates books, pages, chunks, embeddings, vector indexes, and application configurations.
+- **Redis**: Maintains distributed locks (`MultiPageLock`), sliding window rate limiters, user session caches, and ARQ job queues.
+- **Google Cloud Storage / Local Data**: Stores uploaded PDF documents, rendered page image PNGs, and book cover files.
+- **Google Gemini API**: Dispatches outbound requests for multimodal OCR extraction, text embeddings, and streaming RAG conversational responses.
+
+## System Verification
+
+- Backend & Shared Core: `pytest packages/backend-core/tests services/backend/tests services/worker/tests`
+- Frontend: `npm --prefix apps/frontend test`
+
+---
+
 ## Documentation Index
 
 Detailed architectural specs, milestone state machine details, and stage documentation are located in `docs/main/` and `diagrams/`:

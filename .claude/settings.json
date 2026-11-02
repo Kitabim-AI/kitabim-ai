@@ -8,5 +8,16 @@
       "Read(//usr/local/bin/**)",
       "Bash(__NEW_LINE_a33d6a143773278c__ /Applications/Postgres.app/Contents/Versions/latest/bin/psql \"postgresql://omarjan@localhost:5432/kitabim_ai\" -c \":*)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "egm": {
+      "source": {
+        "source": "github",
+        "repo": "google/elephant-goldfish-model"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "egm@egm": true
   }
 }

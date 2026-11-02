@@ -1,100 +1,76 @@
-# Database Migrations
+# Database Migrations (`migrations`)
 
-This directory contains SQL migration scripts for the Kitabim AI database.
+## Overview
+Provides sequential SQL migration scripts and rollbacks for the Kitabim AI PostgreSQL database schema, including tables, indexes, extensions (such as `pg_trgm` and `vector`), and initial system configuration seeds.
 
-## Migration Naming Convention
+## Interface
+- `[001_initial_baseline.sql:books]` — Book metadata, pipeline milestones, and processing flags.
+- `[001_initial_baseline.sql:pages]` — Per-page OCR text, status, page offsets, and milestone states.
+- `[001_initial_baseline.sql:chunks]` — Extracted text chunks with vector embeddings.
+- `[001_initial_baseline.sql:users]` — User accounts, authentication providers, and role access.
+- `[001_initial_baseline.sql:refresh_tokens]` — Hashed JWT refresh tokens and expiration metadata.
+- `[001_initial_baseline.sql:system_configs]` — Key-value system configuration store.
+- `[001_initial_baseline.sql:user_chat_usage]` — Daily chat usage quota tracking per user/IP.
+- `[001_initial_baseline.sql:book_summaries]` — Book summaries and chapter abstracts.
+- `[001_initial_baseline.sql:auto_correct_rules]` — Uyghur spell-check auto-correct mappings.
+- `[001_initial_baseline.sql:page_spell_issues]` — Logged spell check issues per page.
+- `[041_add_agent_metrics_to_rag_evaluations.sql:rag_evaluations]` — RAG query evaluation and metrics.
+- `[058_rename_dictionary_to_words_and_create_new_dictionary.sql:words]` — Base Uyghur lexicon vocabulary.
+- `[058_rename_dictionary_to_words_and_create_new_dictionary.sql:dictionary]` — Multi-dictionary entry definitions.
+- `[059_create_synonyms_table.sql:synonyms]` — Uyghur synonym word pairs.
+- `[060_create_history_dictionary.sql:history_dictionary]` — Historical terms, definitions, and aliases.
+- `[062_create_names_dictionary.sql:names_dictionary]` — Uyghur proper name lexicon.
+- `[064_create_english_uyghur_dictionary.sql:english_uyghur_dictionary]` — English-Uyghur bilingual dictionary.
+- `[067_create_quran_table.sql:quran]` — Quran verses with translations and vector embeddings.
+- `[070_add_batch_ocr_jobs.sql:batch_ocr_jobs]` — Asynchronous batch OCR tracking jobs.
+- `[071_add_batch_embedding_jobs.sql:batch_embedding_jobs]` — Batch embedding generation jobs.
+- `[072_add_conversations.sql:conversations]` — User chat conversation threads.
+- `[072_add_conversations.sql:conversation_messages]` — Individual messages within conversation threads.
+- `[075_add_entity_resolution_tables.sql:graph_resolution_queue]` — Entity resolution queue for claiming Neo4j nodes.
+- `[075_add_entity_resolution_tables.sql:graph_resolution_reviews]` — Admin review queue for ambiguous resolution cases.
+- `[075_add_entity_resolution_tables.sql:graph_merge_log]` — Pre-merge snapshot log enabling unmerge.
+- `[078_create_batch_history_extraction_jobs.sql:batch_history_extraction_jobs]` — Batch history extraction jobs.
+- `[079_create_history_dictionary_staging.sql:history_dictionary_staging]` — Staging table for extracted history terms.
+- `[080_add_history_facts.sql:history_facts]` — Extracted historical facts and citations.
+- `[091_add_batch_llm_spell_check_jobs.sql:batch_llm_spell_check_jobs]` — Batch LLM spell check jobs.
+- `[095_create_reading_progress.sql:reading_progress]` — User reading progress tracking.
+- `[096_create_bookmarks.sql:bookmarks]` — User bookmarked pages.
 
+## Invariants
+- `[001_initial_baseline.sql:books]` — Migrations `002`-`033` are squashed into `001_initial_baseline.sql`; active sequential numbering begins at `034`.
+- Migration files follow sequential naming pattern `NNN_description.sql` and rollback pattern `NNN_rollback_description.sql`.
+- All migration DDL/DML scripts must be wrapped in atomic transaction blocks (`BEGIN; ... COMMIT;`).
+
+## Side Effects
+- Mutates PostgreSQL schema definitions, constraints, tables, columns, and indexes.
+- Inserts or deletes default configuration and seed data rows.
+
+## Verification
+- Run: `pytest packages/backend-core/tests`
+
+## Migration Guide & Operations
+
+### Migration Naming Convention
 Migrations follow the pattern: `NNN_description.sql`
 - `NNN` = Sequential migration number (e.g., 089)
 - `description` = Brief description of the migration
 
-Note: migrations `002`-`033` no longer exist as individual files. They were
-squashed into `001_initial_baseline.sql` (a `pg_dump` schema snapshot) on
-2026-03-20. The next migration after the baseline is `034`, so numbering
-jumps from `001` straight to `034`.
+### Running Migrations
 
-## Running Migrations
-
-### Local Development
-
+#### Local Development
 ```bash
 # Run a specific migration on local database
 psql -h localhost -p 5432 -U omarjan -d kitabim-ai -f packages/backend-core/migrations/089_remove_dead_system_configs.sql
 ```
 
-### Production
-
-**Option 1: Using the migration runner script (recommended)**
-
+#### Production
+Using the migration runner script:
 ```bash
 # From project root
 ./scripts/run_migration_prod.sh 089
 ```
 
-This script will:
-- Load production database credentials from `deploy/gcp/.env`
-- Show migration preview
-- Ask for confirmation
-- Run the migration
-- Show results
-
-**Option 2: Manual execution**
-
-```bash
-# Copy migration to production server
-gcloud compute scp packages/backend-core/migrations/089_remove_dead_system_configs.sql \
-  kitabim-prod:/tmp/ --zone=us-south1-c
-
-# SSH to production
-gcloud compute ssh kitabim-prod --zone=us-south1-c
-
-# Run migration
-PGPASSWORD='<password>' psql -h <CLOUD_SQL_PRIVATE_IP> -p 5432 -U kitabim -d kitabim-ai \
-  -f /tmp/089_remove_dead_system_configs.sql
-
-# Clean up
-rm /tmp/089_remove_dead_system_configs.sql
-exit
-```
-
-**Option 3: Via Docker container**
-
-```bash
-# SSH to production
-gcloud compute ssh kitabim-prod --zone=us-south1-c
-
-# Run via backend container
-cd /opt/kitabim
-docker compose -f deploy/gcp/docker-compose.yml exec backend \
-  psql postgresql://kitabim:<password>@<CLOUD_SQL_PRIVATE_IP>:5432/kitabim-ai \
-  -f /app/packages/backend-core/migrations/089_remove_dead_system_configs.sql
-```
-
-## Recent Migrations
-
-This section is illustrative, not exhaustive — see the directory listing for
-the full, current set of migrations.
-
-### 089_remove_dead_system_configs.sql
-**Date:** 2026-08-16
-**Purpose:** Remove dead `system_configs` rows left over from superseded features
-
-**Rollback:** See `089_rollback_remove_dead_system_configs.sql`
-
-### 088_seed_entity_semantic_matching_config.sql
-**Date:** 2026-08-15
-**Purpose:** Seed config keys for entity semantic matching (default off)
-
-**Rollback:** See `088_rollback_seed_entity_semantic_matching_config.sql`
-
-### 086_add_aliases_to_history_dictionary.sql
-**Date:** 2026-08-09
-**Purpose:** Add an `aliases` column to `history_dictionary` for alternate term names
-
-**Rollback:** See `086_rollback_add_aliases_to_history_dictionary.sql`
-
-## Rollback Migrations
-
+### Rollback Migrations
 Rollback migrations follow the pattern: `NNN_rollback_description.sql`
 
 To rollback a migration:
@@ -106,65 +82,3 @@ psql -h localhost -p 5432 -U omarjan -d kitabim-ai \
 # Production
 ./scripts/run_migration_prod.sh 089_rollback
 ```
-
-**Important:** Not all migrations can be rolled back. Some operations (like `TRUNCATE`) are irreversible. Always check the rollback script comments for limitations.
-
-## Best Practices
-
-1. **Always test locally first** before running on production
-2. **Backup production database** before major migrations
-3. **Use transactions** (BEGIN/COMMIT) to ensure atomicity
-4. **Add comments** explaining the purpose and impact
-5. **Create rollback scripts** when possible
-6. **Use RAISE NOTICE** to show progress and results
-7. **Check migration number** to avoid conflicts (use next sequential number)
-
-## Creating New Migrations
-
-1. Find the latest migration number (note: `ls | tail -1` alone will
-   incorrectly return this `README.md` since it sorts after numeric
-   filenames — restrict the glob to `*.sql`):
-   ```bash
-   ls -1 packages/backend-core/migrations/*.sql | tail -1
-   ```
-
-2. Create new migration with next number:
-   ```bash
-   touch packages/backend-core/migrations/090_your_description.sql
-   ```
-
-3. Add migration header:
-   ```sql
-   -- Migration: 090_your_description.sql
-   -- Description: What this migration does
-   -- Author: Your Name
-   -- Date: YYYY-MM-DD
-
-   BEGIN;
-
-   -- Your SQL here
-
-   COMMIT;
-   ```
-
-4. If this migration adds/changes a table, follow the repo-wide workflow
-   order: migration file first, ORM model second, repository third,
-   endpoint last (see project `CLAUDE.md`).
-
-5. Test locally, then run on production
-
-## Troubleshooting
-
-**Migration fails partway through:**
-- If wrapped in `BEGIN/COMMIT`, changes are automatically rolled back
-- Check error message for specific issue
-- Fix and re-run
-
-**Migration already run:**
-- Migrations are not tracked automatically
-- Keep a log of which migrations have been applied
-- Consider adding a `schema_migrations` tracking table
-
-**Permission errors:**
-- Ensure database user has necessary permissions
-- Some operations (like `TRUNCATE`) require table ownership
