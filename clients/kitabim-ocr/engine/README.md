@@ -34,9 +34,10 @@ Core OCR processing, layout analysis, dictionary validation, queue scheduling, a
 - `[text_cleanup.py:clean_uyghur_text]`: Sanitizes OCR output, strips isolated page numbers, and normalizes typography.
 - `[text_cleanup.py:normalize_uyghur_chars]`: Normalizes unicode codepoints for Uyghur Arabic characters.
 - `[text_cleanup.py:is_toc_page]`: Evaluates if page text represents a Table of Contents.
-- `[text_cleanup.py:is_block_repetition_loop]`: Identifies degenerate looping hallucinations.
-- `[text_cleanup.py:is_hallucinated_arabic_block]`: Identifies hallucinated non-Uyghur Arabic vocabulary.
-- `[text_cleanup.py:is_degenerate_ocr_output]`: Enforces upper bounds on sane character counts.
+- `[text_cleanup.py:is_block_repetition_loop]`: Identifies degenerate looping hallucinations while preserving punctuated literary vocalizations and table rows.
+- `[text_cleanup.py:is_hallucinated_arabic_block]`: Identifies unvocalized non-Uyghur Arabic bleed-through hallucinations while preserving Turkic consonants and vocalized quotations.
+- `[text_cleanup.py:is_hallucinated_ghost_text]`: Identifies pseudo-Uyghur bleed-through hallucinations with garbled internal syllable loops or extreme content-word duplication.
+- `[text_cleanup.py:is_degenerate_ocr_output]`: Enforces upper bounds on character counts and catches per-block or consecutive-line runaway loops without rejecting structured quiz/form pages.
 - `[workdir.py:PageState]`: Dataclass modeling individual page OCR results and review state.
 - `[workdir.py:OcrWorkDir]`: Local filesystem manager for session state, `book.json`, `pages.json`, and rendered PNGs.
 

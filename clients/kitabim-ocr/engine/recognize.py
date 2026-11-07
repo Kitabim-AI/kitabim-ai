@@ -177,9 +177,10 @@ def is_page_blank(pix: fitz.Pixmap) -> bool:
     return float(np.var(arr)) < _BLANK_PAGE_VARIANCE_THRESHOLD
 
 
-_HEADING_TAG_RE = re.compile(r"^<h([1-6])\b[^>]*>", re.IGNORECASE)
 _DOT_LEADER_RE = re.compile(r"[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,}")
-_ROW_NUMBER_RE = re.compile(r"\d{1,4}")
+_ROW_NUMBER_RE = re.compile(r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}")
+_LEADING_DOT_LEADER_RE = re.compile(r"^\s*(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,})")
+_TRAILING_DOT_LEADER_RE = re.compile(r"(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,})\s*$")
 
 
 def _html_to_text(html: str) -> str:
@@ -187,9 +188,27 @@ def _html_to_text(html: str) -> str:
 
 
 def _format_table_row(item_text: str) -> str:
-    number_match = _ROW_NUMBER_RE.search(item_text)
-    if not number_match:
+    matches = list(_ROW_NUMBER_RE.finditer(item_text))
+    if not matches:
         return item_text.strip()
+    if len(matches) == 1:
+        number_match = matches[0]
+    else:
+        first, last = matches[0], matches[-1]
+        at_trailing_edge = not item_text[last.end() :].strip(" .·•-|")
+        at_leading_edge = not item_text[: first.start()].strip(" .·•-|")
+        if at_trailing_edge and _TRAILING_DOT_LEADER_RE.search(
+            item_text[: last.start()]
+        ):
+            number_match = last
+        elif at_leading_edge and _LEADING_DOT_LEADER_RE.search(
+            item_text[first.end() :]
+        ):
+            number_match = first
+        elif at_trailing_edge:
+            number_match = last
+        else:
+            number_match = first
     value = number_match.group()
     title = item_text[: number_match.start()] + " " + item_text[number_match.end() :]
     title = _DOT_LEADER_RE.sub(" ", title)
@@ -227,17 +246,21 @@ def _list_html_to_lines(html: str) -> str:
 
 
 def _mixed_list_html_to_markdown(html: str, format_rows: bool) -> str:
-    """Render a block containing lists/tables, keeping any paragraphs around them.
+    """Render a block containing headings/lists/tables, keeping paragraphs around them.
 
-    Surya can return a whole page as one ListGroup block (prose paragraphs
-    followed by a numbered list), so each top-level element is rendered in
-    order instead of extracting only the list items.
+    Surya can return a whole page or section as one block (e.g. prose paragraphs
+    followed by a numbered list, or a heading followed by body paragraphs), so
+    each top-level element is rendered in order instead of collapsing them.
     """
     soup = BeautifulSoup(html, "html.parser")
     parts: list[str] = []
     for node in soup.children:
         if isinstance(node, str):
             text = node.strip()
+        elif node.name in ("h1", "h2", "h3", "h4", "h5", "h6"):
+            level = min(int(node.name[1]), 6)
+            heading_text = _html_to_text(str(node))
+            text = f"{'#' * level} {heading_text}" if heading_text else ""
         elif node.name in ("ol", "ul", "table") or node.find(["li", "tr"]):
             text = (
                 _html_rows_to_markdown(str(node))
@@ -256,18 +279,44 @@ def _mixed_list_html_to_markdown(html: str, format_rows: bool) -> str:
 
 
 def _block_html_to_markdown(html: str, label: str | None = None) -> str:
-    heading_match = _HEADING_TAG_RE.match(html.strip())
-    if heading_match:
-        level = min(int(heading_match.group(1)), 6)
-        return f"{'#' * level} {_html_to_text(html)}"
-    if "<li" in html or "<tr" in html:
+    stripped = html.strip()
+    if not stripped:
+        return ""
+
+    soup = BeautifulSoup(stripped, "html.parser")
+    root: Any = soup
+    top_tags = [n for n in root.children if getattr(n, "name", None) is not None]
+    top_texts = [n.strip() for n in root.children if isinstance(n, str) and n.strip()]
+    if len(top_tags) == 1 and not top_texts and top_tags[0].name == "div":
+        root = top_tags[0]
+        top_tags = [n for n in root.children if getattr(n, "name", None) is not None]
+        top_texts = [
+            n.strip() for n in root.children if isinstance(n, str) and n.strip()
+        ]
+
+    if (
+        len(top_tags) == 1
+        and not top_texts
+        and top_tags[0].name in ("h1", "h2", "h3", "h4", "h5", "h6")
+    ):
+        level = min(int(top_tags[0].name[1]), 6)
+        heading_text = _html_to_text(str(top_tags[0]))
+        return f"{'#' * level} {heading_text}" if heading_text else ""
+
+    if (
+        "<li" in stripped
+        or "<tr" in stripped
+        or any(t.name in ("h1", "h2", "h3", "h4", "h5", "h6") for t in top_tags)
+    ):
         # TOC-style "| title | page |" rows only for TOC/table blocks; plain
         # lists keep their items as printed.
         format_rows = label is None or label in _ROW_FORMAT_LABELS
-        return _mixed_list_html_to_markdown(html, format_rows)
+        inner_html = (
+            "".join(str(c) for c in root.children) if root is not soup else stripped
+        )
+        return _mixed_list_html_to_markdown(inner_html, format_rows)
 
-    soup = BeautifulSoup(html, "html.parser")
-    p_tags = soup.find_all("p")
+    p_tags = root.find_all("p")
     if len(p_tags) > 1:
         paras = []
         for p in p_tags:
@@ -520,10 +569,10 @@ def _is_vertical_marginalia_block(block: Any, img_w: float, img_h: float) -> boo
 
     In published books, running headers (book or chapter titles, e.g. 'قۇتادغۇ بىلىك')
     are often printed vertically along the outer side margins. Because Uyghur is a
-    horizontal script, text in the outer margin with a tall, narrow aspect ratio
-    (height >= 1.8 * width) represents running side marginalia, not body text.
-    When read horizontally by standard OCR, it produces garbled fragments or
-    hallucinated headers/echoes placed at the bottom of the page.
+    horizontal script, text in the outer margin that spans multiple stacked characters
+    (height >= 2.5 * width and >= 8% of page height) represents running side marginalia,
+    whereas a single short horizontal RTL word on a wide right margin is only one print
+    line tall (~2%-4% of page height) and must be preserved.
     """
     box = _get_block_bbox(block)
     if not box or img_w <= 0 or img_h <= 0:
@@ -534,11 +583,11 @@ def _is_vertical_marginalia_block(block: Any, img_w: float, img_h: float) -> boo
     if w <= 0 or h <= 0:
         return False
 
-    if h < 1.8 * w:
+    if h < 2.5 * w or (h / img_h) < 0.08:
         return False
 
-    is_left_margin = (x1 / img_w) <= 0.18
-    is_right_margin = (x0 / img_w) >= 0.82
+    is_left_margin = (x1 / img_w) <= 0.15
+    is_right_margin = (x0 / img_w) >= 0.85
     return is_left_margin or is_right_margin
 
 
@@ -599,6 +648,7 @@ def _reocr_looping_blocks(
     """
     seen_page_spans: set[tuple[str, ...]] = set()
     looping: set[int] = set()
+    intra_looping: set[int] = set()
 
     for b in sorted(blocks, key=lambda x: getattr(x, "reading_order", 0)):
         if b.skipped or b.error or not b.html:
@@ -606,7 +656,10 @@ def _reocr_looping_blocks(
         text = _html_to_text(b.html)
         if not text.strip():
             continue
-        if has_repeated_word_span(text, min_words=8, seen_spans=seen_page_spans):
+        if has_repeated_word_span(text, min_words=8):
+            looping.add(id(b))
+            intra_looping.add(id(b))
+        elif has_repeated_word_span(text, min_words=8, seen_spans=seen_page_spans):
             looping.add(id(b))
         else:
             add_word_spans(text, seen_page_spans, min_words=8)
@@ -647,9 +700,11 @@ def _reocr_looping_blocks(
     replacements: dict[int, Any] = {}
     for old, new in zip(redo_targets, redone):
         if id(old) in looping:
-            # If the looping block was re-read and produced non-empty text, use it;
-            # if it produced an error or empty text (e.g. phantom margin box),
-            # clear its text so the hallucination is dropped.
+            # If crop-mode failed with an internal error on a cross-block match
+            # (e.g. a real repeated chorus/refrain stanza with no intra-block loop),
+            # preserve the original recognition rather than wiping real content.
+            if getattr(new, "error", False) and id(old) not in intra_looping:
+                continue
             new_text = (
                 _html_to_text(getattr(new, "html", "") or "")
                 if not getattr(new, "error", False)
@@ -660,10 +715,6 @@ def _reocr_looping_blocks(
             else:
                 try:
                     new.html = ""
-                except Exception:
-                    pass
-                try:
-                    old.html = ""
                 except Exception:
                     pass
                 replacements[id(old)] = new

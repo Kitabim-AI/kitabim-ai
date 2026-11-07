@@ -36,6 +36,7 @@ def cmd_app(engine: str | None = None, concurrency: int | None = None) -> None:
 
 
 def cmd_preview(workdir_path: Path, base_url: str | None) -> None:
+    load_dotenv(DOTENV_PATH)
     workdir = OcrWorkDir.load(workdir_path)
     client = (
         KitabimClient(base_url=base_url, config_path=DEFAULT_CONFIG_PATH)

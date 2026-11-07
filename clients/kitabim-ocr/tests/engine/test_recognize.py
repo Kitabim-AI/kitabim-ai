@@ -658,6 +658,44 @@ def test_process_page_sync_discards_phantom_and_hallucinated_blocks():
     assert "في المثال" not in markdown
 
 
+def test_process_page_sync_preserves_dialogue_with_repeated_onomatopoeia():
+    """Regression test: literary dialogue containing repeated sobbing/laughing
+    interjections ('ھۈ - ھۈ - ھۈ ...') must not be dropped as a repetition loop
+    or ghost-text hallucination."""
+    import numpy as np
+
+    img_arr = np.full((300, 300), 245, dtype=np.uint8)
+    img_arr[10:250, 20:280] = 25
+    img = Image.fromarray(img_arr, mode="L")
+
+    b0 = _boxed_block("Text", "<p>بۈگۈن بۇ ئايالنىڭمۇ ئاغزى ئېچىلغان:</p>", 0, 20, 60)
+    b1 = _boxed_block(
+        "Text",
+        "<p>— ئون مېتىر ئورۇس تىرىكىسى، ئۈچ مېتىر مەخمەل، يېپىپڭى چەكمەن، مەسكاپ ئۆتۈك، "
+        "ھۈ - ھۈ - ھۈ ... ئىلاھىم قولىغا كۆيدۈرگۈ چىقار، سىل بولۇپ ئۆلەر ... ھۈ - ھۈ - ھۈ ...</p>",
+        1,
+        80,
+        160,
+    )
+    b2 = _boxed_block(
+        "Text",
+        "<p>ئۇلۇغئاخۇن ئىسىملىك ئۆي ئىگىسى يەردە زوڭزىيىپ ئولتۇرۇۋېلىپ نالە قىلماقتا ئىدى:</p>",
+        2,
+        180,
+        240,
+    )
+
+    mock_result = MagicMock()
+    mock_result.blocks = [b0, b1, b2]
+    mock_predictor = MagicMock(return_value=[mock_result])
+
+    markdown, _ = svc._process_page_sync(img, mock_predictor)
+    paragraphs = markdown.split("\n\n")
+    assert len(paragraphs) == 3
+    assert "ئون مېتىر ئورۇس تىرىكىسى" in paragraphs[1]
+    assert "ھۈ - ھۈ - ھۈ" in paragraphs[1]
+
+
 def test_block_html_to_markdown_preserves_lines_exactly():
     poem_html = (
         "<p>غېبى جانان، دېفى ھىجران تۇگەتتى ياش باھارمىنى،<br/>"
@@ -1480,3 +1518,82 @@ def _ocr_mock_page():
     pix.tobytes.return_value = _fake_png_bytes()
     page.get_pixmap.return_value = pix
     return page
+
+
+def test_is_vertical_marginalia_preserves_short_horizontal_word_at_right_margin():
+    img_w, img_h = 1500.0, 2270.0
+    # Single short RTL word at the right edge of a wide text column (w=30, h=58 -> 2.5% of page height)
+    short_rtl_word = MagicMock()
+    short_rtl_word.polygon = [
+        [1280.0, 600.0],
+        [1310.0, 600.0],
+        [1310.0, 658.0],
+        [1280.0, 658.0],
+    ]
+    assert svc._is_vertical_marginalia_block(short_rtl_word, img_w, img_h) is False
+
+
+def test_format_table_row_preserves_numbered_chapter_titles():
+    assert (
+        svc._format_table_row("1 - باب. مۇقەددىمە ..... 15")
+        == "| 1 - باب. مۇقەددىمە | 15 |"
+    )
+    assert (
+        svc._format_table_row("1945 - يىلقى ۋەقەلەر ..... 82")
+        == "| 1945 - يىلقى ۋەقەلەر | 82 |"
+    )
+    assert (
+        svc._format_table_row("15 ..... 1 - باب. مۇقەددىمە")
+        == "| 1 - باب. مۇقەددىمە | 15 |"
+    )
+    assert svc._format_table_row("3 ..... باب بىر") == "| باب بىر | 3 |"
+
+
+def test_block_html_to_markdown_separates_heading_from_following_paragraphs():
+    mixed_html = (
+        '<div data-label="SectionHeader">'
+        "<h2>بىرىنچى باب</h2>"
+        "<p>بۇ بىرىنچى ئابزاس تېكىستى.<br/>ئىككىنچى قۇر.</p>"
+        "</div>"
+    )
+    assert (
+        svc._block_html_to_markdown(mixed_html, "SectionHeader")
+        == "## بىرىنچى باب\n\nبۇ بىرىنچى ئابزاس تېكىستى.\nئىككىنچى قۇر."
+    )
+
+
+def test_reocr_looping_blocks_preserves_cross_block_refrain_on_crop_error():
+    img = Image.new("RGB", (200, 200))
+    chorus_html = (
+        "<p>ئەلىگە سەن تېۋىپقا ئوخشارسەن بۇ كۈن،<br>"
+        "ساڭا موھتاج ئېرۇر ئاغرىق — خەلق پۈتۈن.</p>"
+    )
+    mid_html = "<p>ئىككىنچى كۇپلېت مىسرالىرى بۇ يەردە داۋام قىلىدۇ.</p>"
+
+    full_page = MagicMock()
+    full_page.blocks = [
+        _boxed_block("Text", chorus_html, 0, 10, 50),
+        _boxed_block("Text", mid_html, 1, 60, 110),
+        _boxed_block("Text", chorus_html, 2, 120, 170),
+    ]
+
+    errored_crop = _boxed_block("Text", "", 2, 120, 170)
+    errored_crop.error = True
+    block_mode = MagicMock()
+    block_mode.blocks = [
+        _boxed_block("Text", chorus_html, 0, 10, 50),
+        _boxed_block("Text", mid_html, 1, 60, 110),
+        errored_crop,
+    ]
+    predictor = MagicMock(return_value=[block_mode])
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    blocks = markdown.split("\n\n")
+    assert len(blocks) == 3
+    assert "ئەلىگە سەن تېۋىپقا" in blocks[0]
+    assert "ئەلىگە سەن تېۋىپقا" in blocks[2]

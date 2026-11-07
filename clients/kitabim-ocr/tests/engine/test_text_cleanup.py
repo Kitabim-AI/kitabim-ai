@@ -6,6 +6,7 @@ from engine.text_cleanup import (
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
     is_hallucinated_ghost_text,
+    is_isolated_page_number,
     is_key_value_line,
     is_metadata_or_key_value_block,
     is_poem_block,
@@ -178,6 +179,58 @@ def test_is_hallucinated_ghost_text_false_for_genuine_uyghur():
         "ھىممەت بىلەن يورۇيدۇ بۇ گۈزەل جاھان."
     )
     assert is_hallucinated_ghost_text(radif_poem) is False
+
+    # Literary dialogue with repeated sobbing/laughing onomatopoeia (regression: page 9)
+    sobbing_dialogue = (
+        "— ئون مېتىر ئورۇس تىرىكىسى، ئۈچ مېتىر مەخمەل، يېپىپڭى چەكمەن، مەسكاپ ئۆتۈك، "
+        "ھۈ - ھۈ - ھۈ ... ئىلاھىم قولىغا كۆيدۈرگۈ چىقار، سىل بولۇپ ئۆلەر ... ھۈ - ھۈ - ھۈ ..."
+    )
+    assert is_hallucinated_ghost_text(sobbing_dialogue) is False
+    assert is_block_repetition_loop(sobbing_dialogue) is False
+
+    pure_crying_line = (
+        "— ھۈ - ھۈ - ھۈ ... ۋاي خۇدايىم، ھۈ - ھۈ - ھۈ ... ھۈ - ھۈ - ھۈ ..."
+    )
+    assert is_hallucinated_ghost_text(pure_crying_line) is False
+    assert is_block_repetition_loop(pure_crying_line) is False
+
+    laughing_line = "— ھا - ھا - ھا - ھا! — دەپ قاقاقلاپ كۈلدى ئۇ."
+    assert is_hallucinated_ghost_text(laughing_line) is False
+    assert is_block_repetition_loop(laughing_line) is False
+
+    # Genuine Uyghur morphology & root reduplications (-ۋاتاتتى, تۇتۇش, چاقچاق, ئەنئەنە, underscore dashes)
+    assert is_hallucinated_ghost_text("تۇخۇم ۋە باناندىن پەرھىز تۇتۇشى لازىم.") is False
+    assert (
+        is_hallucinated_ghost_text("كەتتىم، -- بۇ چاقچاق، چاقچاق قىلىپ قويدۇم.")
+        is False
+    )
+    assert (
+        is_hallucinated_ghost_text(
+            "ئەنئەنە ئىزچىللىقى ئەنئەنە قاتماللىقى ئەمەس، ئەنئەنىنىڭ راۋاجلانغان تارىخىي قاتلاملىقىدىن ئىبارەت."
+        )
+        is False
+    )
+    assert (
+        is_hallucinated_ghost_text(
+            "__ __ گۈلئەنبەر يوقاپ كەتتى. يا، بۇۋىسۇلتان؟ __ دەپ سورىدى. __ ھەئە."
+        )
+        is False
+    )
+
+    # Stuttering dialogue with spaced ellipses and pipe-table TOC blocks
+    stutter = "__ بۇ . . . بۇ . . . __ تىرناق تاتىلاش بىلەن ئاۋارە بولىۋاتقان ئەكبەر دۈدۈقلاپ قالدى."
+    assert is_block_repetition_loop(stutter) is False
+    assert is_hallucinated_ghost_text(stutter) is False
+
+    pipe_toc = (
+        "|ئەنجۈرنىڭ شىپالىق رولى|34|\n"
+        "|بېھىنىڭ شىپالىق رولى|35|\n"
+        "|ئانار ۋە ئۇنىڭ دورىلىق قىممىتى|35|\n"
+        "|شاپتۇل ۋە ئۇنىڭ دورىلىق قىممىتى|38|\n"
+        "|قوغۇن ۋە ئۇنىڭ شىپالىق رولى|40|"
+    )
+    assert is_block_repetition_loop(pipe_toc) is False
+    assert is_hallucinated_ghost_text(pipe_toc) is False
 
 
 def test_is_degenerate_ocr_output_flags_multiword_loops():
@@ -421,3 +474,139 @@ def test_has_repeated_word_span_detects_cross_block_duplicate_in_combined_block(
     assert (
         has_repeated_word_span(last_block, min_words=8, seen_spans=seen_spans) is True
     )
+
+
+def test_page_number_stripping_preserves_markdown_headings_and_list_markers():
+    # Numbered chapter/section headings ('# 1', '## 2') must never be treated as page numbers
+    assert is_isolated_page_number("# 1") is False
+    assert is_isolated_page_number("## 2") is False
+    assert is_isolated_page_number("### 12") is False
+    assert (
+        clean_uyghur_text("# 1\n\nبىرىنچى بۆلەك تېكىستى.")
+        == "# 1\n\nبىرىنچى بۆلەك تېكىستى."
+    )
+    assert (
+        clean_uyghur_text("## 2\n\nئىككىنچى بۆلەك تېكىستى.")
+        == "## 2\n\nئىككىنچى بۆلەك تېكىستى."
+    )
+
+    # Unbalanced list markers / bullets ('1)', '- 1', '* 2') must be preserved
+    assert is_isolated_page_number("1)") is False
+    assert is_isolated_page_number("- 1") is False
+    assert is_isolated_page_number("* 2") is False
+    assert clean_uyghur_text("1)\nبىرىنچى ماددا") == "1)\nبىرىنچى ماددا"
+
+
+def test_has_repeated_word_span_ignores_uyghur_punctuation_and_underscore_dashes():
+    # Standalone Uyghur punctuation ('،', '؟') and underscore dashes ('__') must not count as words
+    short_with_punct = "__ بىر ، ئىككى ، ئۈچ ؟ __ __ بىر ، ئىككى ، ئۈچ ؟ __"
+    assert has_repeated_word_span(short_with_punct, min_words=8) is False
+
+
+def test_is_block_repetition_loop_preserves_attached_punctuation_onomatopoeia():
+    # Real book dialogue: knocking ('تاك.....') and emphatic refusals ('ياق، ياق، ياق، ياق!')
+    knocking = "دېرىزىدىن «تاك..... تاك..... تاك..... تاك.....» قىلغان تاۋۇش ئاڭلاندى."
+    assert is_block_repetition_loop(knocking) is False
+    assert is_hallucinated_ghost_text(knocking) is False
+
+    emphatic_no = "— ياق، ياق، ياق، ياق! بۇنداق بولۇشى مۇمكىن ئەمەس!"
+    assert is_block_repetition_loop(emphatic_no) is False
+    assert is_hallucinated_ghost_text(emphatic_no) is False
+
+    # Bare unpunctuated token loops must still be caught at 4 repeats
+    assert is_block_repetition_loop("چىسىم چىسىم چىسىم چىسىم") is True
+
+
+def test_is_hallucinated_arabic_block_preserves_heh_uyghur_and_vocalized_quotes():
+    # Older Uyghur orthography / OCR 'ه'-for-'ە' substitution containing Turkic consonants (پ, چ, گ, ڭ)
+    heh_uyghur = "توغرا تپه گکور ته گرنگ بزگه ئاتا قلغان ئه گ چوڭ نپه تلرنگ پری."
+    assert is_hallucinated_arabic_block(heh_uyghur) is False
+
+    # Genuine vocalized Quranic / Hadith quote with harakat/tashkeel in classical Uyghur books
+    vocalized_quote = (
+        "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ " "الرَّحْمَٰنِ الرَّحِيمِ مَالِكِ يَوْمِ الدِّينِ"
+    )
+    assert is_hallucinated_arabic_block(vocalized_quote) is False
+
+
+def test_is_degenerate_ocr_output_preserves_questionnaire_pages_and_flags_block_loops():
+    # Real book personality quiz page: 10 distinct numbered questions each followed by 'A. ياق .B. شۇنداق'
+    quiz_blocks = [
+        f"{i}. سىز ھەر كۈنى ئەتىگەندە كىتاب ئوقۇشنى ياقتۇرامسىز؟\nA. ياق .B. شۇنداق"
+        for i in range(11, 21)
+    ]
+    quiz_page = "\n\n".join(quiz_blocks)
+    assert is_degenerate_ocr_output(quiz_page) is False
+
+    # Consecutive identical block/line loops across a page must still be flagged
+    multi_block_loop = "\n\n".join(
+        ["ئۇنىڭ كۆزلىرىدىن ياش تامچىلاپ چۈشتى ۋە يىغلاپ تاشلىدى."] * 6
+    )
+    assert is_degenerate_ocr_output(multi_block_loop) is True
+
+
+def test_cleanup_preserves_parallel_rhetoric_recipes_footnotes_and_exclamations():
+    real_book_passages = [
+        # Worksheet rating rubric
+        (
+            "كۆزلىگەن بازىرىڭىزنى پەرقلەندۈرۈش: ياخشى يامان ئەمەس ناچار رىقابەتچىڭىزگە باھا بېرىش: "
+            "ياخشى يامان ئەمەس ناچار باھانى بېكىتىش: ياخشى يامان ئەمەس ناچار ئېلان تەشۋىقات تەدبىرى تۈزۈش: "
+            "ياخشى يامان ئەمەس ناچار"
+        ),
+        # Classical couplets / refrains rendered inline
+        (
+            "ئادالەتنى شاھقا يار قىلغان ئاللادۇر، تاپاۋەتنى بايغا يار قىلغان ئاللادۇر. "
+            "تاقەتنى گادايغا يار قىلغان ئاللادۇر، جاسارەتنى مەردكە يار قىلغان ئاللادۇر."
+        ),
+        (
+            "ئەي يارەنلەر، ھەركىمى، ياھۇ، يائاللا، مەندەك يېتىم بولمىغاي، ياھۇ، يائاللا. "
+            "يۈرىكى زەرداپ بولۇپ، ياھۇ، يائاللا، كۆڭلى دەردكە تولمىغاي، ياھۇ! يائاللا!"
+        ),
+        # Parallel enumerations, herbal prescriptions, and footnote citation lists
+        (
+            "دەسلەپتە چىلاندىن يەتتە دانە، گۈلبىنەپشىدىن ئالتە گىرام، گۈلى نېلۇپەردىن ئالتە گىرام، "
+            "شاھتەررەدىن ئالتە گىرام، كاسىنە ئۇرۇقىدىن ئالتە گىرام، بىخ كاسىنەدىن ئالتە گىرام."
+        ),
+        (
+            "① «بەيتۇللانىڭ تارىخى»، 21 - بەت.\n"
+            "② «بەيتۇللانىڭ تارىخى»، 33 - بەت.\n"
+            "③ «بەيتۇللانىڭ تارىخى»، 35 - بەت.\n"
+            "④ «بەيتۇللانىڭ تارىخى»، 308 - بەت."
+        ),
+        # Dot-leader TOC block
+        (
+            "160 ..... (7) داۋا\n"
+            "160 ..... (8) داۋا\n"
+            "161 ..... (9) داۋا\n"
+            "161 ..... (10) داۋا\n"
+            "161 ..... (11) داۋا"
+        ),
+        # Rule-of-three exclamations, vocatives, aphorisms, quiz keys, and older 'ه' orthography
+        "## «ۋاقت ئۆتۈپ كېتىۋاتىدۇ، ئالدىراڭلار! ئالدىراڭلار!! ئالدىراڭلار!!»",
+        "— ئەنۋەر! ئەنۋەر! — دەپ توۋلىغانىدى، ئەنۋەر ئارقىسىغا بۇرۇلۇپ:",
+        "— كېلىۋاتىدۇ! كېلىۋاتىدۇ! ئاق بوز ئات ئۇچۇپ كېلىۋاتىدۇ! —",
+        "— ساندۇقۇم، ساندۇقۇم، سەدەپ ساندۇقۇم!",
+        "توققۇز ئاي، توققۇز كۈن، توققۇز سائەت، توققۇز مىنۇت يىغلىساق، كۆز يېشىمىز قۇرۇمايدۇ.",
+        "مۇقام دېمەك — سۆيگۈ دېمەك، ھايات دېمەك، مۇقام دېمەك — يۈرەك دېمەك، قانات دېمەك.",
+        "ئۈچۈن، شەمشىدىن ھاجىم ئۈچۈن، ئۆزۈم ئۈچۈن، ھەممە ئۈچۈن چىداي...»",
+        "A نى تاللىغانلار 3 نومۇرغا ئېرىشتى، B نى تاللىغانلار 2 نومۇرغا ئېرىشتى، C نى تاللىغانلار 1 نومۇرغا ئېرىشتى.",
+        "توغرا تپه گکور ته گرنگ بزگه ئاتا قلغان ئه گ چوڭ نپه تلرنگ پری.",
+    ]
+    for passage in real_book_passages:
+        assert (
+            is_block_repetition_loop(passage) is False
+        ), f"Loop false positive: {passage}"
+        assert (
+            is_hallucinated_ghost_text(passage) is False
+        ), f"Ghost false positive: {passage}"
+        assert (
+            is_hallucinated_arabic_block(passage) is False
+        ), f"Arabic false positive: {passage}"
+
+    # Numbered decoder loops with collapsed vocabulary must still be caught
+    numbered_loop = (
+        "(8) ئۇ قولغا باب بالىلىك بايان دېدى ۋە ئۇ باب بالىلىك بايان دېدى. "
+        "(9) ئۇ باب بالىلىك بايان دېدى ۋە ئۇ باب بالىلىك بايان دېدى. "
+        "(10) ئۇ باب بالىلىك بايان دېدى ۋە ئۇ باب بالىلىك بايان دېدى."
+    )
+    assert is_block_repetition_loop(numbered_loop) is True
