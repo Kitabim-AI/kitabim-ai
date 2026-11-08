@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any, AsyncIterator, Optional, Union
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,6 +66,10 @@ _AGENT_MAX_LLM_CALLS_DEFAULT = 12
 # than the tool-less answer agent.
 _AGENT_SESSION_RECENT_EVENTS_DEFAULT = 50
 _ANSWER_SESSION_RECENT_EVENTS_DEFAULT = 12
+
+_HEURISTIC_PROBE_REGEX = re.compile(
+    r"(?i)(ignore\s+(all\s+)?previous\s+instructions|system\s+prompt|system\s+instructions|act\s+as\s+dan|developer\s+mode|\[inst\]|<\|im_start\|>|you\s+are\s+now\s+an?|disregard\s+(all\s+)?prior)"
+)
 
 
 logger = logging.getLogger("app.services.chat.orchestrator")
@@ -199,6 +204,82 @@ class ChatOrchestrator:
         self.session_service = session_service
         self.conversation_repo = conversation_repo
 
+    async def _handle_refusal_short_circuit(
+        self,
+        request_dto: ChatRequestDTO,
+        conv_id: str,
+        is_first_turn: bool,
+        start_time: float,
+        ctx: QueryContext,
+        db_session: AsyncSession,
+        reason: str = "out_of_domain",
+    ) -> AsyncIterator[Union[str, dict]]:
+        refusal_text = t("rag.guardrail_refusal")
+        log_json(
+            logger,
+            logging.INFO,
+            "Guardrail refusal short-circuit triggered",
+            conversation_id=conv_id,
+            reason=reason,
+            question=request_dto.question,
+        )
+
+        yield {"type": "planning", "intent": "refusal"}
+        yield {"type": "answer_start"}
+        yield {"type": "chunk", "text": refusal_text}
+        yield {"type": "answer_end"}
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        cost = ctx.cost_tracker.as_dict()
+
+        eval_repo = RAGEvaluationsRepository(db_session)
+        eval_record = await eval_repo.create_evaluation(
+            book_id=request_dto.book_id if not request_dto.is_global else None,
+            is_global=request_dto.is_global,
+            question=request_dto.question,
+            current_page=request_dto.current_page,
+            retrieved_count=0,
+            context_chars=0,
+            scores=[],
+            category_filter=request_dto.context_book_ids or [],
+            latency_ms=latency_ms,
+            answer_chars=len(refusal_text),
+            user_id=request_dto.user_id,
+            agent_steps=0,
+            tools_called=[],
+            eval_status="skipped",
+            answer=refusal_text,
+            retrieved_context="",
+            is_first_turn=is_first_turn,
+            input_tokens=cost["input_tokens"],
+            output_tokens=cost["output_tokens"],
+            cost_usd=cost["cost_usd"],
+        )
+        eval_id = eval_record.id
+        eval_record.conversation_id = conv_id
+        await db_session.flush()
+        await db_session.commit()
+
+        conv_repo = self.conversation_repo or ConversationRepository(db_session)
+        await conv_repo.save_turn(
+            conversation_id=conv_id,
+            question=request_dto.question,
+            answer=refusal_text,
+            used_book_ids=[],
+            eval_id=eval_id,
+            current_page=request_dto.current_page,
+            agent_steps={"llm_calls": 0, "tools": []},
+        )
+        await db_session.commit()
+
+        yield {
+            "type": "done",
+            "eval_id": eval_id,
+            "conversation_id": conv_id,
+            "used_book_ids": [],
+            "cost": cost,
+        }
+
     async def stream_response(
         self,
         request_dto: ChatRequestDTO,
@@ -293,6 +374,20 @@ class ChatOrchestrator:
             await configs_repo.get_value("rag_summary_narrowing_enabled", "true"),
             default=True,
         )
+
+        # 1.5. Stage 0.5: Fast heuristic pre-filter for Latin/ASCII injection boilerplate
+        if _HEURISTIC_PROBE_REGEX.search(request_dto.question):
+            async for event in self._handle_refusal_short_circuit(
+                request_dto=request_dto,
+                conv_id=conv_id,
+                is_first_turn=is_first_turn,
+                start_time=start_time,
+                ctx=ctx,
+                db_session=db_session,
+                reason="regex_probe",
+            ):
+                yield event
+            return
 
         # 2. Phrase-intent gate (keyword-search-rework-plan.md Phase 1):
         # A quoted / explicit-exact-phrase question checks the DB catalog first.
@@ -447,6 +542,21 @@ class ChatOrchestrator:
                 signals = {}
 
             intent = signals.get("intent", "open")
+            guardrail = signals.get("guardrail") or {}
+            if guardrail.get("is_refusal") or intent == "refusal":
+                refusal_reason = guardrail.get("reason") or "out_of_domain"
+                async for event in self._handle_refusal_short_circuit(
+                    request_dto=request_dto,
+                    conv_id=conv_id,
+                    is_first_turn=is_first_turn,
+                    start_time=start_time,
+                    ctx=ctx,
+                    db_session=db_session,
+                    reason=refusal_reason,
+                ):
+                    yield event
+                return
+
             yield {"type": "planning", "intent": intent}
 
             # 2c. Catalog shortcut (author_of / books_by): Stage 1.5 above
@@ -827,7 +937,7 @@ class ChatOrchestrator:
         await db_session.flush()
         await db_session.commit()
 
-        if judge_scoring_enabled:
+        if judge_scoring_enabled and eval_record.eval_status != "skipped":
             try:
                 import arq
 

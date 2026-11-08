@@ -46,3 +46,11 @@ def test_current_volume_rule_absent_in_global_chat():
 
 def test_current_volume_rule_absent_without_current_book():
     assert "currently reading" not in build_answer_instructions(is_global=False)
+
+
+def test_build_answer_instructions_includes_domain_guardrail_refusal():
+    instructions = build_answer_instructions()
+    assert "Domain Guardrail" in instructions
+    assert "programming/coding" in instructions
+    # Permissive conversational loophole must be removed
+    assert "respond naturally but maintain your persona" not in instructions

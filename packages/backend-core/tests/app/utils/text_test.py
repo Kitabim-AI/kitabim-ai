@@ -4,6 +4,7 @@ from app.utils.text import (
     correct_uyghur_ocr_orthography,
     generate_uyghur_regex,
     is_degenerate_ocr_output,
+    is_isolated_page_number,
     is_key_value_line,
     is_metadata_or_key_value_block,
     is_poem_block,
@@ -349,3 +350,22 @@ def test_normalize_uyghur_chars_strips_null_bytes():
 
 def test_clean_uyghur_text_strips_null_bytes():
     assert clean_uyghur_text("بۇ تېكىست\x00.\x00") == "بۇ تېكىست."
+
+
+def test_is_isolated_page_number_preserves_headings_and_list_items():
+    assert is_isolated_page_number("4") is True
+    assert is_isolated_page_number("- 12 -") is True
+    assert is_isolated_page_number("( 42 )") is True
+    assert is_isolated_page_number("# 1") is False
+    assert is_isolated_page_number("## 2") is False
+    assert is_isolated_page_number("1)") is False
+    assert is_isolated_page_number("- 1") is False
+    assert (
+        clean_uyghur_text("# 1\n\nبىرىنچى باب تېكىستى.")
+        == "# 1\n\nبىرىنچى باب تېكىستى."
+    )
+
+
+def test_is_degenerate_ocr_output_ignores_single_letter_quiz_labels():
+    quiz = "\n\n".join(f"{i}. سۇئال تېكىستى؟ A. ياق B. ھەئە" for i in range(1, 23))
+    assert is_degenerate_ocr_output(quiz) is False

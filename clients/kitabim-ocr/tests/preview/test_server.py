@@ -341,3 +341,28 @@ def test_serve_font_endpoint(tmp_path: Path):
 
     not_found = client.get("/fonts/nonexistent.woff2")
     assert not_found.status_code == 404
+
+
+def test_redo_pages_auto_detects_toc_when_reocrd_text_is_toc(tmp_path: Path):
+    wd = _workdir(tmp_path)
+    assert wd.get_page(1).is_toc is False
+    app = create_app(wd, client=None)
+    client = TestClient(app)
+
+    toc_md = "## مۇندەرىجە\n\n| بىرىنچى باب | 1 |\n| ئىككىنچى باب | 15 |"
+    with (
+        patch(
+            "preview.server.get_recognition_predictor",
+            AsyncMock(return_value="predictor"),
+        ),
+        patch(
+            "preview.server.ocr_page",
+            AsyncMock(return_value=toc_md),
+        ),
+        patch("preview.server.fitz.open") as mock_fitz_open,
+    ):
+        mock_fitz_open.return_value.load_page.return_value = "fake-fitz-page"
+        response = client.post("/api/pages/redo", json={"pageNumbers": [1]})
+
+    assert response.status_code == 200
+    assert wd.get_page(1).is_toc is True
