@@ -1,39 +1,5 @@
 # Kitabim AI — Claude Instructions
 
-## Skills
-
-This project has a set of skills in `.claude/skills/`. Invoke the right one before starting any work. The skills carry full codebase conventions, patterns, and checklists — do not repeat what is already in the skill.
-
-### When to invoke which skill
-
-| Task | Invoke |
-|------|--------|
-| Designing a new API endpoint, schema, or DB model | `/api-designer` |
-| Implementing backend features day-to-day (migrations, services, repos, jobs) | `/api-developer` |
-| Writing backend tests (repos, services, endpoints) | `/api-unit-tester` |
-| Reviewing backend/worker code changes | `/api-code-review` |
-| Designing a new worker job or scanner | `/worker-designer` |
-| Implementing worker jobs, scanners, pipeline wiring | `/worker-developer` |
-| Writing worker/scanner tests | `/worker-unit-tester` |
-| Reviewing worker code changes | `/worker-code-review` |
-| Designing or implementing React UI components | `/ui-designer` |
-| Implementing frontend hooks, services, routing | `/ui-developer` |
-| Writing frontend component/hook tests | `/ui-unit-tester` |
-| Reviewing frontend code changes | `/ui-code-review` |
-| Designing database schemas, migrations, query patterns | `/database-designer` |
-| Designing infrastructure, GCP resources, CI/CD | `/infra-designer` |
-| Implementing shell scripts, Docker, Nginx, GitHub Actions | `/infra-developer` |
-| Auditing or implementing security controls | `/app-security` |
-| Writing or editing LLM prompts (OCR, RAG, summary) | `/prompt-engineer` |
-| Designing a new feature end-to-end across services | `/system-architect` |
-
-### Rules
-- **Always invoke the relevant skill first** before writing or reviewing any code.
-- A task may require multiple skills (e.g. `/api-designer` + `/database-designer` for a new feature with a new table).
-- Skills are self-contained — they carry the patterns, conventions, and checklists. Trust them.
-
----
-
 ## Project Layout (quick reference)
 
 | Location | Contents |

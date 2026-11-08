@@ -39,20 +39,30 @@ def normalize_uyghur_chars(text: str) -> str:
 
 
 _OCR_MARKER_RE = re.compile(r"\s*\[(?:Header|Footer)\].*", re.IGNORECASE)
+_SURYA_COMPACT_TOKEN_RE = re.compile(r"<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>")
 
 
+_DIGITS_1_4 = r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}"
 _PAGE_NUMBER_RE = re.compile(
-    r"""^\s*
+    rf"""^\s*
     (?:
-        # Decorated / standalone digits: e.g. "- 4 -", "( 12 )", "[3]", "· 4 ·", "4", "— 123 —"
-        (?:[-—–•·*#\(\[\{/\\~]\s*)*
-        [0-9\u0660-\u0669\u06F0-\u06F9]{1,4}
-        (?:\s*[-—–•·*#\)\]\}/\\~])*
+        # Bare standalone digits: e.g. "4", "123", "١٢"
+        {_DIGITS_1_4}
+        |
+        # Paired brackets / parentheses: e.g. "( 12 )", "[3]", "{{ 4 }}"
+        \(\s*{_DIGITS_1_4}\s*\)
+        |
+        \[\s*{_DIGITS_1_4}\s*\]
+        |
+        \{{\s*{_DIGITS_1_4}\s*\}}
+        |
+        # Symmetric dashes / dots / stars / tildes / slashes: e.g. "- 4 -", "— 12 —", "· 4 ·", "~ 15 ~"
+        [-—–•·*~/\\]+\s*{_DIGITS_1_4}\s*[-—–•·*~/\\]+
         |
         # Uyghur / English page labels: e.g. "4 - بەت", "بەت: 4", "Page 4", "p. 4"
-        (?:بەت|page|p\.)\s*[:\-\s]*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}
+        (?:بەت|page|p\.)\s*[:\-\s]*{_DIGITS_1_4}
         |
-        [0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*[:\-]?\s*(?:بەت|page)
+        {_DIGITS_1_4}\s*[:\-]?\s*(?:بەت|page)
     )\s*$""",
     re.IGNORECASE | re.VERBOSE,
 )
@@ -266,8 +276,14 @@ def clean_uyghur_text(text: str) -> str:
     # 1. Normalize characters
     text = normalize_uyghur_chars(text)
 
-    # 2. Strip OCR markers
-    text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
+    # 2. Strip OCR markers and any leaked Surya compact coordinate/tag tokens
+    cleaned_lines = []
+    for line in text.splitlines():
+        line = _OCR_MARKER_RE.sub("", line)
+        if "<|" in line:
+            line = re.sub(r" {2,}", " ", _SURYA_COMPACT_TOKEN_RE.sub("", line))
+        cleaned_lines.append(line)
+    text = "\n".join(cleaned_lines)
 
     # 3. Strip header and footer page numbers
     text = strip_page_numbers(text)
@@ -300,10 +316,35 @@ def is_toc_page(text: str) -> bool:
     if not lines:
         return False
 
-    pipe_table_pattern = re.compile(r"^\|.*\|\s*\d+\s*\|?$")
+    pipe_table_pattern = re.compile(
+        r"^\|.*\|\s*[0-9\u0660-\u0669\u06F0-\u06F9]+\s*\|?$"
+    )
     pipe_count = sum(1 for line in lines if pipe_table_pattern.match(line))
     if pipe_count >= 5 and (pipe_count / len(lines)) >= 0.5:
         return True
+
+    two_col_pipe_pattern = re.compile(
+        r"^\|\s*[^|]+?\s*\|\s*([0-9\u0660-\u0669\u06F0-\u06F9]{1,4})\s*\|?$"
+    )
+    table_sep_pattern = re.compile(r"^\|\s*[:\-]+\s*\|")
+    if not any(table_sep_pattern.match(line) for line in lines):
+        two_col_nums = [
+            int(
+                m.group(1).translate(
+                    str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+                )
+            )
+            for line in lines
+            if (m := two_col_pipe_pattern.match(line))
+        ]
+        if len(two_col_nums) >= 3 and (len(two_col_nums) / len(lines)) >= 0.5:
+            non_dec = sum(
+                1
+                for i in range(len(two_col_nums) - 1)
+                if two_col_nums[i + 1] >= two_col_nums[i]
+            )
+            if non_dec / (len(two_col_nums) - 1) >= 0.75:
+                return True
 
     dot_leader_pattern = re.compile(r"(\.{6,}|_{6,}|-{6,}|·{6,})")
 
@@ -338,17 +379,24 @@ def is_toc_page(text: str) -> bool:
 
 
 _UYGHUR_VOWELS = frozenset("ەۇۆۈېىئ")
+# Consonants present in Uyghur/Turkic/Persian script that never occur in Standard Arabic
+_UYGHUR_SPECIFIC_CONSONANTS = frozenset("پچژگڭۋ")
+# Arabic vocalization marks (harakat / tashkeel) found in printed Quranic/Hadith quotations
+_ARABIC_TASHKEEL = frozenset("\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0670")
 _COMMON_ARABIC_WORDS = re.compile(
     r"\b(في|من|على|إلى|عن|هذا|هذه|الذي|التي|ذلك|تلك|الله|كان|كانت|مع|قد|ما|لم|لن|بل|إن|أن)\b"
 )
+_ALPHA_WORD_RE = re.compile(r"(?:[^\W\d_]|[\u064B-\u065F])+")
+_ALNUM_WORD_RE = re.compile(r"(?:[^\W_]|[\u064B-\u065F])+")
+# Productive Uyghur suffix-boundary sequences that legitimately repeat 2-3 letters across morphemes
+_UYGHUR_MORPH_REPEAT_RE = re.compile(
+    r"(?:ىشىش|ۈشۈش|ۇشۇش|ىشلا|نغانغا|نگەنگە|ردۇر|لارلا|لەرلە|نىمنى|نىڭنى|لىكلىك|لىقلىق|لۇقلۇق|لۈكلۈك)"
+)
+_PUNCT_SEP_CHARS = frozenset(".,،;؛!؟?-—–…·•_~")
 
 
 def _normalize_words_for_span(text: str) -> list[str]:
-    words = [
-        re.sub(r"^[^\w\u0600-\u06FF]+|[^\w\u0600-\u06FF]+$", "", w)
-        for w in text.split()
-    ]
-    return [w for w in words if w]
+    return _ALNUM_WORD_RE.findall(text)
 
 
 def extract_word_spans(
@@ -396,34 +444,132 @@ def has_repeated_word_span(
     return False
 
 
+def _is_pipe_table_block(lines: list[str]) -> bool:
+    if len(lines) < 2:
+        return False
+    pipe_lines = sum(1 for line in lines if "|" in line)
+    return pipe_lines >= 2 and pipe_lines >= len(lines) * 0.5
+
+
+_DOT_LEADER_LINE_RE = re.compile(r"\.{4,}|·{4,}|…{3,}")
+
+
+def _is_dot_leader_toc_block(lines: list[str]) -> bool:
+    if len(lines) < 2:
+        return False
+    leader_lines = sum(1 for line in lines if _DOT_LEADER_LINE_RE.search(line))
+    return leader_lines >= 2 and leader_lines >= len(lines) * 0.4
+
+
 def is_block_repetition_loop(text: str) -> bool:
     """Detect if a block contains a runaway repetitive decoding loop (n-grams or words)."""
     if not text:
         return False
-    words = [w for w in text.split() if w.strip()]
+
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if (
+        _is_pipe_table_block(lines)
+        or _is_dot_leader_toc_block(lines)
+        or (
+            len(lines) >= 2
+            and (is_poem_block(lines) or is_metadata_or_key_value_block(lines))
+        )
+    ):
+        return False
+
+    # Check consecutive identical words.
+    # Distinguish unpunctuated token loops ('چىسىم چىسىم چىسىم چىسىم') from punctuated
+    # literary vocalizations/onomatopoeia ('تاك..... تاك..... تاك..... تاك.....',
+    # 'ياق، ياق، ياق، ياق!', 'ھۈ - ھۈ - ھۈ ...') where punctuation or dashes separate repeats.
+    unpunct_repeats = 0
+    punct_repeats = 0
+    prev_word = ""
+    had_sep = False
+    for tok in text.split():
+        letters = "".join(_ALPHA_WORD_RE.findall(tok))
+        has_leading_sep = bool(tok) and tok[0] in _PUNCT_SEP_CHARS
+        has_trailing_sep = bool(tok) and tok[-1] in _PUNCT_SEP_CHARS
+        if not letters:
+            had_sep = True
+            unpunct_repeats = 0
+            continue
+        if letters == prev_word:
+            punct_repeats += 1
+            if had_sep or has_leading_sep:
+                unpunct_repeats = 1
+            else:
+                unpunct_repeats += 1
+            if len(letters) >= 3 and unpunct_repeats >= 4:
+                return True
+            if len(letters) == 2 and unpunct_repeats >= 6:
+                return True
+            if len(letters) >= 3 and punct_repeats >= 8:
+                return True
+        else:
+            prev_word = letters
+            unpunct_repeats = 1
+            punct_repeats = 1
+        had_sep = has_trailing_sep
+
+    words = _ALNUM_WORD_RE.findall(text)
     if len(words) < 8:
         return False
 
-    # Check consecutive identical words
-    consecutive_repeats = 1
-    for i in range(1, len(words)):
-        if words[i] == words[i - 1]:
-            consecutive_repeats += 1
-            if consecutive_repeats >= 4:
-                return True
-        else:
-            consecutive_repeats = 1
-
-    # Check n-gram phrase loops (n = 2..6)
-    for n in range(2, 7):
-        if len(words) < n * 3:
+    # Check 1: Tandem (back-to-back) phrase loops of period L = 2..12.
+    # Autoregressive decoder loops repeat a phrase immediately back-to-back without
+    # varying nouns/clauses in between, whereas human enumerations, recipes, and
+    # rhetorical parallelism vary the words between repeated refrains/units.
+    max_period = min(12, len(words) // 2)
+    for period in range(2, max_period + 1):
+        min_tandem = 4 if period == 2 else (3 if period <= 7 else 2)
+        if len(words) < period * min_tandem:
             continue
-        ngrams = [" ".join(words[i : i + n]) for i in range(len(words) - n + 1)]
-        counts = Counter(ngrams)
-        if counts:
-            _, count = counts.most_common(1)[0]
-            if count >= 3 and (count * n) >= len(words) * 0.35:
+        idx = 0
+        while idx <= len(words) - period * min_tandem:
+            unit = words[idx : idx + period]
+            # Repeated single short interjection ('ھۈ', 'ھا') is handled by word check above
+            if len(set(unit)) == 1 and len(unit[0]) <= 3:
+                idx += 1
+                continue
+            copies = 1
+            while (
+                idx + (copies + 1) * period <= len(words)
+                and words[idx + copies * period : idx + (copies + 1) * period] == unit
+            ):
+                copies += 1
+            if copies >= min_tandem:
+                if (
+                    period >= 8
+                    and copies == 2
+                    and (copies * period) < len(words) * 0.55
+                ):
+                    idx += 1
+                    continue
                 return True
+            idx += 1
+
+    # Check 2: Non-adjacent phrase loop with severe overall vocabulary collapse
+    # (e.g. numbered decoder loops '(8) X ... (9) X ... (10) X ...').
+    colon_count = text.count(":") + text.count("：")
+    vocab_ratio = len(set(words)) / len(words)
+    if colon_count < 3 and vocab_ratio < 0.32:
+        for n in range(4, 7):
+            if len(words) < n * 4:
+                continue
+            counts = Counter(tuple(words[i : i + n]) for i in range(len(words) - n + 1))
+            for ng, raw_count in counts.most_common(2):
+                if raw_count < 4:
+                    break
+                non_overlap = 0
+                idx = 0
+                while idx <= len(words) - n:
+                    if tuple(words[idx : idx + n]) == ng:
+                        non_overlap += 1
+                        idx += n
+                    else:
+                        idx += 1
+                if non_overlap >= 4 and (non_overlap * n) >= len(words) * 0.55:
+                    return True
     return False
 
 
@@ -433,7 +579,7 @@ def is_hallucinated_arabic_block(text: str) -> bool:
     Uyghur written in Arabic script has mandatory vowel letters (ە, ى, ۇ, ۆ, ۈ, ې, ئ)
     present in virtually every word (comprising 25%-45% of all letters).
     When OCR tries to read faint bleed-through or noise, it frequently hallucinates
-    Standard Arabic vocabulary with near-zero Uyghur vowel characters.
+    unvocalized Standard Arabic vocabulary with near-zero Uyghur vowel characters.
     """
     if not text:
         return False
@@ -445,13 +591,53 @@ def is_hallucinated_arabic_block(text: str) -> bool:
     if not letters:
         return False
 
+    # Standard Arabic never contains Uyghur/Turkic-specific consonants (پ, چ, ژ, گ, ڭ, ۋ);
+    # older Uyghur orthography or OCR 'ه'-for-'ە' substitutions still carry these letters.
+    turkic_consonants = sum(1 for ch in letters if ch in _UYGHUR_SPECIFIC_CONSONANTS)
+    if turkic_consonants >= 2:
+        return False
+
+    # Vocalized Arabic quotations (Quranic verses / Hadiths printed with harakat/tashkeel)
+    # are genuine book content, whereas Surya bleed-through hallucinations are unvocalized.
+    tashkeel_count = sum(1 for ch in text if ch in _ARABIC_TASHKEEL)
+    if (tashkeel_count / len(letters)) >= 0.15:
+        return False
+
     uyghur_vowels = sum(1 for ch in letters if ch in _UYGHUR_VOWELS)
     vowel_ratio = uyghur_vowels / len(letters)
 
     arabic_particles = len(_COMMON_ARABIC_WORDS.findall(text))
-    if vowel_ratio < 0.08 and (arabic_particles >= 2 or "ة" in text or "ه" in text):
+    if vowel_ratio < 0.08 and (
+        arabic_particles >= 2
+        or (
+            arabic_particles >= 1
+            and vowel_ratio < 0.04
+            and ("ة" in text or "ه" in text)
+        )
+    ):
         return True
     return False
+
+
+# High-frequency Uyghur postpositions, auxiliaries, and copulas that legitimately
+# repeat across parallel clauses (e.g. 'X ئۈچۈن، Y ئۈچۈن، Z ئۈچۈن', 'مۇقام دېمەك — سۆيگۈ دېمەك')
+_UYGHUR_GRAMMATICAL_REPEATS = frozenset(
+    {
+        "ئۈچۈن",
+        "بىلەن",
+        "دېمەك",
+        "كېرەك",
+        "لازىم",
+        "بولۇپ",
+        "بولدى",
+        "بولسا",
+        "بولمايدۇ",
+        "ئەمەس",
+        "قانداق",
+        "شۇنداق",
+        "بۇنداق",
+    }
+)
 
 
 def is_hallucinated_ghost_text(text: str) -> bool:
@@ -459,55 +645,98 @@ def is_hallucinated_ghost_text(text: str) -> bool:
 
     When Surya decodes faint show-through, it often hallucinates garbled pseudo-Uyghur words
     with severe internal syllable repetition loops (e.g. 'رختسملىملىم', 'قىلىمىلىم', 'رەسمىلىملىم')
-    or heavily repeated words across a short block (e.g. 4 copies of 'بىلىملىرى' in 15 words).
+    or heavily repeated words across a block (e.g. 4 copies of 'بىلىملىرى' plus repeated stems).
     """
     if not text:
         return False
-    words = [
-        re.sub(r"^[^\w\u0600-\u06FF]+|[^\w\u0600-\u06FF]+$", "", w)
-        for w in text.split()
-    ]
-    words = [w for w in words if len(w) >= 2]
-    if len(words) < 4:
-        return False
 
-    # Check 1: Syllable repetition loops inside words (e.g. ملىملىم, قىلىملىم, نەچەچە)
-    # Require a 3-letter repeat (e.g. لىملىم) or a 3x repeat of 2-3 letters, or non-standard
-    # Arabic/Persian final 'ه' (U+0647) combined with a 2-letter repeat, so genuine Uyghur
-    # reciprocal verbs (-ىشىش / -ۈشۈش like 'بىرلىشىش') and '-نىنى' suffixes are never flagged.
-    repetition_word_count = 0
-    for w in words:
-        if re.search(r"([\u0600-\u06FF]{3})\1", w):
-            repetition_word_count += 1
-        elif re.search(r"([\u0600-\u06FF]{2,3})[\u0600-\u06FF]*\1\1", w):
-            repetition_word_count += 1
-        elif re.search(r"([\u0600-\u06FF]{2})\1", w) and not re.search(
-            r"(?:ىشىش|ۈشۈش|نىنى|دادا|قارار)", w
-        ):
-            repetition_word_count += 1
-
-    if repetition_word_count >= 2 and (repetition_word_count / len(words)) >= 0.20:
-        return True
-
-    # Poetic verses legitimately repeat refrain (radif) words across lines.
     lines = [line.strip() for line in text.split("\n") if line.strip()]
-    if len(lines) >= 2 and is_poem_block(lines):
+    if _is_pipe_table_block(lines) or _is_dot_leader_toc_block(lines):
+        return False
+    if len(lines) >= 2 and (
+        is_poem_block(lines) or is_metadata_or_key_value_block(lines)
+    ):
         return False
 
-    # Check 2: Heavy word duplication in short/medium blocks
-    counts = Counter(words)
-    _, top_count = counts.most_common(1)[0]
-    if top_count >= 3 and (top_count / len(words)) >= 0.22:
+    alpha_words = [w for w in _ALPHA_WORD_RE.findall(text) if len(w) >= 2]
+    if len(alpha_words) < 6:
+        return False
+    alnum_tokens = [w for w in _ALNUM_WORD_RE.findall(text) if len(w) >= 1]
+    denom = max(len(alpha_words), len(alnum_tokens))
+
+    # Check 1: Syllable repetition loops inside garbled words (e.g. رختسملىملىم, قىلىملىم, نەچەچە)
+    # Excludes productive Uyghur suffix combinations (e.g. -ىشىش, -لانغانغا) and normal words
+    # written in older 'ه' orthography that have no internal syllable loop.
+    has_foreign_heh = "\u0647" in text
+    repetition_word_count = 0
+    for w in alpha_words:
+        if _UYGHUR_MORPH_REPEAT_RE.search(w):
+            continue
+        if re.search(r"([^\W\d_]{2,3})\1\1", w):
+            repetition_word_count += 1
+        elif len(w) >= 8 and re.search(r"^.{2,}([^\W\d_]{3})\1", w):
+            repetition_word_count += 1
+        elif has_foreign_heh and len(w) >= 6 and re.search(r"^.{1,}([^\W\d_]{2})\1", w):
+            repetition_word_count += 1
+
+    if (
+        repetition_word_count >= 2
+        and (repetition_word_count / len(alpha_words)) >= 0.20
+    ):
         return True
 
-    # Check 3: Abnormally low vocabulary diversity
-    if len(words) >= 8 and (len(counts) / len(words)) < 0.60:
-        return True
+    # Check 2: Heavy duplication of multi-letter lexical content words (len >= 4).
+    # Rule-of-three exclamations ('ئالدىراڭلار! ئالدىراڭلار!! ئالدىراڭلار!!', 'ئەنۋەر! ئەنۋەر! ... ئەنۋەر')
+    # and single-pivot anaphora ('توققۇز ئاي، توققۇز كۈن، توققۇز سائەت، توققۇز مىنۇت') are normal
+    # prose/dialogue; ghost-text bleed-through repeats multiple distinct words or >=55% of one word.
+    content_words = [w for w in alpha_words if len(w) >= 4]
+    lexical_counts = Counter(
+        w for w in content_words if w not in _UYGHUR_GRAMMATICAL_REPEATS
+    )
+    all_content_counts = Counter(content_words)
+    if lexical_counts and len(alpha_words) >= 8:
+        _, top_count = lexical_counts.most_common(1)[0]
+        if top_count >= 5 and (top_count / denom) >= 0.55:
+            return True
+        distinct_repeated = sum(1 for c in all_content_counts.values() if c >= 2)
+        repeated_content_tokens = sum(c for c in all_content_counts.values() if c >= 2)
+        if (
+            top_count >= 4
+            and distinct_repeated >= 2
+            and (top_count / denom) >= 0.28
+            and (repeated_content_tokens / denom) >= 0.50
+        ):
+            return True
+
+    # Check 3: Extreme vocabulary collapse across medium/long blocks
+    if 12 <= len(content_words) <= 80:
+        if (len(all_content_counts) / len(content_words)) < 0.28:
+            return True
 
     return False
 
 
 _MAX_SANE_OCR_CHARS = 10000
+
+
+def _has_consecutive_identical_units(units: list[str], min_repeats: int = 4) -> bool:
+    """Return True if at least ``min_repeats`` consecutive non-trivial lines/blocks are identical."""
+    streak = 0
+    prev = ""
+    for u in units:
+        norm = " ".join(_ALNUM_WORD_RE.findall(u))
+        if len(norm.split()) < 2:
+            streak = 0
+            prev = ""
+            continue
+        if norm == prev:
+            streak += 1
+            if streak >= min_repeats:
+                return True
+        else:
+            prev = norm
+            streak = 1
+    return False
 
 
 def is_degenerate_ocr_output(text: str) -> bool:
@@ -516,12 +745,22 @@ def is_degenerate_ocr_output(text: str) -> bool:
     if len(text) > _MAX_SANE_OCR_CHARS:
         return True
 
-    words = [w for w in text.split() if any(ch.isalnum() for ch in w)]
-    if len(words) < 30:
+    alnum_words = _ALNUM_WORD_RE.findall(text)
+    if len(alnum_words) < 30:
         return False
 
-    if is_block_repetition_loop(text):
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
+    if any(is_block_repetition_loop(b) for b in blocks):
         return True
 
-    _, most_common_count = Counter(words).most_common(1)[0]
-    return most_common_count >= 20 and (most_common_count / len(words)) >= 0.2
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if _has_consecutive_identical_units(
+        blocks, min_repeats=4
+    ) or _has_consecutive_identical_units(lines, min_repeats=4):
+        return True
+
+    multi_char_words = [w for w in alnum_words if len(w) >= 2]
+    if not multi_char_words:
+        return False
+    _, most_common_count = Counter(multi_char_words).most_common(1)[0]
+    return most_common_count >= 20 and (most_common_count / len(alnum_words)) >= 0.2

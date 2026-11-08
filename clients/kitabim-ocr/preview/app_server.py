@@ -29,6 +29,7 @@ from engine.recognize import (
     get_recognition_predictor,
     ocr_page,
 )
+from engine.text_cleanup import is_toc_page
 from engine.workdir import OcrWorkDir
 from kitabim_client.api import KitabimClient
 from locales.i18n import get_translations, get_translations_json
@@ -2712,7 +2713,9 @@ async def _run_ocr_background(
                                 status="reviewed",
                             )
                         else:
-                            is_toc = existing.is_toc if existing else False
+                            is_toc = bool(existing and existing.is_toc) or is_toc_page(
+                                text
+                            )
                             workdir.set_page(
                                 page_number,
                                 text=text,

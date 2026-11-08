@@ -1,24 +1,48 @@
-# Internationalization (i18n) Implementation
+# Internationalization (i18n)
 
-This project implements a custom i18n system for managing translations between Uyghur and English.
+## Overview
+Custom internationalization (i18n) subsystem providing multilingual support between Uyghur (`ug`, default) and English (`en`), complete with dot-path key resolution, parameter interpolation, and persistent user locale preference.
 
-## Structure
+## Interface
+- `[i18n.ts:Language]`: Union type of supported language codes (`'ug' | 'en'`).
+- `[i18n.ts:translations]`: Bundled translation dictionary mappings for supported locales (`ug`, `en`).
+- `[i18n.ts:defaultLanguage]`: Default language fallback constant (`'ug'`).
+- `[i18n.ts:getNestedTranslation]`: Resolves dot-delimited key paths against a locale dictionary object, returning the key if unresolved.
+- `[I18nContext.tsx:I18nContext]`: React context object holding active language state and translation helper.
+- `[I18nContext.tsx:I18nProvider]`: Provider component managing active language state, persistence, and `t()` parameter interpolation.
+- `[I18nContext.tsx:useI18n]`: React hook exposing `{ language, setLanguage, t }`.
 
+## Invariants
+- `[i18n.ts:defaultLanguage]`: Default language is strictly Uyghur (`'ug'`).
+- `[i18n.ts:getNestedTranslation]`: If a translation path fails to resolve, the function returns the literal path string rather than throwing or returning null.
+- `[I18nContext.tsx:useI18n]`: Must be invoked within an `<I18nProvider>`, throwing `Error('useI18n must be used within I18nProvider')` if context is absent.
+- `[I18nContext.tsx:I18nProvider]`: Parameter interpolation replaces exact pattern `{{paramKey}}` with stringified values.
+
+## Side Effects
+- `[I18nContext.tsx:I18nProvider]`: Reads from and persists active language selection to `localStorage` under key `'kitabim_language'`.
+
+## Verification
+- Run: `npm test`
+
+---
+
+## Developer Guide
+
+### Structure
 ```
 src/
 ├── i18n/
 │   ├── i18n.ts              # Core i18n configuration
 │   ├── I18nContext.tsx      # React context provider
-│   └── README.md            # This file
+│   └── README.md            # Component contract and developer guide
 └── locales/
     ├── ug.json              # Uyghur translations (default)
     └── en.json              # English translations
 ```
 
-## Usage
+### Usage
 
-### 1. Using translations in components
-
+#### 1. Using translations in components
 ```typescript
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -34,8 +58,7 @@ const MyComponent = () => {
 };
 ```
 
-### 2. Switching languages
-
+#### 2. Switching languages
 The `LanguageSwitcher` component is available in the navbar. Users can click the globe icon to switch between languages.
 
 ```typescript
@@ -50,10 +73,7 @@ setLanguage('en');
 setLanguage('ug');
 ```
 
-### 3. Adding new translations
-
-#### Step 1: Add to translation files
-
+#### 3. Adding new translations
 Add your translation key to both `locales/ug.json` and `locales/en.json`:
 
 **ug.json**
@@ -76,33 +96,13 @@ Add your translation key to both `locales/ug.json` and `locales/en.json`:
 }
 ```
 
-#### Step 2: Use in your component
-
-```typescript
-const { t } = useI18n();
-
-<h1>{t('myFeature.title')}</h1>
-<p>{t('myFeature.description')}</p>
-```
-
-### 4. Translation with parameters
-
+#### 4. Translation with parameters
 The `t()` function supports simple `{{param}}` interpolation:
-
 ```typescript
-// In your component
 t('welcome.message', { name: 'Ahmad' })
-
-// In translation file
-"welcome": {
-  "message": "سالام {{name}}!"
-}
 ```
 
-## Translation Keys Organization
-
-Translations are organized by feature/section:
-
+### Translation Keys Organization
 - `common.*` - Common UI elements (buttons, labels)
 - `app.*` - Application-wide text (name, tagline, footer)
 - `auth.*` - Authentication (login/OAuth) UI
@@ -125,46 +125,9 @@ Translations are organized by feature/section:
 - `suggestions.*` - Suggestion/question rotator
 - `theme.*` - Theme switcher
 
-## Example: Updating a Component
-
-**Before:**
-```typescript
-<button>كىتاب قوشۇش</button>
-```
-
-**After:**
-```typescript
-import { useI18n } from '../../i18n/I18nContext';
-
-const MyComponent = () => {
-  const { t } = useI18n();
-
-  return (
-    <button>{t('nav.addBook')}</button>
-  );
-};
-```
-
-## Components Already Updated
-
-i18n coverage is now broad: 50+ components across `admin/`, `auth/`, `chat/`, `graph/`, `layout/`, `library/`, `pages/`, `reader/`, `share/`, and `spell-check/` consume `useI18n`, including Navbar, LanguageSwitcher, HomeView, LibraryView, BookCard, ChatInterface, ReaderView, AdminView, AdminTabs, UserManagementPanel, SpellCheckPanel, and Modal.
-
-When adding a new component, check `grep -rl "useI18n" src` for examples of the current pattern rather than relying on this list, since it will drift as components are added.
-
-## Best Practices
-
+### Best Practices
 1. **Always add to both language files** - Ensure feature parity between languages
 2. **Use descriptive keys** - `nav.home` is better than `h1`
 3. **Group related translations** - Keep features together
 4. **Keep keys flat when possible** - Don't nest too deeply
 5. **Use consistent naming** - Follow existing patterns
-
-## Default Language
-
-The default language is **Uyghur (ug)**. This is set in `i18n/i18n.ts`:
-
-```typescript
-export const defaultLanguage: Language = 'ug';
-```
-
-Users can change the language using the LanguageSwitcher component, and their preference is saved to `localStorage` (`kitabim_language`), so it persists across sessions, not just the current one.

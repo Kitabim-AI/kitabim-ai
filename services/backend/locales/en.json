@@ -90,6 +90,7 @@
     "exact_phrase_page_hit_line_no_page": "{title}",
     "knowledge_graph_title": "Knowledge Graph",
     "short_work_intro": "The full text of the poem «{title}» is as follows:",
-    "short_work_truncated_note": "(Content truncated; the rest continues in the book.)"
+    "short_work_truncated_note": "(Content truncated; the rest continues in the book.)",
+    "guardrail_refusal": "Sorry, I can only answer questions related to Uyghur literature, history, language and linguistics (dictionaries, spelling, proverbs, synonyms), all library catalog works, Islam, and the Quran. I cannot fulfill out-of-domain or unrelated requests."
   }
 }

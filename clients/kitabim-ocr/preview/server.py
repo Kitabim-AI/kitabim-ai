@@ -20,6 +20,7 @@ from engine.recognize import (
     get_recognition_predictor,
     ocr_page,
 )
+from engine.text_cleanup import is_toc_page
 from engine.workdir import OcrWorkDir
 from kitabim_client.api import KitabimAPIError
 
@@ -793,9 +794,9 @@ async def redo_pages_response(
                 with workdir.save_lock:
                     try:
                         existing = workdir.get_page(page_number)
-                        is_toc = existing.is_toc
+                        is_toc = existing.is_toc or is_toc_page(text)
                     except KeyError:
-                        is_toc = False
+                        is_toc = is_toc_page(text)
                     workdir.set_page(
                         page_number,
                         text=text,

@@ -87,18 +87,27 @@ def correct_uyghur_ocr_orthography(text: str) -> str:
 _OCR_MARKER_RE = re.compile(r"\s*\[(?:Header|Footer)\].*", re.IGNORECASE)
 
 
+_DIGITS_1_4 = r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}"
 _PAGE_NUMBER_RE = re.compile(
-    r"""^\s*
+    rf"""^\s*
     (?:
-        # Decorated / standalone digits: e.g. "- 4 -", "( 12 )", "[3]", "· 4 ·", "4", "— 123 —"
-        (?:[-—–•·*#\(\[\{/\\~]\s*)*
-        [0-9\u0660-\u0669\u06F0-\u06F9]{1,4}
-        (?:\s*[-—–•·*#\)\]\}/\\~])*
+        # Bare standalone digits: e.g. "4", "123", "١٢"
+        {_DIGITS_1_4}
+        |
+        # Paired brackets / parentheses: e.g. "( 12 )", "[3]", "{{ 4 }}"
+        \(\s*{_DIGITS_1_4}\s*\)
+        |
+        \[\s*{_DIGITS_1_4}\s*\]
+        |
+        \{{\s*{_DIGITS_1_4}\s*\}}
+        |
+        # Symmetric dashes / dots / stars / tildes / slashes: e.g. "- 4 -", "— 12 —", "· 4 ·", "~ 15 ~"
+        [-—–•·*~/\\]+\s*{_DIGITS_1_4}\s*[-—–•·*~/\\]+
         |
         # Uyghur / English page labels: e.g. "4 - بەت", "بەت: 4", "Page 4", "p. 4"
-        (?:بەت|page|p\.)\s*[:\-\s]*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}
+        (?:بەت|page|p\.)\s*[:\-\s]*{_DIGITS_1_4}
         |
-        [0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*[:\-]?\s*(?:بەت|page)
+        {_DIGITS_1_4}\s*[:\-]?\s*(?:بەت|page)
     )\s*$""",
     re.IGNORECASE | re.VERBOSE,
 )
@@ -535,6 +544,9 @@ def parse_toc_entries(text: str) -> list[tuple[str, int]]:
 _MAX_SANE_OCR_CHARS = 10000
 
 
+_DEGEN_ALNUM_WORD_RE = re.compile(r"(?:[^\W_]|[\u064B-\u065F])+")
+
+
 def is_degenerate_ocr_output(text: str) -> bool:
     """Detect OCR output that is a runaway repetition loop rather than a real
     page -- e.g. the model getting stuck repeating a single word/punctuation
@@ -547,13 +559,17 @@ def is_degenerate_ocr_output(text: str) -> bool:
         return True
 
     # Punctuation-only tokens (pipe-table borders, dash dialogue markers,
-    # quote marks) legitimately repeat dozens of times in real content, so
-    # only real words count toward the repetition ratio.
-    words = [w for w in text.split() if any(ch.isalnum() for ch in w)]
-    if len(words) < 30:
+    # quote marks) and single-character option labels ('A.', 'B.') legitimately
+    # repeat dozens of times on real pages, so count multi-character words
+    # against total alphanumeric tokens.
+    alnum_words = _DEGEN_ALNUM_WORD_RE.findall(text)
+    if len(alnum_words) < 30:
         return False
-    _, most_common_count = Counter(words).most_common(1)[0]
-    return most_common_count >= 20 and (most_common_count / len(words)) >= 0.2
+    multi_char_words = [w for w in alnum_words if len(w) >= 2]
+    if not multi_char_words:
+        return False
+    _, most_common_count = Counter(multi_char_words).most_common(1)[0]
+    return most_common_count >= 20 and (most_common_count / len(alnum_words)) >= 0.2
 
 
 def generate_uyghur_regex(q: str) -> str:
