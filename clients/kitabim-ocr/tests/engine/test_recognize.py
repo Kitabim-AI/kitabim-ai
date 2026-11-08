@@ -10,8 +10,10 @@ from PIL import Image
 @pytest.fixture(autouse=True)
 def reset_singleton():
     svc._surya_predictor = None
+    svc._toc_line_detector = None
     yield
     svc._surya_predictor = None
+    svc._toc_line_detector = None
 
 
 def _fake_png_bytes() -> bytes:
@@ -1597,3 +1599,172 @@ def test_reocr_looping_blocks_preserves_cross_block_refrain_on_crop_error():
     assert len(blocks) == 3
     assert "ئەلىگە سەن تېۋىپقا" in blocks[0]
     assert "ئەلىگە سەن تېۋىپقا" in blocks[2]
+
+
+def test_block_html_to_markdown_formats_paragraph_toc_entries():
+    html = (
+        '<div data-label="TableOfContents">'
+        "<p>مۇندەرىجە</p>"
+        "<p>كىرىش سۆز ..... 1<br/>بىرىنچى باب ..... 15</p>"
+        "</div>"
+    )
+    assert (
+        svc._block_html_to_markdown(html, "TableOfContents")
+        == "مۇندەرىجە\n\n| كىرىش سۆز | 1 |\n| بىرىنچى باب | 15 |"
+    )
+
+
+def test_process_page_sync_formats_multiline_dot_leader_toc_text_blocks():
+    img = Image.new("RGB", (800, 1200))
+    full_page = MagicMock()
+    full_page.blocks = [
+        _boxed_block("SectionHeader", "<h2>مۇندەرىجە</h2>", 0, 50, 90),
+        _boxed_block("Text", "<p>مۇقەددىمە ..... 1</p>", 1, 120, 160),
+        _boxed_block(
+            "Text",
+            "<p>بەشىنچى باب « قۇتادغۇبىلىك » ۋە قاراخانىلارنىڭ<br/>"
+            "ئەلنى قانۇن بىلەن ئىدارە قىلغان دەۋر-<br/>"
+            "لىرى ..... 232</p>",
+            2,
+            170,
+            260,
+        ),
+        _boxed_block(
+            "Text",
+            "<p>يەتتىنچى باب « قۇتادغۇبىلىك » تە بۈگۈن ئۈچۈن<br/>"
+            "ئەينەك قىلىشقا تېگىشلىك ئالتە مەسىلە .. 322</p>",
+            3,
+            270,
+            340,
+        ),
+    ]
+    predictor = MagicMock()
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    predictor.assert_not_called()
+    assert markdown == (
+        "## مۇندەرىجە\n\n"
+        "| مۇقەددىمە | 1 |\n"
+        "| بەشىنچى باب « قۇتادغۇبىلىك » ۋە قاراخانىلارنىڭ ئەلنى قانۇن بىلەن ئىدارە قىلغان دەۋرلىرى | 232 |\n"
+        "| يەتتىنچى باب « قۇتادغۇبىلىك » تە بۈگۈن ئۈچۈن ئەينەك قىلىشقا تېگىشلىك ئالتە مەسىلە | 322 |"
+    )
+
+
+def test_process_page_sync_reocrs_corrupted_toc_page_line_by_line():
+    import numpy as np
+    from types import SimpleNamespace
+
+    img_arr = np.full((600, 1000, 3), 250, dtype=np.uint8)
+    # Draw tall dark ink for missed left-margin digit '1' on row y=160..195 at x=120..128
+    img_arr[165:190, 120:128] = 20
+    img = Image.fromarray(img_arr)
+
+    full_page = MagicMock()
+    corrupted = _boxed_block(
+        "Text",
+        "<p>بىرىنچى باب تارىخىي سەۋەب ..........<|635|> 1 . "
+        "شەخسىي ھاكىممۇتلەقلىق ..........<|325|></p>",
+        1,
+        110,
+        360,
+    )
+    corrupted.polygon = [[110.0, 110.0], [900.0, 110.0], [900.0, 360.0], [110.0, 360.0]]
+    footer = _boxed_block("PageFooter", "<p>1</p>", 2, 540, 575)
+    footer.polygon = [[120.0, 540.0], [140.0, 540.0], [140.0, 575.0], [120.0, 575.0]]
+    heading = _boxed_block("SectionHeader", "<h2>مۇندەرىجە</h2>", 0, 40, 80)
+    heading.polygon = [[420.0, 40.0], [580.0, 40.0], [580.0, 80.0], [420.0, 80.0]]
+    full_page.blocks = [heading, corrupted, footer]
+
+    det_boxes = [
+        SimpleNamespace(bbox=[420.0, 40.0, 580.0, 80.0]),  # مۇندەرىجە
+        SimpleNamespace(bbox=[180.0, 110.0, 880.0, 150.0]),  # wrapped line 1
+        SimpleNamespace(
+            bbox=[350.0, 160.0, 880.0, 195.0]
+        ),  # wrapped line 2 (missed '1' at x=120..128)
+        SimpleNamespace(bbox=[180.0, 220.0, 880.0, 260.0]),  # entry 2 title
+        SimpleNamespace(
+            bbox=[115.0, 225.0, 160.0, 255.0]
+        ),  # entry 2 page num ('S59' -> '559')
+        SimpleNamespace(bbox=[120.0, 540.0, 140.0, 575.0]),  # discarded footer '1'
+    ]
+    mock_detector = MagicMock(return_value=[SimpleNamespace(bboxes=det_boxes)])
+
+    crop_blocks = [
+        SimpleNamespace(html="<h2>مۇندەرىجە</h2>", error=False),
+        SimpleNamespace(html="<p>بىرىنچى باب تارىخىي ئارقا كۆرۈنۈشى</p>", error=False),
+        SimpleNamespace(html="<p>ۋە قوزغىلىشىدىكى سەۋەب ........</p>", error=False),
+        SimpleNamespace(html="<p>1</p>", error=False),  # synthesized left-margin crop!
+        SimpleNamespace(
+            html="<p>2 . مەڭگۈ ئۇنتۇلمايدىغان ساۋاق .....</p>", error=False
+        ),
+        SimpleNamespace(html="<h3>S59</h3>", error=False),
+    ]
+    predictor = MagicMock(return_value=[SimpleNamespace(blocks=crop_blocks)])
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._get_toc_line_detector", return_value=mock_detector),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    predictor.assert_called_once()
+    assert predictor.call_args.kwargs == {"full_page": False}
+    assert markdown == (
+        "## مۇندەرىجە\n\n"
+        "| بىرىنچى باب تارىخىي ئارقا كۆرۈنۈشى ۋە قوزغىلىشىدىكى سەۋەب | 1 |\n"
+        "| 2 . مەڭگۈ ئۇنتۇلمايدىغان ساۋاق | 559 |"
+    )
+
+
+def test_process_page_sync_collapsed_toc_falls_back_to_text_split_without_detector():
+    img = Image.new("RGB", (400, 600))
+    full_page = MagicMock()
+    full_page.blocks = [
+        _boxed_block(
+            "Text",
+            "<p>1. بىرىنچى تېما .......... 234 "
+            "2. ئىككىنچى تېما .......... 273 "
+            "3. ئۈچىنچى تېما .......... 301</p>",
+            0,
+            50,
+            300,
+        )
+    ]
+    mock_detector = MagicMock(return_value=[])
+    predictor = MagicMock()
+
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._get_toc_line_detector", return_value=mock_detector),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    assert markdown == (
+        "| 1. بىرىنچى تېما | 234 |\n"
+        "| 2. ئىككىنچى تېما | 273 |\n"
+        "| 3. ئۈچىنچى تېما | 301 |"
+    )
+
+
+def test_needs_toc_line_reocr_triggers_on_orphaned_dot_leaders_missing_page_numbers():
+    blocks = [
+        _boxed_block("Text", "<p>1 . بىرىنچى تېما .......... 485</p>", 0, 50, 90),
+        _boxed_block(
+            "Text", "<p>2 . ئىككىنچى تېما ....................</p>", 1, 100, 140
+        ),
+        _boxed_block(
+            "Text", "<p>3 . ئۈچىنچى تېما ....................</p>", 2, 150, 190
+        ),
+        _boxed_block(
+            "Text", "<p>4 . تۆتىنچى تېما ....................</p>", 3, 200, 240
+        ),
+    ]
+    assert svc._is_unformatted_toc_page(blocks) is True
+    assert svc._needs_toc_line_reocr(blocks) is True

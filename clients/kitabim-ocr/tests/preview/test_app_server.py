@@ -1338,3 +1338,42 @@ async def test_background_completion_preserves_landing_stage(tmp_path: Path):
         # Completing in background while user is on landing MUST NOT kick stage to review
         assert state.stage == "landing"
         assert state.workdir is None
+
+
+@pytest.mark.asyncio
+async def test_run_ocr_background_auto_sets_is_toc_for_toc_pages(tmp_path: Path):
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    session_dir = work_root / "toc-sess"
+    session_dir.mkdir()
+    pdf_path = session_dir / "book.pdf"
+    pdf_path.write_bytes(_minimal_pdf_bytes(2))
+    workdir = OcrWorkDir.create(session_dir, source_pdf=pdf_path, total_pages=2)
+    workdir.set_page(1, text="", is_toc=False, confidence=0.0, status="pending")
+    workdir.set_page(2, text="", is_toc=False, confidence=0.0, status="pending")
+    workdir.save()
+
+    state = AppState(client=MagicMock(), work_root=work_root)
+    state.workdir = workdir
+
+    outputs = iter(
+        [
+            "## مۇندەرىجە\n\n| بىرىنچى باب | 1 |",
+            "بۇ ئادەتتىكى مەزمۇن تېكىستى.",
+        ]
+    )
+
+    async def fake_ocr_page(fitz_page, predictor, **kwargs):
+        return next(outputs)
+
+    with (
+        patch(
+            "preview.app_server.get_recognition_predictor",
+            AsyncMock(return_value="pred"),
+        ),
+        patch("preview.app_server.ocr_page", side_effect=fake_ocr_page),
+    ):
+        await _run_ocr_background(workdir, state)
+
+    assert workdir.get_page(1).is_toc is True
+    assert workdir.get_page(2).is_toc is False

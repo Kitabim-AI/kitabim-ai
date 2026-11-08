@@ -26,7 +26,7 @@ Core OCR processing, layout analysis, dictionary validation, queue scheduling, a
   - `[queue.py:BookQueueManager.wait_all]`: Waits for all active and queued sessions to complete.
 - `[recognize.py:LowConfidenceOcrError]`: Exception raised on empty or low-confidence OCR output for non-blank pages.
 - `[recognize.py:get_recognition_predictor]`: Instantiates or returns Surya recognition predictor.
-- `[recognize.py:ocr_page]`: Async page OCR executor orchestrating zoom, preprocessing, inference, and retry loops.
+- `[recognize.py:ocr_page]`: Async page OCR executor orchestrating zoom, preprocessing, inference, Table-of-Contents line-aware recovery and pipe-table formatting, and retry loops.
 - `[recognize.py:is_page_blank]`: Checks rendered Pixmap variance against blank page threshold.
 - `[recognize.py:suppress_bleed_through]`: Cleans background show-through ink from scanned pages.
 - `[recognize.py:enhance_dots_and_contrast]`: Enhances diacritics and dots for Uyghur Arabic script.

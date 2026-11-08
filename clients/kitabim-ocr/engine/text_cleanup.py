@@ -39,6 +39,7 @@ def normalize_uyghur_chars(text: str) -> str:
 
 
 _OCR_MARKER_RE = re.compile(r"\s*\[(?:Header|Footer)\].*", re.IGNORECASE)
+_SURYA_COMPACT_TOKEN_RE = re.compile(r"<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>")
 
 
 _DIGITS_1_4 = r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}"
@@ -275,8 +276,14 @@ def clean_uyghur_text(text: str) -> str:
     # 1. Normalize characters
     text = normalize_uyghur_chars(text)
 
-    # 2. Strip OCR markers
-    text = "\n".join(_OCR_MARKER_RE.sub("", line) for line in text.splitlines())
+    # 2. Strip OCR markers and any leaked Surya compact coordinate/tag tokens
+    cleaned_lines = []
+    for line in text.splitlines():
+        line = _OCR_MARKER_RE.sub("", line)
+        if "<|" in line:
+            line = re.sub(r" {2,}", " ", _SURYA_COMPACT_TOKEN_RE.sub("", line))
+        cleaned_lines.append(line)
+    text = "\n".join(cleaned_lines)
 
     # 3. Strip header and footer page numbers
     text = strip_page_numbers(text)
@@ -309,10 +316,35 @@ def is_toc_page(text: str) -> bool:
     if not lines:
         return False
 
-    pipe_table_pattern = re.compile(r"^\|.*\|\s*\d+\s*\|?$")
+    pipe_table_pattern = re.compile(
+        r"^\|.*\|\s*[0-9\u0660-\u0669\u06F0-\u06F9]+\s*\|?$"
+    )
     pipe_count = sum(1 for line in lines if pipe_table_pattern.match(line))
     if pipe_count >= 5 and (pipe_count / len(lines)) >= 0.5:
         return True
+
+    two_col_pipe_pattern = re.compile(
+        r"^\|\s*[^|]+?\s*\|\s*([0-9\u0660-\u0669\u06F0-\u06F9]{1,4})\s*\|?$"
+    )
+    table_sep_pattern = re.compile(r"^\|\s*[:\-]+\s*\|")
+    if not any(table_sep_pattern.match(line) for line in lines):
+        two_col_nums = [
+            int(
+                m.group(1).translate(
+                    str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+                )
+            )
+            for line in lines
+            if (m := two_col_pipe_pattern.match(line))
+        ]
+        if len(two_col_nums) >= 3 and (len(two_col_nums) / len(lines)) >= 0.5:
+            non_dec = sum(
+                1
+                for i in range(len(two_col_nums) - 1)
+                if two_col_nums[i + 1] >= two_col_nums[i]
+            )
+            if non_dec / (len(two_col_nums) - 1) >= 0.75:
+                return True
 
     dot_leader_pattern = re.compile(r"(\.{6,}|_{6,}|-{6,}|·{6,})")
 

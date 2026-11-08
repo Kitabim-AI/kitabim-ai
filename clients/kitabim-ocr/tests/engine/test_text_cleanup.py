@@ -610,3 +610,26 @@ def test_cleanup_preserves_parallel_rhetoric_recipes_footnotes_and_exclamations(
         "(10) ئۇ باب بالىلىك بايان دېدى ۋە ئۇ باب بالىلىك بايان دېدى."
     )
     assert is_block_repetition_loop(numbered_loop) is True
+
+
+def test_clean_uyghur_text_strips_surya_compact_tokens():
+    raw = "بىرىنچى باب <|635|> تېكىستى <|box|><|325|>"
+    assert clean_uyghur_text(raw) == "بىرىنچى باب تېكىستى"
+
+
+def test_is_toc_page_detects_short_continuation_pipe_toc_and_rejects_data_tables():
+    continuation_toc = (
+        "| 2 . « مەدەنىيەت زور ئىنقىلابى » نى ئىنكار قىلىش | 542 |\n"
+        "| 3 . مەڭگۈ ئۇنتۇلمايدىغان ساۋاق | 559 |\n"
+        "| 4 . تارىخنىڭ تۆلىمى | 580 |"
+    )
+    assert is_toc_page(continuation_toc) is True
+
+    markdown_data_table = (
+        "| ئىسمى | يېشى |\n"
+        "| --- | --- |\n"
+        "| ئەلى | 20 |\n"
+        "| ۋەلى | 25 |\n"
+        "| سەلىم | 30 |"
+    )
+    assert is_toc_page(markdown_data_table) is False

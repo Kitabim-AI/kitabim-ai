@@ -12,6 +12,7 @@ import asyncio
 import io
 import logging
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any
@@ -114,6 +115,8 @@ def get_adaptive_page_zoom(
 
 _surya_predictor: Any = None
 _predictor_lock = asyncio.Lock()
+_toc_line_detector: Any = None
+_toc_detector_lock = threading.Lock()
 _executor: ThreadPoolExecutor | None = None
 
 
@@ -177,10 +180,70 @@ def is_page_blank(pix: fitz.Pixmap) -> bool:
     return float(np.var(arr)) < _BLANK_PAGE_VARIANCE_THRESHOLD
 
 
+_SURYA_COMPACT_TOKEN_RE = re.compile(r"<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>")
 _DOT_LEADER_RE = re.compile(r"[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,}")
 _ROW_NUMBER_RE = re.compile(r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}")
 _LEADING_DOT_LEADER_RE = re.compile(r"^\s*(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,})")
 _TRAILING_DOT_LEADER_RE = re.compile(r"(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,})\s*$")
+_TOC_DOT_RUN_RE = re.compile(r"[.·•∙⋅․﹒｡]{3,}|…{2,}")
+_TOC_DOT_TARGET_OR_TOKEN_RE = re.compile(
+    r"(?:[.·•∙⋅․﹒｡]{3,}|[_\-—–]{4,}|…{2,})\s*"
+    r"(?:<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>[\s.]*)*"
+    r"(?:[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}|<\|\d{1,4}\|>)"
+    r"|(?:^|\n)\s*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*"
+    r"(?:[.·•∙⋅․﹒｡]{3,}|[_\-—–]{4,}|…{2,})"
+)
+_TOC_LINE_HAS_TARGET_RE = re.compile(
+    r"(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…+)\s*"
+    r"(?:<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>[\s.]*)*"
+    r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*$"
+    r"|^\s*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…+)"
+)
+_TOC_INLINE_SPLIT_RE = re.compile(
+    r"((?:[.·•∙⋅․﹒｡]{3,}|…{2,})\s*(?:<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>[\s.]*)*"
+    r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4})\s+(?=\S)"
+)
+_TOC_PIPE_ROW_RE = re.compile(
+    r"^\|\s*[^|]+?\s*\|\s*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*\|?$"
+)
+_NEW_TOC_ITEM_START_RE = re.compile(
+    r"^(?:[0-9\u0660-\u0669\u06F0-\u06F9]{1,3}\s*[.)،\-]|\([0-9\u0660-\u0669\u06F0-\u06F9]{1,3}\)"
+    r"|(?:بىرىنچى|ئىككىنچى|ئۈچىنچى|تۆتىنچى|بەشىنچى|ئالتىنچى|يەتتىنچى|سەككىزىنچى|توققۇزىنچى|ئونىنچى)\s+(?:باب|قىسىم|بۆلەك))"
+)
+_PAGE_NUM_DIGIT_MAP = str.maketrans(
+    {
+        "O": "0",
+        "o": "0",
+        "I": "1",
+        "l": "1",
+        "|": "1",
+        "Z": "2",
+        "z": "2",
+        "S": "5",
+        "s": "5",
+        "B": "8",
+        "٠": "0",
+        "١": "1",
+        "٢": "2",
+        "٣": "3",
+        "٤": "4",
+        "٥": "5",
+        "٦": "6",
+        "٧": "7",
+        "٨": "8",
+        "٩": "9",
+        "۰": "0",
+        "۱": "1",
+        "۲": "2",
+        "۳": "3",
+        "۴": "4",
+        "۵": "5",
+        "۶": "6",
+        "۷": "7",
+        "۸": "8",
+        "۹": "9",
+    }
+)
 
 
 def _html_to_text(html: str) -> str:
@@ -188,6 +251,7 @@ def _html_to_text(html: str) -> str:
 
 
 def _format_table_row(item_text: str) -> str:
+    item_text = _SURYA_COMPACT_TOKEN_RE.sub(" ", item_text)
     matches = list(_ROW_NUMBER_RE.finditer(item_text))
     if not matches:
         return item_text.strip()
@@ -213,9 +277,104 @@ def _format_table_row(item_text: str) -> str:
     title = item_text[: number_match.start()] + " " + item_text[number_match.end() :]
     title = _DOT_LEADER_RE.sub(" ", title)
     title = " ".join(title.split())
+    title = re.sub(r"^[.·•∙⋅․﹒｡…_\s]+|[.·•∙⋅․﹒｡…_\s]+$", "", title)
     if not title:
         return item_text.strip()
     return f"| {title} | {value} |"
+
+
+def _join_toc_wrapped_lines(parts: list[str]) -> str:
+    joined = ""
+    for raw in parts:
+        part = raw.strip()
+        if not part:
+            continue
+        if not joined:
+            joined = part
+        elif re.search(r"[\u0600-\u06FF][-\u2010\u2011_]$", joined):
+            joined = joined[:-1] + part
+        else:
+            joined = f"{joined} {part}"
+    return joined
+
+
+def _split_inline_toc_entries(line: str) -> list[str]:
+    marked = _TOC_INLINE_SPLIT_RE.sub(r"\1\n", line)
+    return [seg.strip() for seg in marked.split("\n") if seg.strip()]
+
+
+def _is_munderije_heading_line(line: str) -> bool:
+    stripped = re.sub(r"^[#\s\-—–:«»\"'()]+|[\s\-—–:«»\"'().]+$", "", line)
+    return "مۇندەرىجە" in stripped and len(stripped) <= 35
+
+
+def _format_toc_lines_to_markdown(
+    lines: list[str], *, promote_munderije_heading: bool = False
+) -> str:
+    expanded: list[str] = []
+    for raw_line in lines:
+        cleaned = _SURYA_COMPACT_TOKEN_RE.sub(" ", raw_line).strip()
+        if not cleaned:
+            continue
+        expanded.extend(_split_inline_toc_entries(cleaned))
+
+    sections: list[str] = []
+    table_rows: list[str] = []
+    pending: list[str] = []
+
+    def flush_table() -> None:
+        if table_rows:
+            sections.append("\n".join(table_rows))
+            table_rows.clear()
+
+    def flush_pending() -> None:
+        if pending:
+            flush_table()
+            sections.append(_join_toc_wrapped_lines(pending))
+            pending.clear()
+
+    for line in expanded:
+        if line.startswith("#") or (
+            _is_munderije_heading_line(line)
+            and not _TOC_LINE_HAS_TARGET_RE.search(line)
+        ):
+            flush_pending()
+            flush_table()
+            if line.startswith("#") or not promote_munderije_heading:
+                sections.append(line)
+            else:
+                sections.append(f"## {line}")
+            continue
+
+        if _TOC_PIPE_ROW_RE.match(line):
+            flush_pending()
+            table_rows.append(line)
+            continue
+
+        if _TOC_LINE_HAS_TARGET_RE.search(line):
+            if (
+                len(pending) == 1
+                and len(pending[0]) <= 35
+                and _NEW_TOC_ITEM_START_RE.match(line)
+            ):
+                flush_pending()
+            full_entry = _join_toc_wrapped_lines([*pending, line])
+            pending.clear()
+            table_rows.append(_format_table_row(full_entry))
+        else:
+            if (
+                len(pending) == 1
+                and len(pending[0]) <= 35
+                and _NEW_TOC_ITEM_START_RE.match(line)
+            ):
+                flush_pending()
+            pending.append(line)
+
+    flush_table()
+    if pending:
+        sections.append(_join_toc_wrapped_lines(pending))
+
+    return "\n\n".join(s for s in sections if s.strip())
 
 
 def _html_rows_to_markdown(html: str) -> str:
@@ -270,9 +429,17 @@ def _mixed_list_html_to_markdown(html: str, format_rows: bool) -> str:
         else:
             for br in node.find_all("br"):
                 br.replace_with("\n")
-            text = "\n".join(
+            node_lines = [
                 line.strip() for line in node.get_text().split("\n") if line.strip()
-            )
+            ]
+            if format_rows and any(
+                _TOC_LINE_HAS_TARGET_RE.search(line) for line in node_lines
+            ):
+                text = _format_toc_lines_to_markdown(
+                    node_lines, promote_munderije_heading=False
+                )
+            else:
+                text = "\n".join(node_lines)
         if text:
             parts.append(text)
     return "\n\n".join(parts)
@@ -319,6 +486,7 @@ def _block_html_to_markdown(html: str, label: str | None = None) -> str:
     p_tags = root.find_all("p")
     if len(p_tags) > 1:
         paras = []
+        all_p_lines: list[str] = []
         for p in p_tags:
             for br in p.find_all("br"):
                 br.replace_with("\n")
@@ -327,7 +495,12 @@ def _block_html_to_markdown(html: str, label: str | None = None) -> str:
             ]
             if p_lines:
                 paras.append("\n".join(p_lines))
+                all_p_lines.extend(p_lines)
         if paras:
+            if label == "TableOfContents":
+                return _format_toc_lines_to_markdown(
+                    all_p_lines, promote_munderije_heading=False
+                )
             return "\n\n".join(paras)
 
     for br in soup.find_all("br"):
@@ -336,6 +509,8 @@ def _block_html_to_markdown(html: str, label: str | None = None) -> str:
     lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
     if not lines:
         return ""
+    if label == "TableOfContents":
+        return _format_toc_lines_to_markdown(lines, promote_munderije_heading=False)
     if len(lines) == 1:
         return lines[0]
 
@@ -726,6 +901,462 @@ def _reocr_looping_blocks(
     return [replacements.get(id(b), b) for b in blocks]
 
 
+def _get_toc_line_detector() -> Any:
+    global _toc_line_detector
+    with _toc_detector_lock:
+        if _toc_line_detector is None:
+            from surya.detection import DetectionPredictor
+
+            try:
+                _toc_line_detector = DetectionPredictor()
+            except Exception:
+                _toc_line_detector = DetectionPredictor.local()
+    return _toc_line_detector
+
+
+def _extract_block_lines(html: str) -> list[str]:
+    # Protect Surya compact tokens (<|635|>) before BeautifulSoup parses HTML,
+    # otherwise html.parser strips '<|...|>' as an unknown HTML tag.
+    safe_html = _SURYA_COMPACT_TOKEN_RE.sub(" __SURYA_TOK__ ", html or "")
+    soup = BeautifulSoup(safe_html, "html.parser")
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    return [
+        line.replace("__SURYA_TOK__", "<|0|>").strip()
+        for line in soup.get_text().split("\n")
+        if line.strip()
+    ]
+
+
+def _extract_page_num_from_crop_text(txt: str) -> str | None:
+    cleaned = re.sub(r"[\s.·•∙⋅․﹒｡…\-—–_()\[\]{}:]+", "", txt.strip())
+    if not cleaned:
+        return None
+    mapped = cleaned.translate(_PAGE_NUM_DIGIT_MAP)
+    if re.fullmatch(r"\d{1,4}", mapped):
+        return mapped
+    match = re.search(r"\d{1,4}", txt.translate(_PAGE_NUM_DIGIT_MAP))
+    return match.group(0) if match else None
+
+
+def _tall_ink_mask_1d(crop_gray: np.ndarray, ink_thresh: float) -> np.ndarray:
+    h, w = crop_gray.shape
+    if h < 6 or w < 2:
+        return np.zeros(w, dtype=bool)
+    ink = crop_gray < ink_thresh
+    ink3 = ink.copy()
+    if w >= 3:
+        ink3[:, 1:-1] = ink[:, :-2] | ink[:, 1:-1] | ink[:, 2:]
+    min_span = max(8, int(round(0.30 * h)))
+    min_pixels = max(3, int(round(0.14 * h)))
+    tall = np.zeros(w, dtype=bool)
+    for x in range(w):
+        ys = np.flatnonzero(ink3[:, x])
+        if ys.size >= min_pixels and (int(ys[-1]) - int(ys[0]) + 1) >= min_span:
+            tall[x] = True
+    return tall
+
+
+def _is_unformatted_toc_page(content_blocks: list[Any]) -> bool:
+    if not content_blocks:
+        return False
+    all_lines: list[str] = []
+    has_unformatted_block = False
+    for b in content_blocks:
+        html = (b.html or "").strip()
+        if not html:
+            continue
+        if b.label in _ROW_FORMAT_LABELS and ("<li" in html or "<tr" in html):
+            if _SURYA_COMPACT_TOKEN_RE.search(html):
+                has_unformatted_block = True
+        else:
+            has_unformatted_block = True
+        all_lines.extend(_extract_block_lines(html))
+
+    if not all_lines or not has_unformatted_block:
+        return False
+
+    joined = "\n".join(all_lines)
+    dot_targets = len(_TOC_DOT_TARGET_OR_TOKEN_RE.findall(joined))
+    long_dot_lines = sum(
+        1 for line in all_lines if re.search(r"[.·•∙⋅․﹒｡]{6,}|…{3,}", line)
+    )
+    has_munderije = any(_is_munderije_heading_line(line) for line in all_lines)
+    if has_munderije and (dot_targets >= 1 or long_dot_lines >= 1):
+        return True
+    return dot_targets >= 3 or (dot_targets >= 1 and long_dot_lines >= 3)
+
+
+def _needs_toc_line_reocr(blocks: list[Any]) -> bool:
+    if not _is_unformatted_toc_page(blocks):
+        return False
+    for b in blocks:
+        html = (b.html or "").strip()
+        if not html or getattr(b, "skipped", False) or getattr(b, "error", False):
+            continue
+        if _SURYA_COMPACT_TOKEN_RE.search(html):
+            return True
+        for line in _extract_block_lines(html):
+            if len(_TOC_DOT_RUN_RE.findall(line)) >= 2:
+                return True
+            # Dot leader with no recognized page number means full-page decoding
+            # dropped or truncated the margin page number after the leader run.
+            if re.search(
+                r"[.·•∙⋅․﹒｡]{4,}|…{2,}", line
+            ) and not _TOC_LINE_HAS_TARGET_RE.search(line):
+                return True
+    return False
+
+
+def _format_toc_blocks_to_markdown(content_blocks: list[Any]) -> str:
+    lines: list[str] = []
+    for b in content_blocks:
+        rendered = _block_html_to_markdown(b.html, b.label)
+        if not rendered.strip():
+            continue
+        for line in rendered.split("\n"):
+            if line.strip():
+                lines.append(line.strip())
+    return _format_toc_lines_to_markdown(lines, promote_munderije_heading=True)
+
+
+def _reocr_toc_page_lines(
+    image: Image.Image,
+    recognition_predictor: Any,
+    all_page_blocks: list[Any],
+    valid_blocks: list[Any],
+    gray_arr: np.ndarray,
+) -> str | None:
+    try:
+        from surya.layout.schema import LayoutBox, LayoutResult
+
+        detector = _get_toc_line_detector()
+        det_res = detector([image])
+        det_boxes = det_res[0].bboxes if det_res else []
+    except Exception as exc:
+        logger.warning(
+            "Line-level ToC detection unavailable, using text fallback: %s", exc
+        )
+        return None
+
+    if not det_boxes or len(det_boxes) < 2:
+        return None
+
+    w, h = image.size
+    paper = float(np.percentile(gray_arr, 90))
+    ink_pixels = gray_arr[gray_arr < max(40.0, paper - 35.0)]
+    ink_ref = paper - float(np.percentile(ink_pixels, 20)) if ink_pixels.size else 80.0
+    ink_thresh = paper - max(30.0, 0.25 * ink_ref)
+
+    valid_ids = {id(b) for b in valid_blocks}
+    valid_bboxes: list[tuple[float, float, float, float]] = []
+    discard_bboxes: list[tuple[float, float, float, float]] = []
+    for b in all_page_blocks:
+        bb = _get_block_bbox(b)
+        if not bb:
+            continue
+        bx0, bx1, by0, by1 = bb
+        if id(b) in valid_ids and b.label not in FOOTNOTE_LABELS:
+            valid_bboxes.append((bx0, by0, bx1, by1))
+        else:
+            discard_bboxes.append((bx0, by0, bx1, by1))
+
+    min_valid_y = min((b[1] for b in valid_bboxes), default=0.0)
+    max_valid_y = max((b[3] for b in valid_bboxes), default=float(h))
+
+    filtered: list[list[float]] = []
+    for db in det_boxes:
+        x0, y0, x1, y1 = [float(v) for v in db.bbox]
+        bw, bh = x1 - x0, y1 - y0
+        if bw < 8 or bh < 8:
+            continue
+        cx, cy = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
+        if any(
+            dx0 - 10 <= cx <= dx1 + 10 and dy0 - 10 <= cy <= dy1 + 10
+            for dx0, dy0, dx1, dy1 in discard_bboxes
+        ):
+            continue
+        if valid_bboxes and (
+            y0 > max_valid_y + 2.0 * bh or y1 < min_valid_y - 2.0 * bh
+        ):
+            continue
+        filtered.append([x0, y0, x1, y1])
+
+    if len(filtered) < 2:
+        return None
+
+    filtered.sort(key=lambda b: (0.5 * (b[1] + b[3]), b[0]))
+    rows: list[list[list[float]]] = []
+    for box in filtered:
+        if not rows:
+            rows.append([box])
+            continue
+        prev_row = rows[-1]
+        ry0 = min(b[1] for b in prev_row)
+        ry1 = max(b[3] for b in prev_row)
+        ov = min(ry1, box[3]) - max(ry0, box[1])
+        min_h = min(ry1 - ry0, box[3] - box[1])
+        rcy = 0.5 * (ry0 + ry1)
+        bcy = 0.5 * (box[1] + box[3])
+        if min_h > 0 and (ov / min_h >= 0.40 or abs(bcy - rcy) <= 0.45 * min_h):
+            prev_row.append(box)
+        else:
+            rows.append([box])
+
+    if len(rows) >= 3:
+        last_row, prev_row = rows[-1], rows[-2]
+        last_w = max(b[2] for b in last_row) - min(b[0] for b in last_row)
+        last_h = max(b[3] for b in last_row) - min(b[1] for b in last_row)
+        gap_y = min(b[1] for b in last_row) - max(b[3] for b in prev_row)
+        if last_w < 0.08 * w and gap_y > 2.2 * last_h:
+            rows.pop()
+
+    wide_rows = [
+        (min(b[0] for b in r), max(b[2] for b in r))
+        for r in rows
+        if (max(b[2] for b in r) - min(b[0] for b in r)) >= 0.35 * w
+    ]
+    col_left = min((x0 for x0, _ in wide_rows), default=0.1 * w)
+    col_right = max((x1 for _, x1 in wide_rows), default=0.9 * w)
+    col_w = max(1.0, col_right - col_left)
+    max_num_col_x1 = col_left + max(70.0, 0.085 * w)
+
+    layout_boxes: list[Any] = []
+    row_specs: list[tuple[int | None, int | None, list[float] | None]] = []
+    pad_x = max(8.0, round(0.008 * w))
+    title_pad_x = max(14.0, round(0.012 * w))
+    pad_y = max(6.0, round(0.003 * h))
+
+    for r in rows:
+        r_sorted = sorted(r, key=lambda b: b[0])
+        ry0 = float(max(0, round(min(b[1] for b in r_sorted) - pad_y)))
+        ry1 = float(min(h, round(max(b[3] for b in r_sorted) + pad_y)))
+        raw_y0 = int(max(0, round(min(b[1] for b in r_sorted))))
+        raw_y1 = int(min(h, round(max(b[3] for b in r_sorted))))
+
+        num_bbox: list[float] | None = None
+        title_bbox: list[float] | None = None
+
+        if (
+            len(r_sorted) >= 2
+            and r_sorted[0][2] <= max_num_col_x1 + 25
+            and (r_sorted[0][2] - r_sorted[0][0]) <= 0.12 * w
+        ):
+            nb = r_sorted[0]
+            num_bbox = [
+                max(0.0, nb[0] - pad_x),
+                ry0,
+                min(float(w), nb[2] + pad_x),
+                ry1,
+            ]
+            tb_x0 = min(b[0] for b in r_sorted[1:])
+            tb_x1 = max(b[2] for b in r_sorted[1:])
+            title_bbox = [
+                max(float(nb[2] + 4.0), tb_x0 - title_pad_x),
+                ry0,
+                min(float(w), tb_x1 + title_pad_x),
+                ry1,
+            ]
+        else:
+            rx0 = min(b[0] for b in r_sorted)
+            rx1 = max(b[2] for b in r_sorted)
+            split_done = False
+            if (rx1 - rx0) >= 0.40 * w and rx0 <= max_num_col_x1:
+                rcrop = gray_arr[raw_y0:raw_y1, int(rx0) : int(rx1)]
+                tall = _tall_ink_mask_1d(rcrop, ink_thresh)
+                tall_idx = np.flatnonzero(tall)
+                if tall_idx.size >= 4:
+                    diffs = np.diff(tall_idx)
+                    min_gap = max(85, int(0.08 * w))
+                    gap_positions = np.flatnonzero(diffs >= min_gap)
+                    if gap_positions.size > 0:
+                        g = int(gap_positions[0])
+                        left_end_rel = int(tall_idx[g])
+                        right_start_rel = int(tall_idx[g + 1])
+                        if rx0 + left_end_rel <= max_num_col_x1 + 30:
+                            num_bbox = [
+                                max(0.0, rx0 + int(tall_idx[0]) - pad_x),
+                                ry0,
+                                min(float(w), rx0 + left_end_rel + pad_x),
+                                ry1,
+                            ]
+                            safe_title_x0 = max(
+                                rx0 + left_end_rel + 12.0,
+                                rx0 + right_start_rel - max(36.0, 2.5 * title_pad_x),
+                            )
+                            title_bbox = [
+                                max(0.0, safe_title_x0),
+                                ry0,
+                                min(float(w), rx1 + title_pad_x),
+                                ry1,
+                            ]
+                            split_done = True
+
+            if not split_done:
+                title_bbox = [
+                    max(0.0, rx0 - title_pad_x),
+                    ry0,
+                    min(float(w), rx1 + title_pad_x),
+                    ry1,
+                ]
+                search_x0 = int(max(0, round(col_left - 18)))
+                search_x1 = int(min(round(rx0 - 4), round(max_num_col_x1)))
+                if search_x1 - search_x0 >= 10:
+                    lcrop = gray_arr[raw_y0:raw_y1, search_x0:search_x1]
+                    ltall = _tall_ink_mask_1d(lcrop, ink_thresh)
+                    ltall_idx = np.flatnonzero(ltall)
+                    if ltall_idx.size >= 2:
+                        num_bbox = [
+                            max(0.0, float(search_x0 + int(ltall_idx[0])) - pad_x),
+                            ry0,
+                            min(
+                                float(w),
+                                float(search_x0 + int(ltall_idx[-1]) + 1) + pad_x,
+                            ),
+                            ry1,
+                        ]
+
+        t_idx: int | None = None
+        n_idx: int | None = None
+        if title_bbox is not None:
+            t_idx = len(layout_boxes)
+            layout_boxes.append(
+                LayoutBox(
+                    polygon=title_bbox,
+                    label="Text",
+                    raw_label="Text",
+                    position=t_idx,
+                    count=220,
+                )
+            )
+        if num_bbox is not None:
+            n_idx = len(layout_boxes)
+            layout_boxes.append(
+                LayoutBox(
+                    polygon=num_bbox,
+                    label="Text",
+                    raw_label="Text",
+                    position=n_idx,
+                    count=24,
+                )
+            )
+        row_specs.append((t_idx, n_idx, title_bbox))
+
+    if not layout_boxes:
+        return None
+
+    logger.info(
+        "Re-OCRing ToC page line-by-line (%s physical rows, %s crops)",
+        len(row_specs),
+        len(layout_boxes),
+    )
+    layout = LayoutResult(
+        bboxes=layout_boxes, image_bbox=[0.0, 0.0, float(w), float(h)]
+    )
+    rec_blocks = recognition_predictor([image], [layout], full_page=False)[0].blocks
+
+    out_sections: list[str] = []
+    table_rows: list[str] = []
+    pending_title_lines: list[str] = []
+
+    def flush_table() -> None:
+        if table_rows:
+            out_sections.append("\n".join(table_rows))
+            table_rows.clear()
+
+    def flush_pending() -> None:
+        if pending_title_lines:
+            flush_table()
+            out_sections.append(_join_toc_wrapped_lines(pending_title_lines))
+            pending_title_lines.clear()
+
+    for t_idx, n_idx, t_bb in row_specs:
+        t_txt = ""
+        if t_idx is not None and not getattr(rec_blocks[t_idx], "error", False):
+            t_txt = _html_to_text(rec_blocks[t_idx].html or "")
+        t_txt = _SURYA_COMPACT_TOKEN_RE.sub(" ", t_txt)
+        t_txt = " ".join(t_txt.split())
+
+        n_val: str | None = None
+        if n_idx is not None and not getattr(rec_blocks[n_idx], "error", False):
+            n_raw = _html_to_text(rec_blocks[n_idx].html or "")
+            n_val = _extract_page_num_from_crop_text(n_raw)
+
+        if n_val is None and t_txt:
+            m_trail = re.search(
+                r"(?:[.·•∙⋅․﹒｡…\-—–_]{2,})\s*([0-9\u0660-\u0669\u06F0-\u06F9]{1,4})\s*$",
+                t_txt,
+            )
+            if m_trail:
+                n_val = m_trail.group(1)
+                t_txt = t_txt[: m_trail.start()].strip()
+            else:
+                m_lead = re.match(
+                    r"^\s*([0-9\u0660-\u0669\u06F0-\u06F9]{1,4})\s*(?:[.·•∙⋅․﹒｡…\-—–_]{2,})",
+                    t_txt,
+                )
+                if m_lead:
+                    n_val = m_lead.group(1)
+                    t_txt = t_txt[m_lead.end() :].strip()
+
+        t_txt = re.sub(
+            r"^\s*(?:[.·•∙⋅․﹒｡…_]{2,})\s*|\s*(?:[.·•∙⋅․﹒｡…_]{2,})\s*$",
+            "",
+            t_txt,
+        ).strip()
+
+        if not t_txt and not n_val:
+            continue
+
+        if n_val is None and t_bb is not None:
+            tw = t_bb[2] - t_bb[0]
+            left_margin = t_bb[0] - col_left
+            right_margin = col_right - t_bb[2]
+            is_centered = (
+                tw < 0.55 * col_w
+                and left_margin > 0.14 * col_w
+                and right_margin > 0.14 * col_w
+            )
+            if _is_munderije_heading_line(t_txt):
+                flush_pending()
+                flush_table()
+                out_sections.append(f"## {t_txt.lstrip('#').strip()}")
+                continue
+            if is_centered and not pending_title_lines:
+                flush_table()
+                out_sections.append(f"### {t_txt.lstrip('#').strip()}")
+                continue
+
+        if n_val is not None:
+            if (
+                len(pending_title_lines) == 1
+                and len(pending_title_lines[0]) <= 35
+                and _NEW_TOC_ITEM_START_RE.match(t_txt)
+            ):
+                flush_pending()
+            full_title = _join_toc_wrapped_lines(
+                [*pending_title_lines, *([t_txt] if t_txt else [])]
+            )
+            pending_title_lines.clear()
+            if full_title:
+                table_rows.append(_format_table_row(f"{full_title} ..... {n_val}"))
+        else:
+            if (
+                len(pending_title_lines) == 1
+                and len(pending_title_lines[0]) <= 35
+                and _NEW_TOC_ITEM_START_RE.match(t_txt)
+            ):
+                flush_pending()
+            pending_title_lines.append(t_txt)
+
+    flush_table()
+    if pending_title_lines:
+        out_sections.append(_join_toc_wrapped_lines(pending_title_lines))
+
+    formatted = "\n\n".join(s for s in out_sections if s.strip())
+    return formatted if formatted.strip() else None
+
+
 def _process_page_sync(
     image: Image.Image,
     recognition_predictor: Any,
@@ -735,8 +1366,10 @@ def _process_page_sync(
     non_marginalia_blocks = [
         b for b in result.blocks if not _is_vertical_marginalia_block(b, img_w, img_h)
     ]
-    page_blocks = _reocr_looping_blocks(
-        recognition_predictor, image, non_marginalia_blocks
+    page_blocks = (
+        non_marginalia_blocks
+        if _needs_toc_line_reocr(non_marginalia_blocks)
+        else _reocr_looping_blocks(recognition_predictor, image, non_marginalia_blocks)
     )
 
     footnotes: list[str] = []
@@ -788,6 +1421,33 @@ def _process_page_sync(
                 continue
 
         valid_blocks.append(block)
+
+    content_blocks = [b for b in valid_blocks if b.label not in FOOTNOTE_LABELS]
+    if _is_unformatted_toc_page(content_blocks):
+        toc_markdown: str | None = None
+        if _needs_toc_line_reocr(content_blocks):
+            toc_markdown = _reocr_toc_page_lines(
+                image,
+                recognition_predictor,
+                result.blocks,
+                valid_blocks,
+                gray_arr,
+            )
+        if not toc_markdown:
+            toc_markdown = _format_toc_blocks_to_markdown(content_blocks)
+        for block in valid_blocks:
+            if block.label in FOOTNOTE_LABELS:
+                ft = _block_html_to_markdown(block.html, block.label)
+                if (
+                    ft.strip()
+                    and not is_block_repetition_loop(ft)
+                    and not is_hallucinated_arabic_block(ft)
+                    and not is_hallucinated_ghost_text(ft)
+                ):
+                    footnotes.append(ft)
+        toc_parts = [p for p in (toc_markdown, *footnotes) if p and p.strip()]
+        mean_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+        return "\n\n".join(toc_parts), mean_confidence
 
     # Group vertically adjacent Text blocks that belong to the same poem stanza.
     # Surya frequently segments each verse line of a poem as an independent Text block.
