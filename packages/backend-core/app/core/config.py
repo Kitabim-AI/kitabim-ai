@@ -169,6 +169,10 @@ class Settings:
     admin_emails: str = os.getenv(
         "ADMIN_EMAILS", ""
     )  # Comma-separated list of admin emails
+    usercheck_enabled: bool = os.getenv(
+        "USERCHECK_ENABLED", "false"
+    ).strip().lower() in ("true", "1", "yes")
+    usercheck_api_key: str = os.getenv("USERCHECK_API_KEY", "")
 
     # Cookie Security (set ALLOW_INSECURE_COOKIES=true for local HTTP dev)
     cookie_secure: bool = os.getenv("ALLOW_INSECURE_COOKIES", "false").lower() != "true"

@@ -330,6 +330,39 @@ def decode_oauth_state_token(token: str) -> Optional[OAuthState]:
         return None
 
 
+PLACEHOLDER_EMAIL_DOMAINS: frozenset[str] = frozenset(
+    {
+        "facebook.placeholder",
+        "twitter.placeholder",
+        "instagram.placeholder",
+    }
+)
+
+
+def is_placeholder_email(email: str, provider: Optional[str] = None) -> bool:
+    """
+    Check whether an email address uses a synthetic OAuth placeholder domain.
+
+    When `provider` is omitted (`None`), returns True if the host matches any
+    configured `*.placeholder` domain (used to prevent cross-provider email
+    linking onto synthetic placeholder accounts). When `provider` is supplied,
+    requires an exact `{provider}.placeholder` match for non-Google social
+    providers (`facebook`, `twitter`, `instagram`).
+    """
+    if not email:
+        return False
+    local, sep, host = email.strip().lower().rpartition("@")
+    if not sep or not local or "@" in local:
+        return False
+    if provider is None:
+        return host in PLACEHOLDER_EMAIL_DOMAINS
+    provider_norm = provider.strip().lower()
+    return (
+        provider_norm in {"facebook", "twitter", "instagram"}
+        and host == f"{provider_norm}.placeholder"
+    )
+
+
 def is_admin_email(email: str) -> bool:
     """
     Check if an email should be auto-promoted to admin.
@@ -341,4 +374,4 @@ def is_admin_email(email: str) -> bool:
         True if email is in the admin emails list.
     """
     admin_emails = get_admin_emails_list()
-    return email.lower() in admin_emails
+    return email.strip().lower() in admin_emails

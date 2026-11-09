@@ -10,6 +10,8 @@ TTL_USER_PROFILE = settings.cache_ttl_user_profile
 TTL_STATS = settings.cache_ttl_stats
 TTL_SUMMARY_SEARCH = settings.cache_ttl_summary_search
 TTL_OCR_FREQUENT_CORRECTIONS = settings.cache_ttl_ocr_frequent_corrections
+TTL_USERCHECK_DOMAIN = 2592000  # 30 days
+TTL_USERCHECK_NEGATIVE_MX = 7200  # 2 hours
 
 # Cache key patterns
 KEY_BOOK = "book:{book_id}"
@@ -34,3 +36,6 @@ KEY_OCR_FREQUENT_CORRECTIONS = "ocr:frequent_corrections"
 # Pre-computed by entity_resolution_service after every merge/split/unmerge and resolution
 # batch — query time is a lookup, never a live disambiguation call (design v2 §6).
 KEY_GRAPH_ALIAS_LOOKUP = "graph:alias:{alias}"
+KEY_USERCHECK_DOMAIN = "usercheck:domain:{domain}"
+KEY_USERCHECK_COOLDOWN = "usercheck:cooldown"
+KEY_USERCHECK_PACE = "usercheck:pace"

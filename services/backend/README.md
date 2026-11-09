@@ -5,7 +5,7 @@ FastAPI HTTP application providing REST API endpoints, user authentication, RBAC
 
 ## Local Interface & Invariants
 - `[main.py:app]`: FastAPI application instance with lifespan handler, CORS, rate limiting, and security middlewares.
-- `[main.py:lifespan]`: Context manager initializing logging, translations, JWT secret validation, SQLAlchemy database session pools, system config seeding, ADK DatabaseSessionService, and the Redis pub/sub invalidation listener.
+- `[main.py:lifespan]`: Context manager initializing logging, translations, JWT secret validation, UserCheck config validation and 0-credit `/status` startup probe, SQLAlchemy database session pools, system config seeding, ADK DatabaseSessionService, and the Redis pub/sub invalidation listener.
 - `[main.py:redis_pubsub_listener]`: Background task subscribing to the `user_invalidation` Redis Pub/Sub channel to evict user profiles from `user_lru_cache`.
 - `[main.py:limiter]`: Slowapi rate limiter bound to client remote IP addresses.
 - `[main.py:add_language_header]`: HTTP middleware setting request language context (`ug` or `en`, default `ug`).
@@ -29,6 +29,7 @@ FastAPI HTTP application providing REST API endpoints, user authentication, RBAC
 
 ## Global Side Effects
 - Database: Initializes SQLAlchemy connection pool (`init_db`) and seeds system configs in PostgreSQL (`[main.py:lifespan]`).
+- External APIs: Probes UserCheck `GET https://api.usercheck.com/status` at startup when `USERCHECK_ENABLED=true` (`[main.py:lifespan]`).
 - Redis: Subscribes to `user_invalidation` channel on Redis pub/sub (`[main.py:redis_pubsub_listener]`).
 - Storage: Serves static covers from `settings.covers_dir` or redirects to Google Cloud Storage (`[main.py:get_cover]`).
 

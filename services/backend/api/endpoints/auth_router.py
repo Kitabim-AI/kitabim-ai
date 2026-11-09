@@ -6,7 +6,7 @@ import html as html_module
 import json
 import logging
 from typing import Optional
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -14,9 +14,11 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.session import get_session
 
 from auth.dependencies import get_current_user
+from auth.email_domain_guard import evaluate_signup_email_domain
 from app.core.i18n import t
 from auth.jwt_handler import (
     create_access_token,
@@ -28,6 +30,7 @@ from auth.jwt_handler import (
 from auth.oauth_providers import (
     OAuthState,
     is_admin_email,
+    is_placeholder_email,
     create_oauth_state_token,
     decode_oauth_state_token,
 )
@@ -198,18 +201,25 @@ async def oauth_callback(
     # Handle OAuth errors
     if error:
         logger.warning(f"OAuth error from {provider}: {error}")
+        err_state = decode_oauth_state_token(state) if state else None
         return _error_response(
-            t("errors.oauth_login_failed", provider=provider, error=error)
+            t("errors.oauth_login_failed", provider=provider, error=error),
+            error_code="oauth_login_failed",
+            redirect_uri=err_state.redirect_uri if err_state else None,
         )
 
     if not code or not state:
-        return _error_response(t("errors.missing_oauth_params"))
+        return _error_response(
+            t("errors.missing_oauth_params"), error_code="oauth_login_failed"
+        )
 
     # Validate state by decoding the signed JWT (no cookie needed).
     # The JWT contains state, nonce, code_verifier, and redirect_uri.
     saved_state = decode_oauth_state_token(state)
     if not saved_state:
-        return _error_response(t("errors.invalid_oauth_state"))
+        return _error_response(
+            t("errors.invalid_oauth_state"), error_code="oauth_login_failed"
+        )
 
     try:
         # Exchange code for tokens (with PKCE code_verifier for Twitter)
@@ -221,18 +231,27 @@ async def oauth_callback(
 
         if not access_token:
             logger.error(f"No access token in {provider} response: {token_response}")
-            return _error_response(t("errors.no_access_token"))
+            return _error_response(
+                t("errors.no_access_token"),
+                error_code="oauth_login_failed",
+                redirect_uri=saved_state.redirect_uri,
+            )
 
         # Get user info from provider
         logger.info(f"Fetching user info from {provider}...")
         user_info = await oauth_provider.get_user_info(access_token)
         logger.info(f"User info retrieved for {provider}")
+        normalized_email = (user_info.email or "").strip().lower()
 
         # Check if email is verified (skip for Twitter/Facebook/Instagram placeholder emails)
-        if not user_info.email_verified and not user_info.email.endswith(
-            ("@twitter.placeholder", "@facebook.placeholder", "@instagram.placeholder")
+        if not user_info.email_verified and not is_placeholder_email(
+            normalized_email, provider=provider
         ):
-            return _error_response(t("errors.email_not_verified"))
+            return _error_response(
+                t("errors.email_not_verified"),
+                error_code="email_not_verified",
+                redirect_uri=saved_state.redirect_uri,
+            )
 
         # Check if user exists with this provider
         user = await get_user_by_provider(session, provider, user_info.provider_id)
@@ -240,28 +259,55 @@ async def oauth_callback(
         if not user:
             # If email exists under a different provider, link to that account.
             # Verified OAuth emails are treated as proof of identity.
-            if user_info.email_verified and not user_info.email.endswith(
-                (
-                    "@twitter.placeholder",
-                    "@facebook.placeholder",
-                    "@instagram.placeholder",
-                )
-            ):
-                existing_user = await get_user_by_email(session, user_info.email)
+            # Omit `provider` so no provider can link onto any `*.placeholder` email.
+            if user_info.email_verified and not is_placeholder_email(normalized_email):
+                existing_user = await get_user_by_email(session, normalized_email)
                 if existing_user:
                     user = existing_user
 
+        client_ip = request.client.host if request.client else None
+
         if not user:
+            # Read live system_configs before releasing the pooled DB connection
+            config_repo = SystemConfigsRepository(session)
+            auth_usercheck_enabled_raw = await config_repo.get_value(
+                "auth_usercheck_enabled", "true"
+            )
+            blocked_domains_raw = await config_repo.get_value(
+                "auth_blocked_email_domains", ""
+            )
+            await session.rollback()
+
+            decision = await evaluate_signup_email_domain(
+                email=normalized_email,
+                provider=provider,
+                email_verified=user_info.email_verified,
+                auth_usercheck_enabled_raw=auth_usercheck_enabled_raw,
+                blocked_domains_raw=blocked_domains_raw,
+                client_ip=client_ip,
+            )
+            if decision.status == "reject_policy":
+                return _error_response(
+                    t("errors.signup_email_domain_rejected"),
+                    error_code="signup_email_domain_rejected",
+                    redirect_uri=saved_state.redirect_uri,
+                )
+            if decision.status == "reject_unavailable":
+                return _error_response(
+                    t("errors.signup_verification_unavailable"),
+                    error_code="signup_verification_unavailable",
+                    redirect_uri=saved_state.redirect_uri,
+                )
+
             # Determine role based on admin emails
             role = (
-                UserRole.ADMIN if is_admin_email(user_info.email) else UserRole.READER
+                UserRole.ADMIN if is_admin_email(normalized_email) else UserRole.READER
             )
 
             # Create new user
-            client_ip = request.client.host if request.client else None
             user = await create_user(
                 session=session,
-                email=user_info.email,
+                email=normalized_email,
                 display_name=user_info.name,
                 provider=provider,
                 provider_id=user_info.provider_id,
@@ -272,7 +318,6 @@ async def oauth_callback(
             logger.info(f"Created new user from {provider} OAuth: {user.id}")
         else:
             # Update last login and avatar
-            client_ip = request.client.host if request.client else None
             await update_user_login(session, user.id, user_info.picture, client_ip)
             logger.info(
                 f"User logged in via {provider} OAuth: {user.id} from {client_ip}"
@@ -280,7 +325,11 @@ async def oauth_callback(
 
         # Check if user is active
         if not user.is_active:
-            return _error_response(t("errors.account_disabled"))
+            return _error_response(
+                t("errors.account_disabled"),
+                error_code="account_disabled",
+                redirect_uri=saved_state.redirect_uri,
+            )
 
         # Generate tokens
         access_token = create_access_token(user)
@@ -320,7 +369,11 @@ async def oauth_callback(
         # Log detailed error for debugging but don't expose to user
         logger.exception(f"OAuth callback error for {provider}: {e}")
         # Return generic error message to prevent information leakage
-        return _error_response(t("errors.oauth_login_failed"))
+        return _error_response(
+            t("errors.oauth_login_failed"),
+            error_code="oauth_login_failed",
+            redirect_uri=saved_state.redirect_uri,
+        )
 
 
 @router.post("/refresh")
@@ -612,15 +665,46 @@ def _success_response(access_token: str, refresh_token: str) -> HTMLResponse:
     return response
 
 
-def _error_response(message: str) -> HTMLResponse:
+def _build_error_redirect_url(
+    redirect_uri: Optional[str], error_code: str
+) -> Optional[str]:
+    """Append `?auth_error=<error_code>` to a validated OAuth `redirect_uri`."""
+    if not redirect_uri or not _is_allowed_redirect_uri(redirect_uri):
+        return None
+    parts = urlsplit(redirect_uri)
+    query_pairs = [
+        (k, v)
+        for (k, v) in parse_qsl(parts.query, keep_blank_values=True)
+        if k != "auth_error"
+    ]
+    query_pairs.append(("auth_error", error_code))
+    return urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc,
+            parts.path,
+            urlencode(query_pairs),
+            parts.fragment,
+        )
+    )
+
+
+def _error_response(
+    message: str,
+    error_code: str = "oauth_login_failed",
+    redirect_uri: Optional[str] = None,
+) -> HTMLResponse:
     """
-    Generate HTML response for OAuth errors.
+    Generate HTML response for OAuth errors across desktop popups and mobile redirects.
     """
     allowed_origins_list = [
         origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()
     ]
     allowed_origins_json = json.dumps(allowed_origins_list)
+    safe_redirect_url = _build_error_redirect_url(redirect_uri, error_code)
+    redirect_url_json = json.dumps(safe_redirect_url)
     _safe_message = html_module.escape(message)
+    button_label = "Return to App" if safe_redirect_url else "Close"
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -673,25 +757,57 @@ def _error_response(message: str) -> HTMLResponse:
             <div class="error-icon">⚠️</div>
             <h2>Login Failed</h2>
             <div class="message">{_safe_message}</div>
-            <button onclick="window.close()">Close</button>
+            <button id="auth-error-action">{button_label}</button>
         </div>
         <script>
-            // Notify opener of error
-            if (window.opener && !window.opener.closed) {{
+            (function() {{
+                const payload = {{
+                    type: 'OAUTH_ERROR',
+                    error: {json.dumps(message)},
+                    errorCode: {json.dumps(error_code)}
+                }};
+                const redirectUrl = {redirect_url_json};
                 const allowedOrigins = {allowed_origins_json};
+
                 try {{
-                    for (const origin of allowedOrigins) {{
-                        window.opener.postMessage({{
-                            type: 'OAUTH_ERROR',
-                            error: {json.dumps(message)}
-                        }}, origin);
+                    const authChannel = new BroadcastChannel('kitabim_auth');
+                    authChannel.postMessage(payload);
+                    authChannel.close();
+                }} catch (_) {{}}
+
+                if (window.opener && !window.opener.closed) {{
+                    try {{
+                        for (const origin of allowedOrigins) {{
+                            window.opener.postMessage(payload, origin);
+                        }}
+                        setTimeout(() => window.close(), 1500);
+                    }} catch (err) {{
+                        console.error('Failed to post error message:', err);
                     }}
-                    // Auto-close after a short delay
-                    setTimeout(() => window.close(), 2000);
-                }} catch (err) {{
-                    console.error('Failed to post error message:', err);
+                }} else if (redirectUrl) {{
+                    setTimeout(() => window.location.replace(redirectUrl), 1200);
+                }} else {{
+                    setTimeout(() => {{
+                        try {{ window.close(); }} catch (_) {{}}
+                    }}, 1200);
                 }}
-            }}
+
+                const btn = document.getElementById('auth-error-action');
+                if (btn) {{
+                    btn.onclick = function() {{
+                        if (redirectUrl) {{
+                            window.location.replace(redirectUrl);
+                            return;
+                        }}
+                        try {{ window.close(); }} catch (_) {{}}
+                        setTimeout(() => {{
+                            if (!window.closed) {{
+                                window.location.replace('/');
+                            }}
+                        }}, 150);
+                    }};
+                }}
+            }})();
         </script>
     </body>
     </html>

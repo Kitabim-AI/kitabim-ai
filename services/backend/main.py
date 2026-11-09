@@ -47,6 +47,7 @@ from app.db.session import (
 from app.core.i18n import I18n, set_current_lang, t
 
 from app.utils.observability import configure_logging, log_json, request_id_var
+from auth.email_domain_guard import probe_usercheck_status, validate_usercheck_config
 from auth.jwt_handler import validate_jwt_secret
 
 from app.services.storage_service import storage
@@ -128,6 +129,41 @@ async def lifespan(app: FastAPI):
                 logging.WARNING,
                 "Authentication features will not work properly",
             )
+
+    # Validate UserCheck signup domain gate config & API key (fail fast in production)
+    monthly_credits_remaining = None
+    try:
+        validate_usercheck_config()
+    except ValueError as e:
+        log_json(
+            logger, logging.ERROR, "UserCheck config validation failed", error=str(e)
+        )
+        if settings.environment == "production":
+            raise RuntimeError(
+                f"Cannot start in production without valid UserCheck API key: {e}"
+            )
+    else:
+        if settings.usercheck_enabled:
+            try:
+                monthly_credits_remaining = await probe_usercheck_status()
+            except PermissionError as e:
+                log_json(
+                    logger,
+                    logging.ERROR,
+                    "UserCheck API key rejected by upstream /status",
+                    error=str(e),
+                )
+                if settings.environment == "production":
+                    raise RuntimeError(
+                        f"Cannot start in production with rejected UserCheck API key: {e}"
+                    )
+    log_json(
+        logger,
+        logging.INFO,
+        "UserCheck signup domain gate status",
+        usercheck_enabled=settings.usercheck_enabled,
+        monthly_credits_remaining=monthly_credits_remaining,
+    )
 
     # Initialize SQLAlchemy (replaces db_manager.connect_to_storage())
     await init_db()

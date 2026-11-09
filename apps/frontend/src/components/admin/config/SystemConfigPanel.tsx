@@ -43,7 +43,7 @@ interface CircuitBreakerStatus {
   overall_state: string;
 }
 
-type FeatureGroup = 'all' | 'ocr' | 'rag' | 'embed' | 'kg' | 'history' | 'summary' | 'spell' | 'sys';
+type FeatureGroup = 'all' | 'ocr' | 'rag' | 'embed' | 'kg' | 'history' | 'summary' | 'spell' | 'auth' | 'sys';
 
 interface FeatureGroupInfo {
   id: FeatureGroup;
@@ -63,6 +63,7 @@ const FEATURE_GROUPS: FeatureGroupInfo[] = [
   { id: 'history', label: 'History', prefix: 'history_', badgeBg: 'bg-rose-50 dark:bg-rose-950/40', badgeText: 'text-rose-700 dark:text-rose-400', badgeBorder: 'border-rose-200 dark:border-rose-900/40' },
   { id: 'summary', label: 'Summary', prefix: 'summary_', badgeBg: 'bg-indigo-50 dark:bg-indigo-950/40', badgeText: 'text-indigo-700 dark:text-indigo-400', badgeBorder: 'border-indigo-200 dark:border-indigo-900/40' },
   { id: 'spell', label: 'Spell Check', prefix: 'spell_', badgeBg: 'bg-teal-50 dark:bg-teal-950/40', badgeText: 'text-teal-700 dark:text-teal-400', badgeBorder: 'border-teal-200 dark:border-teal-900/40' },
+  { id: 'auth', label: 'Auth', prefix: 'auth_', badgeBg: 'bg-cyan-50 dark:bg-cyan-950/40', badgeText: 'text-cyan-700 dark:text-cyan-400', badgeBorder: 'border-cyan-200 dark:border-cyan-900/40' },
   { id: 'sys', label: 'System', prefix: 'sys_', badgeBg: 'bg-slate-100 dark:bg-slate-800', badgeText: 'text-slate-700 dark:text-slate-300', badgeBorder: 'border-slate-200 dark:border-slate-700' },
 ];
 

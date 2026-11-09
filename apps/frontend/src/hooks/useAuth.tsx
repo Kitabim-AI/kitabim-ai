@@ -3,13 +3,27 @@
  */
 
 import { ReactNode, createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { AuthService, User, clearAccessToken, getAccessToken, initAppConfig, recoverSessionToken, refreshAccessToken, setAccessToken } from '../services/authService';
+import {
+  AuthErrorCode,
+  AuthService,
+  OAuthCallbackError,
+  User,
+  clearAccessToken,
+  clearConsumedRedirectAuthError,
+  consumeRedirectAuthError,
+  getAccessToken,
+  initAppConfig,
+  recoverSessionToken,
+  refreshAccessToken,
+  setAccessToken,
+} from '../services/authService';
 
 interface AuthState {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   error: string | null;
+  errorCode: AuthErrorCode | null;
 }
 
 interface AuthContextType extends AuthState {
@@ -19,17 +33,19 @@ interface AuthContextType extends AuthState {
   loginWithTwitter: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({
+  const [state, setState] = useState<AuthState>(() => ({
     user: null,
     isLoading: true,
     isAuthenticated: false,
     error: null,
-  });
+    errorCode: consumeRedirectAuthError(),
+  }));
 
   // Check for existing session on mount
   useEffect(() => {
@@ -59,32 +75,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const token = getAccessToken();
       if (!token) {
-        setState({
+        setState(prev => ({
           user: null,
           isLoading: false,
           isAuthenticated: false,
           error: null,
-        });
+          errorCode: prev.errorCode,
+        }));
         return;
       }
 
       try {
         const user = await AuthService.getCurrentUser();
-        setState({
+        setState(prev => ({
           user,
           isLoading: false,
           isAuthenticated: !!user,
           error: null,
-        });
+          errorCode: user ? null : prev.errorCode,
+        }));
       } catch (error) {
         console.error('Auth init failed:', error);
         clearAccessToken();
-        setState({
+        setState(prev => ({
           user: null,
           isLoading: false,
           isAuthenticated: false,
-          error: 'Session expired',
-        });
+          error: null,
+          errorCode: prev.errorCode,
+        }));
       }
     };
 
@@ -92,7 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loginWithGoogle = useCallback(async () => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    clearConsumedRedirectAuthError();
+    setState(prev => ({ ...prev, isLoading: true, error: null, errorCode: null }));
 
     try {
       const user = await AuthService.loginWithGoogle();
@@ -103,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isLoading: false,
           isAuthenticated: true,
           error: null,
+          errorCode: null,
         });
       } else {
         // User cancelled
@@ -110,16 +131,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Google login failed';
+      const errorCode: AuthErrorCode =
+        error instanceof OAuthCallbackError ? error.errorCode : 'oauth_login_failed';
       setState(prev => ({
         ...prev,
         isLoading: false,
         error: message,
+        errorCode,
       }));
     }
   }, []);
 
   const loginWithFacebook = useCallback(async () => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    clearConsumedRedirectAuthError();
+    setState(prev => ({ ...prev, isLoading: true, error: null, errorCode: null }));
 
     try {
       const user = await AuthService.loginWithFacebook();
@@ -130,6 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isLoading: false,
           isAuthenticated: true,
           error: null,
+          errorCode: null,
         });
       } else {
         // User cancelled
@@ -137,16 +163,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Facebook login failed';
+      const errorCode: AuthErrorCode =
+        error instanceof OAuthCallbackError ? error.errorCode : 'oauth_login_failed';
       setState(prev => ({
         ...prev,
         isLoading: false,
         error: message,
+        errorCode,
       }));
     }
   }, []);
 
   const loginWithTwitter = useCallback(async () => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    clearConsumedRedirectAuthError();
+    setState(prev => ({ ...prev, isLoading: true, error: null, errorCode: null }));
 
     try {
       const user = await AuthService.loginWithTwitter();
@@ -157,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isLoading: false,
           isAuthenticated: true,
           error: null,
+          errorCode: null,
         });
       } else {
         // User cancelled
@@ -164,10 +195,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Twitter login failed';
+      const errorCode: AuthErrorCode =
+        error instanceof OAuthCallbackError ? error.errorCode : 'oauth_login_failed';
       setState(prev => ({
         ...prev,
         isLoading: false,
         error: message,
+        errorCode,
       }));
     }
   }, []);
@@ -176,6 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = loginWithGoogle;
 
   const logout = useCallback(async () => {
+    clearConsumedRedirectAuthError();
     setState(prev => ({ ...prev, isLoading: true }));
 
     await AuthService.logout();
@@ -185,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading: false,
       isAuthenticated: false,
       error: null,
+      errorCode: null,
     });
   }, []);
 
@@ -197,6 +233,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const clearError = useCallback(() => {
+    clearConsumedRedirectAuthError();
+    setState(prev => ({ ...prev, error: null, errorCode: null }));
+  }, []);
+
   const value: AuthContextType = {
     ...state,
     login,
@@ -205,6 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loginWithTwitter,
     logout,
     refreshUser,
+    clearError,
   };
 
   return (

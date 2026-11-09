@@ -4,8 +4,8 @@
 Provides reusable React hooks encapsulating authentication, book lifecycle operations, interactive conversational AI, reader DOM manipulation, search debounce, Uyghur transliteration, and spell checking.
 
 ## Interface
-- `[useAuth.tsx:AuthProvider]`: Context provider handling session recovery, token refresh, and OAuth redirect parameters.
-- `[useAuth.tsx:useAuth]`: Hook accessing authentication status, login methods, and user profile data.
+- `[useAuth.tsx:AuthProvider]`: Context provider handling session recovery, token refresh, OAuth redirect parameters (`?access_token=` and validated `?auth_error=`), and closed `AuthErrorCode` state (`errorCode`, `clearError`).
+- `[useAuth.tsx:useAuth]`: Hook accessing authentication status, `errorCode` / `clearError`, login methods, and user profile data.
 - `[useAuth.tsx:useHasRole]`: Hook evaluating whether the current user matches any specified role (`'admin'`, `'editor'`, `'reader'`).
 - `[useAuth.tsx:useIsAdmin]`: Hook returning boolean flag indicating admin privileges.
 - `[useAuth.tsx:useIsEditor]`: Hook returning boolean flag indicating editor or admin privileges.
