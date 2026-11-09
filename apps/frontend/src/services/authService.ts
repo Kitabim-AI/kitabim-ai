@@ -78,6 +78,80 @@ export interface AuthTokens {
   accessToken: string;
 }
 
+export const AUTH_ERROR_CODES = [
+  'signup_email_domain_rejected',
+  'signup_verification_unavailable',
+  'oauth_login_failed',
+  'email_not_verified',
+  'email_already_exists',
+  'account_disabled',
+] as const;
+
+export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number];
+
+const AUTH_ERROR_CODE_SET: ReadonlySet<string> = new Set(AUTH_ERROR_CODES);
+
+export function isAuthErrorCode(value: unknown): value is AuthErrorCode {
+  return typeof value === 'string' && AUTH_ERROR_CODE_SET.has(value);
+}
+
+export class OAuthCallbackError extends Error {
+  readonly errorCode: AuthErrorCode;
+
+  constructor(errorCode: AuthErrorCode, fallbackMessage?: string) {
+    super(fallbackMessage || errorCode);
+    this.name = 'OAuthCallbackError';
+    this.errorCode = errorCode;
+  }
+}
+
+let _redirectErrorChecked = false;
+let _consumedRedirectError: AuthErrorCode | null = null;
+
+/**
+ * Consume and validate `?auth_error=` from the URL once per page load (Mobile Safari OAuth fallback).
+ * Strips the query parameter immediately via history.replaceState while caching the validated
+ * AuthErrorCode across React 19 <StrictMode> double-mounts until clearConsumedRedirectAuthError() runs.
+ */
+export function consumeRedirectAuthError(): AuthErrorCode | null {
+  if (_redirectErrorChecked) {
+    return _consumedRedirectError;
+  }
+  _redirectErrorChecked = true;
+
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('auth_error')) {
+      return null;
+    }
+
+    const rawCode = params.get('auth_error');
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('auth_error');
+    window.history.replaceState({}, '', cleanUrl.toString());
+
+    if (isAuthErrorCode(rawCode)) {
+      _consumedRedirectError = rawCode;
+      return rawCode;
+    }
+  } catch {
+    // Ignore malformed URL edge cases
+  }
+
+  return null;
+}
+
+/**
+ * Reset cached redirect error state after UI consumption.
+ */
+export function clearConsumedRedirectAuthError(): void {
+  _consumedRedirectError = null;
+}
+
 /**
  * Get access token from memory.
  */
@@ -241,7 +315,8 @@ export const AuthService = {
 
       // Use BroadcastChannel as a more robust alternative to window.postMessage
       // that doesn't depend on the fragile window.opener link.
-      const authChannel = new BroadcastChannel('kitabim_auth');
+      const authChannel =
+        typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('kitabim_auth') : null;
 
       const popup = window.open(
         `${API_BASE}/${provider}/login`,
@@ -250,21 +325,25 @@ export const AuthService = {
       );
 
       if (!popup) {
-        authChannel.close();
-        reject(new Error('Popup blocked. Please allow popups for this site.'));
+        authChannel?.close();
+        reject(new OAuthCallbackError('oauth_login_failed', 'Popup blocked. Please allow popups for this site.'));
         return;
       }
 
       let messageReceived = false;
+      let checkInterval: ReturnType<typeof setInterval> | undefined;
 
       // Shared logic to finalize login
       const finalizeLogin = async (token: string) => {
         if (messageReceived) return;
         console.log(`[OAuth ${provider}] Login success! Finalizing session...`);
         messageReceived = true;
-        
+        if (checkInterval !== undefined) {
+          clearInterval(checkInterval);
+        }
+
         setAccessToken(token);
-        authChannel.close();
+        authChannel?.close();
         window.removeEventListener('message', handleMessage);
 
         try {
@@ -279,12 +358,42 @@ export const AuthService = {
         resolve(user);
       };
 
-      // Listen for BroadcastChannel messages
-      authChannel.onmessage = (event) => {
-        if (event.data?.type === 'OAUTH_SUCCESS' && event.data?.accessToken) {
-          finalizeLogin(event.data.accessToken);
+      // Shared logic to fail login with a closed AuthErrorCode
+      const failLogin = (errorCode: AuthErrorCode, fallbackMessage?: string) => {
+        if (messageReceived) return;
+        console.log(`[OAuth ${provider}] Login error (${errorCode})`);
+        messageReceived = true;
+        if (checkInterval !== undefined) {
+          clearInterval(checkInterval);
         }
+
+        authChannel?.close();
+        window.removeEventListener('message', handleMessage);
+
+        try {
+          if (popup && !popup.closed) {
+            popup.close();
+          }
+        } catch (e) {
+          console.warn(`[OAuth ${provider}] Could not close popup:`, e);
+        }
+
+        reject(new OAuthCallbackError(errorCode, fallbackMessage));
       };
+
+      // Listen for BroadcastChannel messages
+      if (authChannel) {
+        authChannel.onmessage = (event) => {
+          if (event.data?.type === 'OAUTH_SUCCESS' && event.data?.accessToken) {
+            finalizeLogin(event.data.accessToken);
+          } else if (event.data?.type === 'OAUTH_ERROR') {
+            const code = isAuthErrorCode(event.data?.errorCode)
+              ? event.data.errorCode
+              : 'oauth_login_failed';
+            failLogin(code, typeof event.data?.error === 'string' ? event.data.error : undefined);
+          }
+        };
+      }
 
       // Listen for postMessage from popup (legacy/fallback)
       const handleMessage = async (event: MessageEvent) => {
@@ -303,14 +412,13 @@ export const AuthService = {
           return;
         }
 
-        if (event.data?.type === 'OAUTH_SUCCESS') {
+        if (event.data?.type === 'OAUTH_SUCCESS' && event.data?.accessToken) {
           finalizeLogin(event.data.accessToken);
         } else if (event.data?.type === 'OAUTH_ERROR') {
-          console.log(`[OAuth ${provider}] Received error message`);
-          messageReceived = true;
-          authChannel.close();
-          window.removeEventListener('message', handleMessage);
-          reject(new Error(event.data.error));
+          const code = isAuthErrorCode(event.data?.errorCode)
+            ? event.data.errorCode
+            : 'oauth_login_failed';
+          failLogin(code, typeof event.data?.error === 'string' ? event.data.error : undefined);
         }
       };
 
@@ -318,7 +426,7 @@ export const AuthService = {
 
       // When popup closes, attempt a silent refresh — the backend may have set
       // the httpOnly refresh cookie even if postMessage/BroadcastChannel failed.
-      const checkInterval = setInterval(async () => {
+      checkInterval = setInterval(async () => {
         try {
           if (popup.closed) {
             clearInterval(checkInterval);
@@ -331,13 +439,13 @@ export const AuthService = {
                 const user = await this.getCurrentUser();
                 if (user) {
                   console.log(`[OAuth ${provider}] Silent refresh succeeded`);
-                  authChannel.close();
+                  authChannel?.close();
                   resolve(user);
                   return;
                 }
               }
-              authChannel.close();
-              reject(new Error('Login cancelled or popup closed without authentication'));
+              authChannel?.close();
+              resolve(null);
             }
           }
         } catch (e) {

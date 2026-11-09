@@ -10,6 +10,9 @@ Provides API client services communicating with backend REST endpoints, handling
 - `[authService.ts:getMaxUploadMb]`: Returns maximum file upload limit in megabytes.
 - `[authService.ts:User]`: Interface representing authenticated user attributes (`id`, `email`, `displayName`, `avatarUrl`, `role`).
 - `[authService.ts:AuthTokens]`: Interface representing token responses.
+- `[authService.ts:AUTH_ERROR_CODES]` / `[authService.ts:AuthErrorCode]` / `[authService.ts:isAuthErrorCode]`: Closed 6-value OAuth callback error code allowlist and type guard.
+- `[authService.ts:OAuthCallbackError]`: Error subclass carrying a validated `AuthErrorCode` from `BroadcastChannel` or `postMessage` OAuth error events.
+- `[authService.ts:consumeRedirectAuthError]` / `[authService.ts:clearConsumedRedirectAuthError]`: Consumes, validates, caches (across React `<StrictMode>` double-mounts), and strips `?auth_error=` from Mobile Safari OAuth error redirects.
 - `[authService.ts:getAccessToken]`: Returns active in-memory JWT access token.
 - `[authService.ts:setAccessToken]`: Updates active in-memory JWT access token.
 - `[authService.ts:clearAccessToken]`: Resets active in-memory JWT access token to `null`.
@@ -60,6 +63,7 @@ Provides API client services communicating with backend REST endpoints, handling
 
 ## Side Effects
 - `[authService.ts:recoverSessionToken]`: Mutates `sessionStorage` by deleting `'kitabim_access_token_session'`.
+- `[authService.ts:consumeRedirectAuthError]`: Strips `?auth_error=` from the browser URL bar via `window.history.replaceState` and caches the validated `AuthErrorCode` in module state.
 - `[pdfService.ts:loadPdfJs]`: Appends `<script>` tags to `document.head` to fetch PDF.js from external CDN.
 - `[pdfService.ts:convertPageToBase64Image]`: Instantiates off-screen `<canvas>` elements and invokes 2D rendering contexts.
 - All service modules: Dispatch HTTP network requests across `/api/*` endpoints.

@@ -18,7 +18,7 @@ Defines the SQLAlchemy 2.0 ORM domain models, database engine initialization, co
 - `[session.py:close_db]` — Closes the async engine and releases connection pool resources.
 - `[session.py:get_session]` — Async generator yielding scoped `AsyncSession` instances.
 - `[session.py:get_engine]` — Returns the active `AsyncEngine` instance.
-- `[seeds.py:seed_system_configs]` — Idempotently seeds default system configurations into PostgreSQL.
+- `[seeds.py:seed_system_configs]` — Idempotently seeds default system configurations into PostgreSQL (including OCR, RAG, embedding, spell-check, and `auth_usercheck_enabled` / `auth_blocked_email_domains` signup gate defaults).
 - [Repositories](./repositories/README.md) — Subdirectory providing domain repository query classes.
 
 ## Invariants

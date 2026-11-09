@@ -312,6 +312,16 @@ async def seed_system_configs(session: AsyncSession):
             "value": "2000",
             "description": "Target character count per page when splitting DOCX files that lack native page-break markers.",
         },
+        {
+            "key": "auth_usercheck_enabled",
+            "value": "true",
+            "description": "Enable pre-signup UserCheck email domain verification when USERCHECK_ENABLED=true (true/false)",
+        },
+        {
+            "key": "auth_blocked_email_domains",
+            "value": "xintaitong.com",
+            "description": "Comma-separated root email domains blocked from new OAuth signups (matches exact domain and subdomains)",
+        },
     ]
 
     for item in defaults:

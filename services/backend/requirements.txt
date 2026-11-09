@@ -31,3 +31,4 @@ redis[hiredis]>=5.0.0
 tenacity>=8.2.0
 neo4j
 defusedxml>=0.7.1
+publicsuffix2>=2.20191221

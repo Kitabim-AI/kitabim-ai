@@ -36,6 +36,13 @@ Authentication and authorization subsystem providing JWT lifecycle management (a
 - `[oauth_providers.py:create_oauth_state_token]`: Encodes `OAuthState` into a 10-minute signed JWT
 - `[oauth_providers.py:decode_oauth_state_token]`: Decodes and verifies state JWT, returning `None` if invalid
 - `[oauth_providers.py:is_admin_email]`: Checks if an email is configured for automatic admin promotion
+- `[oauth_providers.py:PLACEHOLDER_EMAIL_DOMAINS]`: Frozenset of synthetic placeholder domains (`facebook.placeholder`, `twitter.placeholder`, `instagram.placeholder`)
+- `[oauth_providers.py:is_placeholder_email]`: Checks whether an email uses a synthetic OAuth placeholder domain (across all providers when `provider=None`, or matching a specific provider)
+- `[email_domain_guard.py:DomainGateDecision]`: Frozen dataclass describing signup email-domain gate verdict (`status`, `reason`, `domain`, `root_domain`, `cache_status`)
+- `[email_domain_guard.py:VERIFIED_CONSUMER_ALLOWLIST]`: Frozenset of major consumer email domains bypassing external lookups when `email_verified=True`
+- `[email_domain_guard.py:validate_usercheck_config]`: Validates `USERCHECK_API_KEY` is present and non-placeholder when `USERCHECK_ENABLED=True`
+- `[email_domain_guard.py:probe_usercheck_status]`: Calls UserCheck's 0-credit `GET /status` endpoint at startup to verify API key validity and log remaining monthly credits
+- `[email_domain_guard.py:evaluate_signup_email_domain]`: DB-free pre-signup email domain gate enforcing placeholder/admin bypasses, IDNA/syntax validation, `auth_blocked_email_domains` suffix matching, verified consumer allowlisting, `publicsuffix2` `eTLD+1` asymmetric Redis caching, `1 req/sec` atomic Redis pacing, and fail-closed UserCheck `GET /domain/{domain}` verification
 - Providers: [./providers/README.md](./providers/README.md) - Concrete OAuth 2.0 implementations for Google, Facebook, Twitter, and Instagram.
 
 ## Invariants
@@ -47,7 +54,8 @@ Authentication and authorization subsystem providing JWT lifecycle management (a
 
 ## Side Effects
 - Queries and caches user profiles in Redis (`cache_config.KEY_USER`) and the local in-process `user_lru_cache` (`[dependencies.py:get_current_user_optional]`).
-- Performs outbound HTTPS requests via `httpx.AsyncClient` to `oauth2.googleapis.com` and `www.googleapis.com` (`[oauth_providers.py:exchange_code_for_tokens]`, `[oauth_providers.py:get_google_user_info]`).
+- Performs outbound HTTPS requests via `httpx.AsyncClient` to `oauth2.googleapis.com`, `www.googleapis.com`, and `api.usercheck.com` (`/status` and `/domain/{domain}`) (`[oauth_providers.py:exchange_code_for_tokens]`, `[oauth_providers.py:get_google_user_info]`, `[email_domain_guard.py:probe_usercheck_status]`, `[email_domain_guard.py:evaluate_signup_email_domain]`).
+- Reads and writes domain verdicts, upstream cooldown flags, and atomic `1 req/sec` pace locks in Redis (`usercheck:domain:*`, `usercheck:cooldown`, `usercheck:pace`) (`[email_domain_guard.py:evaluate_signup_email_domain]`).
 - Emits structured error and warning logs on JWT signature failures and missing OAuth credentials (`[jwt_handler.py:decode_jwt]`, `[oauth_providers.py:validate_oauth_config]`).
 
 ## Verification
