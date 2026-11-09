@@ -2,6 +2,7 @@
   "errors": {
     "cannot_disable_self": "Cannot disable your own account.",
     "oauth_not_configured": "Google OAuth is not configured",
+    "oauth_login_failed": "Sign-in failed. Please try again.",
     "google_login_failed": "Google login failed: {error}",
     "missing_oauth_params": "Missing code or state parameter",
     "oauth_cookie_missing": "OAuth state cookie missing",
@@ -9,6 +10,8 @@
     "no_access_token": "No access token in response",
     "email_not_verified": "Email not verified with Google",
     "email_already_exists": "An account with this email already exists. Please sign in with your original provider.",
+    "signup_email_domain_rejected": "Temporary or unroutable email domains cannot be used to register. Please sign in with a standard email address.",
+    "signup_verification_unavailable": "Sign-up verification is temporarily busy. Please try again in a moment.",
     "account_disabled": "Your account has been disabled",
     "refresh_token_required": "Refresh token required",
     "invalid_refresh_token": "Invalid refresh token",

@@ -14,7 +14,8 @@ import { useAuth, useIsEditor } from './hooks/useAuth';
 import { useUyghurInput } from './hooks/useUyghurInput';
 import { PersistenceService } from './services/persistenceService';
 import { GraphView } from './components/graph/GraphView';
-import { NotificationProvider } from './context/NotificationContext';
+import { NotificationProvider, useNotification } from './context/NotificationContext';
+import { useI18n } from './i18n/I18nContext';
 import DictionaryView from './components/pages/DictionaryView';
 import QuranView from './components/pages/QuranView';
 
@@ -31,10 +32,19 @@ const AppContent: React.FC = () => {
     previousView
   } = useAppContext();
 
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, errorCode, clearError } = useAuth();
   const isEditor = useIsEditor();
+  const { t } = useI18n();
+  const { addNotification } = useNotification();
 
   useUyghurInput();
+
+  // Surface OAuth callback / signup gate errors in the active UI language
+  useEffect(() => {
+    if (!errorCode) return;
+    addNotification(t(`auth.errors.${errorCode}`), 'error');
+    clearError();
+  }, [errorCode, addNotification, clearError, t]);
 
   // Unified Route Guard
   useEffect(() => {

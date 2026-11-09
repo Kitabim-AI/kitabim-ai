@@ -4,10 +4,10 @@
 Houses system-wide configuration, environment settings, pipeline lifecycle definitions, cache keys and TTLs, internationalization, character personas, system prompts, and abstract service protocols.
 
 ## Interface
-- `[config.py:Settings]` — `class Settings(BaseSettings)`: Application configuration loaded from environment variables (PostgreSQL, Redis, GCS, Gemini, JWT auth).
+- `[config.py:Settings]` — `@dataclass(frozen=True) class Settings`: Application configuration loaded from environment variables (PostgreSQL, Redis, GCS, Gemini, JWT auth, OAuth providers, UserCheck signup domain gate).
 - `[config.py:settings]` — Global singleton instance of `Settings`.
-- `[cache_config.py:TTL_BOOKS]` — Time-to-live constants for caching (`TTL_BOOKS`, `TTL_SYSTEM_CONFIG`, `TTL_CATEGORIES`, `TTL_RAG_QUERY`, `TTL_USER_PROFILE`, `TTL_STATS`, `TTL_SUMMARY_SEARCH`, `TTL_OCR_FREQUENT_CORRECTIONS`).
-- `[cache_config.py:KEY_BOOK]` — Redis cache key prefix constants (`KEY_BOOK`, `KEY_BOOKS_LIST`, `KEY_CATEGORY`, `KEY_USER`, `KEY_RAG_EMBEDDING`, `KEY_RAG_SEARCH_SINGLE`, `KEY_RAG_SEARCH_MULTI`, `KEY_RAG_SUMMARY_SEARCH`, `KEY_RAG_WORD_BOOK_COUNT`, `KEY_RAG_BOOKS_WITH_TEXT`, `KEY_PROVERB`, `KEY_STATS`, `KEY_CONFIG`, `KEY_CHAT_USAGE`, `KEY_RAG_REWRITE`, `KEY_OCR_FREQUENT_CORRECTIONS`, `KEY_GRAPH_ALIAS_LOOKUP`).
+- `[cache_config.py:TTL_BOOKS]` — Time-to-live constants for caching (`TTL_BOOKS`, `TTL_SYSTEM_CONFIG`, `TTL_CATEGORIES`, `TTL_RAG_QUERY`, `TTL_USER_PROFILE`, `TTL_STATS`, `TTL_SUMMARY_SEARCH`, `TTL_OCR_FREQUENT_CORRECTIONS`, `TTL_USERCHECK_DOMAIN`, `TTL_USERCHECK_NEGATIVE_MX`).
+- `[cache_config.py:KEY_BOOK]` — Redis cache key prefix constants (`KEY_BOOK`, `KEY_BOOKS_LIST`, `KEY_CATEGORY`, `KEY_USER`, `KEY_RAG_EMBEDDING`, `KEY_RAG_SEARCH_SINGLE`, `KEY_RAG_SEARCH_MULTI`, `KEY_RAG_SUMMARY_SEARCH`, `KEY_RAG_WORD_BOOK_COUNT`, `KEY_RAG_BOOKS_WITH_TEXT`, `KEY_PROVERB`, `KEY_STATS`, `KEY_CONFIG`, `KEY_CHAT_USAGE`, `KEY_RAG_REWRITE`, `KEY_OCR_FREQUENT_CORRECTIONS`, `KEY_GRAPH_ALIAS_LOOKUP`, `KEY_USERCHECK_DOMAIN`, `KEY_USERCHECK_COOLDOWN`, `KEY_USERCHECK_PACE`).
 - `[pipeline.py:PIPELINE_STEP_OCR]` — Pipeline step constants (`PIPELINE_STEP_OCR`, `PIPELINE_STEP_CHUNKING`, `PIPELINE_STEP_EMBEDDING`, `PIPELINE_STEP_SPELL_CHECK`, `PIPELINE_STEP_SUMMARY`).
 - `[pipeline.py:PIPELINE_ORDER]` — Ordered tuple defining book ingestion pipeline execution order.
 - `[pipeline.py:PAGE_MILESTONE_IDLE]` — Page-level milestone status constants (`PAGE_MILESTONE_IDLE`, `PAGE_MILESTONE_IN_PROGRESS`, `PAGE_MILESTONE_SUCCEEDED`, `PAGE_MILESTONE_FAILED`, `PAGE_MILESTONE_ERROR`).

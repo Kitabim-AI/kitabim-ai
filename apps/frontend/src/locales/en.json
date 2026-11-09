@@ -959,7 +959,15 @@
     "loggingIn": "Logging in...",
     "logout": "Logout",
     "yourRole": "Your Role:",
-    "signInMessage": "You need to sign in to use this feature."
+    "signInMessage": "You need to sign in to use this feature.",
+    "errors": {
+      "signup_email_domain_rejected": "Temporary or unroutable email domains cannot be used to register. Please sign in with a standard email address.",
+      "signup_verification_unavailable": "Sign-up verification is temporarily busy. Please try again in a moment.",
+      "oauth_login_failed": "Sign-in failed. Please try again.",
+      "email_not_verified": "Your email address is not verified with the sign-in provider.",
+      "email_already_exists": "An account with this email already exists. Please sign in with your original provider.",
+      "account_disabled": "Your account has been disabled."
+    }
   },
   "joinUs": {
     "hero": {
