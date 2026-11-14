@@ -72,7 +72,7 @@ def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
             page_val = (
                 c.get("page") if c.get("page") is not None else c.get("page_number")
             )
-            key = (c.get("book_id"), page_val)
+            key = (c.get("book_id"), page_val, c.get("section_id"))
             doc = Document(
                 page_content=c.get("text", ""),
                 metadata={
@@ -81,6 +81,11 @@ def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
                     "volume": c.get("volume"),
                     "page": page_val,
                     "page_number": page_val,
+                    "end_page_number": c.get("end_page_number"),
+                    "section_id": c.get("section_id"),
+                    "section_title": c.get("section_title"),
+                    "content_page_number": c.get("content_page_number"),
+                    "end_content_page_number": c.get("end_content_page_number"),
                     "book_id": c.get("book_id"),
                     "score": c.get("score", 0.0),
                     "rrf_score": c.get("rrf_score", 0.0),

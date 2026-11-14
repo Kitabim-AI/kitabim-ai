@@ -498,8 +498,95 @@ def is_toc_page(text: str) -> bool:
     return False
 
 
-_TOC_PIPE_ENTRY_RE = re.compile(r"^\|\s*(.+?)\s*\|\s*(\d+)\s*\|?\s*$")
-_TOC_DOT_LEADER_ENTRY_RE = re.compile(r"^(.+?)\s*[.\-_·]{3,}\s*(\d+)\s*$")
+_DIGIT_TRANSLATION = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+
+
+def normalize_digits(text: str) -> str:
+    """Normalize Arabic-Indic (٠-٩) and Persian (۰-۹) digits to ASCII 0-9."""
+    if not text:
+        return ""
+    return text.translate(_DIGIT_TRANSLATION)
+
+
+_SECTION_TITLE_STRIP_RE = re.compile(
+    r"^[\s#*_|«»\"'“”‘’()\[\]{}.,،؛:!؟?\-—–·•]+|[\s#*_|«»\"'“”‘’()\[\]{}.,،؛:!؟?\-—–·•]+$"
+)
+
+
+def normalize_section_title(title: str) -> str:
+    """Normalize a chapter or work title for deterministic ToC and short-work matching."""
+    if not title:
+        return ""
+    cleaned = normalize_uyghur_chars(title)
+    cleaned = correct_uyghur_ocr_orthography(cleaned)
+    cleaned = normalize_digits(cleaned)
+    cleaned = re.sub(r"^\s*#{1,6}\s*", "", cleaned)
+    cleaned = _SECTION_TITLE_STRIP_RE.sub("", cleaned)
+    cleaned = re.sub(r"[«»\"'“”‘’*_`]", "", cleaned)
+    cleaned = " ".join(cleaned.split()).lower()
+    return cleaned
+
+
+_CIRCLED_FOOTNOTE_MAP = {
+    chr(0x2460 + i): str(i + 1)
+    for i in range(20)  # ①..⑳ -> "1".."20"
+}
+_SUPERSCRIPT_FOOTNOTE_MAP = {
+    "¹": "1",
+    "²": "2",
+    "³": "3",
+    "⁴": "4",
+    "⁵": "5",
+    "⁶": "6",
+    "⁷": "7",
+    "⁸": "8",
+    "⁹": "9",
+}
+_FOOTNOTE_LINE_RE = re.compile(
+    r"^\s*(?:([①-⑳])|([¹²³⁴⁵⁶⁷⁸⁹])|\[\s*([0-9\u0660-\u0669\u06F0-\u06F9]{1,2})\s*\]\s*:)\s*(.+)$"
+)
+
+
+def parse_footnote_line(line: str) -> tuple[str, str] | None:
+    """Parse a footnote definition line into `(normalized_marker, footnote_text)` or None.
+
+    Only unambiguous circled (`①`-`⑳`), superscript (`¹`-`⁹`), and explicit
+    colon-delimited Markdown footnote definitions (`[1]: ...`) are treated as
+    footnote definitions at line start, so numbered list items / prose starting
+    with `(1)` or `[2]` are never misclassified as footnotes.
+    """
+    if not line:
+        return None
+    m = _FOOTNOTE_LINE_RE.match(line.strip())
+    if not m:
+        return None
+    circled, sup, bracketed_colon, body = m.groups()
+    body = body.strip()
+    if not body:
+        return None
+    if circled:
+        return _CIRCLED_FOOTNOTE_MAP.get(circled, circled), body
+    if sup:
+        return _SUPERSCRIPT_FOOTNOTE_MAP.get(sup, sup), body
+    return normalize_digits(bracketed_colon), body
+
+
+_TOC_PAGE_NUM_TOKEN_PAT = (
+    r"(?:[\(\[\{（［]\s*)?([0-9\u0660-\u0669\u06F0-\u06F9]{1,4})(?:\s*[\)\]\}）］])?"
+)
+_TOC_PIPE_ENTRY_RE = re.compile(
+    rf"^\|\s*(.+?)\s*\|\s*{_TOC_PAGE_NUM_TOKEN_PAT}\s*\|?\s*$"
+)
+_TOC_DOT_LEADER_ENTRY_RE = re.compile(
+    r"^(.+?)\s*(?:(?:[.\-_·•∙⋅․﹒｡]\s*){3,}|(?:[.\-_·•∙⋅․﹒｡…]\s*){2,})\s*"
+    r"([^.\-_·•∙⋅․﹒｡…\n]{0,45}?)\s*"
+    rf"{_TOC_PAGE_NUM_TOKEN_PAT}\s*$"
+)
+_TOC_ELLIPSIS_ENTRY_RE = re.compile(
+    r"^(.+?)\s*…{2,}\s*"
+    r"([^.\-_·•∙⋅․﹒｡…\n]{0,45}?)\s*"
+    rf"{_TOC_PAGE_NUM_TOKEN_PAT}\s*$"
+)
 
 
 def parse_toc_entries(text: str) -> list[tuple[str, int]]:
@@ -508,12 +595,12 @@ def parse_toc_entries(text: str) -> list[tuple[str, int]]:
 
     Supports the same two entry shapes ``is_toc_page`` recognizes: modern
     pipe tables ("| Title | 123 |") and old-style dot leaders
-    ("Title ....... 123"). Any line matching neither shape -- the
-    "مۇندەرىجە" heading itself, a pipe-table header/separator row with no
-    trailing page number, blank lines -- is skipped rather than raising.
-    Duplicate titles are not deduplicated; a title legitimately appearing
-    twice (e.g. two poems both called "غەزەل") returns two entries, and
-    disambiguating between them is the caller's job.
+    ("Title ....... 123" or "Title ....... Author ( 123 )"). Any line matching
+    neither shape -- the "مۇندەرىجە" heading itself, a pipe-table
+    header/separator row with no trailing page number, blank lines -- is
+    skipped rather than raising. Duplicate titles are not deduplicated; a title
+    legitimately appearing twice (e.g. two poems both called "غەزەل") returns
+    two entries, and disambiguating between them is the caller's job.
     """
     if not text:
         return []
@@ -524,15 +611,23 @@ def parse_toc_entries(text: str) -> list[tuple[str, int]]:
         if not line:
             continue
 
-        match = _TOC_PIPE_ENTRY_RE.match(line)
-        if not match:
-            match = _TOC_DOT_LEADER_ENTRY_RE.match(line)
-        if not match:
-            continue
+        pipe_match = _TOC_PIPE_ENTRY_RE.match(line)
+        if pipe_match:
+            title = pipe_match.group(1).strip().strip("|").strip()
+            page_str = normalize_digits(pipe_match.group(2).strip())
+        else:
+            leader_match = _TOC_DOT_LEADER_ENTRY_RE.match(
+                line
+            ) or _TOC_ELLIPSIS_ENTRY_RE.match(line)
+            if not leader_match:
+                continue
+            head = leader_match.group(1).strip().strip("|").strip()
+            after_dots = leader_match.group(2).strip()
+            title = f"{head} {after_dots}".strip() if after_dots else head
+            page_str = normalize_digits(leader_match.group(3).strip())
 
-        title = match.group(1).strip()
-        if title:
-            entries.append((title, int(match.group(2))))
+        if title and not re.fullmatch(r"[-:|.\s]+", title) and page_str.isdigit():
+            entries.append((title, int(page_str)))
 
     return entries
 
@@ -611,10 +706,9 @@ def extract_standalone_page_number(text: str) -> int | None:
 
     # Inspect first 2 lines (header) and last 2 lines (footer)
     candidate_lines = lines[:2] + lines[-2:]
-    trans_table = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
 
     for line in candidate_lines:
-        ascii_line = line.translate(trans_table)
+        ascii_line = normalize_digits(line)
         match = re.search(
             r"^\s*(?:[-~—\s]*|page\s*)?(\d{1,4})\s*[-~—\s]*$", ascii_line, re.IGNORECASE
         )

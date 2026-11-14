@@ -33,8 +33,6 @@ class DummyPage:
         self.pipeline_step = "ocr"
         self.milestone = "succeeded"
         self.is_toc = False
-        self.llm_spell_check_status = "idle"
-        self.llm_spell_check_at = None
 
 
 def _make_mock_book():

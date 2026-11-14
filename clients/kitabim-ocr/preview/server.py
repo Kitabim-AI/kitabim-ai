@@ -15,10 +15,12 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from engine.config import get_configured_engine, resolve_concurrency
+from engine.line_ends import text_ends_with_hyphen
 from engine.recognize import (
     LowConfidenceOcrError,
     get_recognition_predictor,
     ocr_page,
+    pop_last_page_ocr_meta,
 )
 from engine.text_cleanup import is_toc_page
 from engine.workdir import OcrWorkDir
@@ -791,6 +793,11 @@ async def redo_pages_response(
                 text = await ocr_page(
                     fitz_page, predictor, max_parallel_pages=target_concurrency
                 )
+                meta = pop_last_page_ocr_meta(fitz_page)
+                detected_num = meta.detected_page_number if meta else None
+                ended_hyphen = (
+                    meta.ended_with_hyphen if meta else text_ends_with_hyphen(text)
+                )
                 with workdir.save_lock:
                     try:
                         existing = workdir.get_page(page_number)
@@ -803,6 +810,8 @@ async def redo_pages_response(
                         is_toc=is_toc,
                         confidence=1.0,
                         status="ocrd",
+                        detected_page_number=detected_num,
+                        ended_with_hyphen=ended_hyphen,
                     )
                     workdir.save()
             except LowConfidenceOcrError as exc:

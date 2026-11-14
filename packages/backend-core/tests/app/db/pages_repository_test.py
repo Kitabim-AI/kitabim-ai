@@ -2,7 +2,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.models import Page
-from app.core.pipeline import PAGE_MILESTONE_SUCCEEDED, PAGE_MILESTONE_FAILED
 
 
 @pytest.mark.asyncio
@@ -206,48 +205,6 @@ async def test_sync_content_page_offset():
 
 
 @pytest.mark.asyncio
-async def test_set_llm_spell_check_status_success():
-    session = AsyncMock()
-    repo = PagesRepository(session)
-    mock_res = MagicMock()
-    mock_res.rowcount = 1
-    session.execute.return_value = mock_res
-
-    result = await repo.set_llm_spell_check_status("b1", 5, PAGE_MILESTONE_SUCCEEDED)
-    assert result is True
-
-
-@pytest.mark.asyncio
-async def test_set_llm_spell_check_status_sets_at_timestamp_on_terminal_status():
-    session = AsyncMock()
-    repo = PagesRepository(session)
-    mock_res = MagicMock()
-    mock_res.rowcount = 1
-    session.execute.return_value = mock_res
-
-    await repo.set_llm_spell_check_status("b1", 5, PAGE_MILESTONE_FAILED)
-
-    call_args = session.execute.call_args[0][0]
-    compiled = call_args.compile()
-    # func.now() compiles to a SQL function call, not a bound parameter, so
-    # assert on the compiled SQL text rather than compiled.params for this column.
-    assert "llm_spell_check_at=now()" in str(compiled)
-    assert compiled.params["llm_spell_check_status"] == PAGE_MILESTONE_FAILED
-
-
-@pytest.mark.asyncio
-async def test_set_llm_spell_check_status_returns_false_for_unknown_page():
-    session = AsyncMock()
-    repo = PagesRepository(session)
-    mock_res = MagicMock()
-    mock_res.rowcount = 0
-    session.execute.return_value = mock_res
-
-    result = await repo.set_llm_spell_check_status("b1", 999, PAGE_MILESTONE_SUCCEEDED)
-    assert result is False
-
-
-@pytest.mark.asyncio
 async def test_find_toc_pages_orders_by_page_number():
     session = AsyncMock()
     repo = PagesRepository(session)
@@ -358,28 +315,6 @@ async def test_count_books_with_text():
     session.execute.return_value = res
 
     assert await PagesRepository(session).count_books_with_text() == 633
-
-
-@pytest.mark.asyncio
-async def test_list_eligible_for_llm_spell_check():
-    session = AsyncMock()
-    repo = PagesRepository(session)
-    mock_res = MagicMock()
-    mock_res.fetchall.return_value = [(10,), (11,)]
-    session.execute.return_value = mock_res
-
-    ids = await repo.list_eligible_for_llm_spell_check("b1", force=False)
-    assert ids == [10, 11]
-    assert session.execute.called
-
-
-@pytest.mark.asyncio
-async def test_bulk_set_llm_spell_check_status():
-    session = AsyncMock()
-    repo = PagesRepository(session)
-
-    await repo.bulk_set_llm_spell_check_status([1, 2, 3], "in_progress")
-    assert session.execute.called
 
 
 @pytest.mark.asyncio

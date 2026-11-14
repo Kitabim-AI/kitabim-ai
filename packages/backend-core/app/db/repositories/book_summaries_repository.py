@@ -84,17 +84,20 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
 
     async def upsert(self, book_id: str, summary: str, embedding: List[float]) -> None:
         """Insert or replace the summary for a book."""
+        from sqlalchemy import func
+
         stmt = insert(BookSummary).values(
             book_id=book_id,
             summary=summary,
             embedding=embedding,
+            generated_at=func.now(),
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=["book_id"],
             set_={
                 "summary": stmt.excluded.summary,
                 "embedding": stmt.excluded.embedding,
-                "generated_at": stmt.excluded.generated_at,
+                "generated_at": func.now(),
             },
         )
         await self.session.execute(stmt)

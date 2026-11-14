@@ -14,8 +14,11 @@ class PageState:
     text: str
     is_toc: bool
     confidence: float
-    status: str  # "pending" | "ocrd" | "reviewed" | "failed"
+    status: str  # "pending" | "ocrd" | "reviewed" | "failed" | "from_kitabim"
     error: Optional[str] = None  # set when status == "failed"
+    detected_page_number: Optional[int] = None
+    skipped: bool = False
+    ended_with_hyphen: bool = False
 
 
 class OcrWorkDir:
@@ -92,7 +95,13 @@ class OcrWorkDir:
         pages_path = path / "pages.json"
         if pages_path.exists():
             pages_raw = json.loads(pages_path.read_text())
-        pages = {p["page_number"]: PageState(**p) for p in pages_raw}
+        valid_fields = set(PageState.__dataclass_fields__.keys())
+        pages = {
+            p["page_number"]: PageState(
+                **{k: v for k, v in p.items() if k in valid_fields}
+            )
+            for p in pages_raw
+        }
 
         # Backward compatibility inference
         book_id = book_meta.get("book_id")
@@ -196,7 +205,17 @@ class OcrWorkDir:
         confidence: float,
         status: str,
         error: Optional[str] = None,
+        detected_page_number: Optional[int] = None,
+        skipped: bool = False,
+        ended_with_hyphen: bool = False,
     ) -> None:
+        existing = self._pages.get(page_number)
+        if (
+            detected_page_number is None
+            and existing is not None
+            and status == "reviewed"
+        ):
+            detected_page_number = existing.detected_page_number
         self._pages[page_number] = PageState(
             page_number=page_number,
             text=text,
@@ -204,6 +223,9 @@ class OcrWorkDir:
             confidence=confidence,
             status=status,
             error=error,
+            detected_page_number=detected_page_number,
+            skipped=skipped,
+            ended_with_hyphen=ended_with_hyphen,
         )
 
     def all_pages(self) -> list[PageState]:

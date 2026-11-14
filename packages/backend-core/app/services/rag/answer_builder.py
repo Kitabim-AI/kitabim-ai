@@ -105,7 +105,7 @@ def build_instructions(
         ),
         (
             "If the context contains the information, ALWAYS cite the source clearly.\n"
-            "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Page: N]\n"
+            "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Section: section_title, Page: N, PrintedPage: M, RefPages: N1,N2]\n"
             "   Book summaries use the marker SUMMARY instead of Page: [BookID: abc123, Book: title, Author: name, SUMMARY]\n"
             "   Dictionary sources use headers like: [Dictionary Source: Uyghur Dictionary, Term: X], [Dictionary Source: History Dictionary, Term: X], [Dictionary Source: English-Uyghur Dictionary, English: X], or [Dictionary Source: Spelling Word List, Word: X]\n"
             "   Quran sources use headers like: [Source: Holy Quran, Surah: SurahNumber - SurahName (EnglishName), Ayah: N]\n"
@@ -114,12 +114,14 @@ def build_instructions(
         _MULTI_VOLUME_INSTRUCTION,
         (
             "Format citations in Uyghur as a markdown link.\n"
-            "   For page-based sources, the link URL MUST be in the format 'ref:book_id:page_number'.\n"
-            "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
+            "   For page-based sources, the link URL MUST be in the format 'ref:book_id:page_number' using the physical page number(s) from 'RefPages:' (or 'Page:' when 'RefPages:' is absent).\n"
+            "   If multiple physical pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
+            "   In the visible Uyghur link text label, display the 'PrintedPage:' value when present in the header (e.g. '46-بەت' or '46–47-بەت'); otherwise display the 'Page:' value.\n"
             "   For SUMMARY-marked sources (no Page field), use 'ref:book_id:summary' as the URL.\n"
             "   For Quran sources, the link URL MUST be in the format 'ref:quran:surah_number:ayah_number' (e.g., 'ref:quran:1:1' or 'ref:quran:2:255'). If multiple ayahs are referenced, separate them with commas in the URL (e.g., 'ref:quran:2:255,256').\n"
             "   STRICT RULE: Do NOT include the 'BookID: abc123' part in the visible text label of the link! Keep the book ID ONLY in the URL parenthesis.\n"
             "   Example (page): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
+            "   Example (multi-page with PrintedPage): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 46–47-بەت](ref:abc123:52,53)\n"
             "   Example (summary): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر) — قىسقىچە مەزمۇنى](ref:abc123:summary)\n"
             "   Example (Quran): **مەنبە:** [قۇرئان كەرىم، سۈرە فاتىھە، 1-ئايەت](ref:quran:1:1)\n"
             f"   For Knowledge Graph sources (where title contains '{kg_label}' or 'Knowledge Graph'), format citations using the title provided in the header (e.g. **مەنبە:** [«مۇغۇلىستان تارىخى» ({kg_label})، 25-بەت](ref:graph:abc123:25) or **مەنبە:** [{kg_label}](ref:graph:abc123)). NEVER write the English string 'Knowledge Graph' in citations or text labels.\n"
@@ -166,6 +168,10 @@ def format_document(doc: Document) -> str:
         if doc.metadata.get("page") is not None
         else doc.metadata.get("page_number")
     )
+    end_page = doc.metadata.get("end_page_number")
+    section_title = doc.metadata.get("section_title")
+    content_page = doc.metadata.get("content_page_number")
+    end_content_page = doc.metadata.get("end_content_page_number")
     book_id = doc.metadata.get("book_id") or "unknown"
 
     if book_id == "quran":
@@ -179,8 +185,30 @@ def format_document(doc: Document) -> str:
         source_parts.append(f"Author: {author}")
     if volume is not None:
         source_parts.append(f"Volume: {volume}")
+    if section_title:
+        source_parts.append(f"Section: {section_title}")
     if page is not None:
         source_parts.append(f"Page: {page}")
+    if content_page is not None:
+        cp_start_str = str(content_page).strip()
+        cp_end_str = (
+            str(end_content_page).strip() if end_content_page is not None else ""
+        )
+        is_cp_range = False
+        if cp_start_str and cp_end_str and cp_end_str != cp_start_str:
+            try:
+                is_cp_range = int(cp_end_str) > int(cp_start_str)
+            except (ValueError, TypeError):
+                is_cp_range = True
+        if is_cp_range:
+            source_parts.append(f"PrintedPage: {content_page}–{end_content_page}")
+        else:
+            source_parts.append(f"PrintedPage: {content_page}")
+    if page is not None and end_page is not None and int(end_page) > int(page):
+        ref_pages = ",".join(str(p) for p in range(int(page), int(end_page) + 1))
+        source_parts.append(f"RefPages: {ref_pages}")
+    elif page is not None and content_page is not None:
+        source_parts.append(f"RefPages: {page}")
 
     header = ", ".join(source_parts)
     return f"[{header}]\n{doc.page_content}"

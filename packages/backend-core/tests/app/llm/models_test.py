@@ -397,43 +397,6 @@ async def test_protected_llm_timeout_fallback(
     assert config.http_options.timeout == 45000
 
 
-@pytest.mark.asyncio
-@patch("app.llm.models._get_text_client")
-@patch("app.llm.models._TEXT_BREAKER.call")
-@patch("app.llm.models._TEXT_LIMITER.wait", new_callable=AsyncMock)
-@patch("app.llm.models.get_system_config_timeout")
-async def test_protected_llm_spell_check_timeout(
-    mock_get_db_timeout, mock_limiter_wait, mock_breaker_call, mock_get_client
-):
-    async def side_effect(fn, *args, ignore_on_failure=None, **kwargs):
-        return await fn(*args, **kwargs)
-
-    mock_breaker_call.side_effect = side_effect
-    mock_get_db_timeout.return_value = 180.0
-
-    mock_client = MagicMock()
-    mock_generate_content = AsyncMock()
-    mock_resp = MagicMock()
-    mock_resp.text = "mocked response"
-    mock_resp.usage_metadata = None
-    mock_generate_content.return_value = mock_resp
-    mock_client.aio.models.generate_content = mock_generate_content
-    mock_get_client.return_value = mock_client
-
-    from app.llm.models import ProtectedLLM, _TEXT_BREAKER
-
-    llm = ProtectedLLM("gemini-3.1-flash-lite", _TEXT_BREAKER)
-    result = await llm.ainvoke(
-        "hello", timeout_config_key="gemini_llm_spell_check_timeout"
-    )
-
-    assert result == "mocked response"
-    mock_get_db_timeout.assert_called_once_with("gemini_llm_spell_check_timeout", 180.0)
-    mock_generate_content.assert_called_once()
-    kwargs = mock_generate_content.call_args.kwargs
-    assert kwargs["config"].http_options.timeout == 180000
-
-
 def test_is_transient_error():
     from app.llm.models import is_transient_error
 

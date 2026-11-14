@@ -1,198 +1,246 @@
 """
-Chunking Job — splits each page's OCR text into chunks and saves them to the DB.
+Chunking Job — book-scoped section-stream chunking.
 
-Each page is processed in its own session scope for error isolation.
-Pages with no text (empty or auto-skipped) are marked succeeded with zero chunks.
-
-Receives: page_ids (list of Page.id already set to in_progress by scanner).
+Loads ordered pages and leaf `book_sections` for a book, builds unprefixed section-stream
+chunks (`chunking_service.chunk_book_sections`), carries over existing embedding vectors
+whose `text_hash` matches (`ChunksRepository.get_embedding_hash_map` + `replace_for_book`),
+and transitions `Book.chunking_milestone` and `Book.embedding_milestone`.
 """
 
 from __future__ import annotations
 
-import time
+import asyncio
 import logging
-from typing import List
+import time
+from typing import List, Optional
 
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import func, select, update
 
+from app.core.pipeline import (
+    BOOK_MILESTONE_COMPLETE,
+    BOOK_MILESTONE_FAILED,
+    BOOK_MILESTONE_IDLE,
+    BOOK_MILESTONE_IN_PROGRESS,
+    PAGE_MILESTONE_COMPLETE,
+)
 from app.db import session as db_session
-from app.db.models import Book, Chunk, Page, PipelineEvent
+from app.db.models import Book, Page
+from app.db.repositories.book_sections_repository import BookSectionsRepository
+from app.db.repositories.chunks_repository import ChunksRepository
+from app.services.cache_service import cache_service
 from app.services.chunking_service import chunking_service
-from app.services.book_milestone_service import BookMilestoneService
-from app.utils.observability import log_json, make_pipeline_event_payload
-from app.utils.text import clean_uyghur_text
+from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.chunking_job")
 
 
-async def chunking_job(ctx, page_ids: List[int]) -> None:
-    log_json(logger, logging.INFO, "chunking job started", page_count=len(page_ids))
-
-    from app.utils.redis_lock import MultiPageLock
-    from app.utils.circuit_breaker import get_redis
-
-    redis_client = ctx.get("redis") or get_redis()
-    lock_manager = MultiPageLock(redis_client, page_ids, prefix="chunking")
-    locked_page_ids = await lock_manager.__aenter__()
-
+async def _chunk_single_book(book_id: str) -> None:
+    start_time = time.perf_counter()
     try:
-        if not locked_page_ids:
-            log_json(logger, logging.WARNING, "No page locks acquired, exiting job")
+        completed_cleanly = False
+        section_chunks = []
+        unembedded_count = 0
+
+        for _attempt in range(3):
+            async with db_session.async_session_factory() as session:
+                await session.execute(
+                    update(Book)
+                    .where(Book.id == book_id)
+                    .values(
+                        pipeline_step="chunking",
+                        chunking_milestone=BOOK_MILESTONE_IN_PROGRESS,
+                        chunking_claimed_at=func.now(),
+                        last_updated=func.now(),
+                    )
+                )
+                await session.commit()
+
+            async with db_session.async_session_factory() as session:
+                sections_repo = BookSectionsRepository(session)
+                pages_res = await session.execute(
+                    select(Page)
+                    .where(Page.book_id == book_id)
+                    .order_by(Page.page_number.asc())
+                )
+                pages = list(pages_res.scalars().all())
+                sections = await sections_repo.list_leaf_sections(book_id)
+
+            section_chunks = chunking_service.chunk_book_sections(pages, sections)
+            chunk_payloads = [
+                {
+                    "book_id": book_id,
+                    "page_number": ch.page_number,
+                    "end_page_number": ch.end_page_number,
+                    "chunk_index": ch.chunk_index,
+                    "text": ch.text,
+                    "section_id": ch.section_id,
+                    "text_hash": ch.text_hash,
+                }
+                for ch in section_chunks
+            ]
+
+            async with db_session.async_session_factory() as session:
+                chunks_repo = ChunksRepository(session)
+                unembedded_count = await chunks_repo.replace_for_book(
+                    book_id,
+                    chunk_payloads,
+                )
+
+                cur_res = await session.execute(
+                    select(Book.chunking_milestone)
+                    .where(Book.id == book_id)
+                    .with_for_update()
+                )
+                cur_row = cur_res.first() if hasattr(cur_res, "first") else None
+                cur_chunk_ms = (
+                    cur_row[0]
+                    if isinstance(cur_row, (tuple, list)) and len(cur_row) > 0
+                    else getattr(cur_row, "chunking_milestone", None)
+                )
+                if (
+                    isinstance(cur_chunk_ms, str)
+                    and cur_chunk_ms == BOOK_MILESTONE_IDLE
+                ):
+                    await session.commit()
+                    log_json(
+                        logger,
+                        logging.INFO,
+                        "book dirtied during chunking job; re-running chunking",
+                        book_id=book_id,
+                    )
+                    continue
+
+                await session.execute(
+                    update(Page)
+                    .where(
+                        Page.book_id == book_id,
+                        Page.ocr_milestone == PAGE_MILESTONE_COMPLETE,
+                    )
+                    .values(
+                        chunking_milestone="succeeded",
+                        last_updated=func.now(),
+                    )
+                )
+
+                if unembedded_count == 0:
+                    await session.execute(
+                        update(Page)
+                        .where(
+                            Page.book_id == book_id,
+                            Page.ocr_milestone == PAGE_MILESTONE_COMPLETE,
+                        )
+                        .values(
+                            embedding_milestone="succeeded",
+                            is_indexed=True,
+                            last_updated=func.now(),
+                        )
+                    )
+                    await session.execute(
+                        update(Book)
+                        .where(Book.id == book_id)
+                        .values(
+                            chunking_milestone=BOOK_MILESTONE_COMPLETE,
+                            chunking_retry_count=0,
+                            chunking_claimed_at=None,
+                            embedding_milestone=BOOK_MILESTONE_COMPLETE,
+                            embedding_retry_count=0,
+                            embedding_claimed_at=None,
+                            last_updated=func.now(),
+                        )
+                    )
+                    await session.commit()
+                    try:
+                        await cache_service.delete_pattern(f"rag:search:{book_id}:*")
+                    except Exception:
+                        pass
+                else:
+                    await session.execute(
+                        update(Book)
+                        .where(Book.id == book_id)
+                        .values(
+                            chunking_milestone=BOOK_MILESTONE_COMPLETE,
+                            chunking_retry_count=0,
+                            chunking_claimed_at=None,
+                            embedding_milestone=BOOK_MILESTONE_IDLE,
+                            embedding_retry_count=0,
+                            embedding_claimed_at=None,
+                            pipeline_step="embedding",
+                            last_updated=func.now(),
+                        )
+                    )
+                    await session.commit()
+
+                completed_cleanly = True
+                break
+
+        if not completed_cleanly:
+            async with db_session.async_session_factory() as session:
+                await session.execute(
+                    update(Book)
+                    .where(Book.id == book_id)
+                    .values(
+                        chunking_milestone=BOOK_MILESTONE_IDLE,
+                        chunking_claimed_at=None,
+                        last_updated=func.now(),
+                    )
+                )
+                await session.commit()
             return
 
-        # Update worker_id and claimed_at to current executing worker
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        log_json(
+            logger,
+            logging.INFO,
+            "chunking job completed for book",
+            book_id=book_id,
+            total_chunks=len(section_chunks),
+            unembedded_chunks=unembedded_count,
+            duration_ms=duration_ms,
+        )
+
+    except (Exception, asyncio.CancelledError) as exc:
+        error_msg = (str(exc) or exc.__class__.__name__)[:500]
         async with db_session.async_session_factory() as session:
             await session.execute(
-                update(Page)
-                .where(Page.id.in_(locked_page_ids))
+                update(Book)
+                .where(Book.id == book_id)
                 .values(
-                    worker_id=ctx.get("worker_id", "unknown"),
-                    claimed_at=func.now(),
+                    chunking_milestone=BOOK_MILESTONE_FAILED,
+                    chunking_retry_count=Book.chunking_retry_count + 1,
+                    chunking_claimed_at=None,
                     last_updated=func.now(),
                 )
             )
             await session.commit()
 
-        # Load page records
-        async with db_session.async_session_factory() as session:
-            result = await session.execute(
-                select(Page).where(Page.id.in_(locked_page_ids))
-            )
-            pages = list(result.scalars().all())
-
-        # Update book pipeline steps for all unique books in this batch
-        book_ids = list({p.book_id for p in pages})
-        async with db_session.async_session_factory() as session:
-            await session.execute(
-                update(Book)
-                .where(Book.id.in_(book_ids))
-                .values(pipeline_step="chunking")
-            )
-            await session.commit()
-
-        succeeded = 0
-        failed = 0
-
-        for page in pages:
-            start_time = time.perf_counter()
-            try:
-                async with db_session.async_session_factory() as session:
-                    # Skip chunking if it's a Table of Contents (already marked by OCR job)
-                    if page.is_toc:
-                        chunks = []
-                    else:
-                        text = clean_uyghur_text(page.text or "")
-                        chunks = chunking_service.split_text(text)
-
-                    # Delete any chunks that exceed the new chunk count (to clean up shrinking pages)
-                    await session.execute(
-                        delete(Chunk).where(
-                            Chunk.book_id == page.book_id,
-                            Chunk.page_number == page.page_number,
-                            Chunk.chunk_index >= len(chunks),
-                        )
-                    )
-
-                    if chunks:
-                        from sqlalchemy.dialects.postgresql import insert
-
-                        stmt = insert(Chunk).values(
-                            [
-                                {
-                                    "book_id": page.book_id,
-                                    "page_number": page.page_number,
-                                    "chunk_index": idx,
-                                    "text": chunk_text,
-                                }
-                                for idx, chunk_text in enumerate(chunks)
-                            ]
-                        )
-                        stmt = stmt.on_conflict_do_update(
-                            index_elements=["book_id", "page_number", "chunk_index"],
-                            set_={
-                                "text": stmt.excluded.text,
-                                "embedding": None,
-                            },
-                        )
-                        await session.execute(stmt)
-
-                    duration_ms = int((time.perf_counter() - start_time) * 1000)
-                    await session.execute(
-                        update(Page)
-                        .where(Page.id == page.id)
-                        .values(chunking_milestone="succeeded", last_updated=func.now())
-                    )
-                    session.add(
-                        PipelineEvent(
-                            page_id=page.id,
-                            event_type="chunking_succeeded",
-                            payload=make_pipeline_event_payload(
-                                duration_ms=duration_ms
-                            ),
-                        )
-                    )
-                    await session.commit()
-
-                succeeded += 1
-                log_json(
-                    logger,
-                    logging.DEBUG,
-                    "chunking page succeeded",
-                    book_id=page.book_id,
-                    page=page.page_number,
-                    chunks=len(chunks),
-                )
-
-            except Exception as exc:
-                duration_ms = int((time.perf_counter() - start_time) * 1000)
-                async with db_session.async_session_factory() as session:
-                    error_msg = str(exc)[:500]
-                    await session.execute(
-                        update(Page)
-                        .where(Page.id == page.id)
-                        .values(
-                            chunking_milestone="failed",
-                            retry_count=Page.retry_count + 1,
-                            error=error_msg,
-                            last_updated=func.now(),
-                        )
-                    )
-                    session.add(
-                        PipelineEvent(
-                            page_id=page.id,
-                            event_type="chunking_failed",
-                            payload=make_pipeline_event_payload(
-                                duration_ms=duration_ms,
-                                extra_fields={"error": error_msg},
-                            ),
-                        )
-                    )
-                    await session.commit()
-
-                failed += 1
-                log_json(
-                    logger,
-                    logging.WARNING,
-                    "chunking page failed",
-                    book_id=page.book_id,
-                    page=page.page_number,
-                    error=str(exc),
-                )
-
-        # Update book-level chunking milestone after processing batch
-        for book_id in book_ids:
-            async with db_session.async_session_factory() as session:
-                await BookMilestoneService.update_book_milestone_for_step(
-                    session, book_id, "chunking"
-                )
-                await session.commit()
-
         log_json(
             logger,
-            logging.INFO,
-            "chunking job completed",
-            succeeded=succeeded,
-            failed=failed,
+            logging.ERROR,
+            "chunking job failed for book",
+            book_id=book_id,
+            error=error_msg,
         )
-    finally:
-        await lock_manager.__aexit__(None, None, None)
+        if isinstance(exc, asyncio.CancelledError):
+            raise
+
+
+async def chunking_job(
+    ctx,
+    book_id: Optional[str] = None,
+    page_ids: Optional[List[int]] = None,
+) -> None:
+    target_book_ids: List[str] = []
+    if book_id:
+        target_book_ids.append(book_id)
+    elif page_ids:
+        async with db_session.async_session_factory() as session:
+            res = await session.execute(
+                select(Page.book_id).where(Page.id.in_(page_ids)).distinct()
+            )
+            target_book_ids = [r[0] for r in res.fetchall() if r[0]]
+
+    if not target_book_ids:
+        return
+
+    for bid in target_book_ids:
+        await _chunk_single_book(bid)

@@ -1,78 +1,56 @@
 """
 Event Dispatcher — processes the pipeline_events outbox and triggers downstream jobs.
 
-This allows the pipeline to be reactive and run faster than 1-minute crons.
+When a book's OCR (and spell-check, if enabled) milestones become terminal and
+`Book.structure_milestone == 'idle'`, claims `Book.structure_milestone = 'in_progress'`
+and enqueues `structure_job(book_id=...)`.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import List
 
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update
 
 from app.db import session as db_session
-from app.db.models import Book, Page, PipelineEvent
+from app.db.models import Page, PipelineEvent
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
-from app.services.book_milestone_service import BookMilestoneService
+from app.services.book_structure_service import (
+    claim_books_for_structure,
+    enqueue_claimed_structure_jobs,
+)
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.event_dispatcher")
 
 
-async def _claim_candidate_pages(
-    session, ctx, candidate_page_ids, milestone_column, step: str
-):
-    """
-    Atomically claims the subset of candidate pages still idle for `step`,
-    mirroring the *_scanner claim pattern (SKIP LOCKED + milestone flip to
-    in_progress). Without this claim, this reactive dispatch and the
-    corresponding scanner's own poll cycle can both enqueue a job for the
-    same page — the redis lock inside the job resolves the race safely, but
-    every loser is a wasted job invocation.
-    """
+async def _claim_candidate_books_for_structure(
+    session,
+    candidate_page_ids: List[int],
+    spell_check_enabled: bool,
+) -> List[str]:
     if not candidate_page_ids:
         return []
 
-    id_stmt = (
-        select(Page.id, Page.book_id)
-        .join(Book, Page.book_id == Book.id)
-        .where(
-            Page.id.in_(candidate_page_ids),
-            milestone_column == "idle",
-            ~Book.status.in_(["error"]),
-        )
-        .with_for_update(skip_locked=True)
+    page_res = await session.execute(
+        select(Page.book_id).where(Page.id.in_(candidate_page_ids)).distinct()
     )
-    rows = (await session.execute(id_stmt)).fetchall()
-    page_ids = [row[0] for row in rows]
-    if not page_ids:
+    candidate_book_ids = [r[0] for r in page_res.fetchall() if r[0]]
+    if not candidate_book_ids:
         return []
 
-    book_ids = list({row[1] for row in rows})
-
-    await session.execute(
-        update(Page)
-        .where(Page.id.in_(page_ids))
-        .values(
-            **{milestone_column.key: "in_progress"},
-            worker_id=ctx.get("worker_id", "unknown"),
-            claimed_at=func.now(),
-            last_updated=func.now(),
-        )
+    return await claim_books_for_structure(
+        session,
+        book_ids=candidate_book_ids,
+        require_spell_check_terminal=spell_check_enabled,
     )
-    for book_id in book_ids:
-        await BookMilestoneService.update_book_milestone_for_step(
-            session, book_id, step
-        )
-
-    return page_ids
 
 
 async def run_event_dispatcher(ctx) -> None:
     redis = ctx["redis"]
 
     async with db_session.async_session_factory() as session:
-        # Fetch unprocessed events
         stmt = (
             select(PipelineEvent)
             .where(PipelineEvent.processed.is_(False))
@@ -89,30 +67,21 @@ async def run_event_dispatcher(ctx) -> None:
         config_repo = SystemConfigsRepository(session)
         spell_check_enabled = (
             await config_repo.get_value("spell_check_enabled", "false")
-        ) == "true"
+        ).lower() == "true"
 
-        # When spell check is enabled, chunking must wait for it to finish (or
-        # fail) on a page rather than firing straight off OCR — spell check can
-        # rewrite page.text via auto-correct rules, and chunking on text that's
-        # about to change would build chunks from stale content. Mirrors the
-        # gating condition in chunking_scanner.
-        chunking_trigger_types = (
-            ("spell_check_succeeded", "spell_check_failed")
+        structure_trigger_types = (
+            ("ocr_succeeded", "spell_check_succeeded", "spell_check_failed")
             if spell_check_enabled
             else ("ocr_succeeded",)
         )
-        chunking_candidates = [
-            e.page_id for e in events if e.event_type in chunking_trigger_types
-        ]
-        embedding_candidates = [
-            e.page_id for e in events if e.event_type == "chunking_succeeded"
+        structure_candidate_page_ids = [
+            e.page_id
+            for e in events
+            if e.page_id is not None and e.event_type in structure_trigger_types
         ]
 
-        chunking_page_ids = await _claim_candidate_pages(
-            session, ctx, chunking_candidates, Page.chunking_milestone, "chunking"
-        )
-        embedding_page_ids = await _claim_candidate_pages(
-            session, ctx, embedding_candidates, Page.embedding_milestone, "embedding"
+        structure_book_ids = await _claim_candidate_books_for_structure(
+            session, structure_candidate_page_ids, spell_check_enabled
         )
 
         processed_ids = [event.id for event in events]
@@ -123,20 +92,17 @@ async def run_event_dispatcher(ctx) -> None:
         )
         await session.commit()
 
-    enqueued = 0
-    if chunking_page_ids:
-        await redis.enqueue_job("chunking_job", page_ids=chunking_page_ids)
-        enqueued += 1
-    if embedding_page_ids:
-        await redis.enqueue_job("embedding_job", page_ids=embedding_page_ids)
-        enqueued += 1
+    enqueued = await enqueue_claimed_structure_jobs(
+        redis,
+        structure_book_ids,
+        session_factory=db_session.async_session_factory,
+    )
 
     log_json(
         logger,
         logging.INFO,
         "event dispatcher run complete",
         events_processed=len(processed_ids),
-        chunking_pages_claimed=len(chunking_page_ids),
-        embedding_pages_claimed=len(embedding_page_ids),
+        structure_books_claimed=len(structure_book_ids),
         jobs_enqueued=enqueued,
     )

@@ -177,6 +177,41 @@ I. ها ... II. زە ... III. ئو ... - roman - لۇئان — يېقىنقى �
     // Should navigate to page 28 + 10 (offset) = 38, NOT 9 + 10 = 19
     expect(onTocPageClick).toHaveBeenCalledWith(38);
   });
+
+  it('uses contentPageMap directly when provided to resolve ToC printed page numbers', () => {
+    const onTocPageClick = vi.fn();
+    const contentPageMap = {
+      '5': 19,
+      '12': 26,
+    };
+    render(
+      <MarkdownContent
+        content={tocContent}
+        contentPageMap={contentPageMap}
+        contentPageOffset={0}
+        onTocPageClick={onTocPageClick}
+      />
+    );
+
+    const secondTocItem = screen.getByRole('button', { name: /1-باپ/ });
+    fireEvent.click(secondTocItem);
+    expect(onTocPageClick).toHaveBeenCalledWith(26);
+  });
+
+  it('renders <hr class="footnotes-sep" /> and <section class="footnotes"> blocks distinctly', () => {
+    const pageWithFootnotes = `بۇ بەتنىڭ ئاساسىي مەزمۇنى.
+
+<hr class="footnotes-sep" />
+<section class="footnotes">
+1. بىرىنچى ئىزاھات مەزمۇنى.
+</section>`;
+
+    const { container } = render(<MarkdownContent content={pageWithFootnotes} />);
+    expect(container.querySelector('hr.footnotes-sep')).not.toBeNull();
+    const fnSection = container.querySelector('section.footnotes');
+    expect(fnSection).not.toBeNull();
+    expect(fnSection?.textContent).toContain('بىرىنچى ئىزاھات مەزمۇنى');
+  });
 });
 
 describe('MarkdownContent numbered entries and ordered lists', () => {

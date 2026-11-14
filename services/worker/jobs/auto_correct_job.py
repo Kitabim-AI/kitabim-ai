@@ -77,6 +77,7 @@ async def auto_correct_job(ctx, page_ids: List[int]) -> None:
     semaphore = asyncio.Semaphore(settings.max_parallel_auto_correct)
     results = {"succeeded": 0, "failed": 0, "total_corrections": 0}
     processed_book_ids = set()
+    modified_book_ids = set()
 
     async def process_page(page: Page):
         page_id = page.id
@@ -93,6 +94,7 @@ async def auto_correct_job(ctx, page_ids: List[int]) -> None:
                     )
 
                     if corrections_applied > 0:
+                        modified_book_ids.add(book_id)
                         duration_ms = int((time.perf_counter() - start_time) * 1000)
                         session.add(
                             PipelineEvent(
@@ -158,13 +160,46 @@ async def auto_correct_job(ctx, page_ids: List[int]) -> None:
     await asyncio.gather(*(process_page(p) for p in pages))
 
     # Update book milestones for all affected books
+    ready_for_structure_book_ids: List[str] = []
     if processed_book_ids:
+        from app.db.repositories.system_configs_repository import (
+            SystemConfigsRepository,
+        )
         from app.services.book_milestone_service import BookMilestoneService
+        from app.services.book_structure_service import (
+            claim_books_for_structure,
+            enqueue_claimed_structure_jobs,
+            mark_structure_dirty,
+        )
 
+        redis = ctx.get("redis")
         async with db_session.async_session_factory() as session:
             for bid in processed_book_ids:
                 await BookMilestoneService.update_book_milestones(session, bid)
+            if modified_book_ids:
+                await mark_structure_dirty(
+                    session,
+                    list(modified_book_ids),
+                    touch_last_updated=False,
+                )
+                if redis is not None:
+                    sc_val = await SystemConfigsRepository(session).get_value(
+                        "spell_check_enabled", "false"
+                    )
+                    spell_check_enabled = str(sc_val).strip().lower() == "true"
+                    ready_for_structure_book_ids = await claim_books_for_structure(
+                        session,
+                        book_ids=list(modified_book_ids),
+                        require_spell_check_terminal=spell_check_enabled,
+                    )
             await session.commit()
+
+        if redis is not None and ready_for_structure_book_ids:
+            await enqueue_claimed_structure_jobs(
+                redis,
+                ready_for_structure_book_ids,
+                session_factory=db_session.async_session_factory,
+            )
 
     log_json(
         logger,

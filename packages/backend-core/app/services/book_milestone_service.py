@@ -164,9 +164,11 @@ class BookMilestoneService:
 
         if book:
             book.ocr_milestone = ocr_milestone
-            book.chunking_milestone = chunking_milestone
-            book.embedding_milestone = embedding_milestone
             book.spell_check_milestone = spell_check_milestone
+            if book.chunking_milestone is None:
+                book.chunking_milestone = chunking_milestone
+            if book.embedding_milestone is None:
+                book.embedding_milestone = embedding_milestone
 
             # Removed internal commit to allow caller-managed transactions
             # await db.commit()

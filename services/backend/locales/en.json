@@ -34,6 +34,8 @@
     "book_title_not_found": "Book with title '{title}' not found",
     "invalid_file_type": "Invalid file type. Allowed: {allowed}",
     "invalid_pages_payload": "Invalid pages payload: must be a JSON array of {{pageNumber, text, isToc}}",
+    "invalid_gzip_request_body": "Invalid gzip request body",
+    "ocr_payload_too_large": "OCR payload exceeds 25 MB limit",
     "pages_count_mismatch": "Pages array must cover every page from 1 to {total} exactly once (got {count} entries for a {total}-page PDF)",
     "image_process_failed": "Failed to process image: {error}",
     "spell_check_failed": "Spell check failed: {error}",
@@ -54,14 +56,6 @@
     "queue_unavailable": "Processing queue is temporarily unavailable. Please try again in a moment.",
     "graph_enqueue_failed": "Failed to enqueue Knowledge Graph job. Please try again.",
     "summary_enqueue_failed": "Failed to enqueue Summary job. Please try again.",
-    "llm_spell_check_enqueue_failed": "Failed to start LLM spell check. Please try again.",
-    "llm_spell_check_empty_text": "There is no text on this page to check.",
-    "llm_spell_check_invalid_output": "The AI check returned an unusable result. The text was not changed. Please try again.",
-    "staging_candidate_not_found": "Staging candidate not found or already processed",
-    "staging_fact_not_found": "Fact not found on this staging candidate",
-    "staging_conflicts_unresolved": "This term has unresolved fact conflicts. Resolve them before approving.",
-    "staging_synthesis_failed": "Could not generate the definition preview. Please try again.",
-    "invalid_fact_status": "Fact status must be 'active' or 'rejected'",
     "history_entry_duplicate_term": "An entry for this term already exists",
     "history_entry_not_found": "History dictionary entry not found",
     "ai": {
@@ -75,7 +69,7 @@
     "logged_out": "Logged out successfully",
     "corrections_applied": "Corrections applied successfully. Embeddings will be regenerated.",
     "new_conversation_title": "New conversation",
-    "history_extraction_started": "History term extraction task started successfully."
+    "structure_reprocess_started": "Structure milestone reset. Worker will re-analyze book structure."
   },
   "rag": {
     "identity_intro": "I am {name}.",
@@ -94,6 +88,7 @@
     "knowledge_graph_title": "Knowledge Graph",
     "short_work_intro": "The full text of the poem «{title}» is as follows:",
     "short_work_truncated_note": "(Content truncated; the rest continues in the book.)",
+    "short_work_other_matches": "Also found in other sources:",
     "guardrail_refusal": "Sorry, I can only answer questions related to Uyghur literature, history, language and linguistics (dictionaries, spelling, proverbs, synonyms), all library catalog works, Islam, and the Quran. I cannot fulfill out-of-domain or unrelated requests."
   }
 }

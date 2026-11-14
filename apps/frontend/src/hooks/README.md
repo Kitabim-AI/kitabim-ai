@@ -16,8 +16,6 @@ Provides reusable React hooks encapsulating authentication, book lifecycle opera
 - `[useChat.ts:useChat]`: Hook managing book and global conversational sessions, message streaming, and assistant personas.
 - `[useChat.ts:AgentStep]`: Interface representing granular agent execution steps during chat responses.
 - `[useContentSearch.ts:useContentSearch]`: Hook providing debounced in-book text search queries.
-- `[useLlmSpellCheckPreview.ts:useLlmSpellCheckPreview]`: Hook fetching and managing LLM-assisted spell checking candidate previews.
-- `[useLlmSpellCheckPreview.ts:LlmSpellCheckPreview]`: Interface describing candidate LLM spell check replacements.
 - `[useLookupSearch.ts:useLookupSearch]`: Generic debounced search hook for dictionaries and lexical entities.
 - `[usePendingCorrections.ts:usePendingCorrections]`: Hook managing batch review, approval, and rejection of candidate spelling corrections.
 - `[usePendingCorrections.ts:PendingCorrection]`: Interface representing a queued spelling correction candidate.

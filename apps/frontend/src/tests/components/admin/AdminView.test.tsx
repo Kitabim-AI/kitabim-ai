@@ -162,75 +162,6 @@ test('AdminView renders no Graph emerald icon when hasGraph is false (empty pipe
   ocrIcons.forEach((icon) => expect(icon).toHaveClass('text-emerald-500'));
 });
 
-test('AdminView renders emerald LLM spell check icon when fully done', () => {
-  const booksAllDone: Book[] = [
-    {
-      ...mockBooks[0],
-      totalPages: 10,
-      pipelineStats: { llm_spell_check: 10, llm_spell_check_active: 0, llm_spell_check_failed: 0 },
-    },
-  ];
-  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
-    ...mockAppContextValue,
-    books: booksAllDone,
-  } as any);
-
-  render(
-    <I18nContext.Provider value={i18nMockValue}>
-      <AdminView />
-    </I18nContext.Provider>
-  );
-
-  const emeraldIcons = document.querySelectorAll('.text-emerald-500');
-  expect(emeraldIcons.length).toBeGreaterThanOrEqual(1);
-});
-
-test('AdminView renders amber LLM spell check icon when partially done', () => {
-  const booksPartial: Book[] = [
-    {
-      ...mockBooks[0],
-      totalPages: 10,
-      pipelineStats: { llm_spell_check: 3, llm_spell_check_active: 1, llm_spell_check_failed: 0 },
-    },
-  ];
-  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
-    ...mockAppContextValue,
-    books: booksPartial,
-  } as any);
-
-  render(
-    <I18nContext.Provider value={i18nMockValue}>
-      <AdminView />
-    </I18nContext.Provider>
-  );
-
-  const amberIcons = document.querySelectorAll('.text-amber-500');
-  expect(amberIcons.length).toBeGreaterThanOrEqual(1);
-});
-
-test('AdminView renders gray LLM spell check icon when not started', () => {
-  const booksNotStarted: Book[] = [
-    {
-      ...mockBooks[0],
-      totalPages: 10,
-      pipelineStats: { llm_spell_check: 0, llm_spell_check_active: 0, llm_spell_check_failed: 0 },
-    },
-  ];
-  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
-    ...mockAppContextValue,
-    books: booksNotStarted,
-  } as any);
-
-  render(
-    <I18nContext.Provider value={i18nMockValue}>
-      <AdminView />
-    </I18nContext.Provider>
-  );
-
-  const grayIcons = document.querySelectorAll('.text-slate-300');
-  expect(grayIcons.length).toBeGreaterThanOrEqual(1);
-});
-
 test('ActionMenu shows reprocess graph option and fires handler', () => {
   const handleReprocessStep = vi.fn();
   vi.mocked(AppContextModule.useAppContext).mockReturnValue({
@@ -261,4 +192,34 @@ test('ActionMenu shows reprocess graph option and fires handler', () => {
   fireEvent.click(graphButton);
 
   expect(handleReprocessStep).toHaveBeenCalledWith(mockBooks[0].id, 'graph');
+});
+
+test('ActionMenu shows reprocess structure option and fires handler', () => {
+  const handleReprocessStep = vi.fn();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    ...mockAppContextValue,
+    bookActions: {
+      handleReprocessStep,
+      reprocessingBooks: new Map(),
+    },
+  } as any);
+
+  const dummyRect = { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 } as DOMRect;
+  const menuRef = { current: null } as React.RefObject<HTMLDivElement>;
+
+  render(
+    <I18nContext.Provider value={i18nMockValue}>
+      <ActionMenu
+        book={mockBooks[0]}
+        close={vi.fn()}
+        anchorRect={dummyRect}
+        menuRef={menuRef}
+      />
+    </I18nContext.Provider>
+  );
+
+  const structureButton = screen.getByText('admin.table.reprocess.structure');
+  fireEvent.click(structureButton);
+
+  expect(handleReprocessStep).toHaveBeenCalledWith(mockBooks[0].id, 'structure');
 });

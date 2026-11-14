@@ -36,6 +36,12 @@ class ExtractionResult(BaseModel):
     content_page_number: Optional[str] = (
         None  # DB: content_page_number, API: contentPageNumber
     )
+    content_page_number_manual: bool = (
+        False  # DB: content_page_number_manual, API: contentPageNumberManual
+    )
+    detected_page_number: Optional[int] = (
+        None  # DB: detected_page_number, API: detectedPageNumber
+    )
     display_page_number: Optional[str] = (
         None  # Property: display_page_number, API: displayPageNumber
     )
@@ -46,12 +52,6 @@ class ExtractionResult(BaseModel):
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     milestone: Optional[str] = None  # DB: milestone, API: milestone
     is_toc: bool = False  # API: isToc
-    llm_spell_check_status: str = (
-        "idle"  # DB: llm_spell_check_status, API: llmSpellCheckStatus
-    )
-    llm_spell_check_at: Optional[datetime] = (
-        None  # DB: llm_spell_check_at, API: llmSpellCheckAt
-    )
 
 
 class PageTocUpdate(BaseModel):
@@ -70,11 +70,118 @@ class OcrPageInput(BaseModel):
     page_number: int  # API: pageNumber
     text: str
     is_toc: bool = False  # API: isToc
+    detected_page_number: Optional[int] = None  # API: detectedPageNumber
+    skipped: bool = False
 
     @field_validator("text", mode="after")
     @classmethod
     def strip_null_bytes(cls, v: str) -> str:
         return v.replace("\x00", "") if v else ""
+
+
+class SetStartPageRequest(BaseModel):
+    """Request body for marking a page as content Page 1."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    start_content_page: Optional[int] = 1
+
+
+class SetStartPageResponse(BaseModel):
+    """Response after marking a page as content Page 1."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    status: str = "ok"
+    content_page_offset: int
+    content_page_map: Dict[str, int] = Field(default_factory=dict)
+
+
+class RefreshTokenRequest(BaseModel):
+    """Optional JSON body for POST /api/auth/refresh used by CLI clients."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    refresh_token: Optional[str] = None
+
+
+class ReplaceOcrPageItem(BaseModel):
+    """One page entry in a bulk OCR replacement payload."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    page_number: int
+    text: str = ""
+    is_toc: Optional[bool] = None
+    detected_page_number: Optional[int] = None
+    skipped: bool = False
+
+    @field_validator("text", mode="after")
+    @classmethod
+    def strip_null_bytes(cls, v: str) -> str:
+        return v.replace("\x00", "") if v else ""
+
+
+class ReplaceOcrRequest(BaseModel):
+    """Request body for POST /api/books/{book_id}/replace-ocr."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    ocr_version: str = "surya-2.5-v2"
+    pages: List[ReplaceOcrPageItem]
+    force_overwrite_manual: bool = False
+
+
+ReplaceBookOcrRequest = ReplaceOcrRequest
+
+
+class ReplaceOcrResponse(BaseModel):
+    """Response body for POST /api/books/{book_id}/replace-ocr."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    status: str = "ok"
+    book_id: str
+    ocr_version: str
+    pages_updated: int
+    pages_unchanged: int
+    pages_skipped: int = 0
+    backup_uri: Optional[str] = None
+
+
+ReplaceBookOcrResponse = ReplaceOcrResponse
+
+
+class BackfillCandidateOut(BaseModel):
+    """Single candidate book entry for local Surya v2 backfill."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: str
+    title: str
+    author: str
+    volume: Optional[int] = None
+    total_pages: int
+    status: str
+    ocr_version: Optional[str] = None
+    upload_date: Optional[str] = None
+
+
+class BackfillCandidatesResponse(BaseModel):
+    """Response for GET /api/books/backfill-candidates."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    pending_index_books: int
+    candidates: List[BackfillCandidateOut]
 
 
 class Book(BaseModel):
@@ -115,9 +222,15 @@ class Book(BaseModel):
     )  # DB: pipeline_stats, API: pipelineStats
     has_summary: bool = False  # API: hasSummary
     has_graph: bool = False  # API: hasGraph
-    has_history: bool = False  # API: hasHistory
+    ocr_version: Optional[str] = None  # DB: ocr_version, API: ocrVersion
+    content_page_map: Dict[str, int] = Field(
+        default_factory=dict
+    )  # API: contentPageMap
     # Book-level milestones (denormalized from pages for performance)
     ocr_milestone: str = "idle"  # DB: ocr_milestone, API: ocrMilestone
+    structure_milestone: str = (
+        "idle"  # DB: structure_milestone, API: structureMilestone
+    )
     chunking_milestone: str = "idle"  # DB: chunking_milestone, API: chunkingMilestone
     embedding_milestone: str = (
         "idle"  # DB: embedding_milestone, API: embeddingMilestone
@@ -303,58 +416,6 @@ class PaginatedContentHits(BaseModel):
     """Paginated response for Home 'Content' search hits."""
 
     hits: List[ContentSearchHit]
-    total: int
-    page: int
-    page_size: int
-
-
-class FactCitation(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    book_id: str
-    book_title: str
-    volume: Optional[int] = None
-    pages: List[int] = Field(default_factory=list)
-
-
-class HistoryFact(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    id: int
-    text: str
-    citations: List[FactCitation] = Field(default_factory=list)
-    status: str = "active"
-    conflict_group: Optional[int] = None
-
-
-class HistoryStagingItem(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel, populate_by_name=True, from_attributes=True
-    )
-
-    id: int
-    existing_dictionary_id: Optional[int] = None
-    book_id: str
-    term: str
-    transliteration: Optional[str] = None
-    definition: Optional[str] = None
-    original_definition: Optional[str] = None
-    category: str = "general"
-    significance_score: int = 5
-    significance_reason: Optional[str] = None
-    is_ai_generated: bool = True
-    entry_type: str = "new"
-    letter_group: str
-    facts: List[HistoryFact] = Field(default_factory=list)
-    status: str = "pending"
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-
-
-class PaginatedHistoryStagingItems(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    items: List[HistoryStagingItem]
     total: int
     page: int
     page_size: int

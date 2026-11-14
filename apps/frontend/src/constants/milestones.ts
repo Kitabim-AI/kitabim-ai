@@ -1,11 +1,11 @@
 export const PIPELINE_STEP = {
   OCR: 'ocr',
+  STRUCTURE: 'structure',
   CHUNKING: 'chunking',
   EMBEDDING: 'embedding',
   SUMMARY: 'summary',
   SPELL_CHECK: 'spell_check',
   GRAPH: 'graph',
-  HISTORY: 'history',
   READY: 'ready',
   ERROR: 'error',
 } as const;
@@ -21,33 +21,32 @@ export const PAGE_LEVEL_MILESTONE_STEPS = [
 
 export const MILESTONE_FIELD_BY_STEP = {
   [PIPELINE_STEP.OCR]: 'ocrMilestone',
+  [PIPELINE_STEP.STRUCTURE]: 'structureMilestone',
   [PIPELINE_STEP.CHUNKING]: 'chunkingMilestone',
   [PIPELINE_STEP.EMBEDDING]: 'embeddingMilestone',
   [PIPELINE_STEP.SPELL_CHECK]: 'spellCheckMilestone',
   [PIPELINE_STEP.SUMMARY]: 'hasSummary',
   [PIPELINE_STEP.GRAPH]: 'hasGraph',
-  [PIPELINE_STEP.HISTORY]: 'hasHistory',
 } as const;
 
 export const ADMIN_PIPELINE_STEPS = [
   { key: PIPELINE_STEP.OCR, label: 'admin.pipeline.ocr' },
+  { key: PIPELINE_STEP.STRUCTURE, label: 'admin.pipeline.structure' },
   { key: PIPELINE_STEP.CHUNKING, label: 'admin.pipeline.chunking' },
   { key: PIPELINE_STEP.EMBEDDING, label: 'admin.pipeline.embedding' },
   { key: PIPELINE_STEP.SUMMARY, label: 'admin.pipeline.summary' },
   { key: PIPELINE_STEP.SPELL_CHECK, label: 'admin.pipeline.spellCheck' },
   { key: PIPELINE_STEP.GRAPH, label: 'admin.pipeline.graph' },
-  { key: PIPELINE_STEP.HISTORY, label: 'admin.pipeline.history' },
 ] as const;
 
 export const REPROCESS_STEP = {
   OCR: 'ocr',
+  STRUCTURE: 'structure',
   CHUNKING: 'chunking',
   EMBEDDING: 'embedding',
   SPELL_CHECK: 'spell-check',
-  LLM_SPELL_CHECK: 'llm-spell-check',
   GRAPH: 'graph',
   SUMMARY: 'summary',
-  HISTORY: 'history',
 } as const;
 
 export type ReprocessStep = typeof REPROCESS_STEP[keyof typeof REPROCESS_STEP];

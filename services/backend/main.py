@@ -36,7 +36,6 @@ from api.endpoints import (
     proverbs_router,
     quran_router,
     graph_admin_router,
-    admin_history_dictionary_router,
 )
 from app.core.config import settings
 from app.db.session import (
@@ -533,11 +532,6 @@ app.include_router(cache_router.router, prefix="/api/cache", tags=["cache"])
 app.include_router(questions_router.router, prefix="/api/questions", tags=["questions"])
 app.include_router(proverbs_router.router, prefix="/api", tags=["proverbs"])
 app.include_router(quran_router.router, prefix="/api", tags=["quran"])
-app.include_router(
-    admin_history_dictionary_router.router,
-    prefix="/api/admin",
-    tags=["admin-history-dictionary"],
-)
 app.include_router(
     graph_admin_router.router, prefix="/api/admin/graph", tags=["graph-admin"]
 )

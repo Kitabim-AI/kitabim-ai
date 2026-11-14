@@ -34,6 +34,8 @@
     "book_title_not_found": "'{title}' سەرلەۋھىلىك كىتاب تېپىلمىدى",
     "invalid_file_type": "ئىناۋەتسىز ھۆججەت تىپى. رۇخسەت قىلىنىدىغانلىرى: {allowed}",
     "invalid_pages_payload": "ئىناۋەتسىز بەت مەزمۇنى: چوقۇم {{pageNumber, text, isToc}} گۇرۇپپىسىدىن تۈزۈلگەن JSON بولۇشى كېرەك",
+    "invalid_gzip_request_body": "ئىناۋەتسىز gzip تەلەپ مەزمۇنى",
+    "ocr_payload_too_large": "OCR مەزمۇن ھەجمى 25 MB چەكتىن ئېشىپ كەتتى",
     "pages_count_mismatch": "بەتلەر گۇرۇپپىسى 1 دىن {total} گىچە بولغان ھەممە بەتنى بىر قېتىمدىن ئۆز ئىچىگە ئېلىشى كېرەك ({total} بەتلىك PDF ئۈچۈن {count} تۈر تاپشۇرۇلدى)",
     "image_process_failed": "رەسىم بىر تەرەپ قىلىش مەغلۇپ بولدى: {error}",
     "spell_check_failed": "ئىملا تەكشۈرۈش مەغلۇپ بولدى: {error}",
@@ -54,14 +56,6 @@
     "queue_unavailable": "بىر تەرەپ قىلىش ئۆچرىتى ۋاقتىنچە ئىشلىمەۋاتىدۇ. سەل تۇرۇپ قايتا سىناپ بېقىڭ.",
     "graph_enqueue_failed": "بىلىم گىرافى قۇرۇش ۋەزىپىسىنى تىزىملىككە قوشۇش مەغلۇپ بولدى. قايتا سىناپ بېقىڭ.",
     "summary_enqueue_failed": "قىسقىچە مەزمۇن قۇرۇش ۋەزىپىسىنى تىزىملىككە قوشۇش مەغلۇپ بولدى. قايتا سىناپ بېقىڭ.",
-    "llm_spell_check_enqueue_failed": "LLM ئارقىلىق كوررېكتورلاشنى قوزغىتالمىدى. قايتا سىناڭ.",
-    "llm_spell_check_empty_text": "There is no text on this page to check.",
-    "llm_spell_check_invalid_output": "The AI check returned an unusable result. The text was not changed. Please try again.",
-    "staging_candidate_not_found": "تارىخىي ئاتالغۇ ۋەزىپىسى تېپىلمىدى ياكى ئاللىبۇرۇن بىر تەرەپ قىلىنغان",
-    "staging_fact_not_found": "بۇ كاندىدات ئاتالغۇدا مۇشۇ پاكىت تېپىلمىدى",
-    "staging_conflicts_unresolved": "بۇ ئاتالغۇدا بىر تەرەپ قىلىنمىغان زىددىيەتلىك پاكىتلار بار. تەستىقلاشتىن بۇرۇن ئۇلارنى بىر تەرەپ قىلىڭ.",
-    "staging_synthesis_failed": "ئېنىقلىما سىناق نۇسخىسىنى قۇرالمىدى. قايتا سىناپ بېقىڭ.",
-    "invalid_fact_status": "پاكىت ھالىتى 'active' ياكى 'rejected' بولۇشى كېرەك",
     "history_entry_duplicate_term": "بۇ ئاتالغۇ ئۈچۈن خاتىرە ئاللىبۇرۇن مەۋجۇت",
     "history_entry_not_found": "تارىخ لۇغىتى ئاتالغۇسى تېپىلمىدى",
     "ai": {
@@ -75,7 +69,7 @@
     "logged_out": "مۇۋەپپەقىيەتلىك چېكىندىڭىز",
     "corrections_applied": "تۈزىتىشلەر مۇۋەپپەقىيەتلىك قوللىنىلدى. كىتاب قايتا بىر تەرەپ قىلىنىدۇ.",
     "new_conversation_title": "يېڭى سۆھبەت",
-    "history_extraction_started": "تارىخىي ئاتالغۇلارنى بايقاش ۋەزىپىسى باشلاندى."
+    "structure_reprocess_started": "كىتاب قۇرۇلمىسىنى تەھلىل قىلىش ھالىتى ئەسلىگە قايتۇرۇلدى. ئارقا سۇپا كىتاب قۇرۇلمىسىنى قايتا تەھلىل قىلىدۇ."
   },
   "rag": {
     "identity_intro": "مەن {name}.",
@@ -90,6 +84,7 @@
     "knowledge_graph_title": "بىلىم گىرافى",
     "short_work_intro": "«{title}» ناملىق شېئىرنىڭ تولۇق تېكىستى تۆۋەندىكىچە:",
     "short_work_truncated_note": "(مەزمۇن چەكلەنگەن؛ كىتابنىڭ ئۆزىدە داۋامى بار)",
+    "short_work_other_matches": "باشقا مەنبەلەردىمۇ تېپىلدى:",
     "guardrail_refusal": "كەچۈرۈڭ، مەن پەقەت ئۇيغۇر ئەدەبىياتى، تارىخى، ئۇيغۇر تىلى ۋە يېزىقى (لۇغەت، ئىملا، ماقال-تەمسىل، مەنىداش سۆزلەر)، كۇتۇپخانىدىكى بارلىق ئەسەرلەر، ئىسلام دىنى ۋە قۇرئان كەرىمگە مۇناسىۋەتلىك مەزمۇنلارغىلا جاۋاب بېرەلەيمەن. تېمىدىن تاشقىرى ياكى باشقا تۈردىكى تەلەپلەرگە جاۋاب بېرىش ئىقتىدارىم يوق."
   }
 }

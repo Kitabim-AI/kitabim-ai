@@ -21,7 +21,7 @@ Web application and preview server providing a local browser-based GUI for manag
 - `[server.py:push_response]`: Triggers API upload of the current session to Kitabim.
 
 ## Invariants
-- `[app_server.py:create_landing_app]`: Background OCR tasks run sequentially through `[../engine/queue.py:BookQueueManager]` to avoid overloading hardware.
+- `[app_server.py:create_landing_app]`: Background OCR tasks run sequentially through `[../engine/queue.py:BookQueueManager]` and coordinate GPU access via `[../backfill.py:acquire_surya_gpu_lock]` (`$KITABIM_WORK_DIR/.surya_gpu.lock`) to avoid overloading hardware.
 - `[server.py:create_app]`: All page updates and redo operations lock against `[../engine/workdir.py:OcrWorkDir.save_lock]`.
 
 ## Side Effects

@@ -14,6 +14,7 @@ import logging
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
@@ -36,18 +37,40 @@ from engine.config import (
     is_bleed_through_suppression_enabled,
     is_dot_enhancement_enabled,
 )
+from engine.line_ends import text_ends_with_hyphen
 from engine.text_cleanup import (
     add_word_spans,
     clean_uyghur_text,
+    extract_standalone_page_number,
     has_repeated_word_span,
     is_block_repetition_loop,
     is_degenerate_ocr_output,
     is_hallucinated_arabic_block,
     is_hallucinated_ghost_text,
     is_isolated_page_number,
+    strip_page_numbers_with_capture,
 )
 
 logger = logging.getLogger("kitabim_ocr_client.engine.recognize")
+
+OCR_ENGINE_VERSION = "surya-2.5-v2"
+
+
+@dataclass
+class PageOcrResult:
+    text: str
+    detected_page_number: int | None = None
+    ended_with_hyphen: bool = False
+
+
+_LAST_SYNC_META: dict[int, tuple[int | None, int | None]] = {}
+_LAST_PAGE_OCR_META: dict[int, PageOcrResult] = {}
+
+
+def pop_last_page_ocr_meta(page: Any) -> PageOcrResult | None:
+    """Return and clear the ``PageOcrResult`` captured by the most recent ``ocr_page(page, ...)`` call."""
+    return _LAST_PAGE_OCR_META.pop(id(page), None)
+
 
 # Apply sane ceiling for Surya token generation if not overridden in env
 apply_surya_token_limits()
@@ -183,29 +206,45 @@ def is_page_blank(pix: fitz.Pixmap) -> bool:
 _SURYA_COMPACT_TOKEN_RE = re.compile(r"<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>")
 _DOT_LEADER_RE = re.compile(r"[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,}")
 _ROW_NUMBER_RE = re.compile(r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}")
+_TOC_PAGE_NUM_GROUP_PAT = (
+    r"(?:[\(\[\{（［]\s*)?([0-9\u0660-\u0669\u06F0-\u06F9]{1,4})(?:\s*[\)\]\}）］])?"
+)
+_TOC_PAGE_NUM_NONCAP_PAT = (
+    r"(?:[\(\[\{（［]\s*)?[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}(?:\s*[\)\]\}）］])?"
+)
 _LEADING_DOT_LEADER_RE = re.compile(r"^\s*(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,})")
-_TRAILING_DOT_LEADER_RE = re.compile(r"(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,})\s*$")
+_TRAILING_DOT_LEADER_RE = re.compile(
+    r"(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,})\s*(?:[^.·•∙⋅․﹒｡…|\n]{0,45}?)\s*$"
+)
 _TOC_DOT_RUN_RE = re.compile(r"[.·•∙⋅․﹒｡]{3,}|…{2,}")
 _TOC_DOT_TARGET_OR_TOKEN_RE = re.compile(
     r"(?:[.·•∙⋅․﹒｡]{3,}|[_\-—–]{4,}|…{2,})\s*"
     r"(?:<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>[\s.]*)*"
-    r"(?:[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}|<\|\d{1,4}\|>)"
-    r"|(?:^|\n)\s*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*"
+    r"(?:[^.·•∙⋅․﹒｡…\n]{0,45}?\s*)?"
+    rf"(?:{_TOC_PAGE_NUM_NONCAP_PAT}|<\|\d{{1,4}}\|>)"
+    rf"|(?:^|\n)\s*{_TOC_PAGE_NUM_NONCAP_PAT}\s*"
     r"(?:[.·•∙⋅․﹒｡]{3,}|[_\-—–]{4,}|…{2,})"
 )
 _TOC_LINE_HAS_TARGET_RE = re.compile(
     r"(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…+)\s*"
     r"(?:<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>[\s.]*)*"
-    r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*$"
-    r"|^\s*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…+)"
+    r"(?:[^.·•∙⋅․﹒｡…\n]{0,45}?\s*)?"
+    rf"{_TOC_PAGE_NUM_NONCAP_PAT}\s*$"
+    rf"|^\s*{_TOC_PAGE_NUM_NONCAP_PAT}\s*(?:[.·•∙⋅․﹒｡\-—–_]{{2,}}|…+)"
 )
 _TOC_INLINE_SPLIT_RE = re.compile(
     r"((?:[.·•∙⋅․﹒｡]{3,}|…{2,})\s*(?:<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>[\s.]*)*"
-    r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4})\s+(?=\S)"
+    rf"(?:[^.·•∙⋅․﹒｡…\n]{{0,45}}?\s*)?{_TOC_PAGE_NUM_NONCAP_PAT})\s+(?=\S)"
 )
-_TOC_PIPE_ROW_RE = re.compile(
-    r"^\|\s*[^|]+?\s*\|\s*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*\|?$"
+_TOC_TRAILING_PAGE_NUM_RE = re.compile(
+    r"((?:[.·•∙⋅․﹒｡…\-—–_]{2,})\s*)"
+    r"([^.·•∙⋅․﹒｡…\n]{0,45}?)\s*"
+    rf"{_TOC_PAGE_NUM_GROUP_PAT}\s*$"
 )
+_TOC_LEADING_PAGE_NUM_RE = re.compile(
+    rf"^\s*{_TOC_PAGE_NUM_GROUP_PAT}\s*(?:[.·•∙⋅․﹒｡…\-—–_]{{2,}})"
+)
+_TOC_PIPE_ROW_RE = re.compile(rf"^\|\s*[^|]+?\s*\|\s*{_TOC_PAGE_NUM_NONCAP_PAT}\s*\|?$")
 _NEW_TOC_ITEM_START_RE = re.compile(
     r"^(?:[0-9\u0660-\u0669\u06F0-\u06F9]{1,3}\s*[.)،\-]|\([0-9\u0660-\u0669\u06F0-\u06F9]{1,3}\)"
     r"|(?:بىرىنچى|ئىككىنچى|ئۈچىنچى|تۆتىنچى|بەشىنچى|ئالتىنچى|يەتتىنچى|سەككىزىنچى|توققۇزىنچى|ئونىنچى)\s+(?:باب|قىسىم|بۆلەك))"
@@ -250,6 +289,27 @@ def _html_to_text(html: str) -> str:
     return BeautifulSoup(html, "html.parser").get_text(separator=" ", strip=True)
 
 
+def _strip_enclosing_page_brackets(text: str, start: int, end: int) -> tuple[int, int]:
+    """Expand [start, end) to include immediately enclosing ( ... ) or [ ... ]."""
+    open_chars = "([{（［"
+    close_chars = ")]}）］"
+    l_idx = start - 1
+    while l_idx >= 0 and text[l_idx].isspace():
+        l_idx -= 1
+    r_idx = end
+    while r_idx < len(text) and text[r_idx].isspace():
+        r_idx += 1
+    if (
+        l_idx >= 0
+        and r_idx < len(text)
+        and text[l_idx] in open_chars
+        and text[r_idx] in close_chars
+        and open_chars.index(text[l_idx]) == close_chars.index(text[r_idx])
+    ):
+        return l_idx, r_idx + 1
+    return start, end
+
+
 def _format_table_row(item_text: str) -> str:
     item_text = _SURYA_COMPACT_TOKEN_RE.sub(" ", item_text)
     matches = list(_ROW_NUMBER_RE.finditer(item_text))
@@ -259,8 +319,9 @@ def _format_table_row(item_text: str) -> str:
         number_match = matches[0]
     else:
         first, last = matches[0], matches[-1]
-        at_trailing_edge = not item_text[last.end() :].strip(" .·•-|")
-        at_leading_edge = not item_text[: first.start()].strip(" .·•-|")
+        edge_strip = " .·•-|()[]{}（［）］"
+        at_trailing_edge = not item_text[last.end() :].strip(edge_strip)
+        at_leading_edge = not item_text[: first.start()].strip(edge_strip)
         if at_trailing_edge and _TRAILING_DOT_LEADER_RE.search(
             item_text[: last.start()]
         ):
@@ -274,7 +335,10 @@ def _format_table_row(item_text: str) -> str:
         else:
             number_match = first
     value = number_match.group()
-    title = item_text[: number_match.start()] + " " + item_text[number_match.end() :]
+    span_start, span_end = _strip_enclosing_page_brackets(
+        item_text, number_match.start(), number_match.end()
+    )
+    title = item_text[:span_start] + " " + item_text[span_end:]
     title = _DOT_LEADER_RE.sub(" ", title)
     title = " ".join(title.split())
     title = re.sub(r"^[.·•∙⋅․﹒｡…_\s]+|[.·•∙⋅․﹒｡…_\s]+$", "", title)
@@ -362,10 +426,13 @@ def _format_toc_lines_to_markdown(
             pending.clear()
             table_rows.append(_format_table_row(full_entry))
         else:
-            if (
-                len(pending) == 1
-                and len(pending[0]) <= 35
-                and _NEW_TOC_ITEM_START_RE.match(line)
+            if pending and (
+                _TOC_DOT_RUN_RE.search(pending[-1])
+                or (
+                    len(pending) == 1
+                    and len(pending[0]) <= 35
+                    and _NEW_TOC_ITEM_START_RE.match(line)
+                )
             ):
                 flush_pending()
             pending.append(line)
@@ -511,6 +578,16 @@ def _block_html_to_markdown(html: str, label: str | None = None) -> str:
         return ""
     if label == "TableOfContents":
         return _format_toc_lines_to_markdown(lines, promote_munderije_heading=False)
+    if label in ("Title", "SectionHeader") and len(p_tags) <= 1:
+        heading_text = " ".join(lines).strip()
+        if (
+            heading_text
+            and not heading_text.startswith("#")
+            and not is_isolated_page_number(heading_text)
+            and not _TOC_PIPE_ROW_RE.match(heading_text)
+        ):
+            prefix = "# " if label == "Title" else "## "
+            return f"{prefix}{heading_text}"
     if len(lines) == 1:
         return lines[0]
 
@@ -979,7 +1056,7 @@ def _is_unformatted_toc_page(content_blocks: list[Any]) -> bool:
     joined = "\n".join(all_lines)
     dot_targets = len(_TOC_DOT_TARGET_OR_TOKEN_RE.findall(joined))
     long_dot_lines = sum(
-        1 for line in all_lines if re.search(r"[.·•∙⋅․﹒｡]{6,}|…{3,}", line)
+        1 for line in all_lines if re.search(r"[.·•∙⋅․﹒｡]{4,}|…{2,}", line)
     )
     has_munderije = any(_is_munderije_heading_line(line) for line in all_lines)
     if has_munderije and (dot_targets >= 1 or long_dot_lines >= 1):
@@ -1283,18 +1360,14 @@ def _reocr_toc_page_lines(
             n_val = _extract_page_num_from_crop_text(n_raw)
 
         if n_val is None and t_txt:
-            m_trail = re.search(
-                r"(?:[.·•∙⋅․﹒｡…\-—–_]{2,})\s*([0-9\u0660-\u0669\u06F0-\u06F9]{1,4})\s*$",
-                t_txt,
-            )
+            m_trail = _TOC_TRAILING_PAGE_NUM_RE.search(t_txt)
             if m_trail:
-                n_val = m_trail.group(1)
-                t_txt = t_txt[: m_trail.start()].strip()
+                n_val = m_trail.group(3)
+                after_dots = m_trail.group(2).strip(" \t.·•∙⋅․﹒｡…-—–_")
+                prefix = t_txt[: m_trail.start()].strip()
+                t_txt = f"{prefix} {after_dots}".strip() if after_dots else prefix
             else:
-                m_lead = re.match(
-                    r"^\s*([0-9\u0660-\u0669\u06F0-\u06F9]{1,4})\s*(?:[.·•∙⋅․﹒｡…\-—–_]{2,})",
-                    t_txt,
-                )
+                m_lead = _TOC_LEADING_PAGE_NUM_RE.match(t_txt)
                 if m_lead:
                     n_val = m_lead.group(1)
                     t_txt = t_txt[m_lead.end() :].strip()
@@ -1341,10 +1414,13 @@ def _reocr_toc_page_lines(
             if full_title:
                 table_rows.append(_format_table_row(f"{full_title} ..... {n_val}"))
         else:
-            if (
-                len(pending_title_lines) == 1
-                and len(pending_title_lines[0]) <= 35
-                and _NEW_TOC_ITEM_START_RE.match(t_txt)
+            if pending_title_lines and (
+                _TOC_DOT_RUN_RE.search(pending_title_lines[-1])
+                or (
+                    len(pending_title_lines) == 1
+                    and len(pending_title_lines[0]) <= 35
+                    and _NEW_TOC_ITEM_START_RE.match(t_txt)
+                )
             ):
                 flush_pending()
             pending_title_lines.append(t_txt)
@@ -1377,11 +1453,15 @@ def _process_page_sync(
     gray_arr = np.array(image.convert("L"))
 
     valid_blocks: list[Any] = []
+    footer_page_num: int | None = None
+    header_page_num: int | None = None
 
     phantom_candidates = [
         b
         for b in page_blocks
-        if not (b.skipped or b.error or b.label in DISCARD_LABELS)
+        if not (
+            b.skipped or b.error or b.label in DISCARD_LABELS or b.label == "PageFooter"
+        )
         and b.label in _PHANTOM_CHECK_LABELS
     ]
     ink_contrast_reference = _page_ink_contrast_reference(
@@ -1392,32 +1472,43 @@ def _process_page_sync(
         if (
             block.skipped
             or block.error
-            or block.label in DISCARD_LABELS
             or _is_vertical_marginalia_block(block, img_w, img_h)
         ):
             continue
 
-        if block.confidence is not None:
-            confidences.append(block.confidence)
-
         html = (block.html or "").strip()
         if not html:
             continue
+
+        # Filter phantom bleed-through text blocks ahead of PageHeader/PageFooter discard
+        if block.label in _PHANTOM_CHECK_LABELS or block.label in DISCARD_LABELS:
+            if _is_phantom_bleed_through_block(block, gray_arr, ink_contrast_reference):
+                logger.info(
+                    "Discarding phantom bleed-through block %s (no dark ink)",
+                    getattr(block, "reading_order", 0),
+                )
+                continue
+
+        if block.label in DISCARD_LABELS:
+            header_text = _html_to_text(html)
+            if header_text and is_isolated_page_number(header_text):
+                cand = extract_standalone_page_number(header_text)
+                if header_page_num is None and cand is not None:
+                    header_page_num = cand
+            continue
+
+        if block.confidence is not None:
+            confidences.append(block.confidence)
 
         # PageFooter blocks containing only isolated page numbers or blank text are discarded;
         # footers with actual text content (dates, locations, signatures, notes) are preserved.
         if block.label == "PageFooter":
             footer_text = _html_to_text(html)
             if not footer_text or is_isolated_page_number(footer_text):
-                continue
-
-        # Filter phantom bleed-through text blocks with no dark ink
-        if block.label in _PHANTOM_CHECK_LABELS:
-            if _is_phantom_bleed_through_block(block, gray_arr, ink_contrast_reference):
-                logger.info(
-                    "Discarding phantom bleed-through block %s (no dark ink)",
-                    getattr(block, "reading_order", 0),
-                )
+                if footer_text:
+                    cand = extract_standalone_page_number(footer_text)
+                    if cand is not None:
+                        footer_page_num = cand
                 continue
 
         valid_blocks.append(block)
@@ -1447,6 +1538,7 @@ def _process_page_sync(
                     footnotes.append(ft)
         toc_parts = [p for p in (toc_markdown, *footnotes) if p and p.strip()]
         mean_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+        _LAST_SYNC_META[threading.get_ident()] = (footer_page_num, header_page_num)
         return "\n\n".join(toc_parts), mean_confidence
 
     # Group vertically adjacent Text blocks that belong to the same poem stanza.
@@ -1577,10 +1669,22 @@ def _process_page_sync(
     blocks.extend(footnotes)
     markdown = "\n\n".join(blocks)
     mean_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+    _LAST_SYNC_META[threading.get_ident()] = (footer_page_num, header_page_num)
     return markdown, mean_confidence
 
 
-async def ocr_page(
+def _run_process_page_sync(
+    image: Image.Image,
+    recognition_predictor: Any,
+) -> tuple[str, float, int | None, int | None]:
+    tid = threading.get_ident()
+    _LAST_SYNC_META.pop(tid, None)
+    markdown, mean_confidence = _process_page_sync(image, recognition_predictor)
+    footer_num, header_num = _LAST_SYNC_META.pop(tid, (None, None))
+    return markdown, mean_confidence, footer_num, header_num
+
+
+async def ocr_page_with_meta(
     page: fitz.Page,
     recognition_predictor: Any,
     timeout: float | None = None,
@@ -1589,7 +1693,7 @@ async def ocr_page(
     min_confidence: float = 0.3,
     max_retries: int | None = None,
     valid_words: set[str] | None = None,
-) -> str:
+) -> PageOcrResult:
     workers = min(max(1, max_parallel_pages), MAX_SURYA_PARALLEL_PAGES)
     executor = _get_executor(workers)
     loop = asyncio.get_running_loop()
@@ -1607,7 +1711,9 @@ async def ocr_page(
         try:
             pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
             if is_page_blank(pix):
-                return ""
+                return PageOcrResult(
+                    text="", detected_page_number=None, ended_with_hyphen=False
+                )
 
             image = Image.open(io.BytesIO(pix.tobytes("png")))
             if is_bleed_through_suppression_enabled():
@@ -1615,10 +1721,10 @@ async def ocr_page(
             if is_dot_enhancement_enabled():
                 image = enhance_dots_and_contrast(image)
 
-            process_fn = partial(_process_page_sync, image, recognition_predictor)
+            process_fn = partial(_run_process_page_sync, image, recognition_predictor)
             coro = loop.run_in_executor(executor, process_fn)
             try:
-                markdown, mean_confidence = await (
+                markdown, mean_confidence, footer_num, header_num = await (
                     asyncio.wait_for(coro, timeout=effective_timeout)
                     if effective_timeout
                     else coro
@@ -1645,13 +1751,23 @@ async def ocr_page(
                     f"threshold {min_confidence} (attempt {attempt + 1})"
                 )
 
+            _, edge_page_num = strip_page_numbers_with_capture(markdown)
             cleaned = clean_uyghur_text(markdown)
             if is_degenerate_ocr_output(cleaned):
                 raise LowConfidenceOcrError(
                     f"OCR output looks like a runaway repetition/reasoning-leak "
                     f"loop ({len(cleaned)} chars, attempt {attempt + 1})"
                 )
-            return cleaned
+            detected_page_number = (
+                footer_num
+                if footer_num is not None
+                else (edge_page_num if edge_page_num is not None else header_num)
+            )
+            return PageOcrResult(
+                text=cleaned,
+                detected_page_number=detected_page_number,
+                ended_with_hyphen=text_ends_with_hyphen(cleaned),
+            )
 
         except Exception as exc:
             last_exc = exc
@@ -1669,3 +1785,26 @@ async def ocr_page(
     if last_exc is not None:
         raise last_exc
     raise RuntimeError("OCR failed with no attempts")  # pragma: no cover
+
+
+async def ocr_page(
+    page: fitz.Page,
+    recognition_predictor: Any,
+    timeout: float | None = None,
+    *,
+    max_parallel_pages: int = DEFAULT_MAX_PARALLEL_PAGES,
+    min_confidence: float = 0.3,
+    max_retries: int | None = None,
+    valid_words: set[str] | None = None,
+) -> str:
+    res = await ocr_page_with_meta(
+        page,
+        recognition_predictor,
+        timeout=timeout,
+        max_parallel_pages=max_parallel_pages,
+        min_confidence=min_confidence,
+        max_retries=max_retries,
+        valid_words=valid_words,
+    )
+    _LAST_PAGE_OCR_META[id(page)] = res
+    return res.text

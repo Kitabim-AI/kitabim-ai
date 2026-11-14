@@ -364,7 +364,7 @@ async def generate_text(prompt: str, model_name: str) -> str:
 _BREAKER_TIMEOUT_CONFIGS = {
     "llm_ocr": ("ocr_gemini_timeout", 300.0),
     "llm_generate": ("rag_gemini_chat_timeout", 60.0),
-    "llm_embed": ("embed_gemini_timeout", 15.0),
+    "llm_embed": ("embed_gemini_timeout", 45.0),
 }
 
 
@@ -491,14 +491,9 @@ class ProtectedLLM:
         if timeout is None:
             if timeout_config_key:
                 default_val = (
-                    180.0
-                    if "spell" in timeout_config_key
-                    else (
-                        300.0
-                        if "summary" in timeout_config_key
-                        or "ocr" in timeout_config_key
-                        else 30.0
-                    )
+                    300.0
+                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
+                    else 30.0
                 )
                 timeout = await get_system_config_timeout(
                     timeout_config_key, default_val
@@ -562,14 +557,9 @@ class ProtectedLLM:
         if timeout is None:
             if timeout_config_key:
                 default_val = (
-                    180.0
-                    if "spell" in timeout_config_key
-                    else (
-                        300.0
-                        if "summary" in timeout_config_key
-                        or "ocr" in timeout_config_key
-                        else 30.0
-                    )
+                    300.0
+                    if "summary" in timeout_config_key or "ocr" in timeout_config_key
+                    else 30.0
                 )
                 timeout = await get_system_config_timeout(
                     timeout_config_key, default_val
@@ -641,30 +631,39 @@ class GeminiEmbeddings:
 
         model_name = self.model_name
         dimensions = 3072 if "gemini-embedding-2" in model_name else 768
+        timeout = await get_system_config_timeout("embed_gemini_batch_timeout", 45.0)
+        sub_batch_size = 64
 
-        async def _call():
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:batchEmbedContents?key={settings.gemini_api_key}"
-            requests = []
-            for t in texts:
-                req = {
-                    "model": f"models/{model_name}",
-                    "content": {"parts": [{"text": t}]},
-                }
-                if dimensions:
-                    req["outputDimensionality"] = dimensions
-                requests.append(req)
+        all_vectors: List[List[float]] = []
+        for idx in range(0, len(texts), sub_batch_size):
+            batch_texts = texts[idx : idx + sub_batch_size]
 
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=15.0)
-            ) as session:
-                async with session.post(url, json={"requests": requests}) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-                    if "embeddings" not in data:
-                        raise ValueError(f"No embeddings returned from API: {data}")
-                    return [e["values"] for e in data["embeddings"]]
+            async def _call(slice_texts: List[str] = batch_texts):
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:batchEmbedContents?key={settings.gemini_api_key}"
+                requests = []
+                for t in slice_texts:
+                    req = {
+                        "model": f"models/{model_name}",
+                        "content": {"parts": [{"text": t}]},
+                    }
+                    if dimensions:
+                        req["outputDimensionality"] = dimensions
+                    requests.append(req)
 
-        return await _call_with_breaker(_EMBED_BREAKER, _call)
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=timeout)
+                ) as session:
+                    async with session.post(url, json={"requests": requests}) as resp:
+                        resp.raise_for_status()
+                        data = await resp.json()
+                        if "embeddings" not in data:
+                            raise ValueError(f"No embeddings returned from API: {data}")
+                        return [e["values"] for e in data["embeddings"]]
+
+            vectors = await _call_with_breaker(_EMBED_BREAKER, _call, timeout=timeout)
+            all_vectors.extend(vectors)
+
+        return all_vectors
 
     async def aembed_query(self, text: str) -> List[float]:
         if not text:
@@ -675,6 +674,7 @@ class GeminiEmbeddings:
 
         model_name = self.model_name
         dimensions = 3072 if "gemini-embedding-2" in model_name else 768
+        timeout = await get_system_config_timeout("embed_gemini_timeout", 15.0)
 
         async def _call():
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:embedContent?key={settings.gemini_api_key}"
@@ -686,7 +686,7 @@ class GeminiEmbeddings:
                 req["outputDimensionality"] = dimensions
 
             async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=15.0)
+                timeout=aiohttp.ClientTimeout(total=timeout)
             ) as session:
                 async with session.post(url, json=req) as resp:
                     resp.raise_for_status()
@@ -695,7 +695,7 @@ class GeminiEmbeddings:
                         raise ValueError(f"No embedding returned from API: {data}")
                     return data["embedding"]["values"]
 
-        values = await _call_with_breaker(_EMBED_BREAKER, _call)
+        values = await _call_with_breaker(_EMBED_BREAKER, _call, timeout=timeout)
         # Gemini's embedContent response carries no usage_metadata — estimate
         # from input length (~4 chars/token) rather than leave it uncounted.
         from app.services.rag.context import get_current_query_context

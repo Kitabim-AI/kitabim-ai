@@ -126,17 +126,12 @@ async def test_get_books():
     mock_graph_res = MagicMock()
     mock_graph_res.fetchall.return_value = [("book-1",)]
 
-    # Mock history extraction check results
-    mock_history_res = MagicMock()
-    mock_history_res.fetchall.return_value = [("book-1",)]
-
     # Setup session.execute side effects for the sequential queries
     mock_session.execute.side_effect = [
         mock_count_res,
         mock_books_res,
         mock_summary_res,
         mock_graph_res,
-        mock_history_res,
     ]
 
     with patch("api.endpoints.books_router.cache_service") as mock_cache:
@@ -370,7 +365,6 @@ async def test_update_book_details_strips_read_only_and_computed_fields():
             book_update={
                 "id": "book-1",
                 "title": "Edited Title",
-                "hasHistory": True,
                 "hasSummary": True,
                 "hasGraph": True,
                 "pipelineStats": {"ocr": 10},
@@ -383,7 +377,6 @@ async def test_update_book_details_strips_read_only_and_computed_fields():
 
     _, kwargs = mock_repo.update_one.call_args
     assert kwargs["title"] == "Edited Title"
-    assert "has_history" not in kwargs
     assert "has_summary" not in kwargs
     assert "has_graph" not in kwargs
     assert "pipeline_stats" not in kwargs
@@ -814,7 +807,7 @@ async def test_upload_ocrd_returns_existing_book_on_duplicate_hash():
 async def test_upload_ocrd_creates_book_with_prefilled_pages_on_success():
     setup_paths()
     from api.endpoints.books_router import upload_pdf_ocrd
-    from app.core.pipeline import PIPELINE_STEP_CHUNKING
+    from app.core.pipeline import PIPELINE_STEP_STRUCTURE
     import fitz
 
     doc = fitz.open()
@@ -859,7 +852,7 @@ async def test_upload_ocrd_creates_book_with_prefilled_pages_on_success():
     create_kwargs = mock_repo.create.call_args.kwargs
     assert create_kwargs["source"] == "surya_local"
     assert create_kwargs["ocr_milestone"] == "complete"
-    assert create_kwargs["pipeline_step"] == PIPELINE_STEP_CHUNKING
+    assert create_kwargs["pipeline_step"] == PIPELINE_STEP_STRUCTURE
     assert create_kwargs["total_pages"] == 2
 
     added_pages = [call.args[0] for call in mock_session.add.call_args_list] + [
@@ -964,116 +957,6 @@ async def test_upload_ocrd_sanitizes_null_bytes_in_page_text():
     assert len(added_pages) == 1
     assert added_pages[0].text == "helloworld"
     assert "\x00" not in added_pages[0].text
-
-
-@pytest.mark.asyncio
-async def test_reprocess_llm_spell_check_live_path_enqueues_job():
-    setup_paths()
-    from api.endpoints.books_router import reprocess_llm_spell_check  # type: ignore[import]
-
-    mock_session = AsyncMock()
-    mock_user = MagicMock()
-    mock_user.email = "admin@example.com"
-
-    mock_repo = MagicMock()
-    mock_repo.get = AsyncMock(return_value=MagicMock())
-
-    mock_configs_repo = MagicMock()
-    mock_configs_repo.get_value = AsyncMock(return_value="false")
-
-    mock_pages_result = MagicMock()
-    mock_pages_result.fetchall.return_value = [(1,), (2,)]
-    mock_session.execute = AsyncMock(return_value=mock_pages_result)
-
-    mock_pool = AsyncMock()
-
-    with (
-        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
-        patch(
-            "api.endpoints.books_router.SystemConfigsRepository",
-            return_value=mock_configs_repo,
-        ),
-        patch("arq.create_pool", new_callable=AsyncMock, return_value=mock_pool),
-    ):
-        result = await reprocess_llm_spell_check(
-            book_id="some-book-id",
-            current_user=mock_user,
-            session=mock_session,
-        )
-
-    assert result["status"] == "llm_spell_check_started"
-    assert result["queued"] == 2
-    mock_pool.enqueue_job.assert_called_once()
-    call_kwargs = mock_pool.enqueue_job.call_args
-    assert call_kwargs.args[0] == "llm_spell_check_job"
-    assert call_kwargs.kwargs["page_ids"] == [1, 2]
-
-
-@pytest.mark.asyncio
-async def test_reprocess_llm_spell_check_batch_path_submits_batch():
-    setup_paths()
-    from api.endpoints.books_router import reprocess_llm_spell_check  # type: ignore[import]
-
-    mock_session = AsyncMock()
-    mock_user = MagicMock()
-    mock_user.email = "admin@example.com"
-
-    mock_repo = MagicMock()
-    mock_repo.get = AsyncMock(return_value=MagicMock())
-
-    mock_configs_repo = MagicMock()
-    mock_configs_repo.get_value = AsyncMock(return_value="true")
-
-    mock_pages_result = MagicMock()
-    mock_pages_result.fetchall.return_value = [(1,), (2,)]
-    mock_session.execute = AsyncMock(return_value=mock_pages_result)
-
-    mock_batch_job = MagicMock()
-
-    with (
-        patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo),
-        patch(
-            "api.endpoints.books_router.SystemConfigsRepository",
-            return_value=mock_configs_repo,
-        ),
-        patch(
-            "api.endpoints.books_router.submit_batch_llm_spell_check",
-            new_callable=AsyncMock,
-            return_value=mock_batch_job,
-        ) as mock_submit,
-    ):
-        result = await reprocess_llm_spell_check(
-            book_id="some-book-id",
-            current_user=mock_user,
-            session=mock_session,
-        )
-
-    assert result["status"] == "llm_spell_check_batch_submitted"
-    assert result["queued"] == 2
-    mock_submit.assert_called_once_with("some-book-id", [1, 2], mock_session)
-
-
-@pytest.mark.asyncio
-async def test_reprocess_llm_spell_check_book_not_found():
-    setup_paths()
-    from api.endpoints.books_router import reprocess_llm_spell_check  # type: ignore[import]
-
-    mock_session = AsyncMock()
-    mock_user = MagicMock()
-    mock_user.email = "admin@example.com"
-
-    mock_repo = MagicMock()
-    mock_repo.get = AsyncMock(return_value=None)
-
-    with patch("api.endpoints.books_router.BooksRepository", return_value=mock_repo):
-        with pytest.raises(HTTPException) as excinfo:
-            await reprocess_llm_spell_check(
-                book_id="missing-book",
-                current_user=mock_user,
-                session=mock_session,
-            )
-
-    assert excinfo.value.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -1214,290 +1097,95 @@ async def test_download_book_with_invalid_ticket_raises_401():
     assert excinfo.value.status_code == 401
 
 
-def _preview_page(text="old", page_id=7):
-    page = MagicMock()
-    page.id = page_id
-    page.text = text
-    page.llm_spell_check_status = "idle"
-    return page
-
-
 @pytest.mark.asyncio
-async def test_preview_llm_spell_check_returns_corrected_text_without_writes():
+async def test_set_content_start_page_recomputes_content_page_numbers_and_resets_structure():
     setup_paths()
-    from api.endpoints.books_router import (  # type: ignore[import]
-        preview_llm_spell_check_page,
-        LlmSpellCheckPreviewRequest,
-    )
+    from api.endpoints.books_router import set_start_page
 
     mock_session = AsyncMock()
     mock_user = MagicMock()
     mock_user.email = "editor@example.com"
 
-    page = _preview_page(text="saved text")
-    prev_page = _preview_page(text="previous page")
-    next_page = _preview_page(text="next page")
+    mock_book = MagicMock()
+    mock_book.id = "book123"
+    mock_book.total_pages = 50
+    mock_book.ocr_milestone = "complete"
+    mock_book.structure_milestone = "complete"
 
-    async def find_one(book_id, page_num):
-        return {4: prev_page, 5: page, 6: next_page}.get(page_num)
-
-    mock_repo = MagicMock()
-    mock_repo.find_one = AsyncMock(side_effect=find_one)
-
-    with (
-        patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo),
-        patch("api.endpoints.books_router.SystemConfigsRepository"),
-        patch(
-            "api.endpoints.books_router.correct_page_text",
-            new_callable=AsyncMock,
-            return_value="corrected text",
-        ) as mock_correct,
-    ):
-        result = await preview_llm_spell_check_page(
-            book_id="book-1",
-            page_num=5,
-            request=LlmSpellCheckPreviewRequest(text="unsaved edits"),
-            current_user=mock_user,
-            session=mock_session,
-        )
-
-    assert result == {"corrected_text": "corrected text"}
-    args = mock_correct.call_args.args
-    assert args[0] == "unsaved edits"  # textarea text, not the saved page text
-    assert args[1] == "previous page"
-    assert args[2] == "next page"
-    # Nothing persisted
-    assert page.text == "saved text"
-    assert page.llm_spell_check_status == "idle"
-    mock_session.commit.assert_not_called()
-    mock_session.execute.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_preview_llm_spell_check_handles_missing_neighbors():
-    setup_paths()
-    from api.endpoints.books_router import (  # type: ignore[import]
-        preview_llm_spell_check_page,
-        LlmSpellCheckPreviewRequest,
-    )
-
-    page = _preview_page()
-
-    async def find_one(book_id, page_num):
-        return page if page_num == 1 else None
-
-    mock_repo = MagicMock()
-    mock_repo.find_one = AsyncMock(side_effect=find_one)
-
-    with (
-        patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo),
-        patch("api.endpoints.books_router.SystemConfigsRepository"),
-        patch(
-            "api.endpoints.books_router.correct_page_text",
-            new_callable=AsyncMock,
-            return_value="x",
-        ) as mock_correct,
-    ):
-        await preview_llm_spell_check_page(
-            book_id="book-1",
-            page_num=1,
-            request=LlmSpellCheckPreviewRequest(text="text"),
-            current_user=MagicMock(),
-            session=AsyncMock(),
-        )
-
-    args = mock_correct.call_args.args
-    assert args[1] is None
-    assert args[2] is None
-
-
-@pytest.mark.asyncio
-async def test_preview_llm_spell_check_400_on_empty_text():
-    setup_paths()
-    from api.endpoints.books_router import (  # type: ignore[import]
-        preview_llm_spell_check_page,
-        LlmSpellCheckPreviewRequest,
-    )
-
-    with pytest.raises(HTTPException) as excinfo:
-        await preview_llm_spell_check_page(
-            book_id="book-1",
-            page_num=1,
-            request=LlmSpellCheckPreviewRequest(text="   \n "),
-            current_user=MagicMock(),
-            session=AsyncMock(),
-        )
-
-    assert excinfo.value.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_preview_llm_spell_check_404_when_page_missing():
-    setup_paths()
-    from api.endpoints.books_router import (  # type: ignore[import]
-        preview_llm_spell_check_page,
-        LlmSpellCheckPreviewRequest,
-    )
-
-    mock_repo = MagicMock()
-    mock_repo.find_one = AsyncMock(return_value=None)
-
-    with patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo):
-        with pytest.raises(HTTPException) as excinfo:
-            await preview_llm_spell_check_page(
-                book_id="book-1",
-                page_num=999,
-                request=LlmSpellCheckPreviewRequest(text="text"),
-                current_user=MagicMock(),
-                session=AsyncMock(),
-            )
-
-    assert excinfo.value.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_preview_llm_spell_check_422_when_guardrail_rejects():
-    setup_paths()
-    from api.endpoints.books_router import (  # type: ignore[import]
-        preview_llm_spell_check_page,
-        LlmSpellCheckPreviewRequest,
-    )
-
-    mock_repo = MagicMock()
-    mock_repo.find_one = AsyncMock(return_value=_preview_page())
-
-    with (
-        patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo),
-        patch("api.endpoints.books_router.SystemConfigsRepository"),
-        patch(
-            "api.endpoints.books_router.correct_page_text",
-            new_callable=AsyncMock,
-            side_effect=ValueError("LLM spell check returned empty output"),
-        ),
-    ):
-        with pytest.raises(HTTPException) as excinfo:
-            await preview_llm_spell_check_page(
-                book_id="book-1",
-                page_num=2,
-                request=LlmSpellCheckPreviewRequest(text="text"),
-                current_user=MagicMock(),
-                session=AsyncMock(),
-            )
-
-    assert excinfo.value.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_preview_llm_spell_check_502_when_llm_call_fails():
-    setup_paths()
-    from api.endpoints.books_router import (  # type: ignore[import]
-        preview_llm_spell_check_page,
-        LlmSpellCheckPreviewRequest,
-    )
-
-    mock_repo = MagicMock()
-    mock_repo.find_one = AsyncMock(return_value=_preview_page())
-
-    with (
-        patch("api.endpoints.books_router.PagesRepository", return_value=mock_repo),
-        patch("api.endpoints.books_router.SystemConfigsRepository"),
-        patch(
-            "api.endpoints.books_router.correct_page_text",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("circuit open"),
-        ),
-    ):
-        with pytest.raises(HTTPException) as excinfo:
-            await preview_llm_spell_check_page(
-                book_id="book-1",
-                page_num=2,
-                request=LlmSpellCheckPreviewRequest(text="text"),
-                current_user=MagicMock(),
-                session=AsyncMock(),
-            )
-
-    assert excinfo.value.status_code == 502
-
-
-def test_preview_llm_spell_check_requires_editor():
-    setup_paths()
-    from api.endpoints import books_router  # type: ignore[import]
-    from auth.dependencies import require_editor  # type: ignore[import]
-
-    route = next(
-        r
-        for r in books_router.router.routes
-        if getattr(r, "path", "").endswith("/pages/{page_num}/llm-spell-check/preview")
-    )
-    dependency_calls = [d.call for d in route.dependant.dependencies]
-    assert require_editor in dependency_calls
-
-
-async def _call_update_page_text(payload, page):
-    from api.endpoints.books_router import update_page_text  # type: ignore[import]
+    mock_books_repo = MagicMock()
+    mock_books_repo.get = AsyncMock(return_value=mock_book)
+    mock_books_repo.update_one = AsyncMock()
 
     mock_pages_repo = MagicMock()
-    mock_pages_repo.find_one = AsyncMock(return_value=page)
-    mock_books_repo = MagicMock()
-    mock_books_repo.update_one = AsyncMock()
-    mock_configs_repo = MagicMock()
-    mock_configs_repo.get_value = AsyncMock(return_value="gemini-embedding-2")
-    mock_cache = MagicMock()
-    mock_cache.delete = AsyncMock()
-    mock_cache.delete_pattern = AsyncMock()
-    mock_user = MagicMock()
-    mock_user.email = "editor@example.com"
+    mock_pages_repo.set_manual_content_pages = AsyncMock(return_value={"1": 9, "2": 10})
 
     with (
-        patch(
-            "api.endpoints.books_router.PagesRepository", return_value=mock_pages_repo
-        ),
         patch(
             "api.endpoints.books_router.BooksRepository", return_value=mock_books_repo
         ),
         patch(
-            "api.endpoints.books_router.SystemConfigsRepository",
-            return_value=mock_configs_repo,
+            "api.endpoints.books_router.PagesRepository", return_value=mock_pages_repo
         ),
-        patch("api.endpoints.books_router.cache_service", mock_cache),
+        patch("api.endpoints.books_router.cache_service") as mock_cache,
         patch(
-            "app.services.book_milestone_service.BookMilestoneService.update_book_milestones",
+            "api.endpoints.books_router._enqueue_structure_job_best_effort",
             new_callable=AsyncMock,
         ),
     ):
-        # Empty text takes the no-chunking branch, so no embedding calls are made.
-        return await update_page_text(
-            book_id="book-1",
-            page_num=3,
-            payload=payload,
+        mock_cache.delete = AsyncMock()
+        mock_cache.delete_pattern = AsyncMock()
+        res = await set_start_page(
+            book_id="book123",
+            page_num=9,
             current_user=mock_user,
-            session=AsyncMock(),
+            session=mock_session,
         )
 
-
-@pytest.mark.asyncio
-async def test_update_page_text_marks_llm_checked_when_flag_true():
-    setup_paths()
-    page = MagicMock()
-    page.text = "old"
-    page.llm_spell_check_status = "idle"
-    page.llm_spell_check_at = None
-
-    await _call_update_page_text({"text": "", "llm_spell_checked": True}, page)
-
-    assert page.llm_spell_check_status == "succeeded"
-    assert page.llm_spell_check_at is not None
+    assert res.content_page_offset == 8
+    assert res.content_page_map == {"1": 9, "2": 10}
+    mock_pages_repo.set_manual_content_pages.assert_awaited_once_with("book123", 9)
+    update_kwargs = mock_books_repo.update_one.call_args.kwargs
+    assert update_kwargs["content_page_offset"] == 8
+    assert update_kwargs["structure_milestone"] == "idle"
 
 
 @pytest.mark.asyncio
-async def test_update_page_text_leaves_llm_status_without_flag():
+async def test_reprocess_book_step_structure_resets_structure_milestone():
     setup_paths()
-    page = MagicMock()
-    page.text = "old"
-    page.llm_spell_check_status = "idle"
-    page.llm_spell_check_at = None
+    from api.endpoints.books_router import reprocess_structure
+    from app.core.pipeline import PIPELINE_STEP_STRUCTURE
 
-    await _call_update_page_text({"text": ""}, page)
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
 
-    assert page.llm_spell_check_status == "idle"
-    assert page.llm_spell_check_at is None
+    mock_book = MagicMock()
+    mock_book.id = "book123"
+    mock_book.total_pages = 10
+
+    mock_books_repo = MagicMock()
+    mock_books_repo.get = AsyncMock(return_value=mock_book)
+    mock_books_repo.update_one = AsyncMock()
+
+    with (
+        patch(
+            "api.endpoints.books_router.BooksRepository", return_value=mock_books_repo
+        ),
+        patch("api.endpoints.books_router.cache_service") as mock_cache,
+        patch(
+            "api.endpoints.books_router._enqueue_structure_job_best_effort",
+            new_callable=AsyncMock,
+        ),
+    ):
+        mock_cache.delete = AsyncMock()
+        mock_cache.delete_pattern = AsyncMock()
+        res = await reprocess_structure(
+            book_id="book123",
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert res["status"] == "structure_reprocess_started"
+    update_kwargs = mock_books_repo.update_one.call_args.kwargs
+    assert update_kwargs["structure_milestone"] == "idle"
+    assert update_kwargs["pipeline_step"] == PIPELINE_STEP_STRUCTURE

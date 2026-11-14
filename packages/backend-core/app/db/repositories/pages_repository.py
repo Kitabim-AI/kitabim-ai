@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
 import logging
 import re
 from typing import List, Optional
 
-from sqlalchemy import select, delete, func, text, and_, or_, update
+from sqlalchemy import select, delete, func, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Page, Book
 from app.core.pipeline import (
     PAGE_MILESTONE_IDLE,
-    PAGE_MILESTONE_IN_PROGRESS,
-    PAGE_MILESTONE_FAILED,
     PAGE_MILESTONE_SUCCEEDED,
 )
 from app.db.repositories.base_repository import BaseRepository
@@ -394,34 +391,6 @@ class PagesRepository(BaseRepository[Page]):
         await self.session.flush()
         return result.rowcount > 0
 
-    async def set_llm_spell_check_status(
-        self,
-        book_id: str,
-        page_number: int,
-        status: str,
-        updated_by: Optional[str] = None,
-    ) -> bool:
-        """Set the on-demand LLM spell-check status for one page. Records
-        llm_spell_check_at when the run reaches a terminal state (success or
-        failure) — not on transition to in_progress."""
-        from sqlalchemy import update
-        from app.core.pipeline import PAGE_MILESTONE_FAILED
-
-        values = {"llm_spell_check_status": status, "last_updated": func.now()}
-        if status in (PAGE_MILESTONE_SUCCEEDED, PAGE_MILESTONE_FAILED):
-            values["llm_spell_check_at"] = func.now()
-        if updated_by:
-            values["updated_by"] = updated_by
-
-        stmt = (
-            update(Page)
-            .where(Page.book_id == book_id, Page.page_number == page_number)
-            .values(**values)
-        )
-        result = await self.session.execute(stmt)
-        await self.session.flush()
-        return result.rowcount > 0
-
     async def sync_content_page_offset(self, book_id: str) -> int:
         """Calculate and update book.content_page_offset based on MAX(page_number) where is_toc IS TRUE."""
         from sqlalchemy import update
@@ -458,70 +427,6 @@ class PagesRepository(BaseRepository[Page]):
         result = await self.session.execute(stmt)
         return result.scalar_one()
 
-    async def list_eligible_for_llm_spell_check(
-        self,
-        book_id: str,
-        force: bool = False,
-        stale_timeout_minutes: int = 60,
-    ) -> List[int]:
-        """Finds page IDs in a book eligible for LLM spell check.
-        Filters out null/empty text pages. If force is False, only includes
-        idle/failed pages, or in_progress pages that exceeded stale_timeout_minutes.
-        If force is True, includes all non-empty pages not currently active.
-        """
-        now = datetime.now(timezone.utc)
-        stale_threshold = now - timedelta(minutes=stale_timeout_minutes)
-
-        non_empty_cond = and_(
-            Page.text.is_not(None),
-            func.trim(Page.text) != "",
-        )
-
-        if force:
-            status_cond = or_(
-                Page.llm_spell_check_status != PAGE_MILESTONE_IN_PROGRESS,
-                Page.last_updated < stale_threshold,
-            )
-        else:
-            status_cond = or_(
-                Page.llm_spell_check_status.in_(
-                    [PAGE_MILESTONE_IDLE, PAGE_MILESTONE_FAILED]
-                ),
-                and_(
-                    Page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS,
-                    Page.last_updated < stale_threshold,
-                ),
-            )
-
-        stmt = (
-            select(Page.id)
-            .where(
-                Page.book_id == book_id,
-                non_empty_cond,
-                status_cond,
-            )
-            .order_by(Page.page_number)
-        )
-        res = await self.session.execute(stmt)
-        return [row[0] for row in res.fetchall()]
-
-    async def bulk_set_llm_spell_check_status(
-        self, page_ids: List[int], status: str
-    ) -> None:
-        """Update llm_spell_check_status for a batch of page IDs."""
-        if not page_ids:
-            return
-        stmt = (
-            update(Page)
-            .where(Page.id.in_(page_ids))
-            .values(
-                llm_spell_check_status=status,
-                last_updated=func.now(),
-            )
-        )
-        await self.session.execute(stmt)
-        await self.session.flush()
-
     async def get_pages_by_ids(self, page_ids: List[int]) -> List[Page]:
         """Fetch pages by their primary key IDs ordered by page number."""
         if not page_ids:
@@ -535,6 +440,190 @@ class PagesRepository(BaseRepository[Page]):
         stmt = select(Page).where(Page.book_id == book_id).order_by(Page.page_number)
         res = await self.session.execute(stmt)
         return list(res.scalars().all())
+
+    async def get_content_page_map(self, book_id: str) -> dict[str, int]:
+        """Return `{content_page_number: MIN(page_number)}` across non-ToC pages of `book_id`."""
+        stmt = (
+            select(
+                Page.content_page_number,
+                func.min(Page.page_number).label("min_page"),
+            )
+            .where(
+                Page.book_id == book_id,
+                Page.content_page_number.is_not(None),
+                Page.content_page_number != "",
+                Page.is_toc.is_not(True),
+            )
+            .group_by(Page.content_page_number)
+        )
+        res = await self.session.execute(stmt)
+        return {
+            str(row.content_page_number): int(row.min_page)
+            for row in res.fetchall()
+            if row.content_page_number is not None and row.min_page is not None
+        }
+
+    async def bulk_replace_pages(
+        self,
+        book_id: str,
+        pages_payload: List[dict],
+        *,
+        reset_spell_check: bool = True,
+        force_overwrite_manual: bool = False,
+        existing_pages: Optional[List[Page]] = None,
+    ) -> tuple[int, int]:
+        """Batch-upsert non-skipped OCR backfill pages for `book_id`.
+
+        Preserves manually edited pages (`updated_by IS NOT NULL`) unless
+        `force_overwrite_manual` is True. For replaced pages, sets `updated_by = NULL`,
+        `status = 'ocr_done'`, `ocr_milestone = 'succeeded'`, and resets
+        `spell_check_milestone` to `'idle'` when `reset_spell_check` is True.
+
+        Returns `(pages_updated, pages_unchanged)`.
+        """
+        if existing_pages is None:
+            existing_pages = await self.find_by_book(book_id, limit=20000)
+        existing_by_num = {p.page_number: p for p in existing_pages}
+
+        rows_to_upsert: List[dict] = []
+        updated_page_ids: List[int] = []
+        pages_unchanged = 0
+        target_sc_milestone = (
+            PAGE_MILESTONE_IDLE if reset_spell_check else PAGE_MILESTONE_SUCCEEDED
+        )
+
+        for item in pages_payload:
+            if item.get("skipped"):
+                pages_unchanged += 1
+                continue
+
+            page_num = int(
+                item.get("page_number")
+                if item.get("page_number") is not None
+                else item["pageNumber"]
+            )
+            raw_text = (item.get("text") or "").replace("\x00", "")
+            existing = existing_by_num.get(page_num)
+
+            detected_page_num = (
+                item.get("detected_page_number")
+                if "detected_page_number" in item
+                else item.get("detectedPageNumber")
+            )
+            if detected_page_num is not None:
+                detected_page_num = int(detected_page_num)
+
+            if (
+                not force_overwrite_manual
+                and existing is not None
+                and bool(getattr(existing, "updated_by", None))
+            ):
+                if (
+                    detected_page_num is not None
+                    and getattr(existing, "detected_page_number", None)
+                    != detected_page_num
+                ):
+                    existing.detected_page_number = detected_page_num
+                pages_unchanged += 1
+                continue
+
+            raw_is_toc = (
+                item.get("is_toc")
+                if "is_toc" in item and item.get("is_toc") is not None
+                else item.get("isToc")
+            )
+            if raw_is_toc is None:
+                is_toc = bool(existing.is_toc) if existing is not None else False
+            else:
+                is_toc = bool(raw_is_toc)
+
+            if (
+                existing is not None
+                and (existing.text or "") == raw_text
+                and bool(existing.is_toc) == is_toc
+                and getattr(existing, "detected_page_number", None) == detected_page_num
+            ):
+                pages_unchanged += 1
+                continue
+
+            if existing is not None and getattr(existing, "id", None) is not None:
+                updated_page_ids.append(existing.id)
+
+            rows_to_upsert.append(
+                {
+                    "book_id": book_id,
+                    "page_number": page_num,
+                    "text": raw_text,
+                    "is_toc": is_toc,
+                    "detected_page_number": detected_page_num,
+                    "status": "ocr_done",
+                    "error": None,
+                    "ocr_milestone": PAGE_MILESTONE_SUCCEEDED,
+                    "spell_check_milestone": target_sc_milestone,
+                    "updated_by": None,
+                }
+            )
+
+        if updated_page_ids:
+            from app.db.models import PageSpellIssue
+
+            await self.session.execute(
+                delete(PageSpellIssue).where(
+                    PageSpellIssue.page_id.in_(updated_page_ids)
+                )
+            )
+
+        batch_size = 250
+        for idx in range(0, len(rows_to_upsert), batch_size):
+            batch = rows_to_upsert[idx : idx + batch_size]
+            stmt = insert(Page).values(batch)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["book_id", "page_number"],
+                set_={
+                    "text": stmt.excluded.text,
+                    "is_toc": stmt.excluded.is_toc,
+                    "detected_page_number": stmt.excluded.detected_page_number,
+                    "status": stmt.excluded.status,
+                    "error": None,
+                    "ocr_milestone": stmt.excluded.ocr_milestone,
+                    "spell_check_milestone": stmt.excluded.spell_check_milestone,
+                    "updated_by": None,
+                    "last_updated": func.now(),
+                },
+            )
+            await self.session.execute(stmt)
+
+        if rows_to_upsert:
+            await self.session.flush()
+
+        return len(rows_to_upsert), pages_unchanged
+
+    async def set_manual_content_pages(
+        self,
+        book_id: str,
+        start_physical_page: int,
+        start_content_page: int = 1,
+    ) -> dict[str, int]:
+        """Mark `start_physical_page` as printed page `start_content_page` (default 1)
+        and backfill `content_page_number` across all pages of `book_id` with
+        `content_page_number_manual = True`."""
+        start_cp = max(1, int(start_content_page or 1))
+        pages = await self.find_by_book(book_id, limit=20000)
+        for p in pages:
+            p.content_page_number_manual = True
+            if p.page_number < start_physical_page or p.is_toc:
+                p.content_page_number = None
+            else:
+                p.content_page_number = str(
+                    p.page_number - start_physical_page + start_cp
+                )
+
+        offset = max(0, int(start_physical_page) - start_cp)
+        await self.session.execute(
+            update(Book).where(Book.id == book_id).values(content_page_offset=offset)
+        )
+        await self.session.flush()
+        return await self.get_content_page_map(book_id)
 
 
 def get_pages_repository(session: AsyncSession) -> PagesRepository:

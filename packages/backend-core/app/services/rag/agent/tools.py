@@ -1022,11 +1022,22 @@ async def _run_get_current_page(ctx: QueryContext) -> dict:
     book = ctx.book
     author_info = f", Author: {book.author}" if book.author else ""
     volume_info = f", Volume {book.volume}" if book.volume is not None else ""
+    content_page_val = getattr(page_rec, "content_page_number", None)
+    printed_label: Optional[str] = None
+    if isinstance(content_page_val, str) and content_page_val.strip():
+        printed_label = content_page_val.strip()
+    elif isinstance(content_page_val, int) and not isinstance(content_page_val, bool):
+        printed_label = str(content_page_val)
+    printed_info = (
+        f", PrintedPage: {printed_label}, RefPages: {ctx.current_page}"
+        if printed_label is not None
+        else ""
+    )
     page_text = strip_markdown(page_rec.text)
 
     context = (
         f"[BookID: {ctx.book_id}, Book: {book.title or 'Unknown'}"
-        f"{author_info}{volume_info}, Page {ctx.current_page}]\n"
+        f"{author_info}{volume_info}, Page {ctx.current_page}{printed_info}]\n"
         f"{page_text}"
     )
     log_json(

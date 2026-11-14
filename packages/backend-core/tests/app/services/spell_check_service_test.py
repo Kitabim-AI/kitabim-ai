@@ -89,6 +89,7 @@ async def test_run_spell_check_for_page_with_issues():
 
     session.execute.side_effect = [
         mock_rules_res,  # fetch rules
+        MagicMock(),  # update Book.structure_milestone = 'idle' on text_changed
         mock_unknown_res,  # find unknown words
         mock_ocr_db_res,  # dict lookup for ocr variants
         MagicMock(),  # delete

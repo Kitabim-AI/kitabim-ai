@@ -8,16 +8,35 @@ from typing import List, Optional
 from sqlalchemy import select, func, or_, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.pipeline import (
+    BOOK_MILESTONE_COMPLETE,
+    CURRENT_SURYA_OCR_VERSION,
     FAILED_PAGE_MILESTONES,
     PAGE_MILESTONE_ATTR_BY_STEP,
     PAGE_MILESTONE_IDLE,
     PAGE_MILESTONE_IN_PROGRESS,
     PAGE_MILESTONE_SUCCEEDED,
+    PIPELINE_STEP_STRUCTURE,
     PIPELINE_STEP_SUMMARY,
     STEP_DONE_MILESTONE_BY_STEP,
 )
-from app.db.models import Book, Page, BookSummary, BatchHistoryExtractionJob
+from app.db.models import Book, Page, BookSummary
 from app.db.repositories.base_repository import BaseRepository
+
+
+def _book_step_counts(
+    milestone_val: Optional[str], total_pages: int, *, default_complete: bool = False
+) -> tuple[int, int, int]:
+    """Convert a book-scoped milestone ('idle'|'in_progress'|'complete'|'failed'|'partial_failure')
+    into (done, failed, active) page-equivalent counts for pipeline_stats."""
+    if milestone_val == BOOK_MILESTONE_COMPLETE or (
+        default_complete and not isinstance(milestone_val, str)
+    ):
+        return total_pages, 0, 0
+    if milestone_val == "in_progress":
+        return 0, 0, total_pages
+    if milestone_val in ("failed", "partial_failure"):
+        return 0, total_pages, 0
+    return 0, 0, 0
 
 
 class BooksRepository(BaseRepository[Book]):
@@ -25,6 +44,25 @@ class BooksRepository(BaseRepository[Book]):
 
     def __init__(self, session: AsyncSession):
         super().__init__(session, Book)
+
+    async def update_one(self, id: str, **kwargs) -> Optional[Book]:
+        """Update book by primary key, preserving `structure_claimed_at` / `chunking_claimed_at`
+        when resetting `structure_milestone` / `chunking_milestone` to `idle` while a job is `in_progress`."""
+        from app.core.pipeline import BOOK_MILESTONE_IDLE
+        from app.services.book_structure_service import (
+            preserve_active_chunking_claim,
+            preserve_active_structure_claim,
+        )
+
+        if kwargs.get("structure_milestone") == BOOK_MILESTONE_IDLE:
+            kwargs.setdefault("structure_retry_count", 0)
+            if kwargs.get("structure_claimed_at") is None:
+                kwargs["structure_claimed_at"] = preserve_active_structure_claim()
+        if kwargs.get("chunking_milestone") == BOOK_MILESTONE_IDLE:
+            kwargs.setdefault("chunking_retry_count", 0)
+            if kwargs.get("chunking_claimed_at") is None:
+                kwargs["chunking_claimed_at"] = preserve_active_chunking_claim()
+        return await super().update_one(id, **kwargs)
 
     async def find_by_hash(self, content_hash: str) -> Optional[Book]:
         """Find book by content hash (for duplicate detection)"""
@@ -181,35 +219,18 @@ class BooksRepository(BaseRepository[Book]):
         if not book:
             return None
 
-        # llm_spell_check is always scanned from pages, for both ready and
-        # in-progress books — it's an on-demand admin-triggered pass, not
-        # part of the automatic pipeline, so book.status == "ready" says
-        # nothing about whether it has ever been run.
-        llm_stmt = (
-            select(
-                func.count(
-                    case((Page.llm_spell_check_status == PAGE_MILESTONE_SUCCEEDED, 1))
-                ).label("done"),
-                func.count(
-                    case((Page.llm_spell_check_status.in_(FAILED_PAGE_MILESTONES), 1))
-                ).label("failed"),
-                func.count(
-                    case((Page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS, 1))
-                ).label("active"),
+        # Optimization: If book is ready and all book-scoped milestones are complete
+        # (or unset on synthetic test objects), return 100% stats for core steps
+        ready_fast_path = book.status == "ready" and all(
+            getattr(book, attr, None) in (None, BOOK_MILESTONE_COMPLETE)
+            for attr in (
+                "spell_check_milestone",
+                "structure_milestone",
+                "chunking_milestone",
+                "embedding_milestone",
             )
-            .where(Page.book_id == book_id)
-            .group_by(Page.book_id)
         )
-        llm_res = await self.session.execute(llm_stmt)
-        llm_row = llm_res.fetchone()
-        llm_stats = {
-            "llm_spell_check": llm_row.done if llm_row else 0,
-            "llm_spell_check_failed": llm_row.failed if llm_row else 0,
-            "llm_spell_check_active": llm_row.active if llm_row else 0,
-        }
-
-        # Optimization: If book is ready, we can return 100% stats for core steps
-        if book.status == "ready":
+        if ready_fast_path:
             tp = book.total_pages or 0
             summary_stmt = select(func.count(BookSummary.book_id)).where(
                 BookSummary.book_id == book_id
@@ -217,14 +238,7 @@ class BooksRepository(BaseRepository[Book]):
             summary_res = await self.session.execute(summary_stmt)
             has_summary = (summary_res.scalar() or 0) > 0
 
-            has_graph = book.graph_milestone == "complete"
-
-            history_stmt = select(func.count(BatchHistoryExtractionJob.id)).where(
-                BatchHistoryExtractionJob.book_id == book_id,
-                BatchHistoryExtractionJob.status == "succeeded",
-            )
-            history_res = await self.session.execute(history_stmt)
-            has_history = (history_res.scalar() or 0) > 0
+            has_graph = book.graph_milestone == BOOK_MILESTONE_COMPLETE
 
             # For ready books, we still need to check if background spell check is running
             sc_stmt = (
@@ -266,6 +280,9 @@ class BooksRepository(BaseRepository[Book]):
                     "ocr": tp,
                     "ocr_failed": 0,
                     "ocr_active": 0,
+                    "structure": tp,
+                    "structure_failed": 0,
+                    "structure_active": 0,
                     "chunking": tp,
                     "chunking_failed": 0,
                     "chunking_active": 0,
@@ -275,14 +292,35 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check": sc_done,
                     "spell_check_failed": sc_failed,
                     "spell_check_active": sc_active,
-                    **llm_stats,
                 },
                 "has_summary": has_summary,
                 "has_graph": has_graph,
-                "has_history": has_history,
                 "ocr_done_count": tp,
                 "error_count": sc_failed,
                 "pending_count": tp - sc_done - sc_active - sc_failed,
+                "ocr_processing_count": 0,
+            }
+
+        if step == PIPELINE_STEP_STRUCTURE:
+            tp = book.total_pages or 0
+            st_done, st_failed, st_active = _book_step_counts(
+                getattr(book, "structure_milestone", None),
+                tp,
+                default_complete=(book.status == "ready"),
+            )
+            return {
+                "book": book,
+                "page_stats": {},
+                "pipeline_stats": {
+                    "structure": st_done,
+                    "structure_failed": st_failed,
+                    "structure_active": st_active,
+                },
+                "has_summary": False,
+                "has_graph": False,
+                "ocr_done_count": 0,
+                "error_count": st_failed,
+                "pending_count": 0,
                 "ocr_processing_count": 0,
             }
 
@@ -297,13 +335,10 @@ class BooksRepository(BaseRepository[Book]):
 
             milestone_field = milestone_field_map.get(step)
             if not milestone_field:
-                # Invalid step, or a free-standing step not in
-                # PAGE_MILESTONE_ATTR_BY_STEP (e.g. llm_spell_check) — its
-                # stats are already computed above unconditionally.
                 return {
                     "book": book,
                     "page_stats": {},
-                    "pipeline_stats": {**llm_stats},
+                    "pipeline_stats": {},
                     "has_summary": False,
                     "ocr_done_count": 0,
                     "error_count": 0,
@@ -406,14 +441,6 @@ class BooksRepository(BaseRepository[Book]):
             has_summary = (summary_res.scalar() or 0) > 0
 
         has_graph = book.graph_milestone == "complete"
-        has_history = False
-        if not step or step == "history":
-            history_stmt = select(func.count(BatchHistoryExtractionJob.id)).where(
-                BatchHistoryExtractionJob.book_id == book_id,
-                BatchHistoryExtractionJob.status == "succeeded",
-            )
-            history_res = await self.session.execute(history_stmt)
-            has_history = (history_res.scalar() or 0) > 0
 
         # Handle single-step response
         if step and step != PIPELINE_STEP_SUMMARY:
@@ -425,11 +452,9 @@ class BooksRepository(BaseRepository[Book]):
                         step: 0,
                         f"{step}_failed": 0,
                         f"{step}_active": 0,
-                        **llm_stats,
                     },
                     "has_summary": False,
                     "has_graph": has_graph if step == "graph" else False,
-                    "has_history": has_history if step == "history" else False,
                     "ocr_done_count": 0,
                     "error_count": 0,
                     "pending_count": 0,
@@ -443,16 +468,20 @@ class BooksRepository(BaseRepository[Book]):
                     step: getattr(row, f"{step}_done", 0) or 0,
                     f"{step}_failed": getattr(row, f"{step}_failed", 0) or 0,
                     f"{step}_active": getattr(row, f"{step}_active", 0) or 0,
-                    **llm_stats,
                 },
                 "has_summary": False,
                 "has_graph": has_graph if step == "graph" else False,
-                "has_history": has_history if step == "history" else False,
                 "ocr_done_count": 0,
                 "error_count": 0,
                 "pending_count": 0,
                 "ocr_processing_count": 0,
             }
+
+        st_done, st_failed, st_active = _book_step_counts(
+            getattr(book, "structure_milestone", None),
+            book.total_pages or 0,
+            default_complete=(book.status == "ready"),
+        )
 
         # Handle all-steps response (original behavior)
         # If no pages exist yet
@@ -464,6 +493,9 @@ class BooksRepository(BaseRepository[Book]):
                     "ocr": 0,
                     "ocr_failed": 0,
                     "ocr_active": 0,
+                    "structure": st_done,
+                    "structure_failed": st_failed,
+                    "structure_active": st_active,
                     "chunking": 0,
                     "chunking_failed": 0,
                     "chunking_active": 0,
@@ -473,11 +505,9 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check": 0,
                     "spell_check_failed": 0,
                     "spell_check_active": 0,
-                    **llm_stats,
                 },
                 "has_summary": has_summary,
                 "has_graph": has_graph,
-                "has_history": has_history,
                 "ocr_done_count": 0,
                 "error_count": 0,
                 "pending_count": 0,
@@ -491,6 +521,9 @@ class BooksRepository(BaseRepository[Book]):
                 "ocr": row.ocr_done or 0,
                 "ocr_failed": row.ocr_failed or 0,
                 "ocr_active": row.ocr_active or 0,
+                "structure": st_done,
+                "structure_failed": st_failed,
+                "structure_active": st_active,
                 "chunking": row.chunking_done or 0,
                 "chunking_failed": row.chunking_failed or 0,
                 "chunking_active": row.chunking_active or 0,
@@ -500,13 +533,12 @@ class BooksRepository(BaseRepository[Book]):
                 "spell_check": row.spell_check_done or 0,
                 "spell_check_failed": row.spell_check_failed or 0,
                 "spell_check_active": row.spell_check_active or 0,
-                **llm_stats,
             },
             "has_summary": has_summary,
             "has_graph": has_graph,
-            "has_history": has_history,
             "ocr_done_count": row.ocr_done or 0,
             "error_count": (row.ocr_failed or 0)
+            + st_failed
             + (row.chunking_failed or 0)
             + (row.embedding_failed or 0)
             + (row.spell_check_failed or 0),
@@ -529,7 +561,11 @@ class BooksRepository(BaseRepository[Book]):
         # 0. Optimization: Identify which books are 'ready' vs 'processing'
         # For 'ready' books, we can assume 100% stats and skip scanning pages
         books_stmt = select(
-            Book.id, Book.status, Book.total_pages, Book.graph_milestone
+            Book.id,
+            Book.status,
+            Book.total_pages,
+            Book.graph_milestone,
+            Book.structure_milestone,
         ).where(Book.id.in_(book_ids))
         books_res = await self.session.execute(books_stmt)
         books_info = {
@@ -537,6 +573,7 @@ class BooksRepository(BaseRepository[Book]):
                 "status": row.status,
                 "total_pages": row.total_pages,
                 "graph_milestone": row.graph_milestone,
+                "structure_milestone": getattr(row, "structure_milestone", None),
             }
             for row in books_res.fetchall()
         }
@@ -583,15 +620,6 @@ class BooksRepository(BaseRepository[Book]):
                 func.count(
                     case((Page.spell_check_milestone == PAGE_MILESTONE_IN_PROGRESS, 1))
                 ).label("spell_check_active"),
-                func.count(
-                    case((Page.llm_spell_check_status == PAGE_MILESTONE_SUCCEEDED, 1))
-                ).label("llm_spell_check"),
-                func.count(
-                    case((Page.llm_spell_check_status.in_(FAILED_PAGE_MILESTONES), 1))
-                ).label("llm_spell_check_failed"),
-                func.count(
-                    case((Page.llm_spell_check_status == PAGE_MILESTONE_IN_PROGRESS, 1))
-                ).label("llm_spell_check_active"),
             )
             .where(Page.book_id.in_(book_ids))
             .group_by(Page.book_id)
@@ -600,11 +628,21 @@ class BooksRepository(BaseRepository[Book]):
         m_result = await self.session.execute(milestone_stats_stmt)
         for row in m_result.fetchall():
             bid = str(row.book_id)
+            info = books_info.get(bid, {})
+            tp = info.get("total_pages") or 0
+            st_done, st_failed, st_active = _book_step_counts(
+                info.get("structure_milestone"),
+                tp,
+                default_complete=(info.get("status") == "ready"),
+            )
             results[bid] = {
                 "pipeline_stats": {
                     "ocr": row.ocr,
                     "ocr_failed": row.ocr_failed,
                     "ocr_active": row.ocr_active,
+                    "structure": st_done,
+                    "structure_failed": st_failed,
+                    "structure_active": st_active,
                     "chunking": row.chunking,
                     "chunking_failed": row.chunking_failed,
                     "chunking_active": row.chunking_active,
@@ -614,9 +652,6 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check": row.spell_check,
                     "spell_check_failed": row.spell_check_failed,
                     "spell_check_active": row.spell_check_active,
-                    "llm_spell_check": row.llm_spell_check,
-                    "llm_spell_check_failed": row.llm_spell_check_failed,
-                    "llm_spell_check_active": row.llm_spell_check_active,
                 }
             }
 
@@ -630,15 +665,8 @@ class BooksRepository(BaseRepository[Book]):
         books_with_graph = {
             bid
             for bid, info in books_info.items()
-            if info.get("graph_milestone") == "complete"
+            if info.get("graph_milestone") == BOOK_MILESTONE_COMPLETE
         }
-
-        history_stmt = select(BatchHistoryExtractionJob.book_id).where(
-            BatchHistoryExtractionJob.book_id.in_(book_ids),
-            BatchHistoryExtractionJob.status == "succeeded",
-        )
-        history_res = await self.session.execute(history_stmt)
-        books_with_history = {row[0] for row in history_res.fetchall()}
 
         # 3. Assemble final results
         final_results = {}
@@ -652,13 +680,18 @@ class BooksRepository(BaseRepository[Book]):
                 # Stats from DB scan
                 stats = results[bid]["pipeline_stats"]
             else:
-                # Default fallback for missing books (should not happen if pages exist)
-                # If a book is 'ready' but has no page records found (orphaned book record)
-                # we still assume 0 to be safe
+                st_done, st_failed, st_active = _book_step_counts(
+                    info.get("structure_milestone"),
+                    tp,
+                    default_complete=(status == "ready"),
+                )
                 stats = {
                     "ocr": tp if status == "ready" else 0,
                     "ocr_failed": 0,
                     "ocr_active": 0,
+                    "structure": st_done,
+                    "structure_failed": st_failed,
+                    "structure_active": st_active,
                     "chunking": tp if status == "ready" else 0,
                     "chunking_failed": 0,
                     "chunking_active": 0,
@@ -668,19 +701,60 @@ class BooksRepository(BaseRepository[Book]):
                     "spell_check": 0,
                     "spell_check_failed": 0,
                     "spell_check_active": 0,
-                    "llm_spell_check": 0,
-                    "llm_spell_check_failed": 0,
-                    "llm_spell_check_active": 0,
                 }
 
             final_results[bid] = {
                 "pipeline_stats": stats,
                 "has_summary": bid in books_with_summary,
                 "has_graph": bid in books_with_graph,
-                "has_history": bid in books_with_history,
             }
 
         return final_results
+
+    async def list_backfill_candidates(
+        self,
+        target_ocr_version: str = CURRENT_SURYA_OCR_VERSION,
+        limit: int = 500,
+    ) -> List[Book]:
+        """Return PDF books eligible for Surya OCR backfill ordered by upload_date ASC, id ASC."""
+        stmt = (
+            select(Book)
+            .where(
+                Book.file_type == "pdf",
+                Book.status != "error",
+                Book.ocr_version.is_distinct_from(target_ocr_version),
+            )
+            .order_by(Book.upload_date.asc(), Book.id.asc())
+            .limit(limit)
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+    async def count_pending_index_books(self, spell_check_enabled: bool = True) -> int:
+        """Count books with unsubmitted worker backlog across spell_check, structure, chunking, or embedding=idle.
+
+        Excludes books where `embedding_milestone == 'in_progress'` (which are already submitted
+        to Gemini Batch API) so local GPU OCR is not throttled by external batch latency.
+        """
+        conditions = [
+            Book.structure_milestone.in_(["idle", "in_progress"]),
+            Book.chunking_milestone.in_(["idle", "in_progress"]),
+            Book.embedding_milestone == "idle",
+        ]
+        if spell_check_enabled:
+            conditions.append(
+                and_(
+                    Book.ocr_milestone == BOOK_MILESTONE_COMPLETE,
+                    Book.spell_check_milestone.in_(["idle", "in_progress"]),
+                )
+            )
+        stmt = select(func.count(Book.id)).where(
+            Book.status != "error",
+            Book.total_pages > 0,
+            or_(*conditions),
+        )
+        res = await self.session.execute(stmt)
+        return int(res.scalar_one() or 0)
 
     async def count_by_status(self, status: str) -> int:
         """Count books by status"""

@@ -35,6 +35,13 @@ Provides sequential SQL migration scripts and rollbacks for the Kitabim AI Postg
 - `[091_add_batch_llm_spell_check_jobs.sql:batch_llm_spell_check_jobs]` — Batch LLM spell check jobs.
 - `[095_create_reading_progress.sql:reading_progress]` — User reading progress tracking.
 - `[096_create_bookmarks.sql:bookmarks]` — User bookmarked pages.
+- `[097_seed_max_book_upload_mb_system_config.sql:system_configs]` — Seeds `max_book_upload_mb` upload size configuration.
+- `[098_seed_rag_summary_narrowing_config.sql:system_configs]` — Seeds RAG summary narrowing configuration keys.
+- `[099_normalize_book_categories.sql:books]` — Normalizes book category tags across `books.categories`.
+- `[100_add_gemini_llm_spell_check_timeout_config.sql:system_configs]` — Historical LLM spell-check timeout configuration (retired in `102`).
+- `[101_add_book_structure_and_section_chunking.sql:book_sections]` — Adds `book_sections` hierarchy, `books.structure_milestone` and backfill provenance columns, `pages.detected_page_number`, and `chunks` section/page-span/hash columns.
+- `[102_drop_llm_spell_check_and_history_staging.sql:pages]` — Drops retired LLM spell-check and history concept extraction/staging tables, columns, and system configs.
+- `[103_strip_hypothetical_queries_from_book_summaries.sql:book_summaries]` — Strips retired Section 6 (`Hypothetical Queries`) and renumbers Section 7 (`Keywords`) to Section 6 in `book_summaries.summary`.
 
 ## Invariants
 - `[001_initial_baseline.sql:books]` — Migrations `002`-`033` are squashed into `001_initial_baseline.sql`; active sequential numbering begins at `034`.

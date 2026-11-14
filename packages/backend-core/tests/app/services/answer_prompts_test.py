@@ -54,3 +54,37 @@ def test_build_answer_instructions_includes_domain_guardrail_refusal():
     assert "programming/coding" in instructions
     # Permissive conversational loophole must be removed
     assert "respond naturally but maintain your persona" not in instructions
+
+
+def test_format_document_handles_non_numeric_content_page_labels():
+    from types import SimpleNamespace
+    from app.services.rag.answer_builder import format_document
+
+    doc_single = SimpleNamespace(
+        page_content="مۇقەددىمە تېكىستى",
+        metadata={
+            "book_id": "b1",
+            "title": "كىتاب",
+            "page": 3,
+            "end_page_number": 3,
+            "content_page_number": "iv",
+            "end_content_page_number": "iv",
+        },
+    )
+    formatted_single = format_document(doc_single)
+    assert "PrintedPage: iv" in formatted_single
+    assert "iv–iv" not in formatted_single
+
+    doc_range = SimpleNamespace(
+        page_content="مۇقەددىمە تېكىستى داۋامى",
+        metadata={
+            "book_id": "b1",
+            "title": "كىتاب",
+            "page": 3,
+            "end_page_number": 4,
+            "content_page_number": "iv",
+            "end_content_page_number": "v",
+        },
+    )
+    formatted_range = format_document(doc_range)
+    assert "PrintedPage: iv–v" in formatted_range

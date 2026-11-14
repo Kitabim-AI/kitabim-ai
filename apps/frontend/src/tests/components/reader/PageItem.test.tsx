@@ -1,19 +1,14 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { PageItem } from '@/src/components/reader/PageItem';
 import { I18nContext } from '@/src/i18n/I18nContext';
 import * as AuthModule from '@/src/hooks/useAuth';
-import { PersistenceService } from '@/src/services/persistenceService';
 
 vi.mock('@/src/hooks/useAuth', () => ({
   useAuth: vi.fn(),
   useIsEditor: vi.fn(),
   useIsAdmin: vi.fn(),
-}));
-
-vi.mock('@/src/services/persistenceService', () => ({
-  PersistenceService: { previewLlmSpellCheck: vi.fn() },
 }));
 
 const mockPage = {
@@ -89,7 +84,7 @@ test('PageItem calls onSave and onCancel when buttons are clicked', () => {
   renderPageItem({ isEditing: true, onSave, onCancel });
 
   fireEvent.click(screen.getByText('common.save'));
-  expect(onSave).toHaveBeenCalledWith(false);
+  expect(onSave).toHaveBeenCalledTimes(1);
 
   fireEvent.click(screen.getByText('common.cancel'));
   expect(onCancel).toHaveBeenCalledTimes(1);
@@ -106,6 +101,23 @@ test('PageItem renders display page number and PDF page number with spacing when
   });
   expect(screen.getByText('chat.pageNumber')).toBeInTheDocument();
   expect(screen.getByText('(PDF 204)')).toBeInTheDocument();
+});
+
+test('PageItem prefers page.contentPageNumber over displayPageNumber when present', () => {
+  renderPageItem({
+    page: {
+      pageNumber: 20,
+      contentPageNumber: 8,
+      displayPageNumber: '12',
+      text: 'Content with contentPageNumber',
+      status: 'ocr_done',
+    },
+    bookId: 'book-1',
+    bookTitle: 'My Book',
+  });
+  fireEvent.click(screen.getByTitle('share.sharePage'));
+  expect(screen.getByText('share.sharePage')).toBeInTheDocument();
+  expect(screen.getByText('(PDF 20)')).toBeInTheDocument();
 });
 
 test('PageItem renders both content page number and PDF page number in footer even without offset', () => {
@@ -283,158 +295,4 @@ test('PageItem guests do not see the page bookmark button or quote bookmark butt
 
   expect(screen.getByTitle('share.shareQuote')).toBeInTheDocument();
   expect(screen.queryByTitle('bookmarks.bookmarkQuote')).not.toBeInTheDocument();
-});
-
-const EditingHarness: React.FC<{ initial: string; onSave?: (c: boolean) => void; onCancel?: () => void }> = ({
-  initial, onSave = vi.fn(), onCancel = vi.fn(),
-}) => {
-  const [text, setText] = React.useState(initial);
-  return (
-    <I18nContext.Provider value={i18nValue}>
-      <PageItem
-        page={mockPage}
-        isActive
-        isEditing
-        fontSize={18}
-        bookId="book-1"
-        onSetActive={vi.fn()}
-        onEdit={vi.fn()}
-        onReprocess={vi.fn()}
-        tempText={text}
-        onTempTextChange={setText}
-        onSave={onSave}
-        onCancel={onCancel}
-        isLoading={false}
-      />
-    </I18nContext.Provider>
-  );
-};
-
-test('PageItem does not show the LLM check button in view mode', () => {
-  renderPageItem({ isEditing: false, bookId: 'book-1' });
-  expect(screen.queryByTitle('reader.llmSpellCheckTitle')).not.toBeInTheDocument();
-});
-
-test('AI check replaces textarea text and highlights changed words', async () => {
-  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page text for test');
-  render(<EditingHarness initial="Sample page content for test" />);
-
-  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
-
-  const marks = await screen.findAllByTestId('llm-changed-word');
-  expect(marks).toHaveLength(1);
-  expect(marks[0]).toHaveTextContent('text');
-  expect(screen.getByRole('textbox')).toHaveValue('Sample page text for test');
-});
-
-// jsdom has no layout: give every highlighted <mark> a 100x20 box at the
-// origin so pointer hit-testing over the textarea can be exercised.
-const mockMarkBoxes = () =>
-  vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
-    const box = { left: 0, right: 100, top: 0, bottom: 20, width: 100, height: 20, x: 0, y: 0 };
-    return (this.tagName === 'MARK' ? [box] : []) as unknown as DOMRectList;
-  });
-
-test('hovering a replaced word shows the original word; save keeps only the replacement', async () => {
-  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page text for test');
-  const onSave = vi.fn();
-  const boxes = mockMarkBoxes();
-  render(<EditingHarness initial="Sample page content for test" onSave={onSave} />);
-
-  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
-  await screen.findAllByTestId('llm-changed-word');
-  const textbox = screen.getByRole('textbox');
-
-  fireEvent.mouseMove(textbox, { clientX: 50, clientY: 10 });
-  expect(screen.getByTestId('llm-original-tooltip')).toHaveTextContent('content');
-
-  fireEvent.mouseMove(textbox, { clientX: 500, clientY: 500 });
-  expect(screen.queryByTestId('llm-original-tooltip')).not.toBeInTheDocument();
-
-  fireEvent.mouseMove(textbox, { clientX: 50, clientY: 10 });
-  fireEvent.mouseLeave(textbox);
-  expect(screen.queryByTestId('llm-original-tooltip')).not.toBeInTheDocument();
-  boxes.mockRestore();
-
-  fireEvent.click(screen.getByText('common.save'));
-  expect(onSave).toHaveBeenCalledWith(true);
-  expect(textbox).toHaveValue('Sample page text for test');
-});
-
-test('placing the text cursor in a replaced word shows the original word', async () => {
-  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page text for test');
-  render(<EditingHarness initial="Sample page content for test" />);
-
-  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
-  await screen.findAllByTestId('llm-changed-word');
-  const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-
-  const inWord = 'Sample page te'.length;
-  textbox.setSelectionRange(inWord, inWord);
-  fireEvent.select(textbox);
-  expect(screen.getByTestId('llm-original-tooltip')).toHaveTextContent('content');
-
-  textbox.setSelectionRange(0, 0);
-  fireEvent.select(textbox);
-  expect(screen.queryByTestId('llm-original-tooltip')).not.toBeInTheDocument();
-});
-
-test('no original-word tooltip before an AI check', () => {
-  const boxes = mockMarkBoxes();
-  render(<EditingHarness initial="Sample page content for test" />);
-  fireEvent.mouseMove(screen.getByRole('textbox'), { clientX: 50, clientY: 10 });
-  expect(screen.queryByTestId('llm-original-tooltip')).not.toBeInTheDocument();
-  boxes.mockRestore();
-});
-
-test('AI check with no changes highlights nothing and keeps the text', async () => {
-  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page content for test');
-  render(<EditingHarness initial="Sample page content for test" />);
-
-  const button = screen.getByTitle('reader.llmSpellCheckTitle');
-  fireEvent.click(button);
-
-  await waitFor(() => expect(button).not.toBeDisabled());
-  expect(PersistenceService.previewLlmSpellCheck).toHaveBeenCalled();
-  expect(screen.queryByTestId('llm-changed-word')).not.toBeInTheDocument();
-  expect(screen.getByRole('textbox')).toHaveValue('Sample page content for test');
-});
-
-test('AI check failure shows the error and keeps the text', async () => {
-  vi.mocked(PersistenceService.previewLlmSpellCheck).mockRejectedValue(new Error('translated error'));
-  render(<EditingHarness initial="Sample page content for test" />);
-
-  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
-
-  expect(await screen.findByText('translated error')).toBeInTheDocument();
-  expect(screen.getByRole('textbox')).toHaveValue('Sample page content for test');
-});
-
-test('Save after AI check reports llmSpellChecked=true', async () => {
-  vi.mocked(PersistenceService.previewLlmSpellCheck).mockResolvedValue('Sample page text for test');
-  const onSave = vi.fn();
-  render(<EditingHarness initial="Sample page content for test" onSave={onSave} />);
-
-  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
-  await screen.findAllByTestId('llm-changed-word');
-  fireEvent.click(screen.getByText('common.save'));
-
-  expect(onSave).toHaveBeenCalledWith(true);
-});
-
-test('AI check shows a page overlay spinner while running', async () => {
-  let resolve!: (v: string) => void;
-  vi.mocked(PersistenceService.previewLlmSpellCheck).mockImplementation(
-    () => new Promise<string>((r) => { resolve = r; })
-  );
-  render(<EditingHarness initial="Sample page content for test" />);
-
-  expect(screen.queryByRole('status')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByTitle('reader.llmSpellCheckTitle'));
-
-  expect(await screen.findByRole('status')).toHaveTextContent('reader.llmSpellCheckRunning');
-
-  resolve('Sample page text for test');
-  await screen.findAllByTestId('llm-changed-word');
-  expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });

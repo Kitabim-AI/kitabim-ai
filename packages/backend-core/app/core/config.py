@@ -55,9 +55,6 @@ class Settings:
 
     # Parallel Processing
     max_parallel_spell_check: int = int(os.getenv("MAX_PARALLEL_SPELL_CHECK", "6"))
-    max_parallel_llm_spell_check: int = int(
-        os.getenv("MAX_PARALLEL_LLM_SPELL_CHECK", "6")
-    )
     max_concurrent_spell_check_books: int = int(
         os.getenv("MAX_CONCURRENT_SPELL_CHECK_BOOKS", "3")
     )
@@ -92,9 +89,9 @@ class Settings:
     # their footnotes) are atomic and never split below the embedding-safety
     # ceiling, so a large paragraph yields one large chunk while multi-paragraph
     # regions yield several smaller ones. chunk_min_size folds away tiny chunks.
-    chunk_size: int = int(os.getenv("CHUNK_SIZE", "1000"))
-    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "150"))
-    chunk_min_size: int = int(os.getenv("CHUNK_MIN_SIZE", "300"))
+    chunk_size: int = int(os.getenv("CHUNK_SIZE", "1500"))
+    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "200"))
+    chunk_min_size: int = int(os.getenv("CHUNK_MIN_SIZE", "350"))
 
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "WARNING")  # DEBUG, INFO, WARNING, ERROR

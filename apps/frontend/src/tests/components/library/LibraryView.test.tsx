@@ -21,8 +21,8 @@ vi.mock('@/src/components/common/ProverbDisplay', () => ({
 }));
 
 const mockBooks: Book[] = [
-  { id: '1', title: 'Book 1', author: 'Author 1', totalPages: 10, pages: [], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h1', readCount: 0, hasSummary: false, hasGraph: false, hasHistory: false } as Book,
-  { id: '2', title: 'Book 2', author: 'Author 2', totalPages: 20, pages: [], status: 'ocr_processing', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h2', readCount: 0, hasSummary: false, hasGraph: false, hasHistory: false } as Book
+  { id: '1', title: 'Book 1', author: 'Author 1', totalPages: 10, pages: [], status: 'ready', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h1', readCount: 0, hasSummary: false, hasGraph: false } as Book,
+  { id: '2', title: 'Book 2', author: 'Author 2', totalPages: 20, pages: [], status: 'ocr_processing', uploadDate: new Date(), lastUpdated: new Date(), contentHash: 'h2', readCount: 0, hasSummary: false, hasGraph: false } as Book
 ];
 
 vi.mock('@/src/context/AppContext', async () => {

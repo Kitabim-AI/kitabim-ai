@@ -41,6 +41,15 @@ def normalize_uyghur_chars(text: str) -> str:
 _OCR_MARKER_RE = re.compile(r"\s*\[(?:Header|Footer)\].*", re.IGNORECASE)
 _SURYA_COMPACT_TOKEN_RE = re.compile(r"<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>")
 
+_DIGIT_TRANSLATION = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+
+
+def normalize_digits(text: str) -> str:
+    """Normalize Arabic-Indic (٠-٩) and Persian (۰-۹) digits to ASCII 0-9."""
+    if not text:
+        return ""
+    return text.translate(_DIGIT_TRANSLATION)
+
 
 _DIGITS_1_4 = r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}"
 _PAGE_NUMBER_RE = re.compile(
@@ -75,39 +84,95 @@ def is_isolated_page_number(text: str) -> bool:
     return bool(_PAGE_NUMBER_RE.match(text.strip()))
 
 
-def strip_page_numbers(text: str) -> str:
-    """Strip isolated header and footer page numbers from the top and bottom of page text."""
+def extract_standalone_page_number(text: str) -> int | None:
+    """Extract printed page number from header or footer if it represents a standalone page number.
+
+    Supports ASCII, Uyghur, and Arabic numeral scripts (e.g., '1', '١', '- 1 -', '~ 15 ~').
+    Never applies Latin letter-to-digit substitution to multi-word running headers.
+    """
+    if not text or not text.strip():
+        return None
+
+    lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
+    if not lines:
+        return None
+
+    candidate_lines = lines[:2] + lines[-2:]
+    for line in candidate_lines:
+        if is_isolated_page_number(line):
+            ascii_line = normalize_digits(line)
+            m = re.search(r"(\d{1,4})", ascii_line)
+            if m:
+                num = int(m.group(1))
+                if 1 <= num <= 5000:
+                    return num
+        ascii_line = normalize_digits(line)
+        match = re.search(
+            r"^\s*(?:[-~—\s]*|page\s*)?(\d{1,4})\s*[-~—\s]*$",
+            ascii_line,
+            re.IGNORECASE,
+        )
+        if match:
+            num = int(match.group(1))
+            if 1 <= num <= 5000:
+                return num
+
+    return None
+
+
+def strip_page_numbers_with_capture(text: str) -> tuple[str, int | None]:
+    """Strip isolated header/footer page numbers and return `(stripped_text, detected_page_number)`.
+
+    Prefers bottom/footer standalone page numbers over top/header standalone page numbers.
+    """
     if not text:
-        return ""
+        return "", None
 
     blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
     if not blocks:
-        return ""
+        return "", None
+
+    footer_num: int | None = None
+    header_num: int | None = None
 
     # Strip trailing footer page numbers
     while blocks and is_isolated_page_number(blocks[-1]):
-        blocks.pop()
+        cand = extract_standalone_page_number(blocks.pop())
+        if footer_num is None and cand is not None:
+            footer_num = cand
 
     # Strip leading header page numbers
     while blocks and is_isolated_page_number(blocks[0]):
-        blocks.pop(0)
+        cand = extract_standalone_page_number(blocks.pop(0))
+        if header_num is None and cand is not None:
+            header_num = cand
 
     if not blocks:
-        return ""
+        return "", footer_num if footer_num is not None else header_num
 
     # Check if the very last line of the last block is an isolated page number
     last_lines = [line for line in blocks[-1].split("\n") if line.strip()]
     if len(last_lines) > 1 and is_isolated_page_number(last_lines[-1]):
-        last_lines.pop()
+        cand = extract_standalone_page_number(last_lines.pop())
+        if footer_num is None and cand is not None:
+            footer_num = cand
         blocks[-1] = "\n".join(last_lines)
 
     # Check if the very first line of the first block is an isolated page number
     first_lines = [line for line in blocks[0].split("\n") if line.strip()]
     if len(first_lines) > 1 and is_isolated_page_number(first_lines[0]):
-        first_lines.pop(0)
+        cand = extract_standalone_page_number(first_lines.pop(0))
+        if header_num is None and cand is not None:
+            header_num = cand
         blocks[0] = "\n".join(first_lines)
 
-    return "\n\n".join(b for b in blocks if b.strip())
+    cleaned = "\n\n".join(b for b in blocks if b.strip())
+    return cleaned, (footer_num if footer_num is not None else header_num)
+
+
+def strip_page_numbers(text: str) -> str:
+    """Strip isolated header and footer page numbers from the top and bottom of page text."""
+    return strip_page_numbers_with_capture(text)[0]
 
 
 def is_poem_block(lines: list[str], width_ratio: float | None = None) -> bool:

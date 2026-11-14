@@ -3,27 +3,35 @@ Pipeline Driver — the state machine for the decoupled worker.
 
 Responsibilities (runs every 1 minute):
   1. Initialize  — pages with status='pending' and ocr_milestone='idle' (if needed)
-  2. Reset       — failed milestones with retries remaining → idle
-  3. Book ready  — marks book.pipeline_step = 'ready' when all mandatory
-                   milestones (OCR, Chunking, Embedding) are terminal.
-                   Terminal = succeeded OR failed with exhausted retries.
-                   If any pages failed (exhausted retries) → book.status='error'
-                   Only marks book.status='ready' when ALL pages are ocr/chunking/embedding/succeeded.
+  2. Reset       — failed page milestones (OCR / spell_check) and failed book-scoped
+                   milestones (`structure_milestone`, `chunking_milestone`, `embedding_milestone`)
+                   with retries remaining → idle
+  3. Book ready  — marks `book.pipeline_step = 'ready'` and `book.status = 'ready'` when
+                   all pages have `Page.ocr_milestone == 'complete'` AND `Book.structure_milestone == 'complete'`
+                   AND `Book.chunking_milestone == 'complete'` AND `Book.embedding_milestone == 'complete'`.
+                   If any mandatory page or book milestone failed with exhausted retries → `book.status = 'error'`.
+  4. Summary refresh — enqueues `summary_job` for newly-ready books OR ready books whose
+                   `BookSummary.generated_at < Book.ocr_backfill_at`.
 """
 
 from __future__ import annotations
 
 import logging
 
-from sqlalchemy import update, select, func, case, or_, and_, union_all
+from sqlalchemy import and_, case, func, or_, select, union_all, update
 
+from app.core.pipeline import (
+    BOOK_MILESTONE_COMPLETE,
+    BOOK_MILESTONE_FAILED,
+    BOOK_MILESTONE_IDLE,
+    PAGE_MILESTONE_COMPLETE,
+)
 from app.db import session as db_session
-from app.db.models import Book, Page, BookSummary
+from app.db.models import Book, BookSummary, Page
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.book_milestone_service import BookMilestoneService
 from app.utils.observability import log_json
 
-# Books already marked ready or failed — do not reprocess them.
 _V1_READY_STATUSES = ("ready", "error")
 
 logger = logging.getLogger("app.worker.pipeline_driver")
@@ -33,9 +41,8 @@ async def run_pipeline_driver(ctx) -> None:
     async with db_session.async_session_factory() as session:
         config_repo = SystemConfigsRepository(session)
         max_retries = int(await config_repo.get_value("ocr_max_retry_count", "3"))
+
         # ── 1. Initialize ──────────────────────────────────────────────────────
-        # Ensure ocr_milestone is 'idle' for pages that need processing.
-        # Use a join instead of not_in for better performance in production.
         init_ids_stmt = (
             select(Page.id)
             .join(Book, Page.book_id == Book.id)
@@ -62,34 +69,12 @@ async def run_pipeline_driver(ctx) -> None:
             init_exec = await session.execute(init_update_stmt)
             initialized = init_exec.rowcount
 
-        # ── 2. Reset failed milestones that still have retries remaining ───────
-        # If any milestone failed but we have retries left, reset ALL milestones
-        # to ensure a clean retry of the whole page (or just the failing ones).
-        # We fetch IDs first and then update them to avoid a massive sequential
-        # scan update that locks the table and times out in production.
-        # UNION ALL of internal queries to force partial index usage for each leg.
-        # This is much faster than OR across different columns.
+        # ── 2a. Reset failed page milestones (OCR & spell_check) with retries remaining
         reset_queries = [
             select(Page.id)
             .join(Book, Page.book_id == Book.id)
             .where(
                 Page.ocr_milestone.in_(["failed", "error"]),
-                Page.retry_count < max_retries,
-                ~Book.status.in_(_V1_READY_STATUSES),
-            )
-            .limit(5000),
-            select(Page.id)
-            .join(Book, Page.book_id == Book.id)
-            .where(
-                Page.chunking_milestone.in_(["failed", "error"]),
-                Page.retry_count < max_retries,
-                ~Book.status.in_(_V1_READY_STATUSES),
-            )
-            .limit(5000),
-            select(Page.id)
-            .join(Book, Page.book_id == Book.id)
-            .where(
-                Page.embedding_milestone.in_(["failed", "error"]),
                 Page.retry_count < max_retries,
                 ~Book.status.in_(_V1_READY_STATUSES),
             )
@@ -110,53 +95,89 @@ async def run_pipeline_driver(ctx) -> None:
 
         reset = 0
         if reset_page_ids:
-            # Build update values conditionally based on feature flags
             update_values = {
                 "ocr_milestone": case(
                     (Page.ocr_milestone.in_(["failed", "error"]), "idle"),
                     else_=Page.ocr_milestone,
-                ),
-                "chunking_milestone": case(
-                    (Page.chunking_milestone.in_(["failed", "error"]), "idle"),
-                    else_=Page.chunking_milestone,
-                ),
-                "embedding_milestone": case(
-                    (Page.embedding_milestone.in_(["failed", "error"]), "idle"),
-                    else_=Page.embedding_milestone,
                 ),
                 "spell_check_milestone": case(
                     (Page.spell_check_milestone.in_(["failed", "error"]), "idle"),
                     else_=Page.spell_check_milestone,
                 ),
             }
-
             reset_update_stmt = (
                 update(Page).where(Page.id.in_(reset_page_ids)).values(**update_values)
             )
             reset_exec = await session.execute(reset_update_stmt)
             reset = reset_exec.rowcount
 
-        # ── 3. (REMOVED) Sequential Promotion ──────────────────────────────────
-        # Scanners now look for their own work based on dependencies:
-        # - OCR: ocr_milestone == 'idle'
-        # - Chunking: ocr_milestone == 'succeeded' AND chunking_milestone == 'idle'
-        #             AND (spell_check disabled OR spell_check_milestone in succeeded/failed)
-        # - Embedding: chunking_milestone == 'succeeded' AND embedding_milestone == 'idle'
+        # ── 2b. Reset failed book-scoped milestones (structure, chunking, embedding) with retries remaining
+        _book_fail_states = ["failed", "error", "partial_failure"]
+        book_reset_stmt = (
+            update(Book)
+            .where(
+                ~Book.status.in_(["error"]),
+                or_(
+                    and_(
+                        Book.structure_milestone.in_(_book_fail_states),
+                        Book.structure_retry_count < max_retries,
+                    ),
+                    and_(
+                        Book.chunking_milestone.in_(_book_fail_states),
+                        Book.chunking_retry_count < max_retries,
+                    ),
+                    and_(
+                        Book.embedding_milestone.in_(_book_fail_states),
+                        Book.embedding_retry_count < max_retries,
+                    ),
+                ),
+            )
+            .values(
+                structure_milestone=case(
+                    (
+                        and_(
+                            Book.structure_milestone.in_(_book_fail_states),
+                            Book.structure_retry_count < max_retries,
+                        ),
+                        BOOK_MILESTONE_IDLE,
+                    ),
+                    else_=Book.structure_milestone,
+                ),
+                chunking_milestone=case(
+                    (
+                        and_(
+                            Book.chunking_milestone.in_(_book_fail_states),
+                            Book.chunking_retry_count < max_retries,
+                        ),
+                        BOOK_MILESTONE_IDLE,
+                    ),
+                    else_=Book.chunking_milestone,
+                ),
+                embedding_milestone=case(
+                    (
+                        and_(
+                            Book.embedding_milestone.in_(_book_fail_states),
+                            Book.embedding_retry_count < max_retries,
+                        ),
+                        BOOK_MILESTONE_IDLE,
+                    ),
+                    else_=Book.embedding_milestone,
+                ),
+            )
+        )
+        book_reset_exec = await session.execute(book_reset_stmt)
+        reset += book_reset_exec.rowcount or 0
+
         ocr_promoted = 0
         chunk_promoted = 0
 
-        # ── 4. Detect books where all pages are terminal ───────────────────────
-        # Terminal page: embedding_milestone/succeeded  OR any mandatory step failed with exhausted retries
-        terminal_case = case(
+        # ── 3. Detect books where OCR is terminal and book-scoped milestones are terminal
+        ocr_terminal_case = case(
             (
                 or_(
-                    Page.embedding_milestone == "succeeded",
+                    Page.ocr_milestone == PAGE_MILESTONE_COMPLETE,
                     and_(
-                        or_(
-                            Page.ocr_milestone.in_(["failed", "error"]),
-                            Page.chunking_milestone.in_(["failed", "error"]),
-                            Page.embedding_milestone.in_(["failed", "error"]),
-                        ),
+                        Page.ocr_milestone.in_(["failed", "error"]),
                         Page.retry_count >= max_retries,
                     ),
                 ),
@@ -164,25 +185,10 @@ async def run_pipeline_driver(ctx) -> None:
             ),
             else_=None,
         )
-
-        # Count pages that completed successfully (embedding/succeeded)
-        success_case = case(
-            (
-                Page.embedding_milestone == "succeeded",
-                Page.id,
-            ),
-            else_=None,
-        )
-
-        # Count pages that failed with exhausted retries
-        failed_case = case(
+        ocr_failed_case = case(
             (
                 and_(
-                    or_(
-                        Page.ocr_milestone.in_(["failed", "error"]),
-                        Page.chunking_milestone.in_(["failed", "error"]),
-                        Page.embedding_milestone.in_(["failed", "error"]),
-                    ),
+                    Page.ocr_milestone.in_(["failed", "error"]),
                     Page.retry_count >= max_retries,
                 ),
                 Page.id,
@@ -192,35 +198,68 @@ async def run_pipeline_driver(ctx) -> None:
 
         terminal_books_stmt = (
             select(
-                Page.book_id,
+                Book.id.label("book_id"),
+                Book.structure_milestone,
+                Book.structure_retry_count,
+                Book.chunking_milestone,
+                Book.chunking_retry_count,
+                Book.embedding_milestone,
+                Book.embedding_retry_count,
                 func.count(Page.id).label("total"),
-                func.count(terminal_case).label("terminal"),
-                func.count(success_case).label("succeeded"),
-                func.count(failed_case).label("failed_exhausted"),
+                func.count(ocr_terminal_case).label("ocr_terminal"),
+                func.count(ocr_failed_case).label("ocr_failed_exhausted"),
             )
-            .join(Book, Page.book_id == Book.id)
+            .join(Page, Page.book_id == Book.id)
             .where(~Book.status.in_(_V1_READY_STATUSES))
-            .group_by(Page.book_id)
+            .group_by(
+                Book.id,
+                Book.structure_milestone,
+                Book.structure_retry_count,
+                Book.chunking_milestone,
+                Book.chunking_retry_count,
+                Book.embedding_milestone,
+                Book.embedding_retry_count,
+            )
             .having(
-                func.count(Page.id) == func.count(terminal_case),
+                func.count(Page.id) == func.count(ocr_terminal_case),
                 func.count(Page.id) > 0,
             )
         )
         result = await session.execute(terminal_books_stmt)
         rows = result.fetchall()
 
-        # Split into fully-succeeded vs. any-failed groups
-        fully_ready_ids = [row.book_id for row in rows if row.failed_exhausted == 0]
-        has_failures_ids = [row.book_id for row in rows if row.failed_exhausted > 0]
+        fully_ready_ids: list[str] = []
+        has_failures_ids: list[str] = []
 
-        # Identify books about to transition to ready (not already ready).
-        # Captured before the UPDATE so we enqueue summary jobs only for
-        # truly newly-ready books, avoiding duplicates on re-runs.
-        newly_ready_ids: list = []
+        for row in rows:
+            book_failed_exhausted = (
+                (
+                    row.structure_milestone
+                    in (BOOK_MILESTONE_FAILED, "error", "partial_failure")
+                    and (row.structure_retry_count or 0) >= max_retries
+                )
+                or (
+                    row.chunking_milestone
+                    in (BOOK_MILESTONE_FAILED, "error", "partial_failure")
+                    and (row.chunking_retry_count or 0) >= max_retries
+                )
+                or (
+                    row.embedding_milestone
+                    in (BOOK_MILESTONE_FAILED, "error", "partial_failure")
+                    and (row.embedding_retry_count or 0) >= max_retries
+                )
+            )
+            if row.ocr_failed_exhausted > 0 or book_failed_exhausted:
+                has_failures_ids.append(row.book_id)
+            elif (
+                row.structure_milestone == BOOK_MILESTONE_COMPLETE
+                and row.chunking_milestone == BOOK_MILESTONE_COMPLETE
+                and row.embedding_milestone == BOOK_MILESTONE_COMPLETE
+            ):
+                fully_ready_ids.append(row.book_id)
+
+        newly_ready_ids: list[str] = []
         if fully_ready_ids:
-            # newly_ready_ids filters fully_ready_ids for those that either:
-            # 1. Are not yet marked as 'ready' in the pipeline_step column
-            # 2. DO NOT have a summary yet (to avoid re-enqueuing during spell-check updates)
             nr_result = await session.execute(
                 select(Book.id)
                 .outerjoin(BookSummary, Book.id == BookSummary.book_id)
@@ -231,7 +270,14 @@ async def run_pipeline_driver(ctx) -> None:
                         Book.pipeline_step.is_(None),
                         Book.status != "ready",
                     ),
-                    BookSummary.book_id.is_(None),
+                    or_(
+                        BookSummary.book_id.is_(None),
+                        BookSummary.summary.is_(None),
+                        and_(
+                            Book.ocr_backfill_at.isnot(None),
+                            BookSummary.generated_at < Book.ocr_backfill_at,
+                        ),
+                    ),
                 )
             )
             newly_ready_ids = [row[0] for row in nr_result.fetchall()]
@@ -255,7 +301,6 @@ async def run_pipeline_driver(ctx) -> None:
                 )
             ).rowcount
 
-            # Update book-level milestones for ready books
             for book_id in fully_ready_ids:
                 await BookMilestoneService.update_book_milestones(session, book_id)
 
@@ -275,13 +320,11 @@ async def run_pipeline_driver(ctx) -> None:
                 )
             ).rowcount
 
-            # Update book-level milestones for error books
             for book_id in has_failures_ids:
                 await BookMilestoneService.update_book_milestones(session, book_id)
 
         await session.commit()
 
-    # Enqueue summary jobs for books that just became ready (outside the session).
     redis = ctx["redis"]
     for book_id in newly_ready_ids:
         await redis.enqueue_job(

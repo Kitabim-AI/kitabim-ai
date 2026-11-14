@@ -43,7 +43,7 @@ interface CircuitBreakerStatus {
   overall_state: string;
 }
 
-type FeatureGroup = 'all' | 'ocr' | 'rag' | 'embed' | 'kg' | 'history' | 'summary' | 'spell' | 'auth' | 'sys';
+type FeatureGroup = 'all' | 'ocr' | 'rag' | 'embed' | 'kg' | 'summary' | 'spell' | 'auth' | 'sys';
 
 interface FeatureGroupInfo {
   id: FeatureGroup;
@@ -60,7 +60,6 @@ const FEATURE_GROUPS: FeatureGroupInfo[] = [
   { id: 'rag', label: 'RAG', prefix: 'rag_', badgeBg: 'bg-blue-50 dark:bg-blue-950/40', badgeText: 'text-blue-700 dark:text-blue-400', badgeBorder: 'border-blue-200 dark:border-blue-900/40' },
   { id: 'embed', label: 'Embeddings', prefix: 'embed_', badgeBg: 'bg-emerald-50 dark:bg-emerald-950/40', badgeText: 'text-emerald-700 dark:text-emerald-400', badgeBorder: 'border-emerald-200 dark:border-emerald-900/40' },
   { id: 'kg', label: 'Knowledge Graph', prefix: 'kg_', badgeBg: 'bg-purple-50 dark:bg-purple-950/40', badgeText: 'text-purple-700 dark:text-purple-400', badgeBorder: 'border-purple-200 dark:border-purple-900/40' },
-  { id: 'history', label: 'History', prefix: 'history_', badgeBg: 'bg-rose-50 dark:bg-rose-950/40', badgeText: 'text-rose-700 dark:text-rose-400', badgeBorder: 'border-rose-200 dark:border-rose-900/40' },
   { id: 'summary', label: 'Summary', prefix: 'summary_', badgeBg: 'bg-indigo-50 dark:bg-indigo-950/40', badgeText: 'text-indigo-700 dark:text-indigo-400', badgeBorder: 'border-indigo-200 dark:border-indigo-900/40' },
   { id: 'spell', label: 'Spell Check', prefix: 'spell_', badgeBg: 'bg-teal-50 dark:bg-teal-950/40', badgeText: 'text-teal-700 dark:text-teal-400', badgeBorder: 'border-teal-200 dark:border-teal-900/40' },
   { id: 'auth', label: 'Auth', prefix: 'auth_', badgeBg: 'bg-cyan-50 dark:bg-cyan-950/40', badgeText: 'text-cyan-700 dark:text-cyan-400', badgeBorder: 'border-cyan-200 dark:border-cyan-900/40' },

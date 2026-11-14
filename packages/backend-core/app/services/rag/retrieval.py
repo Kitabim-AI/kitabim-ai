@@ -211,6 +211,7 @@ async def vector_search(
     ctx: "QueryContext",
     book_ids: Optional[List[str]],
     query_vector: Optional[List[float]] = None,
+    section_ids: Optional[List[int]] = None,
 ) -> List[dict]:
     """Cached pgvector similarity search — vector-only.
 
@@ -218,7 +219,9 @@ async def vector_search(
     The keyword leg never blends with vector results (see
     exact_phrase_chunk_search / keyword-search-rework-plan.md Phase 1) — it
     runs standalone, only for exact-phrase-search intent.
-    Returns a list of dicts with keys: text, score, page, title, volume, author, book_id.
+    Returns a list of dicts with keys: text, score, page, title, volume, author, book_id,
+    plus optional end_page_number, section_id, section_title, content_page_number,
+    end_content_page_number when present on the retrieved chunk.
     """
     effective_vector = query_vector if query_vector is not None else ctx.query_vector
     if not effective_vector:
@@ -237,6 +240,7 @@ async def vector_search(
     from app.db.session import async_session_factory
 
     chunks_repo = get_vector_store(ctx.session)
+    section_kwargs = {"section_ids": section_ids} if section_ids is not None else {}
 
     async def _search_book_isolated(
         bid: str, limit: int, threshold: float
@@ -253,6 +257,7 @@ async def vector_search(
                 categories=ctx.character_categories or None,
                 limit=limit,
                 threshold=threshold,
+                **section_kwargs,
             )
 
     configs_repo = SystemConfigsRepository(ctx.session)
@@ -283,7 +288,19 @@ async def vector_search(
         ).hexdigest()
         book_ids_hash += f"_cat_{cat_hash}"
 
-    if not ctx.is_global and len(sorted_book_ids) == 1 and not ctx.character_categories:
+    if section_ids:
+        sec_hash = hashlib.md5(
+            ",".join(str(s) for s in sorted(section_ids)).encode(),
+            usedforsecurity=False,
+        ).hexdigest()
+        book_ids_hash += f"_sec_{sec_hash}"
+
+    if (
+        not ctx.is_global
+        and len(sorted_book_ids) == 1
+        and not ctx.character_categories
+        and not section_ids
+    ):
         search_cache_key = cache_config.KEY_RAG_SEARCH_SINGLE.format(
             book_id=sorted_book_ids[0], hash=emb_hash
         )
@@ -322,6 +339,7 @@ async def vector_search(
                     categories=ctx.character_categories or None,
                     limit=rag_top_k,
                     threshold=settings.rag_score_threshold,
+                    **section_kwargs,
                 )
 
             if not similar_chunks:
@@ -349,6 +367,7 @@ async def vector_search(
                         categories=ctx.character_categories or None,
                         limit=rag_top_k,
                         threshold=0.0,
+                        **section_kwargs,
                     )
             top_results = [
                 {
@@ -364,6 +383,31 @@ async def vector_search(
                     "volume": chunk.get("volume"),
                     "author": chunk.get("author") or None,
                     "book_id": chunk.get("book_id"),
+                    **(
+                        {"end_page_number": chunk["end_page_number"]}
+                        if "end_page_number" in chunk
+                        else {}
+                    ),
+                    **(
+                        {"section_id": chunk["section_id"]}
+                        if "section_id" in chunk
+                        else {}
+                    ),
+                    **(
+                        {"section_title": chunk["section_title"]}
+                        if "section_title" in chunk
+                        else {}
+                    ),
+                    **(
+                        {"content_page_number": chunk["content_page_number"]}
+                        if "content_page_number" in chunk
+                        else {}
+                    ),
+                    **(
+                        {"end_content_page_number": chunk["end_content_page_number"]}
+                        if "end_content_page_number" in chunk
+                        else {}
+                    ),
                 }
                 for chunk in similar_chunks
             ]

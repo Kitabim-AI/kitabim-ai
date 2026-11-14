@@ -111,3 +111,65 @@ async def test_summary_job_success():
             embedding=[0.1, 0.2, 0.3],
         )
         mock_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_summary_job_empty_response_does_not_touch_existing_generated_at():
+    ctx = {"redis": AsyncMock(), "worker_id": "test_worker"}
+    book_id = "test-book"
+
+    executed_stmts: list[str] = []
+    mock_session = AsyncMock()
+    mock_session.commit = AsyncMock()
+    mock_session.add = MagicMock()
+
+    mock_book = MagicMock(spec=Book)
+    mock_book.id = book_id
+    mock_book.title = "Test Book"
+    mock_book.author = "Test Author"
+
+    mock_result_book = MagicMock()
+    mock_result_book.scalar_one_or_none.return_value = mock_book
+
+    mock_result_pages = MagicMock()
+    mock_result_pages.fetchall.return_value = [("Sample page text.",)]
+
+    async def mock_execute(stmt, *args, **kwargs):
+        stmt_str = str(stmt).lower()
+        executed_stmts.append(stmt_str)
+        if "from books" in stmt_str:
+            return mock_result_book
+        if "from pages" in stmt_str:
+            return mock_result_pages
+        return MagicMock()
+
+    mock_session.execute.side_effect = mock_execute
+
+    with (
+        patch("app.db.session.async_session_factory") as mock_session_factory,
+        patch(
+            "services.worker.jobs.summary_job.SystemConfigsRepository.get_value",
+            new_callable=AsyncMock,
+            return_value="gemini-2.0-flash",
+        ),
+        patch(
+            "services.worker.jobs.summary_job.build_text_chain"
+        ) as mock_build_text_chain,
+        patch(
+            "services.worker.jobs.summary_job.BookSummariesRepository",
+            spec=True,
+        ) as mock_repo_cls,
+    ):
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+        mock_chain = AsyncMock()
+        mock_chain.ainvoke.return_value = "   "
+        mock_build_text_chain.return_value = mock_chain
+
+        mock_repo = AsyncMock()
+        mock_repo_cls.return_value = mock_repo
+
+        await summary_job(ctx, book_id)
+
+        mock_repo.upsert.assert_not_called()
+        assert not any("update book_summaries" in s for s in executed_stmts)

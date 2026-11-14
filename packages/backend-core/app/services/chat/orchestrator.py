@@ -109,6 +109,25 @@ def _format_short_work_answer(match: ShortWorkMatch) -> str:
         if match.start_page == match.end_page
         else ",".join(str(p) for p in range(match.start_page, match.end_page + 1))
     )
+    disp_start = (
+        match.content_start_page
+        if match.content_start_page is not None
+        else match.start_page
+    )
+    disp_end = (
+        match.content_end_page
+        if match.content_end_page is not None
+        else (
+            match.end_page
+            if match.content_start_page is None
+            else match.content_start_page
+        )
+    )
+    page_display = (
+        f"{disp_start}-بەت"
+        if disp_start == disp_end or match.content_start_page is None
+        else f"{disp_start}–{disp_end}-بەت"
+    )
     book_label = match.book_title or ""
     if match.book_author:
         book_label = (
@@ -118,7 +137,7 @@ def _format_short_work_answer(match: ShortWorkMatch) -> str:
         f"{book_label} — «{match.title}»" if book_label else f"«{match.title}»"
     )
     citation = (
-        f"**مەنبە:** [{citation_label}، {match.start_page}-بەت]"
+        f"**مەنبە:** [{citation_label}، {page_display}]"
         f"(ref:{match.book_id}:{pages})"
     )
 
@@ -126,6 +145,49 @@ def _format_short_work_answer(match: ShortWorkMatch) -> str:
     if match.truncated:
         parts.append(t("rag.short_work_truncated_note"))
     parts.append(citation)
+
+    if match.other_matches:
+        shown_others = match.other_matches[:8]
+        remaining = len(match.other_matches) - len(shown_others)
+        alt_lines = []
+        for alt in shown_others:
+            alt_book = alt.get("book_title") or ""
+            alt_author = alt.get("book_author")
+            if alt_author:
+                alt_book = f"{alt_book} ({alt_author})" if alt_book else alt_author
+            alt_title = alt.get("title") or match.title
+            alt_label = f"{alt_book} — «{alt_title}»" if alt_book else f"«{alt_title}»"
+            alt_start = int(alt.get("start_page") or 1)
+            alt_end = int(alt.get("end_page") or alt_start)
+            alt_pages = (
+                str(alt_start)
+                if alt_start == alt_end
+                else ",".join(str(p) for p in range(alt_start, alt_end + 1))
+            )
+            alt_c_start = alt.get("content_start_page")
+            alt_c_end = alt.get("content_end_page")
+            alt_disp_start = alt_c_start if alt_c_start is not None else alt_start
+            alt_disp_end = (
+                alt_c_end
+                if alt_c_end is not None
+                else (alt_end if alt_c_start is None else alt_c_start)
+            )
+            alt_page_disp = (
+                f"{alt_disp_start}-بەت"
+                if alt_disp_start == alt_disp_end
+                else f"{alt_disp_start}–{alt_disp_end}-بەت"
+            )
+            alt_lines.append(
+                f"- [{alt_label}، {alt_page_disp}](ref:{alt.get('book_id')}:{alt_pages})"
+            )
+        if remaining > 0:
+            alt_lines.append(f"- (+ {remaining})")
+        other_header = t(
+            "rag.short_work_other_matches",
+            default="باشقا مەنبەلەردىمۇ تېپىلدى:",
+        )
+        parts.append(other_header + "\n" + "\n".join(alt_lines))
+
     return "\n\n".join(parts)
 
 
@@ -448,7 +510,11 @@ class ChatOrchestrator:
                 ctx.context_book_ids[0] if len(ctx.context_book_ids) == 1 else None
             )
             short_work_match = await resolve_short_work(
-                db_session, short_work_intent.title, book_id=scoped_book_id
+                db_session,
+                short_work_intent.title,
+                book_id=scoped_book_id,
+                candidate_book_ids=ctx.context_book_ids or None,
+                question=request_dto.question,
             )
             if short_work_match is not None:
                 phrase_intent.is_exact = False

@@ -12,9 +12,9 @@ Coordinates retrieval-augmented generation (RAG) across books and reference lexi
 - `[judge.py:score_answer]` — Evaluates RAG answer quality against retrieved context and original question.
 - `[phrase_intent.py:PhraseIntent]` / `[phrase_intent.py:detect_phrase_intent]` — Detects exact phrase quote lookup intent.
 - `[short_work_intent.py:ShortWorkIntent]` / `[short_work_intent.py:detect_short_work_intent]` — Detects intent to locate short stories, poems, or articles within collections.
-- `[toc_lookup_service.py:resolve_short_work]` — Resolves short work title to specific book and page ranges via table-of-contents entries.
+- `[toc_lookup_service.py:resolve_short_work]` — Resolves short work titles via `book_sections` (with fallback to `toc_pages`), performing intra-page `[start_block_index .. end_block_index]` slicing, author/book disambiguation, and returning `other_matches` and printed-page spans.
 - `[query_rewriter.py:QueryRewriter]` — Reformulates conversational questions into standalone search queries using dialogue history.
-- `[retrieval.py:vector_search]` / `[retrieval.py:exact_phrase_chunk_search]` — Vector and exact phrase search primitives over book chunks.
+- `[retrieval.py:vector_search]` / `[retrieval.py:exact_phrase_chunk_search]` — Vector and exact phrase search primitives over book chunks (supporting optional `section_ids` and section/printed-page metadata).
 - `[retrieval.py:select_balanced_chunks]` — Selects a balanced distribution of chunks across sister volumes and chapters.
 - `[llm_resources.py:LLMResources]` — Shared singleton pooling Gemini clients, embedding models, and rerankers.
 - `[utils.py:normalize_uyghur]` / `[utils.py:normalize_uyghur_spelling]` — Normalization utilities for Uyghur Arabic text and diacritics.

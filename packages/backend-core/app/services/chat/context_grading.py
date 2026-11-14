@@ -113,6 +113,11 @@ def _grade_context(
                     "page_number": c.get("page_number")
                     if c.get("page_number") is not None
                     else c.get("page"),
+                    "end_page_number": c.get("end_page_number"),
+                    "section_id": c.get("section_id"),
+                    "section_title": c.get("section_title"),
+                    "content_page_number": c.get("content_page_number"),
+                    "end_content_page_number": c.get("end_content_page_number"),
                     "book_id": c.get("book_id"),
                     "score": c.get("score", 0.0),
                     "rrf_score": c.get("rrf_score", 0.0),
@@ -156,7 +161,7 @@ def _grade_context(
                 if doc.metadata.get("page") is not None
                 else doc.metadata.get("page_number")
             )
-            key = (doc.metadata["book_id"], page_val)
+            key = (doc.metadata["book_id"], page_val, doc.metadata.get("section_id"))
             if key in seen:
                 existing = all_graded_documents[seen[key]]
                 if is_better_duplicate(doc.metadata, existing.metadata):

@@ -353,3 +353,53 @@ async def test_rerank_dedup_prefers_keyword_page_over_chunk_from_same_page():
             graded_context, _, _ = await rerank_context("q", observations, model="m")
         assert "FULL-PAGE" in graded_context
         assert "CHUNK\n" not in graded_context and not graded_context.endswith("CHUNK")
+
+
+@pytest.mark.asyncio
+async def test_rerank_dedup_keeps_distinct_sections_sharing_same_page_and_formats_printed_page_headers():
+    """Two chunks on the same physical page with different section_id values must NOT
+    overwrite each other, and format_document must emit Section, PrintedPage, and RefPages."""
+    observations = [
+        _search_obs(
+            [
+                _chunk(
+                    book_id="b1",
+                    page=20,
+                    end_page_number=21,
+                    section_id=101,
+                    section_title="ئىز",
+                    content_page_number=8,
+                    end_content_page_number=9,
+                    text="FIRST-POEM",
+                    score=0.9,
+                ),
+                _chunk(
+                    book_id="b1",
+                    page=20,
+                    end_page_number=20,
+                    section_id=102,
+                    section_title="سالام",
+                    content_page_number=8,
+                    end_content_page_number=8,
+                    text="SECOND-POEM",
+                    score=0.85,
+                ),
+            ]
+        )
+    ]
+    llm = _mock_llm("[1, 2]")
+    with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
+        graded_context, before_count, after_count = await rerank_context(
+            "q", observations, model="m"
+        )
+
+    assert before_count == 2
+    assert after_count == 2
+    assert "FIRST-POEM" in graded_context
+    assert "SECOND-POEM" in graded_context
+    assert "Section: ئىز" in graded_context
+    assert "PrintedPage: 8–9" in graded_context
+    assert "RefPages: 20,21" in graded_context
+    assert "Section: سالام" in graded_context
+    assert "PrintedPage: 8" in graded_context
+    assert "RefPages: 20" in graded_context

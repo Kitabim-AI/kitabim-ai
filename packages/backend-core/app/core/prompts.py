@@ -47,14 +47,14 @@ BOOK_SUMMARY_PROMPT = """You are an expert librarian indexing Uyghur books for a
 Your task is to generate a search-optimized summary that captures the full content of the book for vector-based retrieval.
 
 The entire summary is embedded as a single vector — every section contributes to matching user search queries.
-Write the summary IN UYGHUR (Arabic script) only.
+Input book pages are in Uyghur. All output text fields must be strictly written in modern Uyghur using Uyghur Arabic script only.
 
 Structure the summary into these sections:
 
 1. تۈرى (Domain): List 1-3 categories in order of relevance (most relevant first):
    داستان-رومان (fiction/novel) | تارىخ (history) | دىن (religious) | پەن ۋە مائارىپ (science/educational) | پەلسەپە (philosophy) | تىبابەت (medicine/health) | ئىقتىساد (economics) | سىياسەت (politics) | ئەدەبىيات-سەنئەت (arts/literature) | باشقا (other)
 
-2. ئومومى بايان (Overview): A comprehensive 400-600 word narrative covering the book's subject, main plot or arguments, key developments across the whole book, and overall conclusions or significance. This is the backbone of the embedding — be thorough.
+2. ئومۇمىي بايان (Overview): A comprehensive 400-600 word narrative covering the book's subject, main plot or arguments, key developments across the whole book, and overall conclusions or significance. This is the backbone of the embedding — be thorough.
 
 3. ئاساسلىق ئۇقۇم ۋە تېمىلار (Concepts & Themes): Exhaustively list every key theme, concept, theory, ideology, or scientific topic explored in the book. Cover all major and minor themes — completeness matters here.
 
@@ -63,11 +63,9 @@ Structure the summary into these sections:
    - ئورۇنلار (Places): Countries, cities, regions, landmarks, institutions mentioned in the content
    - تەشكىلاتلار ۋە ۋەقەلەر (Organizations & Events): Named organizations, movements, historical events, time periods mentioned in the content
 
-5. مەزمون دائىرىسى (Topic Coverage): Write a dense paragraph enumerating every specific subject, issue, event, period, method, question, or argument the book addresses in depth — derived entirely from the content, not the chapter structure. Include both broad subjects and highly specific details. This section answers "does this book cover X?" queries and must reflect the full breadth of the book.
+5. مەزمۇن دائىرىسى (Topic Coverage): Write a dense paragraph enumerating every specific subject, issue, event, period, method, question, or argument the book addresses in depth — derived entirely from the content, not the chapter structure. Include both broad subjects and highly specific details. This section answers "does this book cover X?" queries and must reflect the full breadth of the book.
 
-6. تىپىك سوئاللار (Hypothetical Queries): List 20-30 realistic questions in natural Uyghur that a reader might search to find this book. Cover every major topic, person, theme, and argument in the book — think about all the different ways users might ask about any part of this content. This is the most critical section for search quality.
-
-7. ئاچقۇچلۇق سۆزلەر (Keywords): 25-40 specific terms, proper nouns, and subject tags that define the book's content. Include both broad category terms and highly specific terms from the text.
+6. ئاچقۇچلۇق سۆزلەر (Keywords): 25-40 specific terms, proper nouns, and subject tags that define the book's content. Include both broad category terms and highly specific terms from the text.
 
 Guidelines:
 - BE SPECIFIC: Use proper nouns, technical terms, and exact names from the text.
@@ -164,123 +162,3 @@ Conversation history:
 Follow-up question: {question}
 
 Rewritten question:"""
-
-# Used by: HistoryExtractionService._call_llm_extraction (worker + batch extraction)
-# Model: system_configs["history_gemini_model"], temperature default, thinking_budget default
-EXTRACTION_PROMPT_TEMPLATE = """You are an expert Uyghur historical researcher and scholar.
-The provided book pages are written in the Uyghur language (using Uyghur Arabic script). Your task is to analyze these pages and extract important historical entities, including historical figures, key events, dynasties/kingdoms, and historical geographical locations or concepts.
-
-CRITICAL LANGUAGE & SCRIPT REQUIREMENTS:
-1. INPUT: The input book pages are written in Uyghur.
-2. OUTPUT LANGUAGE: All extracted text fields — specifically `term`, fact `text`, and `significance_reason` — MUST be strictly written in modern Uyghur using Uyghur Arabic script.
-3. TRANSLITERATION: `transliteration` must contain Latin script transliteration or dates/era (e.g. "Sultan Sutuk Bughra Khan, ? - 955").
-
-For each extracted entity, return a JSON object with the following fields:
-- term: Historical entity name in Uyghur Arabic script (e.g., "سۇلتان سۇتۇق بۇغراخان", "قاراخانىيلار خاندانلىقى")
-- transliteration: Latin script transliteration or dates/era (e.g., "Sultan Sutuk Bughra Khan, ? - 955")
-- category: One of "figure", "event", "dynasty", or "concept"
-- significance_score: Historical significance score from 1 to 10 (10: major ruler/historical event/classic work; 1-4: minor mention or common word - exclude these)
-- significance_reason: A 1-sentence reason for the historical significance score, strictly written in Uyghur
-- facts: Array of atomic facts about this entity found on these pages. Each fact must:
-  - State exactly ONE piece of information (one relationship, one date, one achievement, one event) — never a multi-clause narrative sentence.
-  - NOT restate the same fact twice within your own output, even in different words.
-  - Carry its own `pages` array — the specific page number(s) that fact was found on (a single entity's facts on the same pages can come from different specific pages within the window).
-
-Book Pages:
-{pages_text}
-
-JSON FORMAT REQUIRED:
-{{
-  "entities": [
-    {{
-      "term": "...",
-      "transliteration": "...",
-      "category": "figure",
-      "significance_score": 9,
-      "significance_reason": "...",
-      "facts": [
-        {{"text": "ياركەند خانلىقىنىڭ خانى، سۇلتان سەئىدخاننىڭ ئوغلى.", "pages": [40, 42]}},
-        {{"text": "ھىجرىيە 915-يىلى (مىلادىيە 1509-1510) تۇغۇلغان.", "pages": [343]}}
-      ]
-    }}
-  ]
-}}
-"""
-
-# Used by: llm_spell_check_service.correct_page_text (live path) and
-# batch_llm_spell_check_service.submit_batch_llm_spell_check (batch path,
-# one request per page)
-# Model: system_configs["gemini_llm_spell_check_model"], temperature=0.0
-LLM_SPELL_CHECK_PROMPT = """You are an expert Uyghur-language copy editor. The text below is one page from a Uyghur book, written in Uyghur Arabic script and already run through OCR and a dictionary-based spell checker. Your task is to find and fix ONLY context-dependent word substitution errors — a valid Uyghur word that was OCR'd or typed as a different, valid Uyghur word that does not fit the sentence's meaning. A dictionary lookup cannot catch these because both the wrong word and the right word are real words; only reading the sentence reveals the mistake.
-
-CRITICAL LANGUAGE & SCRIPT REQUIREMENTS:
-1. INPUT: The page text is written in modern Uyghur using Uyghur Arabic script.
-2. OUTPUT: Return the corrected page text strictly in Uyghur Arabic script. Do NOT translate, transliterate, or romanize any part of it.
-
-RULES:
-1. Fix ONLY real-word substitution errors — a wrong-but-valid word that breaks the sentence's meaning. Judge this using the surrounding sentence and, when needed, the previous/next page context below.
-2. Do NOT fix spelling of words that are not real Uyghur words — a separate dictionary-based checker already handles those; leave anything you are not sure is a real-word substitution unchanged.
-3. Do NOT rewrite, rephrase, summarize, reorder, or improve the writing style. Change only the specific mistaken word(s).
-4. Preserve the page's exact formatting: paragraph breaks, line breaks, Markdown headings, and any `[Header]`/`[Footer]` markers must remain exactly as given.
-5. Do NOT add, remove, or alter punctuation except where it was clearly part of a fixed word.
-6. Return ONLY the corrected page text. Do NOT add commentary, explanations, a summary of changes, or any wrapper (no JSON, no markdown code fences, no "Corrected text:" prefix).
-7. If you find no context-dependent errors, return the page text completely unchanged.
-
---- previous page (context only, do not correct) ---
-{prev_context}
---- end previous page context ---
-
---- page to correct ---
-{page_text}
---- end page to correct ---
-
---- next page (context only, do not correct) ---
-{next_context}
---- end next page context ---
-
-Return only the corrected version of "page to correct" above, with nothing else."""
-
-# Used by: HistoryExtractionService._classify_facts
-# Model: system_configs["history_gemini_model"], temperature default
-FACT_CLASSIFICATION_PROMPT_TEMPLATE = """You are an expert Uyghur historical editor and scholar.
-Compare the NEW CANDIDATE FACTS against the EXISTING FACTS about the historical term "{term}" and decide, for each candidate, one of:
-- "new": the candidate states information not already covered by any existing fact.
-- "duplicate": the candidate restates an existing fact's information (possibly reworded or with different spelling) with no new detail.
-- "conflict": the candidate contradicts a specific detail in an existing fact (e.g. a different date, a different relationship, a different outcome for the same event).
-
-All reasoning and the `reason` field must be in Uyghur. Return the id of the existing fact each "duplicate"/"conflict" decision refers to.
-
-EXISTING FACTS (numbered by id):
-{existing_facts}
-
-NEW CANDIDATE FACTS (numbered by index, starting at 0):
-{candidate_facts}
-
-JSON FORMAT REQUIRED:
-{{
-  "decisions": [
-    {{"candidate_index": 0, "decision": "new", "existing_fact_id": null, "reason": "..."}},
-    {{"candidate_index": 1, "decision": "duplicate", "existing_fact_id": 3, "reason": "..."}},
-    {{"candidate_index": 2, "decision": "conflict", "existing_fact_id": 5, "reason": "..."}}
-  ]
-}}
-"""
-
-# Used by: HistoryExtractionService._synthesize_definition (on-demand preview + approve time)
-# Model: system_configs["history_gemini_model"], temperature default
-SYNTHESIS_PROMPT_TEMPLATE = """You are an expert Uyghur historical editor and scholar.
-Write a single, cohesive historical definition for "{term}" strictly in modern Uyghur (Uyghur Arabic script), based only on the facts listed below.
-
-CRITICAL REQUIREMENTS:
-1. Preserve every fact's page citation using the format [N] (or [N, M] when a fact cites multiple pages).
-2. Do NOT invent information beyond what is listed below.
-3. Organize related facts into natural sentences and paragraphs (1 to 3 paragraphs) — do not just list the facts as bullet points.
-
-FACTS:
-{facts_text}
-
-JSON FORMAT REQUIRED:
-{{
-  "definition": "..."
-}}
-"""

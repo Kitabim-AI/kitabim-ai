@@ -1,20 +1,21 @@
 """
 Summary Scanner — backfill and retry for book_summaries.
 
-Catches three cases the pipeline_driver hook misses:
+Catches cases the pipeline_driver hook misses:
   1. Books that were already 'ready' before this feature was deployed
   2. Books whose summary_job failed (no row in book_summaries)
-  3. Books whose summary was cleared for regeneration (summary IS NULL, migration 039)
+  3. Books whose summary was cleared for regeneration (summary IS NULL)
+  4. Books whose OCR was replaced via backfill (`BookSummary.generated_at < Book.ocr_backfill_at`)
 
 Runs every 5 minutes. Batch size controlled by system_config 'summary_scanner_batch_size'
-(default 5). Increase temporarily to speed up bulk regeneration, then reset to 5.
+(default 5).
 """
 
 from __future__ import annotations
 
 import logging
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 
 from app.db import session as db_session
 from app.db.models import Book, BookSummary
@@ -41,6 +42,10 @@ async def run_summary_scanner(ctx) -> None:
                 or_(
                     BookSummary.book_id.is_(None),
                     BookSummary.summary.is_(None),
+                    and_(
+                        Book.ocr_backfill_at.isnot(None),
+                        BookSummary.generated_at < Book.ocr_backfill_at,
+                    ),
                 )
             )
             .limit(batch_size)
@@ -51,8 +56,6 @@ async def run_summary_scanner(ctx) -> None:
     if not book_ids:
         return
 
-    # enqueue_job returns None when arq deduplicates (job already queued/running).
-    # Only count and log books that were genuinely newly enqueued.
     newly_enqueued = []
     for book_id in book_ids:
         job = await redis.enqueue_job(

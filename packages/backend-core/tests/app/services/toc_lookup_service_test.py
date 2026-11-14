@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from app.db.models import Book, Page
+from app.db.repositories.book_sections_repository import BookSectionsRepository
 from app.db.repositories.books_repository import BooksRepository
 from app.db.repositories.pages_repository import PagesRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
@@ -387,3 +388,165 @@ async def test_resolve_short_work_preserves_irregular_verse_line_breaks():
     assert "كۆمۈش كەبى يالتىراق. مەرۋايىتتەك پارقىراق" in lines
     assert "بىر" in lines
     assert "چوققا ئۈستىدىكى قار ئۆزگىچە جانلانغان بىر دۇنيا كۆرگۈزىدۇ." in lines
+
+
+@pytest.mark.asyncio
+async def test_resolve_short_work_primary_book_sections_lookup_slices_intra_page_blocks():
+    """When book_sections resolves a leaf section sharing a page with preceding/following
+    blocks, only [start_block_index .. end_block_index] is returned."""
+    session = AsyncMock()
+    page_text = (
+        "ئالدىنقى شېئىر قۇرلىرى\n\n"
+        "## ئىز\n\n"
+        "ياق، ياق، بىزنىڭ ئىزىمىز ئۆچمەيدۇ\n\n"
+        "كېيىنكى شېئىر باشلاندى"
+    )
+    page_obj = Page(
+        book_id="b1",
+        page_number=20,
+        content_page_number="8",
+        text=page_text,
+        is_toc=False,
+    )
+    sec_dict = {
+        "id": 101,
+        "book_id": "b1",
+        "section_index": 3,
+        "level": 2,
+        "section_type": "work",
+        "title": "ئىز",
+        "normalized_title": "ئىز",
+        "source": "toc_matched",
+        "toc_printed_page": 8,
+        "start_page": 20,
+        "end_page": 20,
+        "start_block_index": 1,
+        "end_block_index": 2,
+        "book_title": "ئۆمۈر مەنزىللىرى",
+        "book_author": "ئابدۇرېھىم ئۆتكۈر",
+    }
+
+    async def fake_search_by_normalized_title(
+        self, norm_title, book_ids=None, limit=25
+    ):
+        return [sec_dict]
+
+    async def fake_get_value(self, key, default=None):
+        return "10"
+
+    async def fake_find_range(self, book_id, start_page, end_page):
+        assert (start_page, end_page) == (20, 20)
+        return [page_obj]
+
+    with (
+        patch.object(
+            BookSectionsRepository,
+            "search_by_normalized_title",
+            fake_search_by_normalized_title,
+        ),
+        patch.object(SystemConfigsRepository, "get_value", fake_get_value),
+        patch.object(PagesRepository, "find_range", fake_find_range),
+    ):
+        result = await resolve_short_work(session, "ئىز", book_id="b1")
+
+    assert result is not None
+    assert result.book_id == "b1"
+    assert result.start_page == 20
+    assert result.end_page == 20
+    assert result.content_start_page == "8"
+    assert result.content_end_page == "8"
+    assert "## ئىز" in result.text
+    assert "ياق، ياق، بىزنىڭ ئىزىمىز ئۆچمەيدۇ" in result.text
+    assert "ئالدىنقى شېئىر" not in result.text
+    assert "كېيىنكى شېئىر" not in result.text
+
+
+@pytest.mark.asyncio
+async def test_resolve_short_work_disambiguates_multiple_matches_by_author_and_populates_other_matches():
+    session = AsyncMock()
+    sec1_dict = {
+        "id": 201,
+        "book_id": "b1",
+        "section_index": 1,
+        "level": 2,
+        "section_type": "work",
+        "title": "غەزەل",
+        "normalized_title": "غەزەل",
+        "source": "toc_matched",
+        "toc_printed_page": 5,
+        "start_page": 15,
+        "end_page": 15,
+        "start_block_index": 0,
+        "end_block_index": None,
+        "book_title": "تاللانما شېئىرلار",
+        "book_author": "لۇتپۇللا مۇتەللىپ",
+    }
+    sec2_dict = {
+        "id": 202,
+        "book_id": "b2",
+        "section_index": 2,
+        "level": 2,
+        "section_type": "work",
+        "title": "غەزەل",
+        "normalized_title": "غەزەل",
+        "source": "toc_matched",
+        "toc_printed_page": 12,
+        "start_page": 22,
+        "end_page": 23,
+        "start_block_index": 0,
+        "end_block_index": None,
+        "book_title": "ئۆمۈر مەنزىللىرى",
+        "book_author": "ئابدۇرېھىم ئۆتكۈر",
+    }
+
+    async def fake_find_books_by_author(self, question):
+        return [Book(id="b2", title="ئۆمۈر مەنزىللىرى", author="ئابدۇرېھىم ئۆتكۈر")]
+
+    async def fake_search_by_normalized_title(
+        self, norm_title, book_ids=None, limit=25
+    ):
+        if book_ids == ["b2"]:
+            return [sec2_dict, sec1_dict]
+        return [sec1_dict, sec2_dict]
+
+    async def fake_get_value(self, key, default=None):
+        return "10"
+
+    async def fake_find_range(self, book_id, start_page, end_page):
+        return [
+            Page(
+                book_id=book_id,
+                page_number=start_page,
+                content_page_number="12" if book_id == "b2" else "5",
+                text="## غەزەل\n\nشېئىر تېكىستى...",
+                is_toc=False,
+            )
+        ]
+
+    with (
+        patch.object(
+            BooksRepository,
+            "find_books_by_author_in_question",
+            fake_find_books_by_author,
+        ),
+        patch.object(
+            BookSectionsRepository,
+            "search_by_normalized_title",
+            fake_search_by_normalized_title,
+        ),
+        patch.object(SystemConfigsRepository, "get_value", fake_get_value),
+        patch.object(PagesRepository, "find_range", fake_find_range),
+    ):
+        result = await resolve_short_work(
+            session,
+            "غەزەل",
+            book_id=None,
+            question="ئابدۇرېھىم ئۆتكۈرنىڭ غەزەل شېئىرىنى تېپىپ بېرىڭ",
+        )
+
+    assert result is not None
+    assert result.book_id == "b2"
+    assert result.book_author == "ئابدۇرېھىم ئۆتكۈر"
+    assert len(result.other_matches) == 1
+    assert result.other_matches[0].book_id == "b1"
+    assert result.other_matches[0].content_start_page == "5"

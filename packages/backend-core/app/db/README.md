@@ -5,14 +5,15 @@ Defines the SQLAlchemy 2.0 ORM domain models, database engine initialization, co
 
 ## Interface
 - `[models.py:Base]` — Declarative ORM base class for all database models.
-- `[models.py:Book]` — ORM model for books and pipeline milestone tracking.
-- `[models.py:Page]` — ORM model for book pages, OCR text, and processing statuses.
-- `[models.py:Chunk]` — ORM model for document chunks and vector embeddings (`pgvector`).
+- `[models.py:Book]` — ORM model for books, pipeline milestone tracking, and OCR backfill provenance.
+- `[models.py:Page]` — ORM model for book pages, OCR text, printed/detected page numbers, and processing statuses.
+- `[models.py:BookSection]` — ORM model for two-tier book structure sections (`chapter` -> `work`) and block/page spans.
+- `[models.py:Chunk]` — ORM model for document chunks, cross-page spans, section links, text hashes, and vector embeddings (`pgvector`).
 - `[models.py:User]` / `[models.py:RefreshToken]` — ORM models for user identity and token sessions.
 - `[models.py:SystemConfig]` — ORM model for dynamic configuration parameters.
 - `[models.py:RAGEvaluation]` — ORM model for RAG response quality metrics and token costs.
-- `[models.py:BatchOCRJob]` — Batch processing job models (`BatchOCRJob`, `BatchEmbeddingJob`, `BatchHistoryExtractionJob`, `BatchLlmSpellCheckJob`).
-- `[models.py:HistoryDictionary]` — Models for history dictionary (`HistoryDictionary`, `HistoryDictionaryStaging`).
+- `[models.py:BatchOCRJob]` — Batch processing job models (`BatchOCRJob`, `BatchEmbeddingJob`).
+- `[models.py:HistoryDictionary]` — Model for history dictionary (`HistoryDictionary`).
 - `[models.py:Conversation]` — Models for user chat histories (`Conversation`, `ConversationMessage`).
 - `[session.py:init_db]` — Initializes the SQLAlchemy async engine and session factory.
 - `[session.py:close_db]` — Closes the async engine and releases connection pool resources.

@@ -280,9 +280,9 @@ const JoinUsView: React.FC = () => {
                 className="flex items-center justify-center p-2 active:scale-95 group/logo"
               >
                 <img
-                  src="https://dallasuyghurcommunity.org/wp-content/uploads/2025/01/DUC_Logo_3ai_Artboard-2-photoaidcom-cropped-1.png"
+                  src="/duc-logo.png"
                   alt="Dallas Uyghur Community Logo"
-                  className="h-20 md:h-24 lg:h-32 w-auto object-contain group-hover/logo:scale-105 transition-transform"
+                  className="h-20 md:h-24 lg:h-32 w-auto object-contain group-hover/logo:scale-105 transition-transform rounded-full"
                 />
               </a>
               <a

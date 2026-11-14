@@ -5,7 +5,7 @@ Provides shared application UI primitives including localized markdown rendering
 
 ## Interface
 - `[LanguageSwitcher.tsx:LanguageSwitcher]` — Language selector dropdown toggling application locale between Uyghur (`ug`) and English (`en`).
-- `[MarkdownContent.tsx:MarkdownContent]` — Localized markdown renderer with citation badges, table formatting, and Quranic Arabic diacritics font adaptation.
+- `[MarkdownContent.tsx:MarkdownContent]` — Localized markdown renderer with citation badges, `contentPageMap` ToC page resolution (falling back to `contentPageOffset`), `<hr class="footnotes-sep" />` and `<section class="footnotes">` block rendering, table formatting, and Quranic Arabic diacritics font adaptation.
 - `[MarkdownContent.tsx:isTocPageContent]` — Regex and keyword heuristic utility detecting whether page text represents a Table of Contents.
 - `[Modal.tsx:Modal]` — Reusable dialog supporting `'alert' | 'confirm' | 'success'` variants with body scroll locking and backdrop dismiss.
 - `[NotificationContainer.tsx:NotificationContainer]` — Toast notifications display container subscribing to `NotificationContext`.
