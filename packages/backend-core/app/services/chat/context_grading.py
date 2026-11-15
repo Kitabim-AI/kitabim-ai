@@ -113,6 +113,7 @@ def _grade_context(
                     "page_number": c.get("page_number")
                     if c.get("page_number") is not None
                     else c.get("page"),
+                    "chunk_index": c.get("chunk_index"),
                     "end_page_number": c.get("end_page_number"),
                     "section_id": c.get("section_id"),
                     "section_title": c.get("section_title"),
@@ -161,7 +162,12 @@ def _grade_context(
                 if doc.metadata.get("page") is not None
                 else doc.metadata.get("page_number")
             )
-            key = (doc.metadata["book_id"], page_val, doc.metadata.get("section_id"))
+            key = (
+                doc.metadata["book_id"],
+                page_val,
+                doc.metadata.get("section_id"),
+                doc.metadata.get("chunk_index"),
+            )
             if key in seen:
                 existing = all_graded_documents[seen[key]]
                 if is_better_duplicate(doc.metadata, existing.metadata):

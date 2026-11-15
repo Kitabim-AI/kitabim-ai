@@ -1,7 +1,7 @@
 import logging
 import json
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,6 +65,10 @@ async def chat_with_book_api(
     try:
         # 2. Process chat request via the ADK orchestrator
         is_global = req.is_global or req.book_id == "global"
+        is_staff = getattr(current_user.role, "value", str(current_user.role)) in (
+            "admin",
+            "editor",
+        )
         dto = ChatRequestDTO(
             question=req.question,
             user_id=current_user.id,
@@ -75,6 +79,7 @@ async def chat_with_book_api(
             conversation_id=req.conversation_id,
             context_book_ids=req.context_book_ids,
             exact_phrase=req.exact_phrase,
+            is_staff=is_staff,
         )
         adk_session_service = getattr(request.app.state, "adk_session_service", None)
         orchestrator = ChatOrchestrator(session_service=adk_session_service)
@@ -153,6 +158,10 @@ async def chat_with_book_stream(
             orchestrator = ChatOrchestrator(session_service=adk_session_service)
 
             is_global = req.is_global or req.book_id == "global"
+            is_staff = getattr(current_user.role, "value", str(current_user.role)) in (
+                "admin",
+                "editor",
+            )
             dto = ChatRequestDTO(
                 question=req.question,
                 user_id=current_user.id,
@@ -163,6 +172,7 @@ async def chat_with_book_stream(
                 conversation_id=req.conversation_id,
                 context_book_ids=req.context_book_ids,
                 exact_phrase=req.exact_phrase,
+                is_staff=is_staff,
             )
 
             async for event in orchestrator.stream_response(dto, session):
@@ -285,7 +295,7 @@ async def submit_chat_feedback(
 
 @router.get("/recent-questions")
 async def get_recent_questions(
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=50),
     session: AsyncSession = Depends(get_session),
 ):
     """Return recent distinct first-turn questions for the home page rotator.
@@ -339,8 +349,8 @@ async def create_conversation_endpoint(
 
 @router.get("/conversations")
 async def list_conversations_endpoint(
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     book_id: Optional[str] = None,
     is_global: Optional[bool] = None,
     current_user: User = Depends(require_reader),
@@ -376,7 +386,7 @@ async def list_conversations_endpoint(
 @router.get("/conversations/{conversation_id}/messages")
 async def list_conversation_messages_endpoint(
     conversation_id: str,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=500),
     current_user: User = Depends(require_reader),
     session: AsyncSession = Depends(get_session),
 ):

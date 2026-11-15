@@ -141,6 +141,112 @@ _predictor_lock = asyncio.Lock()
 _toc_line_detector: Any = None
 _toc_detector_lock = threading.Lock()
 _executor: ThreadPoolExecutor | None = None
+_llamacpp_restart_lock = threading.Lock()
+_last_llamacpp_restart_ts: float = 0.0
+_llamacpp_hook_installed: bool = False
+_LLAMACPP_RESTART_COOLDOWN_S: float = 15.0
+
+
+def restart_llamacpp_server(
+    reason: str = "inference error",
+    client_to_update: Any = None,
+) -> bool:
+    """Kill a wedged local llama-server process, respawn a fresh one, and point active OpenAI clients to its new port."""
+    global _last_llamacpp_restart_ts
+
+    import time as _time
+
+    with _llamacpp_restart_lock:
+        try:
+            from surya.inference import get_default_manager
+            from surya.inference.backends.spawn import (
+                _delete_sentinel,
+                _read_sentinel,
+                _stop_process,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not import surya llamacpp helpers for restart: %s", exc
+            )
+            return False
+
+        manager = get_default_manager()
+        if getattr(manager, "method", None) != "llamacpp":
+            return False
+
+        now = _time.monotonic()
+        if (
+            _last_llamacpp_restart_ts > 0.0
+            and (now - _last_llamacpp_restart_ts) < _LLAMACPP_RESTART_COOLDOWN_S
+            and getattr(manager.backend, "handle", None) is not None
+        ):
+            new_base_url = manager.backend.handle.base_url
+            if client_to_update is not None and hasattr(client_to_update, "base_url"):
+                client_to_update.base_url = new_base_url
+            return True
+
+        sentinel = _read_sentinel("llamacpp")
+        old_pid = sentinel.get("pid") if isinstance(sentinel, dict) else None
+        old_port = sentinel.get("port") if isinstance(sentinel, dict) else None
+        logger.warning(
+            "Restarting wedged llama-server (pid=%s, port=%s) due to: %s",
+            old_pid,
+            old_port,
+            reason,
+        )
+
+        if old_pid:
+            try:
+                _stop_process(int(old_pid), "llamacpp")
+            except Exception as exc:
+                logger.warning(
+                    "Failed stopping old llama-server pid=%s: %s", old_pid, exc
+                )
+        _delete_sentinel("llamacpp")
+
+        try:
+            manager.backend.stop()
+            new_handle = manager.backend.start()
+            _last_llamacpp_restart_ts = _time.monotonic()
+            if client_to_update is not None and hasattr(client_to_update, "base_url"):
+                client_to_update.base_url = new_handle.base_url
+            logger.info(
+                "Successfully restarted llama-server at %s",
+                new_handle.base_url,
+            )
+            return True
+        except Exception as exc:
+            logger.error("Failed to restart llama-server: %s", exc)
+            return False
+
+
+def _install_llamacpp_auto_restart_hook() -> None:
+    """Wrap surya's openai_client._generate_one so a wedged llama-server (HTTP 500 / mtmd failure) is auto-restarted."""
+    global _llamacpp_hook_installed
+    if _llamacpp_hook_installed:
+        return
+    try:
+        from surya.inference.backends import openai_client
+
+        orig_generate_one = openai_client._generate_one
+        if getattr(orig_generate_one, "_kitabim_wrapped", False):
+            _llamacpp_hook_installed = True
+            return
+
+        def _wrapped_generate_one(item, client, *args, **kwargs):
+            res = orig_generate_one(item, client, *args, **kwargs)
+            if getattr(res, "error", False):
+                restart_llamacpp_server(
+                    reason="llama-server chat completion returned error=True",
+                    client_to_update=client,
+                )
+            return res
+
+        _wrapped_generate_one._kitabim_wrapped = True  # type: ignore[attr-defined]
+        openai_client._generate_one = _wrapped_generate_one
+        _llamacpp_hook_installed = True
+    except Exception as exc:
+        logger.warning("Failed to install llamacpp auto-restart hook: %s", exc)
 
 
 async def get_recognition_predictor(engine: str | None = None) -> Any:
@@ -153,6 +259,7 @@ async def get_recognition_predictor(engine: str | None = None) -> Any:
     target_engine = (engine or get_configured_engine()).strip().lower()
 
     if target_engine == "surya":
+        _install_llamacpp_auto_restart_hook()
         if _surya_predictor is not None:
             return _surya_predictor
         async with _predictor_lock:

@@ -2205,6 +2205,140 @@ async def test_stream_response_short_work_lookup_miss_falls_through_to_exact_phr
 
 
 @pytest.mark.asyncio
+async def test_stream_response_section_chunks_lookup_synthesizes_answer_across_full_chapter():
+    """A question asking about the content of a named chapter/section (e.g.
+    «ئالدانغان كېيىك» ناملىق بابىدا قانداق ئاساسى مەزمۇن بار؟) must resolve
+    the section's chunks via resolve_section_chunks, preserve all chunks in
+    reading order (including multiple chunks starting on the same page),
+    bypass exact_phrase_search and LLM reranking, and synthesize the answer
+    via Answer Agent."""
+    db_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = []
+    db_session.execute.return_value = mock_result
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-1", user_id="user-1", book_id="dbd310c05e85", is_global=False
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=42)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(
+        side_effect=AssertionError(
+            "retrieval agent must not run for a section-chunks lookup hit"
+        )
+    )
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({})
+    )
+
+    from app.services.rag.toc_lookup_service import SectionChunksMatch
+
+    chapter_chunks = [
+        {
+            "book_id": "dbd310c05e85",
+            "page_number": 180,
+            "end_page_number": 181,
+            "chunk_index": 243,
+            "text": "ئالدانغان كېيىك\n\nمەۋسۇملۇق ئىمتىھان ئاخىرلىشىپ...",
+            "section_id": 12,
+            "section_title": "ئالدانغان كېيىك",
+            "title": "لېيىغان بۇلاق",
+            "volume": 1,
+            "author": "جالالىدىن بەھرام",
+            "score": 1.0,
+        },
+        {
+            "book_id": "dbd310c05e85",
+            "page_number": 181,
+            "end_page_number": 181,
+            "chunk_index": 244,
+            "text": "ھېكمەت مەكتەپكە قايتىپ كەلگەندىن كېيىن...",
+            "section_id": 12,
+            "section_title": "ئالدانغان كېيىك",
+            "title": "لېيىغان بۇلاق",
+            "volume": 1,
+            "author": "جالالىدىن بەھرام",
+            "score": 1.0,
+        },
+        {
+            "book_id": "dbd310c05e85",
+            "page_number": 181,
+            "end_page_number": 182,
+            "chunk_index": 245,
+            "text": "ئاخىرىدا بۇ بابنىڭ خۇلاسىسى بايان قىلىنىدۇ...",
+            "section_id": 12,
+            "section_title": "ئالدانغان كېيىك",
+            "title": "لېيىغان بۇلاق",
+            "volume": 1,
+            "author": "جالالىدىن بەھرام",
+            "score": 1.0,
+        },
+    ]
+    section_match = SectionChunksMatch(
+        book_id="dbd310c05e85",
+        section_id=12,
+        title="ئالدانغان كېيىك",
+        start_page=180,
+        end_page=199,
+        chunks=chapter_chunks,
+        book_title="لېيىغان بۇلاق",
+        book_author="جالالىدىن بەھرام",
+    )
+
+    with _exact_phrase_orchestrator_patches(
+        conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.resolve_section_chunks",
+        AsyncMock(return_value=section_match),
+    ) as mock_resolve_section, patch(
+        "app.services.chat.orchestrator.run_exact_phrase_retrieval",
+        AsyncMock(),
+    ) as mock_run_exact_phrase, patch(
+        "app.services.chat.orchestrator.rerank_context",
+        AsyncMock(),
+    ) as mock_rerank, patch(
+        "app.services.chat.orchestrator.build_answer_agent",
+        return_value=MagicMock(),
+    ) as mock_build_answer_agent, patch(
+        "app.services.chat.orchestrator._build_human_message",
+        return_value="human message",
+    ):
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="بۇ كىتابنىڭ «ئالدانغان كېيىك» ناملىق بابىدا قانداق ئاساسى مەزمۇن بار؟",
+            user_id="user-1",
+            book_id="dbd310c05e85",
+            is_global=False,
+        )
+
+        events = [
+            event async for event in orchestrator.stream_response(dto, db_session)
+        ]
+
+    mock_resolve_section.assert_awaited_once()
+    mock_run_exact_phrase.assert_not_awaited()
+    mock_rerank.assert_not_awaited()
+    mock_build_answer_agent.assert_called_once()
+    graded_ctx_arg = mock_build_answer_agent.call_args.kwargs["graded_context"]
+    assert "مەۋسۇملۇق ئىمتىھان" in graded_ctx_arg
+    assert "ھېكمەت مەكتەپكە" in graded_ctx_arg
+    assert "ئاخىرىدا بۇ بابنىڭ خۇلاسىسى" in graded_ctx_arg
+    grading_events = [e for e in events if e.get("type") == "grading"]
+    assert grading_events == [{"type": "grading", "before": 3, "after": 3}]
+
+
+@pytest.mark.asyncio
 async def test_stream_response_unquoted_short_work_question_never_attempts_toc_lookup():
     """A short-work-style question with no quoted title at all doesn't match
     detect_short_work_intent (it requires a quoted span), so resolve_short_work

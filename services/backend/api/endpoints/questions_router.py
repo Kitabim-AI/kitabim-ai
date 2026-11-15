@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
@@ -22,8 +22,8 @@ router = APIRouter()
 
 @router.get("/admin/questions", response_model=RagQuestionsPage)
 async def get_admin_questions(
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     query: Optional[str] = None,
     current_user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
@@ -75,7 +75,7 @@ async def toggle_featured_question(
 
 @router.get("/featured", response_model=List[str])
 async def get_featured_questions(
-    limit: int = 20,
+    limit: int = Query(20, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
 ):
     """

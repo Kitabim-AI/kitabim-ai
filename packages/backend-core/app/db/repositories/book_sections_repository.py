@@ -182,7 +182,8 @@ class BookSectionsRepository(BaseRepository[BookSection]):
                 ON p_start.book_id = bs.book_id AND p_start.page_number = bs.start_page
             LEFT JOIN pages p_end
                 ON p_end.book_id = bs.book_id AND p_end.page_number = bs.end_page
-            WHERE b.status != 'error'
+            WHERE b.status = 'ready'
+              AND (b.visibility = 'public' OR b.visibility IS NULL)
               AND bs.section_type IN ('work', 'chapter')
               AND (
                   bs.normalized_title = :norm

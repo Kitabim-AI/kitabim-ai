@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import secrets
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,8 +20,12 @@ async def verify_operator_access(
     db: AsyncSession = Depends(get_session),
 ) -> bool:
     """Verifies that the request either has a valid operator token or is authenticated as an admin."""
-    # 1. Check if token matches settings.operator_token
-    if settings.operator_token and x_operator_token == settings.operator_token:
+    # 1. Check if token matches settings.operator_token using constant-time comparison
+    if (
+        settings.operator_token
+        and x_operator_token
+        and secrets.compare_digest(x_operator_token, settings.operator_token)
+    ):
         return True
 
     # 2. Or check if the user is an admin

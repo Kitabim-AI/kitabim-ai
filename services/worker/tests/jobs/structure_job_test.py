@@ -26,7 +26,11 @@ async def test_structure_job_persists_structure_and_enqueues_chunking():
         patch(
             "services.worker.jobs.structure_job.BookStructureService.analyze_and_persist_book_structure",
             new_callable=AsyncMock,
-            return_value={"content_pages_assigned": 10, "sections_extracted": 3},
+            return_value={
+                "book_id": "book-123",
+                "sections_count": 3,
+                "content_page_offset": 0,
+            },
         ) as mock_analyze,
     ):
         await structure_job(ctx, "book-123")

@@ -42,7 +42,12 @@ from app.services.chat.query_signals import analyze_query_signals
 from app.services.rag.agent.reranker import rerank_context
 from app.services.rag.context import QueryContext, set_current_query_context
 from app.services.rag.short_work_intent import detect_short_work_intent
-from app.services.rag.toc_lookup_service import ShortWorkMatch, resolve_short_work
+from app.services.rag.toc_lookup_service import (
+    SectionChunksMatch,
+    ShortWorkMatch,
+    resolve_section_chunks,
+    resolve_short_work,
+)
 from app.services.rag.phrase_intent import detect_phrase_intent
 from app.services.rag.retrieval import find_books_by_title_in_question
 from app.utils.citation_fixer import fix_malformed_citations
@@ -359,6 +364,12 @@ class ChatOrchestrator:
 
         if conv_id:
             conversation = await conv_repo.get_conversation(conv_id)
+            if (
+                conversation is not None
+                and isinstance(getattr(conversation, "user_id", None), str)
+                and conversation.user_id != request_dto.user_id
+            ):
+                raise ValueError(t("errors.conversation_not_found"))
 
         cleaned_q = " ".join(request_dto.question.strip().split())
         question_title = cleaned_q[:37] + "..." if len(cleaned_q) > 40 else cleaned_q
@@ -397,6 +408,13 @@ class ChatOrchestrator:
         if not request_dto.is_global and request_dto.book_id:
             books_repo = BooksRepository(db_session)
             book = await books_repo.get(request_dto.book_id)
+            if book is not None and not request_dto.is_staff:
+                book_status = getattr(book, "status", None)
+                book_vis = getattr(book, "visibility", None)
+                if (isinstance(book_status, str) and book_status != "ready") or (
+                    isinstance(book_vis, str) and book_vis not in ("public", "")
+                ):
+                    raise ValueError(t("errors.book_not_found"))
 
         configs_repo = SystemConfigsRepository(db_session)
         chat_model = await configs_repo.get_value("rag_gemini_chat_model") or model_name
@@ -503,20 +521,64 @@ class ChatOrchestrator:
         # and it benefits from ctx.context_book_ids already being populated
         # by catalog-first when scoping the lookup below.
         short_work_intent = detect_short_work_intent(request_dto.question)
-        short_work_match = None
+        short_work_match: Optional[ShortWorkMatch] = None
+        section_chunks_match: Optional[SectionChunksMatch] = None
         catalog_match: Optional[dict] = None
+        scoped_book_id = (
+            ctx.context_book_ids[0] if len(ctx.context_book_ids) == 1 else None
+        )
         if short_work_intent.applies and short_work_intent.title:
-            scoped_book_id = (
-                ctx.context_book_ids[0] if len(ctx.context_book_ids) == 1 else None
-            )
-            short_work_match = await resolve_short_work(
+            if short_work_intent.is_verbatim_request:
+                short_work_match = await resolve_short_work(
+                    db_session,
+                    short_work_intent.title,
+                    book_id=scoped_book_id,
+                    candidate_book_ids=ctx.context_book_ids or None,
+                    question=request_dto.question,
+                )
+                if short_work_match is None:
+                    section_chunks_match = await resolve_section_chunks(
+                        db_session,
+                        short_work_intent.title,
+                        book_id=scoped_book_id,
+                        candidate_book_ids=ctx.context_book_ids or None,
+                        question=request_dto.question,
+                        limit=settings.rag_top_k,
+                    )
+            else:
+                section_chunks_match = await resolve_section_chunks(
+                    db_session,
+                    short_work_intent.title,
+                    book_id=scoped_book_id,
+                    candidate_book_ids=ctx.context_book_ids or None,
+                    question=request_dto.question,
+                    limit=settings.rag_top_k,
+                )
+                if section_chunks_match is None:
+                    short_work_match = await resolve_short_work(
+                        db_session,
+                        short_work_intent.title,
+                        book_id=scoped_book_id,
+                        candidate_book_ids=ctx.context_book_ids or None,
+                        question=request_dto.question,
+                    )
+            if short_work_match is not None or section_chunks_match is not None:
+                phrase_intent.is_exact = False
+        elif (
+            phrase_intent.is_exact
+            and not request_dto.exact_phrase
+            and not phrase_intent.is_page_finding
+            and len(phrase_intent.phrases) in (1, 2)
+        ):
+            section_chunks_match = await resolve_section_chunks(
                 db_session,
-                short_work_intent.title,
+                phrase_intent.phrases[-1],
                 book_id=scoped_book_id,
                 candidate_book_ids=ctx.context_book_ids or None,
                 question=request_dto.question,
+                limit=settings.rag_top_k,
             )
-            if short_work_match is not None:
+            if section_chunks_match is not None:
                 phrase_intent.is_exact = False
 
         observations: list[dict] = []
@@ -564,6 +626,31 @@ class ChatOrchestrator:
                 "type": "tool_result",
                 "tool": "toc_lookup",
                 "found": 1,
+            }
+        elif section_chunks_match is not None:
+            yield {"type": "planning", "intent": "section_lookup"}
+            yield {
+                "type": "tool_call",
+                "tool": "toc_lookup",
+                "name": "toc_lookup",
+            }
+            observations.append(
+                {
+                    "tool": "search_chunks",
+                    "result": {
+                        "ok": True,
+                        "data": {
+                            "chunks": list(section_chunks_match.chunks),
+                        },
+                        "found_count": len(section_chunks_match.chunks),
+                    },
+                }
+            )
+            ctx.context_book_ids = [section_chunks_match.book_id]
+            yield {
+                "type": "tool_result",
+                "tool": "toc_lookup",
+                "found": len(section_chunks_match.chunks),
             }
         elif phrase_intent.is_exact:
             yield {"type": "planning", "intent": "exact_phrase"}
@@ -826,9 +913,6 @@ class ChatOrchestrator:
         if skip_answer_synthesis:
             graded_context, before_count, after_count = "", 0, 0
         else:
-            reranker_enabled = (
-                await configs_repo.get_value("rag_reranker_enabled", "true")
-            ).lower() == "true"
             rag_top_k_str = await configs_repo.get_value(
                 "rag_vector_top_k", str(settings.rag_top_k)
             )
@@ -837,34 +921,47 @@ class ChatOrchestrator:
             except ValueError:
                 rag_top_k = settings.rag_top_k
 
-            if reranker_enabled:
-                try:
-                    reranker_model = await configs_repo.get_value(
-                        "rag_gemini_reranker_model", "gemini-3.1-flash-lite"
-                    )
-                    effective_question = _extract_effective_question(
-                        request_dto.question, observations
-                    )
-                    graded_context, before_count, after_count = await rerank_context(
-                        effective_question,
-                        observations,
-                        reranker_model,
-                        max_chunks=rag_top_k,
-                    )
-                except Exception as exc:
-                    log_json(
-                        logger,
-                        logging.WARNING,
-                        "reranker failed, falling back to _grade_context",
-                        error=str(exc),
-                    )
-                    graded_context, before_count, after_count = _grade_context(
-                        observations, max_chunks=rag_top_k
-                    )
-            else:
+            if section_chunks_match is not None:
                 graded_context, before_count, after_count = _grade_context(
                     observations, max_chunks=rag_top_k
                 )
+            else:
+                reranker_enabled = (
+                    await configs_repo.get_value("rag_reranker_enabled", "true")
+                ).lower() == "true"
+
+                if reranker_enabled:
+                    try:
+                        reranker_model = await configs_repo.get_value(
+                            "rag_gemini_reranker_model", "gemini-3.1-flash-lite"
+                        )
+                        effective_question = _extract_effective_question(
+                            request_dto.question, observations
+                        )
+                        (
+                            graded_context,
+                            before_count,
+                            after_count,
+                        ) = await rerank_context(
+                            effective_question,
+                            observations,
+                            reranker_model,
+                            max_chunks=rag_top_k,
+                        )
+                    except Exception as exc:
+                        log_json(
+                            logger,
+                            logging.WARNING,
+                            "reranker failed, falling back to _grade_context",
+                            error=str(exc),
+                        )
+                        graded_context, before_count, after_count = _grade_context(
+                            observations, max_chunks=rag_top_k
+                        )
+                else:
+                    graded_context, before_count, after_count = _grade_context(
+                        observations, max_chunks=rag_top_k
+                    )
 
         if before_count > 0:
             yield {"type": "grading", "before": before_count, "after": after_count}

@@ -172,13 +172,14 @@ async def structure_job(ctx, book_id: str) -> None:
             return
 
         duration_ms = int((time.perf_counter() - start_time) * 1000)
+        log_stats = {k: v for k, v in (stats or {}).items() if k != "book_id"}
         log_json(
             logger,
             logging.INFO,
             "structure job completed",
             book_id=book_id,
             duration_ms=duration_ms,
-            **stats,
+            **log_stats,
         )
 
         if redis is not None and should_enqueue_chunking:

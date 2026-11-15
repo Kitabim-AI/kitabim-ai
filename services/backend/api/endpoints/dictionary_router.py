@@ -7,7 +7,7 @@ from __future__ import annotations
 import gzip
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,7 +70,7 @@ async def check_spelling(
 @router.get("/dictionary/search", response_model=List[DictionaryEntryOut])
 async def search_dictionary(
     q: str,
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
 ):
     """Search for entries in the dictionary (autocomplete)."""
@@ -116,8 +116,8 @@ async def list_letter_groups(
 
 @router.get("/dictionary", response_model=List[DictionaryEntryOut])
 async def list_dictionary_entries(
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
     letter_group: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):

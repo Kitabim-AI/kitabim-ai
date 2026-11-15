@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import logging
+import secrets
 import uuid
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -229,11 +230,20 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
-app = FastAPI(title=settings.project_name, lifespan=lifespan)
+app = FastAPI(
+    title=settings.project_name,
+    lifespan=lifespan,
+    docs_url=None if settings.environment == "production" else "/docs",
+    redoc_url=None if settings.environment == "production" else "/redoc",
+    openapi_url=None if settings.environment == "production" else "/openapi.json",
+)
 
-# Trust X-Forwarded-For from Nginx proxy (localhost) so request.client.host
+# Trust X-Forwarded-For from Nginx / Docker bridge proxy networks so request.client.host
 # returns the real client IP everywhere, including slowapi rate limiting.
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["127.0.0.1", "::1"])
+_trusted_hosts = [
+    h.strip() for h in settings.trusted_proxy_hosts.split(",") if h.strip()
+] or ["127.0.0.1", "::1"]
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_hosts)
 
 
 # Global exception handler to capture and log any unhandled exceptions
@@ -434,10 +444,15 @@ async def enforce_app_id(request: Request, call_next):
     if any(request.url.path.startswith(p) for p in exempt_paths):
         return await call_next(request)
 
-    # Check for the Application ID header
+    # Check for the Application ID header using constant-time comparison
     app_id = request.headers.get("X-Kitabim-App-Id")
+    expected_app_id = settings.security_app_id
 
-    if app_id != settings.security_app_id:
+    if (
+        not app_id
+        or not expected_app_id
+        or not secrets.compare_digest(app_id, expected_app_id)
+    ):
         logger = logging.getLogger("app.security")
         log_json(
             logger,
@@ -466,7 +481,13 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept-Language", "X-Request-ID"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept-Language",
+        "X-Request-ID",
+        "X-Kitabim-App-Id",
+    ],
     expose_headers=["X-Request-ID"],
 )
 
@@ -587,7 +608,12 @@ async def ready():
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Database not ready: {exc}")
+        detail = (
+            "Database not ready"
+            if settings.environment == "production"
+            else f"Database not ready: {exc}"
+        )
+        raise HTTPException(status_code=503, detail=detail)
     return {"status": "ready"}
 
 

@@ -470,6 +470,7 @@
       "status": "Status",
       "actions": "Actions",
       "view": "View",
+      "copyBookId": "Copy Book ID",
       "edit": "Edit",
       "delete": "Delete",
       "reindex": "Re-vectorize",
@@ -835,6 +836,9 @@
     "reprocessOcr": {
       "title": "Reprocess OCR"
     },
+    "reprocessStructure": {
+      "title": "Reprocess Structure"
+    },
     "reprocessChunking": {
       "title": "Reprocess Chunking"
     },
@@ -859,6 +863,9 @@
     "reprocess": {
       "ocr": {
         "message": "Are you sure you want to reprocess all pages from the OCR step? All current text will be deleted."
+      },
+      "structure": {
+        "message": "Are you sure you want to re-analyze book structure? Downstream chunking and embedding will also be reprocessed."
       },
       "chunking": {
         "message": "Are you sure you want to reprocess all pages from the Chunking step? Existing chunks will be deleted."

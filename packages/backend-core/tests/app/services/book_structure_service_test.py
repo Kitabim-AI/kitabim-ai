@@ -330,3 +330,55 @@ def test_parse_toc_entries_and_reconcile_anthology_entries_with_authors_and_pare
     assert len(leaf_sections) == 2
     assert leaf_sections[0]["start_page"] == 2
     assert leaf_sections[1]["start_page"] == 3
+
+
+def test_is_structural_chapter_title_recognizes_compound_ordinals_and_punctuated_subtitles():
+    from app.services.book_structure_service import is_structural_chapter_title
+
+    assert is_structural_chapter_title("ئون بىرىنچى باب تەقدىر") is True
+    assert is_structural_chapter_title("ئون ئىككىنچى باب خورلانغان ئەرك") is True
+    assert is_structural_chapter_title("ئون ئۈچىنچى باب دېرەكسىز غايىب بولۇش") is True
+    assert is_structural_chapter_title("يىگىرمە بەشىنچى باب سەپەر") is True
+    assert is_structural_chapter_title("بىرىنچى باب ئانا، نەدە سەن؟") is True
+    assert is_structural_chapter_title("ئون بىرىنچى باب خوشلىشىش") is True
+    assert is_structural_chapter_title("تۇل خوتۇن ئۆمەرجان ساۋۇت") is False
+
+
+def test_parse_toc_entries_supports_reverse_dot_leader_and_reverse_pipe_tables():
+    from app.utils.text import parse_toc_entries
+
+    toc_text = (
+        "# مۇندەرىجە\n\n"
+        "* 1 ................... قار گۈللىرى\n"
+        "- 13 .................. قەبرە بېشىدىكى چۈش\n"
+        "| 28 | روزىمەت خۇشال |\n"
+        "* I باب ئاساسىي تارىخىي مەنبەلەر (49)\n"
+        "* 77 توردى ھالىم\n"
+    )
+    entries = parse_toc_entries(toc_text)
+    assert entries == [
+        ("قار گۈللىرى", 1),
+        ("قەبرە بېشىدىكى چۈش", 13),
+        ("روزىمەت خۇشال", 28),
+        ("I باب ئاساسىي تارىخىي مەنبەلەر", 49),
+        ("توردى ھالىم", 77),
+    ]
+
+
+def test_parse_page_blocks_handles_numbered_h2_and_filters_publisher_and_trailing_prose_lines():
+    text = (
+        "# ياقۇببەگ ھاكىمىيىتى توغرىسىدا\n\n"
+        "## 1. ئومۇمىي ئەھۋال\n\n"
+        "شىنجاڭ خەلق نەشرىياتى\n\n"
+        "بېيجىن - 1958\n\n"
+        "× × ×\n\n"
+        "بىرىنچى ئابزاس تېكىستى تولۇق جۈملە بىلەن ئاخىرلىشىدۇ.\n\n"
+        "ئېنگلىيە مۇستەملىكىچىلىرى بىر تەرەپتىن ئۆزلىرىنىڭ ئوتتۇرا"
+    )
+    blocks = parse_page_blocks(text)
+    headings = [(b.heading_level, b.raw_text) for b in blocks if b.kind == "heading"]
+    assert headings == [
+        (1, "# ياقۇببەگ ھاكىمىيىتى توغرىسىدا"),
+        (2, "## 1. ئومۇمىي ئەھۋال"),
+    ]
+    assert blocks[-1].kind == "prose"

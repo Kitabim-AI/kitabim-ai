@@ -328,12 +328,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     )}
                   </div>
 
-                  <div className={`flex flex-col min-w-0 ${msg.role === 'user' ? 'max-w-[85%] sm:max-w-xl items-start' : 'w-full items-end'}`}>
+                  <div className={`flex flex-col w-full min-w-0 ${msg.role === 'user' ? 'items-start' : 'items-end'}`}>
                     <div
-                      className={`px-5 py-4 rounded-3xl shadow-sm transition-all text-[#1a1a1a] dark:text-slate-100 ${
+                      className={`px-5 py-4 rounded-3xl shadow-sm transition-all text-[#1a1a1a] dark:text-slate-100 w-full ${
                         msg.role === 'user'
                           ? 'rounded-tr-none bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/60'
-                          : 'rounded-tl-none bg-[#0369a1] dark:bg-[#0369a1] text-white shadow-md shadow-[#0369a1]/10 w-full'
+                          : 'rounded-tl-none bg-[#0369a1] dark:bg-[#0369a1] text-white shadow-md shadow-[#0369a1]/10'
                       }`}
                       style={{ fontSize: `${chatFontSize}px`, lineHeight: '1.8' }}
                     >
@@ -816,11 +816,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 </span>
               )}
             </div>
-            <div className={`flex flex-col gap-1.5 min-w-0 ${msg.role === 'user' ? 'max-w-[85%] items-start' : 'w-full items-end'}`}>
+            <div className={`flex flex-col gap-1.5 w-full min-w-0 ${msg.role === 'user' ? 'items-start' : 'items-end'}`}>
               <div
-                className={`px-4 py-3 rounded-2xl font-normal uyghur-text shadow-sm ${msg.role === 'user'
+                className={`px-4 py-3 rounded-2xl font-normal uyghur-text shadow-sm w-full ${msg.role === 'user'
                   ? 'rounded-tr-none bg-white/90 dark:bg-slate-800/90 border border-slate-200/60 dark:border-slate-700/60 text-[#1a1a1a] dark:text-slate-100'
-                  : 'rounded-tl-none bg-[#0369a1] dark:bg-[#0369a1] text-white shadow-md shadow-[#0369a1]/10 w-full'
+                  : 'rounded-tl-none bg-[#0369a1] dark:bg-[#0369a1] text-white shadow-md shadow-[#0369a1]/10'
                   }`}
                 style={{ fontSize: `${chatFontSize}px`, lineHeight: '1.8' }}
               >

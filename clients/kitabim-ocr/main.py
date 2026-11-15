@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
 import time
 from pathlib import Path
@@ -22,6 +23,10 @@ DOTENV_PATH = Path(__file__).resolve().parent / ".env"
 
 def cmd_login(base_url: str | None = None, provider: str = "google") -> None:
     load_dotenv(DOTENV_PATH)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     effective_base_url = base_url or os.environ.get("KITABIM_BASE_URL")
     if not effective_base_url:
         raise SystemExit("KITABIM_BASE_URL environment variable is required")
@@ -45,6 +50,10 @@ def cmd_backfill(
     base_url: str | None = None,
 ) -> list[dict]:
     load_dotenv(DOTENV_PATH)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     effective_base_url = base_url or os.environ.get("KITABIM_BASE_URL")
     if not effective_base_url:
         raise SystemExit("KITABIM_BASE_URL environment variable is required")

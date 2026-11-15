@@ -24,11 +24,29 @@ _TSQUERY_UNSAFE = re.compile(r"[&|!():*<>'\\\"«»،؟.,;\-\[\]{}\s]")
 _WORD_BOOK_COUNT_TIMEOUT_MS = 2000
 
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
+from app.utils.text import has_formatted_pipe_toc, is_title_cover_page
 
 logger = logging.getLogger(__name__)
 
 _KEYWORD_SEARCH_WORK_MEM = "64MB"
 _KEYWORD_SEARCH_STATEMENT_TIMEOUT_MS = "15000ms"
+
+_SYSTEM_UPDATED_BY_MARKERS = frozenset(
+    {
+        "batch_finalizer",
+        "batch_service",
+        "batch_chunker",
+        "manual_reset",
+    }
+)
+
+
+def is_manually_edited_by_user(updated_by: Optional[str]) -> bool:
+    """Return True if ``updated_by`` reflects a human editor rather than an automated batch marker."""
+    if not updated_by:
+        return False
+    cleaned = str(updated_by).strip()
+    return bool(cleaned) and cleaned not in _SYSTEM_UPDATED_BY_MARKERS
 
 
 class PagesRepository(BaseRepository[Page]):
@@ -471,13 +489,15 @@ class PagesRepository(BaseRepository[Page]):
         reset_spell_check: bool = True,
         force_overwrite_manual: bool = False,
         existing_pages: Optional[List[Page]] = None,
+        book_title: Optional[str] = None,
     ) -> tuple[int, int]:
         """Batch-upsert non-skipped OCR backfill pages for `book_id`.
 
-        Preserves manually edited pages (`updated_by IS NOT NULL`) unless
-        `force_overwrite_manual` is True. For replaced pages, sets `updated_by = NULL`,
-        `status = 'ocr_done'`, `ocr_milestone = 'succeeded'`, and resets
-        `spell_check_milestone` to `'idle'` when `reset_spell_check` is True.
+        Preserves manually edited pages (`is_manually_edited_by_user(updated_by)`)
+        and front-matter cover / calligraphic inner-title pages (`is_title_cover_page`)
+        unless `force_overwrite_manual` is True. For replaced pages, sets
+        `updated_by = NULL`, `status = 'ocr_done'`, `ocr_milestone = 'succeeded'`,
+        and resets `spell_check_milestone` to `'idle'` when `reset_spell_check` is True.
 
         Returns `(pages_updated, pages_unchanged)`.
         """
@@ -513,10 +533,40 @@ class PagesRepository(BaseRepository[Page]):
             if detected_page_num is not None:
                 detected_page_num = int(detected_page_num)
 
+            existing_is_toc = (
+                bool(getattr(existing, "is_toc", False))
+                if existing is not None
+                else False
+            )
+            existing_text = (
+                getattr(existing, "text", None) if existing is not None else None
+            )
+            is_protected_cover = (
+                existing is not None
+                and not existing_is_toc
+                and (
+                    page_num == 1
+                    or is_title_cover_page(
+                        existing_text,
+                        book_title,
+                        page_num,
+                        is_toc=False,
+                    )
+                )
+            )
+            is_protected_toc = (
+                existing is not None
+                and existing_is_toc
+                and has_formatted_pipe_toc(existing_text, min_rows=2)
+            )
             if (
                 not force_overwrite_manual
                 and existing is not None
-                and bool(getattr(existing, "updated_by", None))
+                and (
+                    is_manually_edited_by_user(getattr(existing, "updated_by", None))
+                    or is_protected_cover
+                    or is_protected_toc
+                )
             ):
                 if (
                     detected_page_num is not None

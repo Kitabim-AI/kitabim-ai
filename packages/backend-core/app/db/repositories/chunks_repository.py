@@ -203,6 +203,86 @@ class ChunksRepository(BaseRepository[Chunk]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def find_by_section_ids(
+        self,
+        section_ids: List[int],
+        limit: int = 25,
+    ) -> List[dict]:
+        """Fetch chunks belonging to `section_ids` (or child sections whose
+        `parent_id` is in `section_ids`), ordered in reading order by
+        `page_number ASC, chunk_index ASC`, with full book/page/section metadata.
+        """
+        if not section_ids:
+            return []
+
+        query = text("""
+            SELECT
+                c.book_id,
+                c.page_number,
+                COALESCE(c.end_page_number, c.page_number) AS end_page_number,
+                c.section_id,
+                CASE
+                    WHEN parent_bs.title IS NOT NULL AND bs.title IS NOT NULL AND parent_bs.title <> bs.title
+                        THEN parent_bs.title || ' › ' || bs.title
+                    ELSE bs.title
+                END AS section_title,
+                c.chunk_index,
+                c.text,
+                b.title,
+                b.volume,
+                b.author,
+                p.content_page_number,
+                p_end.content_page_number AS end_content_page_number
+            FROM chunks c
+            JOIN books b ON c.book_id = b.id
+            LEFT JOIN book_sections bs ON c.section_id = bs.id
+            LEFT JOIN book_sections parent_bs ON bs.parent_id = parent_bs.id
+            LEFT JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
+            LEFT JOIN pages p_end
+                ON c.book_id = p_end.book_id
+               AND COALESCE(c.end_page_number, c.page_number) = p_end.page_number
+            WHERE (c.section_id = ANY(:section_ids) OR bs.parent_id = ANY(:section_ids))
+              AND b.status = 'ready'
+              AND (b.visibility = 'public' OR b.visibility IS NULL)
+              AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
+            ORDER BY c.book_id ASC, c.page_number ASC, c.chunk_index ASC
+            LIMIT :limit
+        """)
+        result = await self.session.execute(
+            query,
+            {
+                "section_ids": [int(sid) for sid in section_ids],
+                "limit": int(limit),
+            },
+        )
+        rows = result.fetchall()
+        return [
+            {
+                "book_id": str(row.book_id),
+                "page": row.page_number,
+                "page_number": row.page_number,
+                "end_page_number": _opt_int(getattr(row, "end_page_number", None))
+                or row.page_number,
+                "section_id": _opt_int(getattr(row, "section_id", None)),
+                "section_title": _opt_str(getattr(row, "section_title", None)),
+                "content_page_number": _opt_str(
+                    getattr(row, "content_page_number", None)
+                ),
+                "end_content_page_number": _opt_str(
+                    getattr(row, "end_content_page_number", None)
+                )
+                or _opt_str(getattr(row, "content_page_number", None)),
+                "chunk_index": row.chunk_index,
+                "text": row.text,
+                "title": row.title,
+                "volume": row.volume,
+                "author": row.author,
+                "score": 1.0,
+                "similarity": 1.0,
+            }
+            for row in rows
+        ]
+
     async def similarity_search(
         self,
         query_embedding: List[float],
@@ -291,6 +371,8 @@ class ChunksRepository(BaseRepository[Chunk]):
                 LEFT JOIN book_sections bs ON rm.section_id = bs.id
                 LEFT JOIN book_sections parent_bs ON bs.parent_id = parent_bs.id
                 WHERE rm.similarity > :threshold
+                  AND b.status = 'ready'
+                  AND (b.visibility = 'public' OR b.visibility IS NULL)
                   AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
                   {cat_filter}
                 ORDER BY rm.similarity DESC
@@ -350,6 +432,8 @@ class ChunksRepository(BaseRepository[Chunk]):
                 LEFT JOIN book_sections bs ON vm.section_id = bs.id
                 LEFT JOIN book_sections parent_bs ON bs.parent_id = parent_bs.id
                 WHERE vm.similarity > :threshold
+                  AND b.status = 'ready'
+                  AND (b.visibility = 'public' OR b.visibility IS NULL)
                   AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
                   {cat_filter}
                 ORDER BY vm.similarity DESC
@@ -418,7 +502,7 @@ class ChunksRepository(BaseRepository[Chunk]):
             return []
 
         cat_filter = (
-            "WHERE b.categories && CAST(:categories AS text[])" if categories else ""
+            "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
         sec_exists_filter = (
             """AND EXISTS (
@@ -483,7 +567,9 @@ class ChunksRepository(BaseRepository[Chunk]):
                     ORDER BY bs.level DESC, bs.section_index ASC
                     LIMIT 1
                 ) sec ON true
-                {cat_filter}
+                WHERE b.status = 'ready'
+                  AND (b.visibility = 'public' OR b.visibility IS NULL)
+                  {cat_filter}
                 ORDER BY km.rank DESC
                 LIMIT :limit
             """)
@@ -539,7 +625,9 @@ class ChunksRepository(BaseRepository[Chunk]):
                     ORDER BY bs.level DESC, bs.section_index ASC
                     LIMIT 1
                 ) sec ON true
-                {cat_filter}
+                WHERE b.status = 'ready'
+                  AND (b.visibility = 'public' OR b.visibility IS NULL)
+                  {cat_filter}
                 ORDER BY km.rank DESC
                 LIMIT :limit
             """)

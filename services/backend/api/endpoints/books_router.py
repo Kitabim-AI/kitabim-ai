@@ -400,10 +400,13 @@ async def get_books(
     # --- PART 1: Define Filters ---
     # conditions: for the main list (total)
     # ready_conditions: for the 'ready' list (total_ready) - only relevant for admins/editors
+    can_see_all = _can_staff_access_book(current_user)
     conditions = []
-    if current_user is None:
+    if not can_see_all:
         conditions.append(BookDB.status == "ready")
-        conditions.append(or_(BookDB.visibility == "public", BookDB.visibility is None))
+        conditions.append(
+            or_(BookDB.visibility == "public", BookDB.visibility.is_(None))
+        )
 
     if category:
         conditions.append(category == any_(BookDB.categories))
@@ -694,7 +697,7 @@ async def get_books(
         # 2. For admin stats requests, ALSO cache a metadata-only version (no stats)
         #    This allows future requests to reuse book list + counts and only fetch fresh stats
 
-        cache_ttl = 1800 if current_user is None else 600
+        cache_ttl = 1800 if not can_see_all else 600
 
         if includeStats and current_user and current_user.role in ["admin", "editor"]:
             # Create metadata-only version (strip out stats)
@@ -824,23 +827,25 @@ async def get_random_proverb(
 @router.get("/top-categories")
 async def get_top_categories(
     response: Response,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=200),
     sort: str = "count",  # "count" or "alphabetical"
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
     """Get categories with optional sorting and limit"""
+    is_staff = _can_staff_access_book(current_user)
+
     # Add HTTP cache headers for browser caching (15 minutes = 900 seconds)
     # Set this early so it applies to both cached and fresh responses
-    # public = cacheable by browsers and CDNs (categories change infrequently)
-    # max-age = browser caches for 15 minutes
-    # stale-while-revalidate = browser can use stale cache for 120s while fetching new data in background
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.cache_ttl_categories}, stale-while-revalidate=120"
-    )
+    if is_staff:
+        response.headers["Cache-Control"] = "private, no-cache"
+    else:
+        response.headers["Cache-Control"] = (
+            f"public, max-age={settings.cache_ttl_categories}, stale-while-revalidate=120"
+        )
 
     # Cache Lookup
-    cache_params = {"limit": limit, "sort": sort, "is_guest": current_user is None}
+    cache_params = {"limit": limit, "sort": sort, "is_staff": is_staff}
     version = await cache_service.get_namespace_version("category")
     param_hash = hashlib.md5(
         json.dumps(cache_params, sort_keys=True).encode(),
@@ -857,8 +862,8 @@ async def get_top_categories(
     where_conditions = []
     params = {"limit": limit}
 
-    if current_user is None:
-        # Guests can only see public ready books
+    if not is_staff:
+        # Guests and non-staff readers can only see public ready books
         where_conditions.append("status = 'ready'")
         where_conditions.append("(visibility = 'public' OR visibility IS NULL)")
 
@@ -917,8 +922,8 @@ async def suggest_books(
     # Build base query for guest access
 
     conditions = []
-    if current_user is None:
-        # Guests can only see public ready books
+    if not _can_staff_access_book(current_user):
+        # Guests and non-staff readers can only see public ready books
         conditions.extend(
             [
                 Book.status == "ready",
@@ -993,12 +998,28 @@ async def get_global_graph(
     """Retrieve global or book-specific knowledge graph data for visualization."""
     from app.db.repositories.graph_repository import GraphRepository
 
+    is_staff = _can_staff_access_book(current_user)
+    allowed_book_ids: Optional[List[str]] = None
+
+    if not is_staff:
+        pub_stmt = select(BookDB.id).where(
+            BookDB.status == "ready",
+            or_(BookDB.visibility == "public", BookDB.visibility.is_(None)),
+        )
+        pub_res = await session.execute(pub_stmt)
+        allowed_book_ids = [str(row[0]) for row in pub_res.fetchall()]
+        if not allowed_book_ids:
+            return {"nodes": [], "links": []}
+        if book_id and book_id.strip() and book_id.strip() not in set(allowed_book_ids):
+            return {"nodes": [], "links": []}
+
     graph_repo = GraphRepository()
 
     query = """
     MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
     WHERE ($q IS NULL OR toLower(s.canonical_name) CONTAINS toLower($q) OR toLower(t.canonical_name) CONTAINS toLower($q))
       AND ($book_id IS NULL OR r.book_id = $book_id OR s.book_id = $book_id OR t.book_id = $book_id)
+      AND ($allowed_book_ids IS NULL OR r.book_id IN $allowed_book_ids)
     RETURN s.id AS source_id, s.canonical_name AS source_name, s.type AS source_type,
            s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
            s.context_summary AS source_context_summary,
@@ -1012,6 +1033,7 @@ async def get_global_graph(
     params = {
         "q": q.strip() if q and q.strip() else None,
         "book_id": book_id.strip() if book_id and book_id.strip() else None,
+        "allowed_book_ids": allowed_book_ids,
     }
 
     try:
@@ -1022,6 +1044,8 @@ async def get_global_graph(
         # Fallback to empty if Neo4j is not configured or not running
         logger.error(f"Error querying Neo4j graph: {exc}")
         return {"nodes": [], "links": []}
+    finally:
+        await graph_repo.close()
 
     nodes_seen = set()
     nodes = []
@@ -1085,6 +1109,7 @@ async def get_graph_chunk_detail(
     ref: str = Query(
         ..., description="Chunk ref string (e.g. book_id:page:chunk_index or chunk_id)"
     ),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
     """Retrieve original text and metadata for a chunk referenced by a graph edge."""
@@ -1101,7 +1126,12 @@ async def get_graph_chunk_detail(
             page_num = int(page_num_str)
             chunk_idx = int(chunk_idx_str)
             stmt = (
-                select(Chunk, Book.title.label("book_title"))
+                select(
+                    Chunk,
+                    Book.title.label("book_title"),
+                    Book.status.label("book_status"),
+                    Book.visibility.label("book_visibility"),
+                )
                 .outerjoin(Book, Chunk.book_id == Book.id)
                 .where(
                     Chunk.book_id == book_id,
@@ -1118,7 +1148,12 @@ async def get_graph_chunk_detail(
         try:
             chunk_id = int(chunk_id_str)
             stmt = (
-                select(Chunk, Book.title.label("book_title"))
+                select(
+                    Chunk,
+                    Book.title.label("book_title"),
+                    Book.status.label("book_status"),
+                    Book.visibility.label("book_visibility"),
+                )
                 .outerjoin(Book, Chunk.book_id == Book.id)
                 .where(Chunk.id == chunk_id)
             )
@@ -1134,6 +1169,17 @@ async def get_graph_chunk_detail(
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     chunk, book_title = row[0], row[1]
+    book_status = row[2] if len(row) > 2 else "ready"
+    book_visibility = row[3] if len(row) > 3 else "public"
+
+    if not _can_staff_access_book(current_user):
+        if book_status != "ready" or book_visibility not in ("public", None):
+            raise HTTPException(status_code=404, detail="Chunk not found")
+        if current_user is None and chunk.page_number > 20:
+            raise HTTPException(
+                status_code=401, detail=t("errors.authentication_required")
+            )
+
     return {
         "id": chunk.id,
         "bookId": chunk.book_id,
@@ -1579,8 +1625,8 @@ async def get_book_page(
 @router.get("/{book_id}/pages", response_model=List[ExtractionResult])
 async def get_book_pages(
     book_id: str,
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
@@ -2089,13 +2135,23 @@ async def replace_book_ocr(
     sc_val = await configs_repo.get_value("spell_check_enabled", "false")
     spell_check_enabled = str(sc_val).strip().lower() == "true"
 
-    pages_updated, pages_unchanged = await pages_repo.bulk_replace_pages(
-        book_id,
-        [p.model_dump() for p in req.pages],
-        reset_spell_check=spell_check_enabled,
-        force_overwrite_manual=bool(req.force_overwrite_manual),
-        existing_pages=existing_pages,
-    )
+    try:
+        pages_updated, pages_unchanged = await pages_repo.bulk_replace_pages(
+            book_id,
+            [p.model_dump() for p in req.pages],
+            reset_spell_check=spell_check_enabled,
+            force_overwrite_manual=bool(req.force_overwrite_manual),
+            existing_pages=existing_pages,
+            book_title=getattr(book, "title", None),
+        )
+    except TypeError:
+        pages_updated, pages_unchanged = await pages_repo.bulk_replace_pages(
+            book_id,
+            [p.model_dump() for p in req.pages],
+            reset_spell_check=spell_check_enabled,
+            force_overwrite_manual=bool(req.force_overwrite_manual),
+            existing_pages=existing_pages,
+        )
     pages_skipped = sum(1 for p in req.pages if p.skipped)
 
     preserved_status = "ready" if book.status == "ready" else "ocr_done"
@@ -3450,15 +3506,17 @@ async def get_book_summary(
     if not book_obj:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    # Check access permission for guests (directly access book attributes)
-    if not current_user:
-        # Guest access: only allow if book is public and ready
+    # Check access permission for non-staff users
+    if not _can_staff_access_book(current_user):
+        # Guest and reader access: only allow if book is public and ready
         book_status = getattr(book_obj, "status", None)
         book_visibility = getattr(book_obj, "visibility", "public")
-        if book_status != "ready" or book_visibility != "public":
-            raise HTTPException(
-                status_code=401, detail=t("errors.authentication_required")
-            )
+        if book_status != "ready" or book_visibility not in ("public", None):
+            if not current_user:
+                raise HTTPException(
+                    status_code=401, detail=t("errors.authentication_required")
+                )
+            raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
 
     summaries_repo = BookSummariesRepository(session)
     summary = await summaries_repo.get_by_book_id(book_id)

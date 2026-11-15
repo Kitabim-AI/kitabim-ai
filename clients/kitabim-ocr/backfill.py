@@ -5,10 +5,12 @@ from contextlib import contextmanager
 import fcntl
 import json
 import logging
+import os
 import re
 import shutil
 import signal
-import tempfile
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Iterator, Optional
@@ -28,14 +30,14 @@ from engine.recognize import (
     get_recognition_predictor,
     ocr_page_with_meta,
 )
-from engine.text_cleanup import is_toc_page
+from engine.text_cleanup import is_title_cover_page, is_toc_page
 from engine.workdir import PageState
 from kitabim_client.api import KitabimClient
 
 logger = logging.getLogger("kitabim_ocr_client.backfill")
 
 _PIPE_TOC_ROW_RE = re.compile(
-    r"^\|\s*[^|]+?\s*\|\s*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*\|?\s*$"
+    r"^\|\s*(?:[^|]+?\s*\|\s*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}|[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*\|\s*[^|]+?)\s*\|?\s*$"
 )
 
 
@@ -52,6 +54,48 @@ def has_formatted_pipe_toc(text: str, min_rows: int = 2) -> bool:
     return False
 
 
+_ACTIVE_CAFFEINATE_PROC: Optional[subprocess.Popen] = None
+
+
+@contextmanager
+def prevent_macos_sleep() -> Iterator[Optional[subprocess.Popen]]:
+    """Prevent macOS idle/display/system sleep via ``caffeinate`` while backfill runs."""
+    global _ACTIVE_CAFFEINATE_PROC
+    if _ACTIVE_CAFFEINATE_PROC is not None and _ACTIVE_CAFFEINATE_PROC.poll() is None:
+        yield _ACTIVE_CAFFEINATE_PROC
+        return
+
+    proc: Optional[subprocess.Popen] = None
+    if sys.platform == "darwin" and shutil.which("caffeinate"):
+        try:
+            proc = subprocess.Popen(
+                ["caffeinate", "-dims", "-w", str(os.getpid())],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            _ACTIVE_CAFFEINATE_PROC = proc
+            logger.info(
+                "Started macOS caffeinate (pid=%s) to prevent sleep during backfill",
+                proc.pid,
+            )
+        except Exception as exc:
+            logger.warning("Failed to start caffeinate: %s", exc)
+    try:
+        yield proc
+    finally:
+        if proc is not None:
+            _ACTIVE_CAFFEINATE_PROC = None
+            if proc.poll() is None:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=2.0)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+
+
 @contextmanager
 def acquire_surya_gpu_lock(work_root: Path) -> Iterator[Path]:
     """Acquire process-exclusive flock on ``$KITABIM_WORK_DIR/.surya_gpu.lock``."""
@@ -60,7 +104,8 @@ def acquire_surya_gpu_lock(work_root: Path) -> Iterator[Path]:
     f = open(lock_path, "a+", encoding="utf-8")
     try:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        yield lock_path
+        with prevent_macos_sleep():
+            yield lock_path
     finally:
         try:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
@@ -75,6 +120,74 @@ def _append_audit_log(audit_log_path: Path, entry: dict[str, Any]) -> None:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+DEFAULT_CHECKPOINT_OVERLAP_PAGES = 2
+
+
+def _load_page_checkpoint(
+    checkpoint_path: Path,
+    ocr_version: str,
+    overlap_pages: int = DEFAULT_CHECKPOINT_OVERLAP_PAGES,
+) -> dict[int, dict[str, Any]]:
+    """Load per-page OCR results from a local JSONL checkpoint file.
+
+    Drops the trailing ``overlap_pages`` checkpointed entries (and any truncated
+    tail line) and rewrites the checkpoint file cleanly so pages right at the
+    crash boundary are always re-OCR'd fresh.
+    """
+    ordered_by_pno: dict[int, dict[str, Any]] = {}
+    if not checkpoint_path.exists():
+        return ordered_by_pno
+    try:
+        with open(checkpoint_path, "r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(row, dict) or row.get("ocr_version") != ocr_version:
+                    continue
+                pno = row.get("page_number")
+                if (
+                    isinstance(pno, int)
+                    and pno >= 1
+                    and isinstance(row.get("text"), str)
+                ):
+                    ordered_by_pno[pno] = row
+    except Exception as exc:
+        logger.warning("Failed to read checkpoint %s: %s", checkpoint_path, exc)
+        return {}
+
+    if not ordered_by_pno:
+        return {}
+
+    rows = list(ordered_by_pno.values())
+    if overlap_pages > 0:
+        rows = rows[:-overlap_pages] if len(rows) > overlap_pages else []
+
+    kept: dict[int, dict[str, Any]] = {int(r["page_number"]): r for r in rows}
+    try:
+        tmp_ckpt = checkpoint_path.with_suffix(".jsonl.tmp")
+        with open(tmp_ckpt, "w", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            f.flush()
+        tmp_ckpt.replace(checkpoint_path)
+    except Exception as exc:
+        logger.warning("Failed to compact checkpoint %s: %s", checkpoint_path, exc)
+
+    return kept
+
+
+def _append_page_checkpoint(checkpoint_path: Path, row: dict[str, Any]) -> None:
+    """Append a single OCR'd page record to the local JSONL checkpoint file."""
+    with open(checkpoint_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        f.flush()
+
+
 async def backfill_single_book(
     book_id: str,
     client: KitabimClient,
@@ -85,6 +198,8 @@ async def backfill_single_book(
     concurrency: Optional[int] = None,
     audit_log_path: Optional[Path] = None,
     ocr_version: str = OCR_ENGINE_VERSION,
+    checkpoint_overlap: int = DEFAULT_CHECKPOINT_OVERLAP_PAGES,
+    force_overwrite_manual: bool = True,
 ) -> dict[str, Any]:
     """Download, Surya-2.5 re-OCR, dehyphenate, and bulk-replace one PDF book."""
     t0 = time.time()
@@ -94,13 +209,20 @@ async def backfill_single_book(
     )
 
     work_root.mkdir(parents=True, exist_ok=True)
-    tmp_dir = Path(tempfile.mkdtemp(prefix=f"backfill-{book_id}-", dir=str(work_root)))
+    # Clean up any legacy random-suffix temp dirs for this book
+    for stale_dir in work_root.glob(f"backfill-{book_id}-*"):
+        if stale_dir.is_dir():
+            shutil.rmtree(stale_dir, ignore_errors=True)
+
+    tmp_dir = work_root / f"backfill-{book_id}"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = tmp_dir / "checkpoint.jsonl"
+    completed = False
 
     prev_sigint = signal.getsignal(signal.SIGINT)
     prev_sigterm = signal.getsignal(signal.SIGTERM)
 
     def _cleanup_on_signal(signum, frame):
-        shutil.rmtree(tmp_dir, ignore_errors=True)
         raise KeyboardInterrupt(f"Backfill interrupted by signal {signum}")
 
     try:
@@ -111,11 +233,43 @@ async def backfill_single_book(
             pass
 
         pdf_path = tmp_dir / "book.pdf"
-        client.download_book_pdf(book_id, pdf_path)
+        need_download = True
+        if pdf_path.exists() and pdf_path.stat().st_size > 0:
+            try:
+                with fitz.open(pdf_path) as check_doc:
+                    if len(check_doc) > 0:
+                        need_download = False
+            except Exception:
+                need_download = True
+
+        if need_download:
+            part_pdf_path = tmp_dir / "book.pdf.part"
+            client.download_book_pdf(book_id, part_pdf_path)
+            if part_pdf_path.exists():
+                part_pdf_path.replace(pdf_path)
+
+        if not title and hasattr(client, "get_book"):
+            try:
+                book_meta = client.get_book(book_id) or {}
+                if isinstance(book_meta, dict):
+                    title = book_meta.get("title")
+            except Exception:
+                pass
         existing_pages = client.get_book_pages(book_id)
         existing_by_num = {
             int(p["pageNumber"]): p for p in existing_pages if "pageNumber" in p
         }
+
+        checkpoint_by_num = _load_page_checkpoint(
+            checkpoint_path, ocr_version, overlap_pages=checkpoint_overlap
+        )
+        if checkpoint_by_num:
+            logger.info(
+                "Resuming book=%s from local checkpoint (%d pages reused, overlap=%d)",
+                book_id,
+                len(checkpoint_by_num),
+                checkpoint_overlap,
+            )
 
         doc = fitz.open(pdf_path)
         total_pages = len(doc)
@@ -131,8 +285,11 @@ async def backfill_single_book(
             is_toc = bool(existing.get("isToc"))
             existing_text = existing.get("text") or ""
 
-            # 1. Skip page 1 cover unless marked as ToC
-            if page_number == 1 and not is_toc:
+            # 1. Skip page 1 cover or front-matter calligraphic inner-title pages unless marked as ToC
+            if not is_toc and (
+                page_number == 1
+                or is_title_cover_page(existing_text, title, page_number, is_toc=False)
+            ):
                 pages_by_num[page_number] = PageState(
                     page_number=page_number,
                     text=existing_text,
@@ -153,6 +310,25 @@ async def backfill_single_book(
                     status="skipped",
                     skipped=True,
                 )
+                return
+
+            # 3. Reuse checkpointed OCR result if available from an interrupted run
+            ckpt = checkpoint_by_num.get(page_number)
+            if ckpt is not None:
+                ended_hyphen = bool(ckpt.get("ended_with_hyphen", False))
+                pages_by_num[page_number] = PageState(
+                    page_number=page_number,
+                    text=ckpt["text"],
+                    is_toc=bool(ckpt.get("is_toc", is_toc)),
+                    confidence=1.0,
+                    status="ocrd",
+                    detected_page_number=ckpt.get("detected_page_number"),
+                    skipped=False,
+                    ended_with_hyphen=ended_hyphen,
+                )
+                fresh_page_numbers.add(page_number)
+                if ended_hyphen:
+                    hyphen_ended_pages.add(page_number)
                 return
 
             async with sem:
@@ -178,6 +354,17 @@ async def backfill_single_book(
                     fresh_page_numbers.add(page_number)
                     if res.ended_with_hyphen:
                         hyphen_ended_pages.add(page_number)
+                    _append_page_checkpoint(
+                        checkpoint_path,
+                        {
+                            "ocr_version": ocr_version,
+                            "page_number": page_number,
+                            "text": res.text,
+                            "is_toc": detected_toc,
+                            "detected_page_number": res.detected_page_number,
+                            "ended_with_hyphen": res.ended_with_hyphen,
+                        },
+                    )
                 except (
                     LowConfidenceOcrError,
                     TimeoutError,
@@ -210,21 +397,32 @@ async def backfill_single_book(
             hyphen_ended_pages=hyphen_ended_pages,
         )
 
-        replace_res = client.replace_book_ocr(
-            book_id, ordered_pages, ocr_version=ocr_version
-        )
-        elapsed_s = round(time.time() - t0, 2)
-
         skipped_count = sum(
             1 for p in ordered_pages if p.skipped and p.status != "failed"
         )
         failed_count = sum(1 for p in ordered_pages if p.status == "failed")
+
+        try:
+            replace_res = client.replace_book_ocr(
+                book_id,
+                ordered_pages,
+                ocr_version=ocr_version,
+                force_overwrite_manual=force_overwrite_manual,
+            )
+        except TypeError:
+            replace_res = client.replace_book_ocr(
+                book_id, ordered_pages, ocr_version=ocr_version
+            )
+        completed = failed_count == 0
+        elapsed_s = round(time.time() - t0, 2)
+
         audit_entry = {
             "book_id": book_id,
             "title": title,
             "ocr_version": ocr_version,
             "total_pages": total_pages,
             "ocrd_pages": len(fresh_page_numbers),
+            "resumed_pages": len(checkpoint_by_num),
             "skipped_pages": skipped_count,
             "failed_pages": failed_count,
             "dehyphenated_pairs": dehyphenated_pairs,
@@ -247,7 +445,8 @@ async def backfill_single_book(
             signal.signal(signal.SIGTERM, prev_sigterm)
         except ValueError:
             pass
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        if completed:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 async def run_backfill(
@@ -298,78 +497,79 @@ async def run_backfill(
     processed = 0
     seen_ids: set[str] = set()
 
-    while True:
-        if limit is not None and processed >= limit:
-            break
+    with prevent_macos_sleep():
+        while True:
+            if limit is not None and processed >= limit:
+                break
 
-        batch_limit = min(100, (limit - processed) if limit is not None else 100)
-        cand_resp = client.get_backfill_candidates(
-            ocr_version=ocr_version, limit=max(1, batch_limit)
-        )
-        pending_backlog = int(
-            cand_resp.get(
-                "activePipelineBookCount",
+            batch_limit = min(100, (limit - processed) if limit is not None else 100)
+            cand_resp = client.get_backfill_candidates(
+                ocr_version=ocr_version, limit=max(1, batch_limit)
+            )
+            pending_backlog = int(
                 cand_resp.get(
-                    "active_pipeline_book_count",
+                    "activePipelineBookCount",
                     cand_resp.get(
-                        "pendingIndexBooks", cand_resp.get("pending_index_books", 0)
+                        "active_pipeline_book_count",
+                        cand_resp.get(
+                            "pendingIndexBooks", cand_resp.get("pending_index_books", 0)
+                        ),
                     ),
-                ),
-            )
-            or 0
-        )
-        candidates = cand_resp.get("candidates") or []
-        remaining = [c for c in candidates if str(c.get("id")) not in seen_ids]
-
-        if not remaining:
-            break
-
-        if dry_run:
-            for c in remaining:
-                if limit is not None and len(results) >= limit:
-                    break
-                cid = str(c["id"])
-                seen_ids.add(cid)
-                entry = {
-                    "book_id": cid,
-                    "title": c.get("title"),
-                    "total_pages": c.get("totalPages") or c.get("total_pages"),
-                    "ocr_version": c.get("ocrVersion") or c.get("ocr_version"),
-                    "dry_run": True,
-                }
-                print(
-                    f"[DRY-RUN] Candidate #{len(results) + 1}: {cid} "
-                    f"({entry['title'] or '—'}, {entry['total_pages']} pages)"
                 )
-                results.append(entry)
-            break
-
-        if pending_backlog >= max_server_backlog:
-            logger.info(
-                "Server pending index backlog (%s) >= max_server_backlog (%s); sleeping %.1fs",
-                pending_backlog,
-                max_server_backlog,
-                poll_interval,
+                or 0
             )
-            await asyncio.sleep(poll_interval)
-            continue
+            candidates = cand_resp.get("candidates") or []
+            remaining = [c for c in candidates if str(c.get("id")) not in seen_ids]
 
-        target = remaining[0]
-        target_id = str(target["id"])
-        seen_ids.add(target_id)
+            if not remaining:
+                break
 
-        with acquire_surya_gpu_lock(work_root):
-            res = await backfill_single_book(
-                target_id,
-                client,
-                work_root,
-                title=target.get("title"),
-                engine=engine,
-                concurrency=concurrency,
-                audit_log_path=effective_audit_log,
-                ocr_version=ocr_version,
-            )
-            results.append(res)
-            processed += 1
+            if dry_run:
+                for c in remaining:
+                    if limit is not None and len(results) >= limit:
+                        break
+                    cid = str(c["id"])
+                    seen_ids.add(cid)
+                    entry = {
+                        "book_id": cid,
+                        "title": c.get("title"),
+                        "total_pages": c.get("totalPages") or c.get("total_pages"),
+                        "ocr_version": c.get("ocrVersion") or c.get("ocr_version"),
+                        "dry_run": True,
+                    }
+                    print(
+                        f"[DRY-RUN] Candidate #{len(results) + 1}: {cid} "
+                        f"({entry['title'] or '—'}, {entry['total_pages']} pages)"
+                    )
+                    results.append(entry)
+                break
+
+            if pending_backlog >= max_server_backlog:
+                logger.info(
+                    "Server pending index backlog (%s) >= max_server_backlog (%s); sleeping %.1fs",
+                    pending_backlog,
+                    max_server_backlog,
+                    poll_interval,
+                )
+                await asyncio.sleep(poll_interval)
+                continue
+
+            target = remaining[0]
+            target_id = str(target["id"])
+            seen_ids.add(target_id)
+
+            with acquire_surya_gpu_lock(work_root):
+                res = await backfill_single_book(
+                    target_id,
+                    client,
+                    work_root,
+                    title=target.get("title"),
+                    engine=engine,
+                    concurrency=concurrency,
+                    audit_log_path=effective_audit_log,
+                    ocr_version=ocr_version,
+                )
+                results.append(res)
+                processed += 1
 
     return results

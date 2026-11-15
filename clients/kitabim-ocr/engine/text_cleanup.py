@@ -829,3 +829,74 @@ def is_degenerate_ocr_output(text: str) -> bool:
         return False
     _, most_common_count = Counter(multi_char_words).most_common(1)[0]
     return most_common_count >= 20 and (most_common_count / len(alnum_words)) >= 0.2
+
+
+_SECTION_TITLE_STRIP_RE = re.compile(
+    r"^[\s#*_|«»\"'“”‘’()\[\]{}.,،؛:!؟?\-—–·•]+|[\s#*_|«»\"'“”‘’()\[\]{}.,،؛:!؟?\-—–·•]+$"
+)
+_COVER_MD_HEADING_RE = re.compile(r"^\s*#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+_COLOPHON_KEYWORDS = (
+    "مەسئۇل مۇھەررىر",
+    "مەسئۇل كوررېكتور",
+    "باسما زاۋۇتى",
+    "نەشر قىلدى",
+    "كىتابخانىسى تارقاتتى",
+    "تەرجىمە قىلغۇچىلار",
+)
+
+
+def normalize_section_title(title: str) -> str:
+    """Normalize a chapter or book title for deterministic matching."""
+    if not title:
+        return ""
+    cleaned = normalize_uyghur_chars(title)
+    cleaned = normalize_digits(cleaned)
+    cleaned = re.sub(r"^\s*#{1,6}\s*", "", cleaned)
+    cleaned = _SECTION_TITLE_STRIP_RE.sub("", cleaned)
+    cleaned = re.sub(r"[«»\"'“”‘’*_`]", "", cleaned)
+    cleaned = " ".join(cleaned.split()).lower()
+    return cleaned
+
+
+def is_title_cover_page(
+    text: str | None,
+    book_title: str | None = None,
+    page_number: int = 1,
+    *,
+    is_toc: bool = False,
+    max_front_matter_page: int = 8,
+) -> bool:
+    """Return True if a page is a front-matter cover or calligraphic inner-title page."""
+    if is_toc or not text:
+        return False
+    if page_number < 1 or page_number > max_front_matter_page:
+        return False
+
+    stripped_text = text.strip()
+    if not stripped_text or len(stripped_text) > 300:
+        return False
+
+    if not _COVER_MD_HEADING_RE.search(stripped_text):
+        return False
+
+    lines = [ln.strip() for ln in stripped_text.splitlines() if ln.strip()]
+    non_header_lines = [
+        re.sub(r"^\[(?:Header|Footer)\]\s*", "", ln).strip()
+        for ln in lines
+        if not _COVER_MD_HEADING_RE.match(ln)
+    ]
+    non_header_lines = [ln for ln in non_header_lines if ln]
+    max_line_len = max((len(ln) for ln in non_header_lines), default=0)
+    if max_line_len > 90:
+        return False
+    if any(
+        len(ln) >= 60 and ln.endswith((".", "۔", "؟", "!")) for ln in non_header_lines
+    ):
+        return False
+
+    if len(stripped_text) > 220 and any(
+        kw in stripped_text for kw in _COLOPHON_KEYWORDS
+    ):
+        return False
+
+    return True

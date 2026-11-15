@@ -350,6 +350,94 @@ async def test_bulk_replace_pages_preserves_manual_edits_unless_forced():
 
 
 @pytest.mark.asyncio
+async def test_bulk_replace_pages_ignores_system_updated_by_and_preserves_inner_title_cover():
+    setup_paths()
+    from app.db.models import Page
+    from app.db.repositories.pages_repository import PagesRepository
+
+    mock_session = AsyncMock()
+    repo = PagesRepository(mock_session)
+
+    # Page 1 is an outer cover with updated_by=None
+    outer_cover_page = Page(
+        id=19,
+        book_id="b1",
+        page_number=1,
+        text="مۇقاۋا تېكىستى",
+        is_toc=False,
+        detected_page_number=None,
+        updated_by=None,
+        status="indexed",
+        ocr_milestone="succeeded",
+        spell_check_milestone="succeeded",
+    )
+    # Page 2 is an inner calligraphy title page with system updated_by='batch_finalizer'
+    inner_cover_page = Page(
+        id=20,
+        book_id="b1",
+        page_number=2,
+        text="غۇلام ئۆمەر\n\n# باياۋاندىكى گۈلخان\n\n(تارىخىي رومان)\n\nشىنجاڭ خەلق نەشرىياتى",
+        is_toc=False,
+        detected_page_number=None,
+        updated_by="batch_finalizer",
+        status="indexed",
+        ocr_milestone="succeeded",
+        spell_check_milestone="succeeded",
+    )
+    # Page 3 is a formatted pipe-table ToC page with updated_by=None
+    pipe_toc_page = Page(
+        id=21,
+        book_id="b1",
+        page_number=3,
+        text="## مۇندەرىجە\n\n| بىرىنچى باب | 1 |\n| ئىككىنچى باب | 15 |",
+        is_toc=True,
+        detected_page_number=None,
+        updated_by=None,
+        status="indexed",
+        ocr_milestone="succeeded",
+        spell_check_milestone="succeeded",
+    )
+    # Page 4 is a normal body page with system updated_by='batch_finalizer'
+    body_page = Page(
+        id=22,
+        book_id="b1",
+        page_number=4,
+        text="كونا ئابزاس تېكىستى.",
+        is_toc=False,
+        detected_page_number=1,
+        updated_by="batch_finalizer",
+        status="indexed",
+        ocr_milestone="succeeded",
+        spell_check_milestone="succeeded",
+    )
+    repo.find_by_book = AsyncMock(
+        return_value=[outer_cover_page, inner_cover_page, pipe_toc_page, body_page]
+    )
+
+    payload = [
+        {"page_number": 1, "text": "خاتا OCR 1", "detected_page_number": None},
+        {"page_number": 2, "text": "خاتا OCR 2", "detected_page_number": None},
+        {"page_number": 3, "text": "خاتا مۇندەرىجە", "detected_page_number": None},
+        {"page_number": 4, "text": "يېڭى سۇريا تېكىستى.", "detected_page_number": 1},
+    ]
+
+    updated, unchanged = await repo.bulk_replace_pages(
+        "b1",
+        payload,
+        reset_spell_check=True,
+        force_overwrite_manual=False,
+        book_title="باياۋاندىكى گۈلخان",
+    )
+    # Pages 1 (outer cover), 2 (inner cover), and 3 (formatted pipe ToC) are all preserved;
+    # only body page 4 is updated despite having updated_by='batch_finalizer'!
+    assert updated == 1
+    assert unchanged == 3
+    assert outer_cover_page.text == "مۇقاۋا تېكىستى"
+    assert "# باياۋاندىكى گۈلخان" in inner_cover_page.text
+    assert "| بىرىنچى باب | 1 |" in pipe_toc_page.text
+
+
+@pytest.mark.asyncio
 async def test_reprocess_chunking_and_embedding_reset_retry_counters():
     setup_paths()
     from api.endpoints.books_router import reprocess_chunking, reprocess_embedding

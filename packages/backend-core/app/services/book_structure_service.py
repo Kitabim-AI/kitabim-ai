@@ -46,11 +46,21 @@ from app.utils.text import (
 logger = logging.getLogger(__name__)
 
 # Uyghur structural chapter/division headings (Tier 1)
+_UYGHUR_ORDINAL_PREFIX_RE = (
+    r"(?:"
+    r"(?:(?:ئون|يىگىرمە|ئوتتۇز|قىرىق|ئەللىك|ئاتمىش|يەتمىش|سەكسەن|توقسان|يۈز)\s+)?"
+    r"(?:بىرىنچى|ئىككىنچى|ئۈچىنچى|تۆتىنچى|بەشىنچى|ئالتىنچى|يەتتىنچى|سەككىزىنچى|توققۇزىنچى)"
+    r"|"
+    r"(?:ئونىنچى|يىگىرمىنچى|ئوتتۇزىنچى|قىرىقىنچى|ئەللىكىنچى|ئاتمىشىنچى|يەتمىشىنچى|سەكسىنىنچى|توقسىنىنچى|يۈزىنچى)"
+    r"|"
+    r"\d+\s*-\s*"
+    r")"
+)
 _STRUCTURAL_CHAPTER_RE = re.compile(
-    r"""^\s*(?:#{1,3}\s*)?(?:
+    rf"""^\s*(?:#{{1,3}}\s*)?(?:
         (?:[0-9\u0660-\u0669\u06F0-\u06F9IVXLCDM]+\s*[-–—.]*\s*)?(?:باب|قىسىم|بۆلۈم|پەسىل)\b
         |
-        (?:بىرىنچى|ئىككىنچى|ئۈچىنچى|تۆتىنچى|بەشىنچى|ئالتىنچى|يەتتىنچى|سەككىزىنچى|توققۇزىنچى|ئونىنچى|\d+\s*-\s*)\s*(?:باب|قىسىم|بۆلۈم|پەسىل)\b
+        {_UYGHUR_ORDINAL_PREFIX_RE}\s*(?:باب|قىسىم|بۆلۈم|پەسىل)\b
         |
         (?:مۇقەددىمە|خاتىمە|كىرىش\s+سۆز|سۆز\s+بېشى|ئاخىرقى\s+سۆز|ئاپتوردىن|تۈزگۈچىدىن|نەشرىياتتىن)\s*$
     )""",
@@ -58,17 +68,23 @@ _STRUCTURAL_CHAPTER_RE = re.compile(
 )
 
 # Noise patterns that must never be promoted to headings
-_DIVIDER_NOISE_RE = re.compile(r"^\s*(?:[*•·\-—–=~_]\s*){3,}\s*$")
+_DIVIDER_NOISE_RE = re.compile(r"^\s*(?:[*•·\-—–=~_※✦✧❖◆◇▪▫×xX]\s*){2,}\s*$")
 _STANDALONE_YEAR_OR_DATE_RE = re.compile(
     r"""^\s*(?:#{1,6}\s*)?(?:
         (?:1[0-9]{3}|20[0-2][0-9])\s*(?:-\s*يىل(?:ى)?.*)?
         |
         [\u0600-\u06FF\w\s،,()-]{0,35}\b(?:1[89][0-9]{2}|20[0-2][0-9])\s*-\s*يىل(?:ى)?[\u0600-\u06FF\w\s،,.\-()0-9]*
+        |
+        [\u0600-\u06FF\w\s،,()-]{1,35}\s*[-—–]\s*(?:1[89][0-9]{2}|20[0-2][0-9])
     )\s*$""",
     re.VERBOSE,
 )
 _BRACKET_META_RE = re.compile(
     r"^\s*(?:#{1,6}\s*)?(?:\([^()\n]{1,45}\)|\[[^\[\]\n]{1,45}\])\s*$"
+)
+_PUBLISHER_OR_COLOPHON_LINE_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:.*?\bنەشرىياتى|ISBN\b|书号|定价|印张|字数).*$",
+    re.IGNORECASE,
 )
 _MARKDOWN_HEADING_RE = re.compile(r"^\s*(#{1,6})\s+(.+?)\s*$")
 
@@ -89,9 +105,7 @@ def is_structural_chapter_title(title: str) -> bool:
     if not title:
         return False
     cleaned = normalize_digits(normalize_uyghur_chars(title)).strip()
-    if cleaned.endswith((".", "۔", "؟", "!", "؛")) or re.search(
-        r"[\.۔؟!]\s+\S", cleaned
-    ):
+    if cleaned.endswith((".", "۔", "؛")) or re.search(r"[\.۔؟!]\s+\S", cleaned):
         return False
     return bool(_STRUCTURAL_CHAPTER_RE.match(cleaned))
 
@@ -100,7 +114,7 @@ def _is_heading_noise(
     text: str, repeated_running_headers: Optional[set[str]] = None
 ) -> bool:
     """Return True if a candidate heading is actually a divider, date/location sign-off,
-    isolated page number, bracketed stage note, or repeated running header."""
+    isolated page number, bracketed stage note, publisher/colophon line, or repeated running header."""
     stripped = re.sub(r"^\s*#{1,6}\s*", "", text or "").strip()
     if not stripped:
         return True
@@ -112,6 +126,8 @@ def _is_heading_noise(
     if _STANDALONE_YEAR_OR_DATE_RE.match(ascii_stripped):
         return True
     if _BRACKET_META_RE.match(stripped):
+        return True
+    if _PUBLISHER_OR_COLOPHON_LINE_RE.match(stripped):
         return True
     norm = normalize_section_title(stripped)
     if not norm:
@@ -180,7 +196,7 @@ def parse_page_blocks(
     units = _split_raw_chunks_preserving_headings_and_footnotes(normalized_page)
     blocks: List[PageBlock] = []
 
-    for unit in units:
+    for unit_idx, unit in enumerate(units):
         stripped = unit.strip()
         if not stripped:
             continue
@@ -190,6 +206,7 @@ def parse_page_blocks(
             continue
 
         idx = len(blocks)
+        is_last_unit = unit_idx == len(units) - 1
 
         # 1. Explicit OCR header/footer markers or isolated page numbers -> meta_noise
         if (
@@ -258,7 +275,13 @@ def parse_page_blocks(
                 )
                 continue
             # Long punctuated sentence accidentally prefixed with # by OCR -> prose
-            if len(heading_body) > 110 or re.search(r"[\.؟!]\s+\S", heading_body):
+            # Allow numbered section prefixes like '1. ' or '12. ' at the start of a heading.
+            body_after_num = re.sub(
+                r"^\s*[0-9\u0660-\u0669\u06F0-\u06F9IVXLCDM]+\s*\.\s*",
+                "",
+                heading_body,
+            )
+            if len(heading_body) > 110 or re.search(r"[\.؟!]\s+\S", body_after_num):
                 blocks.append(
                     PageBlock(
                         block_index=idx,
@@ -308,15 +331,19 @@ def parse_page_blocks(
                     )
                 )
                 continue
-            # Short standalone unpunctuated line (e.g. poem or story title without # prefix)
+            # Short standalone unpunctuated line (e.g. poem or story title without # prefix).
+            # Exclude dialogue attributions ('A: ...', '**A:** ...'), mid-line clauses
+            # with commas/semicolons/colons, and trailing bottom-of-page incomplete prose
+            # sentences that wrap onto the next page.
             if (
                 2 <= len(line) <= 65
                 and len(line.split()) <= 8
+                and not (is_last_unit and len(units) >= 2)
                 and not line.endswith(
                     (".", "۔", "؟", "!", ":", "؛", "،", ",", "—", "-")
                 )
-                and not line.startswith(("-", "—", "–", "«", '"'))
-                and not re.search(r"[\.؟!]\s+\S", line)
+                and not line.startswith(("-", "—", "–", "«", '"', "…", "."))
+                and not re.search(r"[\.؟!،,؛:;：]\s+\S", line)
             ):
                 blocks.append(
                     PageBlock(
@@ -852,7 +879,7 @@ def extract_book_sections(
                 }
             )
 
-        # Attach child `work` sections inside chapter-only ToCs when level-2 headings exist in-page
+        # Attach child `work` sections inside chapter-only ToCs when explicit Markdown level-2 headings exist in-page
         if raw_sections and all(
             s["level"] == 1 and s["section_type"] == "chapter" for s in raw_sections
         ):
@@ -864,14 +891,26 @@ def extract_book_sections(
             for pnum, p_blocks in blocks_by_page.items():
                 if pnum < first_ch_page:
                     continue
+                page_toc_norms = [
+                    s["normalized_title"]
+                    for s in raw_sections
+                    if int(s["start_page"]) == pnum and s.get("normalized_title")
+                ]
                 for blk in p_blocks:
                     if (
                         blk.kind == "heading"
                         and blk.heading_level == 2
+                        and _MARKDOWN_HEADING_RE.match(blk.raw_text)
                         and (pnum, blk.block_index) not in matched_keys
                     ):
                         clean_h = re.sub(r"^\s*#{1,6}\s*", "", blk.raw_text).strip()
                         if clean_h and blk.normalized_text:
+                            # Skip subtitle line that is already part of the chapter's ToC title on the same page
+                            if any(
+                                blk.normalized_text in ch_norm
+                                for ch_norm in page_toc_norms
+                            ):
+                                continue
                             raw_sections.append(
                                 {
                                     "level": 2,
@@ -890,6 +929,11 @@ def extract_book_sections(
 
     # ── Mode B: Header-Driven Mode (ToC-less books) ───────────────────────────
     if not raw_sections:
+        has_markdown_headings = any(
+            blk.kind == "heading" and _MARKDOWN_HEADING_RE.match(blk.raw_text)
+            for p_blocks in blocks_by_page.values()
+            for blk in p_blocks
+        )
         has_level1_chapters = any(
             blk.kind == "heading" and blk.heading_level == 1
             for p_blocks in blocks_by_page.values()
@@ -898,6 +942,12 @@ def extract_book_sections(
         for pnum, p_blocks in blocks_by_page.items():
             for blk in p_blocks:
                 if blk.kind != "heading" or not blk.normalized_text:
+                    continue
+                if (
+                    has_markdown_headings
+                    and blk.heading_level == 2
+                    and not _MARKDOWN_HEADING_RE.match(blk.raw_text)
+                ):
                     continue
                 clean_h = re.sub(r"^\s*#{1,6}\s*", "", blk.raw_text).strip()
                 if not clean_h:

@@ -1,12 +1,24 @@
 import { Book } from '@shared/types';
-import { BookOpen, BookOpenCheck, Cuboid, FileText, Image, ListTree, Loader2, Network, RotateCcw, ScanText, Scissors, Trash2 } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Copy, Cuboid, FileText, Image, ListTree, Loader2, Network, RotateCcw, ScanText, Scissors, Trash2 } from 'lucide-react';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { REPROCESS_STEP } from '../../constants/milestones';
 import { useAppContext } from '../../context/AppContext';
-import { authFetch } from '../../services/authService';
 import { useIsAdmin } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
+
+function legacyCopy(text: string): boolean {
+  const field = Object.assign(document.createElement('textarea'), { value: text });
+  field.setAttribute('readonly', '');
+  field.style.cssText = 'position:fixed;inset-block-start:0;opacity:0';
+  document.body.append(field);
+  field.select();
+  try {
+    return document.execCommand('copy');
+  } finally {
+    field.remove();
+  }
+}
 
 interface ActionMenuProps {
   book: Book;
@@ -21,6 +33,15 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
   const { t } = useI18n();
   const isAdmin = useIsAdmin();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleCopyBookId = async () => {
+    try {
+      await navigator.clipboard.writeText(book.id);
+    } catch {
+      legacyCopy(book.id);
+    }
+    close();
+  };
 
   const reprocessingStep = bookActions.reprocessingBooks.get(book.id);
 
@@ -61,13 +82,27 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
 
       <div className="px-2 space-y-0.5">
         <button
+          type="button"
           onClick={() => { bookActions.openReader(book, () => { }, () => { }, () => { }); close(); }}
           disabled={book.pipelineStep === null && book.status === 'pending'}
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[#1a1a1a] dark:text-slate-100 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
         >
-          <BookOpen size={16} className="text-slate-500" />
+          <BookOpen size={16} className="text-slate-500" aria-hidden="true" />
           <span className="flex-1 text-right">{t('admin.table.view')}</span>
         </button>
+
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={handleCopyBookId}
+            className="w-full min-h-6 min-w-6 flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 rounded-xl transition-all active:scale-[0.98]"
+          >
+            <Copy size={16} className="text-slate-500 shrink-0" aria-hidden="true" />
+            <span className="flex-1 text-right">
+              {t('admin.table.copyBookId') || 'كىتاب ID نى كۆچۈرۈش'}
+            </span>
+          </button>
+        )}
 
         <div className="h-px bg-slate-100/60 dark:bg-slate-800 my-1.5 mx-2" />
 

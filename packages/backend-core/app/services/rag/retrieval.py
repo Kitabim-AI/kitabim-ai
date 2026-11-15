@@ -384,6 +384,11 @@ async def vector_search(
                     "author": chunk.get("author") or None,
                     "book_id": chunk.get("book_id"),
                     **(
+                        {"chunk_index": chunk["chunk_index"]}
+                        if "chunk_index" in chunk
+                        else {}
+                    ),
+                    **(
                         {"end_page_number": chunk["end_page_number"]}
                         if "end_page_number" in chunk
                         else {}

@@ -34,9 +34,26 @@ class KitabimClient:
         self.config_path = config_path
         self.provider = provider
         self.headless = headless
+        self._explicit_app_id = app_id
         self._app_id = (
             app_id if app_id is not None else (os.environ.get("SECURITY_APP_ID") or "")
         )
+
+    def _current_app_id(self) -> str:
+        if self._explicit_app_id is not None:
+            return self._explicit_app_id
+        dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+        if dotenv_path.exists():
+            try:
+                from dotenv import dotenv_values
+
+                vals = dotenv_values(dotenv_path)
+                if vals.get("SECURITY_APP_ID"):
+                    self._app_id = str(vals["SECURITY_APP_ID"]).strip()
+                    return self._app_id
+            except Exception:
+                pass
+        return os.environ.get("SECURITY_APP_ID") or self._app_id
 
     def _headers(self) -> dict:
         if self.headless:
@@ -46,8 +63,9 @@ class KitabimClient:
         else:
             token = get_valid_token(self.base_url, self.config_path, self.provider)
         headers = {"Authorization": f"Bearer {token}"}
-        if self._app_id:
-            headers["X-Kitabim-App-Id"] = self._app_id
+        app_id = self._current_app_id()
+        if app_id:
+            headers["X-Kitabim-App-Id"] = app_id
         return headers
 
     def _check(self, response: httpx.Response) -> dict:
@@ -195,9 +213,12 @@ class KitabimClient:
         pages: list["PageState"],
         ocr_version: str = "surya-2.5-v2",
         request_id: str | None = None,
+        *,
+        force_overwrite_manual: bool = True,
     ) -> dict:
         payload = {
             "ocrVersion": ocr_version,
+            "forceOverwriteManual": bool(force_overwrite_manual),
             "pages": [
                 {
                     "pageNumber": p.page_number,

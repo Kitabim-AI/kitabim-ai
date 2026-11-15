@@ -49,6 +49,19 @@ class ShortWorkMatch:
     other_matches: Tuple["ShortWorkMatch", ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class SectionChunksMatch:
+    book_id: str
+    section_id: int
+    title: str
+    start_page: int
+    end_page: int
+    chunks: Tuple[dict, ...] = field(default_factory=tuple)
+    book_title: Optional[str] = None
+    book_author: Optional[str] = None
+    book_volume: Optional[int] = None
+
+
 def _normalize_title(title: str) -> str:
     return normalize_uyghur_chars(title).strip()
 
@@ -354,4 +367,101 @@ async def resolve_short_work(
         book_author=book.author,
         content_start_page=content_start_page,
         content_end_page=content_end_page,
+    )
+
+
+async def resolve_section_chunks(
+    session: AsyncSession,
+    title: str,
+    book_id: Optional[str] = None,
+    *,
+    candidate_book_ids: Optional[List[str]] = None,
+    question: Optional[str] = None,
+    limit: int = 25,
+) -> Optional[SectionChunksMatch]:
+    """Resolve a named `book_sections` entry (chapter or work) to its ordered
+    section chunks so analytical/summary questions about a named section can
+    synthesize an answer across the whole section rather than falling through
+    to a literal exact-phrase search on the heading text.
+    """
+    from app.db.repositories.chunks_repository import ChunksRepository
+
+    books_repo = BooksRepository(session)
+    sections_repo = BookSectionsRepository(session)
+    chunks_repo = ChunksRepository(session)
+    norm_title = normalize_section_title(title)
+    if not norm_title:
+        return None
+
+    scope_book_ids: Optional[List[str]] = (
+        [book_id]
+        if book_id
+        else (list(candidate_book_ids) if candidate_book_ids else None)
+    )
+    scoped_from_question = False
+    if scope_book_ids is None and question:
+        try:
+            author_books = await books_repo.find_books_by_author_in_question(question)
+            if isinstance(author_books, list) and author_books:
+                scope_book_ids = [
+                    str(b.id) for b in author_books if getattr(b, "id", None)
+                ]
+                scoped_from_question = bool(scope_book_ids)
+        except Exception:
+            pass
+
+    try:
+        raw_hits = await sections_repo.search_by_normalized_title(
+            norm_title,
+            book_ids=scope_book_ids,
+            limit=_MAX_UNFILTERED_SHORT_WORK_MATCHES + 5,
+        )
+        section_hits = (
+            raw_hits
+            if isinstance(raw_hits, list) and all(isinstance(r, dict) for r in raw_hits)
+            else []
+        )
+    except Exception:
+        section_hits = []
+
+    if not section_hits:
+        return None
+
+    is_unfiltered_global = (
+        book_id is None and not candidate_book_ids and not scoped_from_question
+    )
+    if is_unfiltered_global and len(section_hits) > _MAX_UNFILTERED_SHORT_WORK_MATCHES:
+        return None
+
+    top = section_hits[0]
+    section_id = top.get("section_id") or top.get("id")
+    if section_id is None:
+        return None
+
+    top_book_id = str(top["book_id"])
+    top_start = int(top["start_page"])
+    top_end = int(top.get("end_page") or top_start)
+    if top_end < top_start:
+        top_end = top_start
+
+    try:
+        chunks = await chunks_repo.find_by_section_ids(
+            [int(section_id)], limit=int(limit)
+        )
+    except Exception:
+        chunks = []
+
+    if not isinstance(chunks, list) or not chunks:
+        return None
+
+    return SectionChunksMatch(
+        book_id=top_book_id,
+        section_id=int(section_id),
+        title=str(top.get("title") or title),
+        start_page=top_start,
+        end_page=top_end,
+        chunks=tuple(chunks),
+        book_title=top.get("book_title"),
+        book_author=top.get("book_author"),
+        book_volume=top.get("book_volume"),
     )

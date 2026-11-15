@@ -550,3 +550,112 @@ async def test_resolve_short_work_disambiguates_multiple_matches_by_author_and_p
     assert len(result.other_matches) == 1
     assert result.other_matches[0].book_id == "b1"
     assert result.other_matches[0].content_start_page == "5"
+
+
+@pytest.mark.asyncio
+async def test_resolve_section_chunks_returns_ordered_chunks_for_long_chapter():
+    from app.db.repositories.chunks_repository import ChunksRepository
+    from app.services.rag.toc_lookup_service import resolve_section_chunks
+
+    session = AsyncMock()
+    sec_dict = {
+        "id": 12,
+        "book_id": "dbd310c05e85",
+        "section_index": 12,
+        "level": 1,
+        "section_type": "chapter",
+        "title": "ئالدانغان كېيىك",
+        "normalized_title": "ئالدانغان كېيىك",
+        "source": "toc_matched",
+        "toc_printed_page": 173,
+        "start_page": 180,
+        "end_page": 199,
+        "start_block_index": 0,
+        "end_block_index": None,
+        "book_title": "لېيىغان بۇلاق",
+        "book_author": "جالالىدىن بەھرام",
+    }
+
+    fake_chunks = [
+        {
+            "book_id": "dbd310c05e85",
+            "page_number": 180,
+            "end_page_number": 181,
+            "chunk_index": 243,
+            "text": "ئالدانغان كېيىك\n\nمەۋسۇملۇق ئىمتىھان ئاخىرلىشىپ...",
+            "section_id": 12,
+            "section_title": "ئالدانغان كېيىك",
+            "title": "لېيىغان بۇلاق",
+            "volume": 1,
+            "author": "جالالىدىن بەھرام",
+            "content_page_number": "173",
+            "end_content_page_number": "174",
+            "score": 1.0,
+        },
+        {
+            "book_id": "dbd310c05e85",
+            "page_number": 181,
+            "end_page_number": 181,
+            "chunk_index": 244,
+            "text": "ھېكمەت مەكتەپكە قايتىپ كەلگەندىن كېيىن...",
+            "section_id": 12,
+            "section_title": "ئالدانغان كېيىك",
+            "title": "لېيىغان بۇلاق",
+            "volume": 1,
+            "author": "جالالىدىن بەھرام",
+            "content_page_number": "174",
+            "end_content_page_number": "174",
+            "score": 1.0,
+        },
+        {
+            "book_id": "dbd310c05e85",
+            "page_number": 181,
+            "end_page_number": 182,
+            "chunk_index": 245,
+            "text": "ئۇ كېيىنچە بۇ ۋەقەنىڭ تەپسىلاتىنى چۈشەندى...",
+            "section_id": 12,
+            "section_title": "ئالدانغان كېيىك",
+            "title": "لېيىغان بۇلاق",
+            "volume": 1,
+            "author": "جالالىدىن بەھرام",
+            "content_page_number": "174",
+            "end_content_page_number": "175",
+            "score": 1.0,
+        },
+    ]
+
+    async def fake_search_by_normalized_title(
+        self, norm_title, book_ids=None, limit=25
+    ):
+        return [sec_dict]
+
+    async def fake_find_by_section_ids(self, section_ids, limit=25):
+        assert section_ids == [12]
+        return fake_chunks
+
+    with (
+        patch.object(
+            BookSectionsRepository,
+            "search_by_normalized_title",
+            fake_search_by_normalized_title,
+        ),
+        patch.object(
+            ChunksRepository,
+            "find_by_section_ids",
+            fake_find_by_section_ids,
+        ),
+    ):
+        result = await resolve_section_chunks(
+            session,
+            "ئالدانغان كېيىك",
+            book_id="dbd310c05e85",
+            question="بۇ كىتابنىڭ «ئالدانغان كېيىك» ناملىق بابىدا قانداق ئاساسى مەزمۇن بار؟",
+        )
+
+    assert result is not None
+    assert result.book_id == "dbd310c05e85"
+    assert result.section_id == 12
+    assert result.start_page == 180
+    assert result.end_page == 199
+    assert len(result.chunks) == 3
+    assert [c["chunk_index"] for c in result.chunks] == [243, 244, 245]

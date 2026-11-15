@@ -164,6 +164,11 @@ const renderInline = (text: string, onReferenceClick?: (bookId: string, pageNums
       );
     }
 
+    const isSafeUrl = /^(https?:\/\/|mailto:|\/|#)/i.test(url.trim());
+    if (!isSafeUrl) {
+      return <span key={`link-${key}`}>{text}</span>;
+    }
+
     return (
       <a
         key={`link-${key}`}

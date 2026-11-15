@@ -5,6 +5,7 @@ from __future__ import annotations
 import html as html_module
 import json
 import logging
+import secrets
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
@@ -181,7 +182,17 @@ async def oauth_login(
     else:
         auth_url = oauth_provider.get_auth_url(state_jwt, oauth_state.nonce)
 
-    return RedirectResponse(url=auth_url)
+    resp = RedirectResponse(url=auth_url)
+    resp.set_cookie(
+        key="oauth_state_nonce",
+        value=oauth_state.nonce,
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookie_secure,
+        path="/api/auth",
+    )
+    return resp
 
 
 @router.get("/{provider}/callback")
@@ -229,13 +240,38 @@ async def oauth_callback(
             t("errors.missing_oauth_params"), error_code="oauth_login_failed"
         )
 
-    # Validate state by decoding the signed JWT (no cookie needed).
+    # Validate state by decoding the signed JWT.
     # The JWT contains state, nonce, code_verifier, and redirect_uri.
     saved_state = decode_oauth_state_token(state)
     if not saved_state:
         return _error_response(
             t("errors.invalid_oauth_state"), error_code="oauth_login_failed"
         )
+
+    # Verify browser-bound cookie nonce when present to prevent Login CSRF,
+    # and enforce single-use state consumption in Redis.
+    cookie_nonce = (
+        request.cookies.get("oauth_state_nonce")
+        if hasattr(request, "cookies") and isinstance(request.cookies, dict)
+        else None
+    )
+    if cookie_nonce:
+        if not secrets.compare_digest(cookie_nonce, saved_state.nonce):
+            return _error_response(
+                t("errors.invalid_oauth_state"),
+                error_code="oauth_login_failed",
+                redirect_uri=saved_state.redirect_uri,
+            )
+        from app.services.cache_service import cache_service
+
+        state_replay_key = f"oauth_state_used:{saved_state.state}"
+        if await cache_service.get(state_replay_key):
+            return _error_response(
+                t("errors.invalid_oauth_state"),
+                error_code="oauth_login_failed",
+                redirect_uri=saved_state.redirect_uri,
+            )
+        await cache_service.set(state_replay_key, True, ttl=600)
 
     try:
         # Exchange code for tokens (with PKCE code_verifier for Twitter)

@@ -235,6 +235,10 @@ class Settings:
     )
     security_app_id: str = os.getenv("SECURITY_APP_ID", "")
     operator_token: str = os.getenv("OPERATOR_TOKEN", "")
+    trusted_proxy_hosts: str = os.getenv(
+        "TRUSTED_PROXY_HOSTS",
+        "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+    )
 
     # Providers
     embedding_provider: str = os.getenv("EMBEDDING_PROVIDER", "gemini")

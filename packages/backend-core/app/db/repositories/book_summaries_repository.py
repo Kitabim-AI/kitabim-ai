@@ -34,7 +34,7 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
 
         embedding_str = str(query_embedding)
         limit_clause = "LIMIT :limit" if limit is not None else ""
-        join_clause = "JOIN books b ON s.book_id = b.id" if categories else ""
+        join_clause = "JOIN books b ON s.book_id = b.id"
         cat_filter = (
             "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
@@ -49,6 +49,8 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
                 FROM book_summaries s
                 {join_clause}
                 WHERE s.book_id = ANY(:book_ids)
+                  AND b.status = 'ready'
+                  AND (b.visibility = 'public' OR b.visibility IS NULL)
                   {cat_filter}
                   AND 1 - (s.embedding <=> CAST(:embedding AS vector(3072))) > :threshold
                 ORDER BY similarity DESC
@@ -67,6 +69,8 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
                 FROM book_summaries s
                 {join_clause}
                 WHERE 1 - (s.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
+                  AND b.status = 'ready'
+                  AND (b.visibility = 'public' OR b.visibility IS NULL)
                   {cat_filter}
                 ORDER BY similarity DESC
                 {limit_clause}

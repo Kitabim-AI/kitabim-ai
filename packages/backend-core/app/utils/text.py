@@ -577,15 +577,28 @@ _TOC_PAGE_NUM_TOKEN_PAT = (
 _TOC_PIPE_ENTRY_RE = re.compile(
     rf"^\|\s*(.+?)\s*\|\s*{_TOC_PAGE_NUM_TOKEN_PAT}\s*\|?\s*$"
 )
+_TOC_PIPE_REVERSE_ENTRY_RE = re.compile(
+    rf"^\|\s*{_TOC_PAGE_NUM_TOKEN_PAT}\s*\|\s*(.+?)\s*\|?\s*$"
+)
 _TOC_DOT_LEADER_ENTRY_RE = re.compile(
-    r"^(.+?)\s*(?:(?:[.\-_·•∙⋅․﹒｡]\s*){3,}|(?:[.\-_·•∙⋅․﹒｡…]\s*){2,})\s*"
+    r"^(?:[*•·\-—–]\s*)?(.+?)\s*(?:(?:[.\-_·•∙⋅․﹒｡]\s*){3,}|(?:[.\-_·•∙⋅․﹒｡…]\s*){2,})\s*"
     r"([^.\-_·•∙⋅․﹒｡…\n]{0,45}?)\s*"
     rf"{_TOC_PAGE_NUM_TOKEN_PAT}\s*$"
 )
 _TOC_ELLIPSIS_ENTRY_RE = re.compile(
-    r"^(.+?)\s*…{2,}\s*"
+    r"^(?:[*•·\-—–]\s*)?(.+?)\s*…{2,}\s*"
     r"([^.\-_·•∙⋅․﹒｡…\n]{0,45}?)\s*"
     rf"{_TOC_PAGE_NUM_TOKEN_PAT}\s*$"
+)
+_TOC_REVERSE_DOT_LEADER_ENTRY_RE = re.compile(
+    rf"^(?:[*•·\-—–]\s*)?{_TOC_PAGE_NUM_TOKEN_PAT}\s*"
+    r"(?:(?:[.\-_·•∙⋅․﹒｡]\s*){3,}|(?:[.\-_·•∙⋅․﹒｡…]\s*){2,}|…{2,})\s*(.+?)\s*$"
+)
+_TOC_BULLET_LEADING_NUM_RE = re.compile(
+    rf"^(?:[*•·\-—–]\s+){_TOC_PAGE_NUM_TOKEN_PAT}\s+(.+?)\s*$"
+)
+_TOC_TRAILING_PAREN_NUM_RE = re.compile(
+    r"^(?:[*•·\-—–]\s*)?(.+?)\s+[\(\[\{（［]\s*([0-9\u0660-\u0669\u06F0-\u06F9]{1,4})\s*[\)\]\}）］]\s*$"
 )
 
 
@@ -593,11 +606,12 @@ def parse_toc_entries(text: str) -> list[tuple[str, int]]:
     """Extract (title, printed_page_number) pairs from a page already
     identified as a table of contents (see ``is_toc_page``).
 
-    Supports the same two entry shapes ``is_toc_page`` recognizes: modern
-    pipe tables ("| Title | 123 |") and old-style dot leaders
-    ("Title ....... 123" or "Title ....... Author ( 123 )"). Any line matching
-    neither shape -- the "مۇندەرىجە" heading itself, a pipe-table
-    header/separator row with no trailing page number, blank lines -- is
+    Supports the same entry shapes ``is_toc_page`` and RTL Uyghur ToCs use:
+    - Pipe tables: ``| Title | 123 |`` or ``| 123 | Title |``
+    - Dot leaders: ``Title ....... 123`` or ``* 123 ....... Title``
+    - Bulleted/parenthesized ToC entries: ``* 123 Title`` or ``* Title (123)``
+    Any line matching none of those shapes -- the "مۇندەرىجە" heading itself,
+    a pipe-table header/separator row with no page number, blank lines -- is
     skipped rather than raising. Duplicate titles are not deduplicated; a title
     legitimately appearing twice (e.g. two poems both called "غەزەل") returns
     two entries, and disambiguating between them is the caller's job.
@@ -611,20 +625,44 @@ def parse_toc_entries(text: str) -> list[tuple[str, int]]:
         if not line:
             continue
 
+        title = ""
+        page_str = ""
+
         pipe_match = _TOC_PIPE_ENTRY_RE.match(line)
         if pipe_match:
             title = pipe_match.group(1).strip().strip("|").strip()
             page_str = normalize_digits(pipe_match.group(2).strip())
         else:
-            leader_match = _TOC_DOT_LEADER_ENTRY_RE.match(
-                line
-            ) or _TOC_ELLIPSIS_ENTRY_RE.match(line)
-            if not leader_match:
-                continue
-            head = leader_match.group(1).strip().strip("|").strip()
-            after_dots = leader_match.group(2).strip()
-            title = f"{head} {after_dots}".strip() if after_dots else head
-            page_str = normalize_digits(leader_match.group(3).strip())
+            rev_pipe_match = _TOC_PIPE_REVERSE_ENTRY_RE.match(line)
+            if rev_pipe_match:
+                page_str = normalize_digits(rev_pipe_match.group(1).strip())
+                title = rev_pipe_match.group(2).strip().strip("|").strip()
+            else:
+                rev_leader_match = _TOC_REVERSE_DOT_LEADER_ENTRY_RE.match(line)
+                if rev_leader_match:
+                    page_str = normalize_digits(rev_leader_match.group(1).strip())
+                    title = rev_leader_match.group(2).strip().strip("|").strip()
+                else:
+                    leader_match = _TOC_DOT_LEADER_ENTRY_RE.match(
+                        line
+                    ) or _TOC_ELLIPSIS_ENTRY_RE.match(line)
+                    if leader_match:
+                        head = leader_match.group(1).strip().strip("|").strip()
+                        after_dots = leader_match.group(2).strip()
+                        title = f"{head} {after_dots}".strip() if after_dots else head
+                        page_str = normalize_digits(leader_match.group(3).strip())
+                    else:
+                        paren_match = _TOC_TRAILING_PAREN_NUM_RE.match(line)
+                        if paren_match:
+                            title = paren_match.group(1).strip()
+                            page_str = normalize_digits(paren_match.group(2).strip())
+                        else:
+                            bullet_match = _TOC_BULLET_LEADING_NUM_RE.match(line)
+                            if bullet_match:
+                                page_str = normalize_digits(
+                                    bullet_match.group(1).strip()
+                                )
+                                title = bullet_match.group(2).strip()
 
         if title and not re.fullmatch(r"[-:|.\s]+", title) and page_str.isdigit():
             entries.append((title, int(page_str)))
@@ -718,3 +756,83 @@ def extract_standalone_page_number(text: str) -> int | None:
                 return num
 
     return None
+
+
+_COVER_MD_HEADING_RE = re.compile(r"^\s*#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+_COLOPHON_KEYWORDS = (
+    "مەسئۇل مۇھەررىر",
+    "مەسئۇل كوررېكتور",
+    "باسما زاۋۇتى",
+    "نەشر قىلدى",
+    "كىتابخانىسى تارقاتتى",
+    "تەرجىمە قىلغۇچىلار",
+)
+
+
+_PIPE_TOC_ROW_RE = re.compile(
+    r"^\|\s*(?:[^|]+?\s*\|\s*[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}|[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}\s*\|\s*[^|]+?)\s*\|?\s*$"
+)
+
+
+def has_formatted_pipe_toc(text: str | None, min_rows: int = 2) -> bool:
+    """Return True if ``text`` already contains at least ``min_rows`` pipe-table ToC rows."""
+    if not text:
+        return False
+    count = 0
+    for line in text.split("\n"):
+        if _PIPE_TOC_ROW_RE.match(line.strip()):
+            count += 1
+            if count >= min_rows:
+                return True
+    return False
+
+
+def is_title_cover_page(
+    text: str | None,
+    book_title: str | None = None,
+    page_number: int = 1,
+    *,
+    is_toc: bool = False,
+    max_front_matter_page: int = 8,
+) -> bool:
+    """Return True if a page is a front-matter cover or calligraphic inner-title page.
+
+    Matches pages in front matter (``1 <= page_number <= max_front_matter_page`` and
+    not a ToC page) that contain a Markdown heading (``# ...``) and have a short
+    cover-only layout (no body prose paragraphs or long colophon blocks). Does not
+    require the heading to match ``book_title`` so series covers and OCR-misread
+    calligraphy headings (e.g. ``# جۇدۇن`` for ``جۇدالىق``) are also detected.
+    """
+    if is_toc or not text:
+        return False
+    if page_number < 1 or page_number > max_front_matter_page:
+        return False
+
+    stripped_text = text.strip()
+    if not stripped_text or len(stripped_text) > 300:
+        return False
+
+    if not _COVER_MD_HEADING_RE.search(stripped_text):
+        return False
+
+    lines = [ln.strip() for ln in stripped_text.splitlines() if ln.strip()]
+    non_header_lines = [
+        re.sub(r"^\[(?:Header|Footer)\]\s*", "", ln).strip()
+        for ln in lines
+        if not _COVER_MD_HEADING_RE.match(ln)
+    ]
+    non_header_lines = [ln for ln in non_header_lines if ln]
+    max_line_len = max((len(ln) for ln in non_header_lines), default=0)
+    if max_line_len > 90:
+        return False
+    if any(
+        len(ln) >= 60 and ln.endswith((".", "۔", "؟", "!")) for ln in non_header_lines
+    ):
+        return False
+
+    if len(stripped_text) > 220 and any(
+        kw in stripped_text for kw in _COLOPHON_KEYWORDS
+    ):
+        return False
+
+    return True
