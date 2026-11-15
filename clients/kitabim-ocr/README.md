@@ -17,6 +17,7 @@ Set the required environment variables in shell or `.env`:
 ```bash
 export KITABIM_BASE_URL=https://kitabim.ai/api    # Kitabim backend endpoint
 export KITABIM_WORK_DIR=~/kitabim-ocr-work        # Directory where local OCR sessions are stored
+export SECURITY_APP_ID=<your-app-id>              # App-ID header required by /api/books/* endpoints
 export KITABIM_OCR_CONCURRENCY=4                  # Parallel pages (default: 4, max: 4 for Surya)
 ```
 
@@ -28,15 +29,21 @@ This starts a local server on `http://127.0.0.1:8765` and launches the default b
 
 ### CLI Commands
 - `python main.py app [--concurrency N]`: Open the interactive book-picker and OCR queue landing page.
+- `python main.py login [--base-url <url>]`: Run interactive loopback OAuth once to persist `{access_token, refresh_token}` in `~/.config/kitabim-ocr-client/token.json` (`0600`) before starting headless `backfill`.
+- `python main.py backfill [--dry-run] [--book-id <id>] [--limit N] [--max-server-backlog N] [--audit-log <path>]`: Run sequential headless Surya 2.5 OCR backfill across legacy PDFs with `$KITABIM_WORK_DIR/.surya_gpu.lock` coordination and server backlog throttling.
 - `python main.py preview <workdir>`: Reopen the review UI for an existing session directory.
 - `python main.py push <workdir> --base-url <url>`: Push OCR results from a work directory to Kitabim headlessly.
 
 ## Interface
 - `[main.py:cmd_app]`: Starts the unified web application and queue manager.
+- `[main.py:cmd_login]`: Runs interactive OAuth login and stores `access_token` + `refresh_token`.
+- `[main.py:cmd_backfill]`: Runs sequential headless Surya 2.5 re-OCR backfill via `[backfill.py:run_backfill]`.
 - `[main.py:cmd_preview]`: Reopens the preview server for a local work directory.
 - `[main.py:cmd_push]`: Headlessly pushes a completed session to Kitabim API.
-- `[main.py:build_parser]`: Configures CLI arguments and flags (`--engine`, `--concurrency`).
+- `[main.py:build_parser]`: Configures CLI arguments and flags (`--engine`, `--concurrency`, `login`, `backfill`).
 - `[main.py:main]`: Top-level CLI entry point.
+- `[backfill.py:run_backfill]`: Coordinates candidate discovery, server backlog throttling, `.surya_gpu.lock`, temp directory cleanup, and `backfill_audit.jsonl`.
+- `[backfill.py:backfill_single_book]`: Downloads, re-OCRs, dehyphenates, and replaces one PDF book via `POST /books/{id}/replace-ocr`.
 - Subdirectories:
   - [engine](./engine/README.md): Core OCR pipeline, layout analysis, dictionary validation, queue manager, and workspace persistence.
   - [kitabim_client](./kitabim_client/README.md): Kitabim HTTP API client and OAuth2 authentication handlers.

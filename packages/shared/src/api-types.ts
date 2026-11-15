@@ -123,7 +123,7 @@ export interface paths {
         put?: never;
         /**
          * Refresh Access Token
-         * @description Refresh an access token using a valid refresh token.
+         * @description Refresh an access token using a valid refresh token (from HttpOnly cookie or JSON body).
          */
         post: operations["refresh_access_token_api_auth_refresh_post"];
         delete?: never;
@@ -471,6 +471,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/backfill-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Backfill Candidates
+         * @description List PDF books eligible for Surya OCR backfill and unsubmitted worker backlog count.
+         */
+        get: operations["get_backfill_candidates_api_books_backfill_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{book_id}": {
         parameters: {
             query?: never;
@@ -663,6 +683,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/{book_id}/replace-ocr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace Book Ocr
+         * @description Replace OCR page texts for an existing book in one compressed batch.
+         */
+        post: operations["replace_book_ocr_api_books__book_id__replace_ocr_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{book_id}/reprocess/ocr": {
         parameters: {
             query?: never;
@@ -683,6 +723,26 @@ export interface paths {
          *     - Allows scanners to handle data updates atomically
          */
         post: operations["reprocess_ocr_api_books__book_id__reprocess_ocr_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/reprocess/structure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reprocess Structure
+         * @description Reprocess book structure (printed page numbers + section tree) and downstream chunking/embedding.
+         */
+        post: operations["reprocess_structure_api_books__book_id__reprocess_structure_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -812,53 +872,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/books/{book_id}/reprocess/llm-spell-check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reprocess Llm Spell Check
-         * @description Manually trigger the on-demand Gemini-based LLM spell-check pass for
-         *     every eligible page in a book. Runs independently of the dictionary-based
-         *     spell check pipeline; each trigger costs real Gemini API calls, hence
-         *     require_admin. Branches on llm_spell_check_batch_enabled to choose the
-         *     live vs. Gemini Batch API path. Set force=True to reprocess succeeded pages.
-         */
-        post: operations["reprocess_llm_spell_check_api_books__book_id__reprocess_llm_spell_check_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/books/{book_id}/pages/{page_num}/llm-spell-check/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Preview Llm Spell Check Page
-         * @description Run the LLM spell check on the editor's current (possibly unsaved)
-         *     page text and return the corrected text WITHOUT persisting anything.
-         *     The editor reviews the highlighted changes in edit mode and decides
-         *     whether to save via POST .../update.
-         */
-        post: operations["preview_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/books/{book_id}/retry-failed": {
         parameters: {
             query?: never;
@@ -933,6 +946,26 @@ export interface paths {
          * @description Manually mark or unmark a page as a Table of Contents page
          */
         post: operations["set_page_toc_api_books__book_id__pages__page_num__toc_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/pages/{page_num}/set-start-page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Start Page
+         * @description Mark physical `page_num` as content Page 1, backfill `content_page_number`, and re-queue structure analysis.
+         */
+        post: operations["set_start_page_api_books__book_id__pages__page_num__set_start_page_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2735,147 +2768,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/books/{book_id}/extract-history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Trigger History Extraction
-         * @description Trigger background ARQ extraction task for a specific book ("تارىخىي ئاتالغۇلارنى تېپىش").
-         */
-        post: operations["trigger_history_extraction_api_admin_books__book_id__extract_history_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/history-dictionary/staging": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Staging Terms
-         * @description List staging queue terms ordered by significance_score DESC.
-         */
-        get: operations["list_staging_terms_api_admin_history_dictionary_staging_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/history-dictionary/staging/{staging_id}/approve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Approve Staging Term
-         * @description Approve candidate term and publish to live history_dictionary.
-         */
-        post: operations["approve_staging_term_api_admin_history_dictionary_staging__staging_id__approve_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/history-dictionary/staging/bulk-approve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Bulk Approve Staging Terms
-         * @description Bulk approve multiple staging candidate terms. Items with unresolved
-         *     conflicts or a failed synthesis are skipped and reported, not silently dropped.
-         */
-        post: operations["bulk_approve_staging_terms_api_admin_history_dictionary_staging_bulk_approve_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/history-dictionary/staging/{staging_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Reject Staging Term
-         * @description Reject candidate term.
-         */
-        delete: operations["reject_staging_term_api_admin_history_dictionary_staging__staging_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/history-dictionary/staging/{staging_id}/facts/{fact_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Resolve Staging Fact
-         * @description Resolve a single fact (accept/reject/edit) on a pending staging candidate.
-         */
-        patch: operations["resolve_staging_fact_api_admin_history_dictionary_staging__staging_id__facts__fact_id__patch"];
-        trace?: never;
-    };
-    "/api/admin/history-dictionary/staging/{staging_id}/synthesize": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Synthesize Staging Definition
-         * @description Regenerate the preview `definition` from the candidate's current active facts.
-         */
-        post: operations["synthesize_staging_definition_api_admin_history_dictionary_staging__staging_id__synthesize_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/graph/entities/{entity_id}/split": {
         parameters: {
             query?: never;
@@ -3111,6 +3003,38 @@ export interface components {
             /** Pending Corrections */
             pending_corrections: number;
         };
+        /**
+         * BackfillCandidateOut
+         * @description Single candidate book entry for local Surya v2 backfill.
+         */
+        BackfillCandidateOut: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Author */
+            author: string;
+            /** Volume */
+            volume?: number | null;
+            /** Totalpages */
+            totalPages: number;
+            /** Status */
+            status: string;
+            /** Ocrversion */
+            ocrVersion?: string | null;
+            /** Uploaddate */
+            uploadDate?: string | null;
+        };
+        /**
+         * BackfillCandidatesResponse
+         * @description Response for GET /api/books/backfill-candidates.
+         */
+        BackfillCandidatesResponse: {
+            /** Pendingindexbooks */
+            pendingIndexBooks: number;
+            /** Candidates */
+            candidates: components["schemas"]["BackfillCandidateOut"][];
+        };
         /** Body_update_book_cover_api_books__book_id__cover_post */
         Body_update_book_cover_api_books__book_id__cover_post: {
             /** File */
@@ -3127,6 +3051,8 @@ export interface components {
             file: string;
             /** Pages */
             pages: string;
+            /** Ocr Version */
+            ocr_version?: string | null;
         };
         /**
          * Book
@@ -3199,16 +3125,22 @@ export interface components {
              * @default false
              */
             hasGraph: boolean;
-            /**
-             * Hashistory
-             * @default false
-             */
-            hasHistory: boolean;
+            /** Ocrversion */
+            ocrVersion?: string | null;
+            /** Contentpagemap */
+            contentPageMap?: {
+                [key: string]: number;
+            };
             /**
              * Ocrmilestone
              * @default idle
              */
             ocrMilestone: string;
+            /**
+             * Structuremilestone
+             * @default idle
+             */
+            structureMilestone: string;
             /**
              * Chunkingmilestone
              * @default idle
@@ -3240,11 +3172,6 @@ export interface components {
             status: string;
             /** Count */
             count: number;
-        };
-        /** BulkApproveRequest */
-        BulkApproveRequest: {
-            /** Staging Ids */
-            staging_ids: number[];
         };
         /**
          * ChatRequest
@@ -3507,14 +3434,6 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
-        /** ExtractHistoryRequest */
-        ExtractHistoryRequest: {
-            /**
-             * Min Significance
-             * @default 5
-             */
-            min_significance: number | null;
-        };
         /**
          * ExtractionResult
          * @description Page extraction result with automatic camelCase conversion
@@ -3524,6 +3443,13 @@ export interface components {
             pageNumber: number;
             /** Contentpagenumber */
             contentPageNumber?: string | null;
+            /**
+             * Contentpagenumbermanual
+             * @default false
+             */
+            contentPageNumberManual: boolean;
+            /** Detectedpagenumber */
+            detectedPageNumber?: number | null;
             /** Displaypagenumber */
             displayPageNumber?: string | null;
             /** Text */
@@ -3543,13 +3469,6 @@ export interface components {
              * @default false
              */
             isToc: boolean;
-            /**
-             * Llmspellcheckstatus
-             * @default idle
-             */
-            llmSpellCheckStatus: string;
-            /** Llmspellcheckat */
-            llmSpellCheckAt?: string | null;
         };
         /** FeedbackRequest */
         FeedbackRequest: {
@@ -3625,11 +3544,6 @@ export interface components {
         IgnoreIssuesRequest: {
             /** Issue Ids */
             issue_ids: number[];
-        };
-        /** LlmSpellCheckPreviewRequest */
-        LlmSpellCheckPreviewRequest: {
-            /** Text */
-            text: string;
         };
         /** MergeEntitiesRequest */
         MergeEntitiesRequest: {
@@ -3948,6 +3862,14 @@ export interface components {
             /** First Issue Page */
             first_issue_page: number;
         };
+        /**
+         * RefreshTokenRequest
+         * @description Optional JSON body for POST /api/auth/refresh used by CLI clients.
+         */
+        RefreshTokenRequest: {
+            /** Refreshtoken */
+            refreshToken?: string | null;
+        };
         /** RenameBookmarkRequest */
         RenameBookmarkRequest: {
             /** Name */
@@ -3960,17 +3882,64 @@ export interface components {
             /** Newname */
             newName: string;
         };
+        /**
+         * ReplaceOcrResponse
+         * @description Response body for POST /api/books/{book_id}/replace-ocr.
+         */
+        ReplaceOcrResponse: {
+            /**
+             * Status
+             * @default ok
+             */
+            status: string;
+            /** Bookid */
+            bookId: string;
+            /** Ocrversion */
+            ocrVersion: string;
+            /** Pagesupdated */
+            pagesUpdated: number;
+            /** Pagesunchanged */
+            pagesUnchanged: number;
+            /**
+             * Pagesskipped
+             * @default 0
+             */
+            pagesSkipped: number;
+            /** Backupuri */
+            backupUri?: string | null;
+        };
         /** ReprocessGraphRequest */
         ReprocessGraphRequest: {
             /** Scope */
             scope: string;
         };
-        /** ResolveFactRequest */
-        ResolveFactRequest: {
-            /** Status */
+        /**
+         * SetStartPageRequest
+         * @description Request body for marking a page as content Page 1.
+         */
+        SetStartPageRequest: {
+            /**
+             * Startcontentpage
+             * @default 1
+             */
+            startContentPage: number | null;
+        };
+        /**
+         * SetStartPageResponse
+         * @description Response after marking a page as content Page 1.
+         */
+        SetStartPageResponse: {
+            /**
+             * Status
+             * @default ok
+             */
             status: string;
-            /** Text */
-            text?: string | null;
+            /** Contentpageoffset */
+            contentPageOffset: number;
+            /** Contentpagemap */
+            contentPageMap?: {
+                [key: string]: number;
+            };
         };
         /** SpellIssueOut */
         SpellIssueOut: {
@@ -4303,7 +4272,11 @@ export interface operations {
                 kitabim_refresh_token?: string | null;
             };
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RefreshTokenRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4878,6 +4851,39 @@ export interface operations {
             };
         };
     };
+    get_backfill_candidates_api_books_backfill_candidates_get: {
+        parameters: {
+            query?: {
+                /** @description Target Surya OCR version string */
+                ocr_version?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackfillCandidatesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_book_api_books__book_id__get: {
         parameters: {
             query?: never;
@@ -5224,7 +5230,69 @@ export interface operations {
             };
         };
     };
+    replace_book_ocr_api_books__book_id__replace_ocr_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplaceOcrResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reprocess_ocr_api_books__book_id__reprocess_ocr_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reprocess_structure_api_books__book_id__reprocess_structure_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5414,75 +5482,6 @@ export interface operations {
             };
         };
     };
-    reprocess_llm_spell_check_api_books__book_id__reprocess_llm_spell_check_post: {
-        parameters: {
-            query?: {
-                force?: boolean;
-            };
-            header?: never;
-            path: {
-                book_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    preview_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                book_id: string;
-                page_num: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LlmSpellCheckPreviewRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     retry_failed_pages_api_books__book_id__retry_failed_post: {
         parameters: {
             query?: never;
@@ -5607,6 +5606,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_start_page_api_books__book_id__pages__page_num__set_start_page_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book_id: string;
+                page_num: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SetStartPageRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetStartPageResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8563,239 +8598,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuranAyahOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    trigger_history_extraction_api_admin_books__book_id__extract_history_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                book_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExtractHistoryRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_staging_terms_api_admin_history_dictionary_staging_get: {
-        parameters: {
-            query?: {
-                status?: string;
-                category?: string | null;
-                minSignificance?: number | null;
-                bookId?: string | null;
-                page?: number;
-                pageSize?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    approve_staging_term_api_admin_history_dictionary_staging__staging_id__approve_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                staging_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    bulk_approve_staging_terms_api_admin_history_dictionary_staging_bulk_approve_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BulkApproveRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reject_staging_term_api_admin_history_dictionary_staging__staging_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                staging_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    resolve_staging_fact_api_admin_history_dictionary_staging__staging_id__facts__fact_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                staging_id: number;
-                fact_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ResolveFactRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    synthesize_staging_definition_api_admin_history_dictionary_staging__staging_id__synthesize_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                staging_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

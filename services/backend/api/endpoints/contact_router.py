@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
@@ -19,6 +21,7 @@ from app.models.schemas import (
 from auth.dependencies import require_admin
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post(
@@ -26,7 +29,9 @@ router = APIRouter()
     response_model=ContactSubmissionPublic,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("5/minute")
 async def submit_contact_form(
+    request: Request,
     submission: ContactSubmissionCreate,
     session: AsyncSession = Depends(get_session),
 ):
@@ -52,8 +57,8 @@ async def submit_contact_form(
 @router.get("/admin/submissions", response_model=List[ContactSubmissionAdmin])
 async def get_contact_submissions(
     status: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     current_user=Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ):

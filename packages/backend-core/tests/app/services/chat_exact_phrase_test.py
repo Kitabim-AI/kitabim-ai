@@ -116,3 +116,24 @@ def test_summarize_page_hits_as_text_with_hits():
 
     assert "History" in text
     assert "Chronicle" in text
+
+
+def test_format_page_hits_includes_content_page_number_and_section_title_when_present():
+    hits = [
+        {
+            "book_id": "b1",
+            "title": "History",
+            "volume": 1,
+            "author": "A",
+            "page_number": 15,
+            "content_page_number": 7,
+            "section_title": "Chapter 1",
+            "text": "Sample text",
+        }
+    ]
+
+    payload = format_page_hits(hits)
+
+    assert payload[0]["page"] == 15
+    assert payload[0]["contentPageNumber"] == 7
+    assert payload[0]["sectionTitle"] == "Chapter 1"

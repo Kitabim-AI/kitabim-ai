@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     ARRAY,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Integer,
     JSON,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -76,6 +78,9 @@ class Book(Base):
     ocr_milestone: Mapped[str] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=False
     )
+    structure_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
     chunking_milestone: Mapped[str] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=False
     )
@@ -88,6 +93,33 @@ class Book(Base):
     graph_milestone: Mapped[str] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=False
     )
+
+    # Book-scoped retry counters and claim timestamps
+    structure_retry_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    structure_claimed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    chunking_retry_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    chunking_claimed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    embedding_retry_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    embedding_claimed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # OCR Backfill provenance
+    ocr_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    ocr_backfill_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    gcs_ocr_backup_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Arrays (PostgreSQL)
     categories: Mapped[List[str]] = mapped_column(
@@ -131,6 +163,9 @@ class Book(Base):
     pages: Mapped[List["Page"]] = relationship(
         "Page", back_populates="book", cascade="all, delete-orphan"
     )
+    sections: Mapped[List["BookSection"]] = relationship(
+        "BookSection", back_populates="book", cascade="all, delete-orphan"
+    )
     chunks: Mapped[List["Chunk"]] = relationship(
         "Chunk", back_populates="book", cascade="all, delete-orphan"
     )
@@ -156,6 +191,10 @@ class Book(Base):
         CheckConstraint(
             "visibility IN ('public', 'private')", name="books_visibility_check"
         ),
+        CheckConstraint(
+            "structure_milestone IN ('idle', 'in_progress', 'complete', 'partial_failure', 'failed')",
+            name="books_structure_milestone_check",
+        ),
     )
 
 
@@ -174,6 +213,10 @@ class Page(Base):
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
     content_page_number: Mapped[Optional[str]] = mapped_column(
         String(20), nullable=True
+    )
+    detected_page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    content_page_number_manual: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
     )
 
     text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -208,12 +251,6 @@ class Page(Base):
     )
     spell_check_milestone: Mapped[Optional[str]] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=True
-    )
-    llm_spell_check_status: Mapped[str] = mapped_column(
-        String(20), default="idle", server_default="idle", nullable=False
-    )
-    llm_spell_check_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
     )
     prev_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -262,10 +299,6 @@ class Page(Base):
         CheckConstraint(
             "status IN ('pending', 'ocr_processing', 'ocr_done', 'chunked', 'indexing', 'indexed', 'error')",
             name="pages_status_check",
-        ),
-        CheckConstraint(
-            "llm_spell_check_status IN ('idle', 'in_progress', 'succeeded', 'failed')",
-            name="pages_llm_spell_check_status_check",
         ),
     )
 
@@ -397,52 +430,50 @@ class BatchEmbeddingJob(Base):
     )
 
 
-class BatchHistoryExtractionJob(Base):
-    """Batch History Extraction Job model tracking Gemini Batch API history extraction requests"""
+class BookSection(Base):
+    """Two-tier book structure section (chapter -> work) for section-stream chunking and ToC lookup"""
 
-    __tablename__ = "batch_history_extraction_jobs"
+    __tablename__ = "book_sections"
 
-    id: Mapped[str] = mapped_column(
-        String(64),
-        primary_key=True,
-        default=lambda: str(uuid4()),
-    )
-    gemini_batch_id: Mapped[Optional[str]] = mapped_column(
-        String(255), unique=True, nullable=True
-    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     book_id: Mapped[str] = mapped_column(
         String(64),
         ForeignKey("books.id", ondelete="CASCADE"),
         index=True,
         nullable=False,
     )
-    status: Mapped[str] = mapped_column(
-        String(20),
-        default="submitting",
-        server_default="submitting",
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("book_sections.id", ondelete="CASCADE"),
         index=True,
+        nullable=True,
+    )
+    section_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    level: Mapped[int] = mapped_column(
+        SmallInteger, default=1, server_default="1", nullable=False
+    )
+    section_type: Mapped[str] = mapped_column(
+        String(32), default="chapter", server_default="chapter", nullable=False
+    )
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_title: Mapped[str] = mapped_column(Text, index=True, nullable=False)
+    toc_printed_page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    start_page: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_block_index: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    end_page: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_block_index: Mapped[int] = mapped_column(
+        Integer, default=999999, server_default="999999", nullable=False
+    )
+    source: Mapped[str] = mapped_column(
+        String(32),
+        default="header_detected",
+        server_default="header_detected",
         nullable=False,
     )
-
-    gcs_input_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    gcs_output_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    total_batches: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    min_significance: Mapped[int] = mapped_column(
-        Integer, default=5, server_default="5"
-    )
-    model_name: Mapped[str] = mapped_column(
-        String(100),
-        default="gemini-3.5-flash-lite",
-        server_default="gemini-3.5-flash-lite",
-    )
-    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    submitted_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    confidence: Mapped[float] = mapped_column(
+        Float, default=1.0, server_default="1.0", nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -450,79 +481,27 @@ class BatchHistoryExtractionJob(Base):
         server_default=func.now(),
         nullable=False,
     )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=func.now(),
-        onupdate=func.now(),
-        server_default=func.now(),
-        nullable=False,
-    )
 
-    # Relationships
-    book: Mapped["Book"] = relationship("Book")
+    book: Mapped["Book"] = relationship("Book", back_populates="sections")
+
+    @validates("title", "normalized_title")
+    def _validate_clean_strings(self, key: str, value: Optional[str]) -> Optional[str]:
+        if isinstance(value, str):
+            return value.replace("\x00", "")
+        return value
 
     __table_args__ = (
-        CheckConstraint(
-            "status IN ('submitting', 'submitted', 'running', 'succeeded', 'failed', 'cancelled')",
-            name="check_batch_history_jobs_status",
+        UniqueConstraint(
+            "book_id", "section_index", name="book_sections_book_id_section_index_key"
         ),
-    )
-
-
-class BatchLlmSpellCheckJob(Base):
-    """Batch LLM Spell Check Job model tracking Gemini Batch API LLM-based
-    spell-correction requests"""
-
-    __tablename__ = "batch_llm_spell_check_jobs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    gemini_batch_id: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False
-    )
-    book_id: Mapped[str] = mapped_column(
-        String(64),
-        ForeignKey("books.id", ondelete="CASCADE"),
-        index=True,
-        nullable=False,
-    )
-    page_ids: Mapped[List[int]] = mapped_column(ARRAY(Integer), nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(20), default="submitting", server_default="submitting", nullable=False
-    )
-
-    gcs_input_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    gcs_output_uri: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    total_batches: Mapped[int] = mapped_column(
-        Integer, default=1, server_default="1", nullable=False
-    )
-    model_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    submitted_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=func.now(),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=func.now(),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
-
-    __table_args__ = (
+        CheckConstraint("level IN (1, 2)", name="book_sections_level_check"),
         CheckConstraint(
-            "status IN ('submitting', 'running', 'succeeded', 'failed', 'cancelled', 'expired')",
-            name="batch_llm_spell_check_jobs_status_check",
+            "section_type IN ('chapter', 'work', 'front_matter', 'back_matter', 'synthetic_body')",
+            name="book_sections_type_check",
+        ),
+        CheckConstraint(
+            "source IN ('toc_matched', 'toc_interpolated', 'header_detected', 'synthetic_body')",
+            name="book_sections_source_check",
         ),
     )
 
@@ -540,9 +519,19 @@ class Chunk(Base):
         nullable=False,
     )
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    section_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("book_sections.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
     chunk_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    text_hash: Mapped[Optional[str]] = mapped_column(
+        String(64), index=True, nullable=True
+    )
     embedding: Mapped[Optional[List[float]]] = mapped_column(
         Vector(3072),  # pgvector type
         nullable=True,
@@ -556,6 +545,7 @@ class Chunk(Base):
 
     # Relationships
     book: Mapped["Book"] = relationship("Book", back_populates="chunks")
+    section: Mapped[Optional["BookSection"]] = relationship("BookSection")
 
     __table_args__ = (
         UniqueConstraint(
@@ -1067,52 +1057,6 @@ class HistoryDictionary(Base):
     )
     aliases: Mapped[list] = mapped_column(
         JSON, default=list, server_default=text("'[]'::jsonb"), nullable=False
-    )
-
-
-class HistoryDictionaryStaging(Base):
-    """Staging queue for extracted history dictionary candidates awaiting admin review"""
-
-    __tablename__ = "history_dictionary_staging"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    existing_dictionary_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("history_dictionary.id", ondelete="SET NULL"), nullable=True
-    )
-    book_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    term: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
-    transliteration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    original_definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    category: Mapped[str] = mapped_column(String(30), default="general", nullable=False)
-    significance_score: Mapped[int] = mapped_column(
-        Integer, default=5, nullable=False, index=True
-    )
-    significance_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    entry_type: Mapped[str] = mapped_column(
-        String(20), default="new", nullable=False, index=True
-    )
-    letter_group: Mapped[str] = mapped_column(String(10), nullable=False)
-    facts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
-    aliases: Mapped[list] = mapped_column(
-        JSON, default=list, server_default=text("'[]'::jsonb"), nullable=False
-    )
-    status: Mapped[str] = mapped_column(
-        String(20), default="pending", nullable=False, index=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=func.now(),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=func.now(),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
     )
 
 

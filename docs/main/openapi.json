@@ -221,7 +221,7 @@
           "auth"
         ],
         "summary": "Refresh Access Token",
-        "description": "Refresh an access token using a valid refresh token.",
+        "description": "Refresh an access token using a valid refresh token (from HttpOnly cookie or JSON body).",
         "operationId": "refresh_access_token_api_auth_refresh_post",
         "parameters": [
           {
@@ -241,6 +241,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshTokenRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1274,6 +1291,69 @@
         ]
       }
     },
+    "/api/books/backfill-candidates": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Backfill Candidates",
+        "description": "List PDF books eligible for Surya OCR backfill and unsubmitted worker backlog count.",
+        "operationId": "get_backfill_candidates_api_books_backfill_candidates_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ocr_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Target Surya OCR version string",
+              "default": "surya-2.5-v2",
+              "title": "Ocr Version"
+            },
+            "description": "Target Surya OCR version string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackfillCandidatesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/{book_id}": {
       "get": {
         "tags": [
@@ -1822,6 +1902,54 @@
         ]
       }
     },
+    "/api/books/{book_id}/replace-ocr": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Replace Book Ocr",
+        "description": "Replace OCR page texts for an existing book in one compressed batch.",
+        "operationId": "replace_book_ocr_api_books__book_id__replace_ocr_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplaceOcrResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/{book_id}/reprocess/ocr": {
       "post": {
         "tags": [
@@ -1830,6 +1958,52 @@
         "summary": "Reprocess Ocr",
         "description": "Reprocess OCR by resetting milestones. Text will be overwritten by OCR scanner.\n\nThis is a non-destructive operation that:\n- Resets OCR and downstream milestones to 'idle'\n- Preserves existing text until OCR scanner overwrites it\n- Preserves chunks until chunking scanner processes the new text\n- Allows scanners to handle data updates atomically",
         "operationId": "reprocess_ocr_api_books__book_id__reprocess_ocr_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/reprocess/structure": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Reprocess Structure",
+        "description": "Reprocess book structure (printed page numbers + section tree) and downstream chunking/embedding.",
+        "operationId": "reprocess_structure_api_books__book_id__reprocess_structure_post",
         "security": [
           {
             "HTTPBearer": []
@@ -2108,127 +2282,6 @@
         }
       }
     },
-    "/api/books/{book_id}/reprocess/llm-spell-check": {
-      "post": {
-        "tags": [
-          "books"
-        ],
-        "summary": "Reprocess Llm Spell Check",
-        "description": "Manually trigger the on-demand Gemini-based LLM spell-check pass for\nevery eligible page in a book. Runs independently of the dictionary-based\nspell check pipeline; each trigger costs real Gemini API calls, hence\nrequire_admin. Branches on llm_spell_check_batch_enabled to choose the\nlive vs. Gemini Batch API path. Set force=True to reprocess succeeded pages.",
-        "operationId": "reprocess_llm_spell_check_api_books__book_id__reprocess_llm_spell_check_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "book_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Book Id"
-            }
-          },
-          {
-            "name": "force",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Force"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/books/{book_id}/pages/{page_num}/llm-spell-check/preview": {
-      "post": {
-        "tags": [
-          "books"
-        ],
-        "summary": "Preview Llm Spell Check Page",
-        "description": "Run the LLM spell check on the editor's current (possibly unsaved)\npage text and return the corrected text WITHOUT persisting anything.\nThe editor reviews the highlighted changes in edit mode and decides\nwhether to save via POST .../update.",
-        "operationId": "preview_llm_spell_check_page_api_books__book_id__pages__page_num__llm_spell_check_preview_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "book_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Book Id"
-            }
-          },
-          {
-            "name": "page_num",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Page Num"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LlmSpellCheckPreviewRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/books/{book_id}/retry-failed": {
       "post": {
         "tags": [
@@ -2446,6 +2499,80 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/books/{book_id}/pages/{page_num}/set-start-page": {
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Set Start Page",
+        "description": "Mark physical `page_num` as content Page 1, backfill `content_page_number`, and re-queue structure analysis.",
+        "operationId": "set_start_page_api_books__book_id__pages__page_num__set_start_page_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page_num",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Page Num"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SetStartPageRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetStartPageResponse"
+                }
               }
             }
           },
@@ -7314,428 +7441,6 @@
         }
       }
     },
-    "/api/admin/books/{book_id}/extract-history": {
-      "post": {
-        "tags": [
-          "admin-history-dictionary"
-        ],
-        "summary": "Trigger History Extraction",
-        "description": "Trigger background ARQ extraction task for a specific book (\"\u062a\u0627\u0631\u0649\u062e\u0649\u064a \u0626\u0627\u062a\u0627\u0644\u063a\u06c7\u0644\u0627\u0631\u0646\u0649 \u062a\u06d0\u067e\u0649\u0634\").",
-        "operationId": "trigger_history_extraction_api_admin_books__book_id__extract_history_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "book_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Book Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ExtractHistoryRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/history-dictionary/staging": {
-      "get": {
-        "tags": [
-          "admin-history-dictionary"
-        ],
-        "summary": "List Staging Terms",
-        "description": "List staging queue terms ordered by significance_score DESC.",
-        "operationId": "list_staging_terms_api_admin_history_dictionary_staging_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "pending",
-              "title": "Status"
-            }
-          },
-          {
-            "name": "category",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Category"
-            }
-          },
-          {
-            "name": "minSignificance",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Minsignificance"
-            }
-          },
-          {
-            "name": "bookId",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Bookid"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1,
-              "title": "Page"
-            }
-          },
-          {
-            "name": "pageSize",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 20,
-              "title": "Pagesize"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/history-dictionary/staging/{staging_id}/approve": {
-      "post": {
-        "tags": [
-          "admin-history-dictionary"
-        ],
-        "summary": "Approve Staging Term",
-        "description": "Approve candidate term and publish to live history_dictionary.",
-        "operationId": "approve_staging_term_api_admin_history_dictionary_staging__staging_id__approve_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "staging_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Staging Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/history-dictionary/staging/bulk-approve": {
-      "post": {
-        "tags": [
-          "admin-history-dictionary"
-        ],
-        "summary": "Bulk Approve Staging Terms",
-        "description": "Bulk approve multiple staging candidate terms. Items with unresolved\nconflicts or a failed synthesis are skipped and reported, not silently dropped.",
-        "operationId": "bulk_approve_staging_terms_api_admin_history_dictionary_staging_bulk_approve_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BulkApproveRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/admin/history-dictionary/staging/{staging_id}": {
-      "delete": {
-        "tags": [
-          "admin-history-dictionary"
-        ],
-        "summary": "Reject Staging Term",
-        "description": "Reject candidate term.",
-        "operationId": "reject_staging_term_api_admin_history_dictionary_staging__staging_id__delete",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "staging_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Staging Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/history-dictionary/staging/{staging_id}/facts/{fact_id}": {
-      "patch": {
-        "tags": [
-          "admin-history-dictionary"
-        ],
-        "summary": "Resolve Staging Fact",
-        "description": "Resolve a single fact (accept/reject/edit) on a pending staging candidate.",
-        "operationId": "resolve_staging_fact_api_admin_history_dictionary_staging__staging_id__facts__fact_id__patch",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "staging_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Staging Id"
-            }
-          },
-          {
-            "name": "fact_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Fact Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ResolveFactRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/admin/history-dictionary/staging/{staging_id}/synthesize": {
-      "post": {
-        "tags": [
-          "admin-history-dictionary"
-        ],
-        "summary": "Synthesize Staging Definition",
-        "description": "Regenerate the preview `definition` from the candidate's current active facts.",
-        "operationId": "synthesize_staging_definition_api_admin_history_dictionary_staging__staging_id__synthesize_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "staging_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Staging Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/admin/graph/entities/{entity_id}/split": {
       "post": {
         "tags": [
@@ -8197,6 +7902,95 @@
         ],
         "title": "AutoCorrectStatsOut"
       },
+      "BackfillCandidateOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "ocrVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocrversion"
+          },
+          "uploadDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaddate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "author",
+          "totalPages",
+          "status"
+        ],
+        "title": "BackfillCandidateOut",
+        "description": "Single candidate book entry for local Surya v2 backfill."
+      },
+      "BackfillCandidatesResponse": {
+        "properties": {
+          "pendingIndexBooks": {
+            "type": "integer",
+            "title": "Pendingindexbooks"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/BackfillCandidateOut"
+            },
+            "type": "array",
+            "title": "Candidates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pendingIndexBooks",
+          "candidates"
+        ],
+        "title": "BackfillCandidatesResponse",
+        "description": "Response for GET /api/books/backfill-candidates."
+      },
       "Body_update_book_cover_api_books__book_id__cover_post": {
         "properties": {
           "file": {
@@ -8243,6 +8037,17 @@
               }
             ],
             "title": "Pages"
+          },
+          "ocr_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Version"
           }
         },
         "type": "object",
@@ -8413,14 +8218,32 @@
             "title": "Hasgraph",
             "default": false
           },
-          "hasHistory": {
-            "type": "boolean",
-            "title": "Hashistory",
-            "default": false
+          "ocrVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocrversion"
+          },
+          "contentPageMap": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Contentpagemap"
           },
           "ocrMilestone": {
             "type": "string",
             "title": "Ocrmilestone",
+            "default": "idle"
+          },
+          "structureMilestone": {
+            "type": "string",
+            "title": "Structuremilestone",
             "default": "idle"
           },
           "chunkingMilestone": {
@@ -8495,22 +8318,6 @@
           "count"
         ],
         "title": "BookStatusCount"
-      },
-      "BulkApproveRequest": {
-        "properties": {
-          "staging_ids": {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array",
-            "title": "Staging Ids"
-          }
-        },
-        "type": "object",
-        "required": [
-          "staging_ids"
-        ],
-        "title": "BulkApproveRequest"
       },
       "ChatRequest": {
         "properties": {
@@ -9193,24 +9000,6 @@
         ],
         "title": "ErrorEvent"
       },
-      "ExtractHistoryRequest": {
-        "properties": {
-          "min_significance": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Significance",
-            "default": 5
-          }
-        },
-        "type": "object",
-        "title": "ExtractHistoryRequest"
-      },
       "ExtractionResult": {
         "properties": {
           "pageNumber": {
@@ -9227,6 +9016,22 @@
               }
             ],
             "title": "Contentpagenumber"
+          },
+          "contentPageNumberManual": {
+            "type": "boolean",
+            "title": "Contentpagenumbermanual",
+            "default": false
+          },
+          "detectedPageNumber": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detectedpagenumber"
           },
           "displayPageNumber": {
             "anyOf": [
@@ -9303,23 +9108,6 @@
             "type": "boolean",
             "title": "Istoc",
             "default": false
-          },
-          "llmSpellCheckStatus": {
-            "type": "string",
-            "title": "Llmspellcheckstatus",
-            "default": "idle"
-          },
-          "llmSpellCheckAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Llmspellcheckat"
           }
         },
         "type": "object",
@@ -9548,19 +9336,6 @@
           "issue_ids"
         ],
         "title": "IgnoreIssuesRequest"
-      },
-      "LlmSpellCheckPreviewRequest": {
-        "properties": {
-          "text": {
-            "type": "string",
-            "title": "Text"
-          }
-        },
-        "type": "object",
-        "required": [
-          "text"
-        ],
-        "title": "LlmSpellCheckPreviewRequest"
       },
       "MergeEntitiesRequest": {
         "properties": {
@@ -10459,6 +10234,24 @@
         ],
         "title": "RandomBookOut"
       },
+      "RefreshTokenRequest": {
+        "properties": {
+          "refreshToken": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refreshtoken"
+          }
+        },
+        "type": "object",
+        "title": "RefreshTokenRequest",
+        "description": "Optional JSON body for POST /api/auth/refresh used by CLI clients."
+      },
       "RenameBookmarkRequest": {
         "properties": {
           "name": {
@@ -10490,6 +10283,56 @@
         ],
         "title": "RenameEntityRequest"
       },
+      "ReplaceOcrResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok"
+          },
+          "bookId": {
+            "type": "string",
+            "title": "Bookid"
+          },
+          "ocrVersion": {
+            "type": "string",
+            "title": "Ocrversion"
+          },
+          "pagesUpdated": {
+            "type": "integer",
+            "title": "Pagesupdated"
+          },
+          "pagesUnchanged": {
+            "type": "integer",
+            "title": "Pagesunchanged"
+          },
+          "pagesSkipped": {
+            "type": "integer",
+            "title": "Pagesskipped",
+            "default": 0
+          },
+          "backupUri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backupuri"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bookId",
+          "ocrVersion",
+          "pagesUpdated",
+          "pagesUnchanged"
+        ],
+        "title": "ReplaceOcrResponse",
+        "description": "Response body for POST /api/books/{book_id}/replace-ocr."
+      },
       "ReprocessGraphRequest": {
         "properties": {
           "scope": {
@@ -10503,29 +10346,50 @@
         ],
         "title": "ReprocessGraphRequest"
       },
-      "ResolveFactRequest": {
+      "SetStartPageRequest": {
         "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "text": {
+          "startContentPage": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Text"
+            "title": "Startcontentpage",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "title": "SetStartPageRequest",
+        "description": "Request body for marking a page as content Page 1."
+      },
+      "SetStartPageResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok"
+          },
+          "contentPageOffset": {
+            "type": "integer",
+            "title": "Contentpageoffset"
+          },
+          "contentPageMap": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Contentpagemap"
           }
         },
         "type": "object",
         "required": [
-          "status"
+          "contentPageOffset"
         ],
-        "title": "ResolveFactRequest"
+        "title": "SetStartPageResponse",
+        "description": "Response after marking a page as content Page 1."
       },
       "SpellIssueOut": {
         "properties": {

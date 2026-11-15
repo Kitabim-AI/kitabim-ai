@@ -8,8 +8,8 @@ Houses system-wide configuration, environment settings, pipeline lifecycle defin
 - `[config.py:settings]` — Global singleton instance of `Settings`.
 - `[cache_config.py:TTL_BOOKS]` — Time-to-live constants for caching (`TTL_BOOKS`, `TTL_SYSTEM_CONFIG`, `TTL_CATEGORIES`, `TTL_RAG_QUERY`, `TTL_USER_PROFILE`, `TTL_STATS`, `TTL_SUMMARY_SEARCH`, `TTL_OCR_FREQUENT_CORRECTIONS`, `TTL_USERCHECK_DOMAIN`, `TTL_USERCHECK_NEGATIVE_MX`).
 - `[cache_config.py:KEY_BOOK]` — Redis cache key prefix constants (`KEY_BOOK`, `KEY_BOOKS_LIST`, `KEY_CATEGORY`, `KEY_USER`, `KEY_RAG_EMBEDDING`, `KEY_RAG_SEARCH_SINGLE`, `KEY_RAG_SEARCH_MULTI`, `KEY_RAG_SUMMARY_SEARCH`, `KEY_RAG_WORD_BOOK_COUNT`, `KEY_RAG_BOOKS_WITH_TEXT`, `KEY_PROVERB`, `KEY_STATS`, `KEY_CONFIG`, `KEY_CHAT_USAGE`, `KEY_RAG_REWRITE`, `KEY_OCR_FREQUENT_CORRECTIONS`, `KEY_GRAPH_ALIAS_LOOKUP`, `KEY_USERCHECK_DOMAIN`, `KEY_USERCHECK_COOLDOWN`, `KEY_USERCHECK_PACE`).
-- `[pipeline.py:PIPELINE_STEP_OCR]` — Pipeline step constants (`PIPELINE_STEP_OCR`, `PIPELINE_STEP_CHUNKING`, `PIPELINE_STEP_EMBEDDING`, `PIPELINE_STEP_SPELL_CHECK`, `PIPELINE_STEP_SUMMARY`).
-- `[pipeline.py:PIPELINE_ORDER]` — Ordered tuple defining book ingestion pipeline execution order.
+- `[pipeline.py:PIPELINE_STEP_OCR]` — Pipeline step constants (`PIPELINE_STEP_OCR`, `PIPELINE_STEP_SPELL_CHECK`, `PIPELINE_STEP_STRUCTURE`, `PIPELINE_STEP_CHUNKING`, `PIPELINE_STEP_EMBEDDING`, `PIPELINE_STEP_SUMMARY`) and `CURRENT_SURYA_OCR_VERSION`.
+- `[pipeline.py:PIPELINE_ORDER]` — Ordered tuple defining book ingestion pipeline execution order (`OCR -> Spell Check -> Structure -> Chunking -> Embedding`).
 - `[pipeline.py:PAGE_MILESTONE_IDLE]` — Page-level milestone status constants (`PAGE_MILESTONE_IDLE`, `PAGE_MILESTONE_IN_PROGRESS`, `PAGE_MILESTONE_SUCCEEDED`, `PAGE_MILESTONE_FAILED`, `PAGE_MILESTONE_ERROR`).
 - `[pipeline.py:BOOK_MILESTONE_IDLE]` — Book-level milestone status constants (`BOOK_MILESTONE_IDLE`, `BOOK_MILESTONE_IN_PROGRESS`, `BOOK_MILESTONE_COMPLETE`, `BOOK_MILESTONE_PARTIAL_FAILURE`, `BOOK_MILESTONE_FAILED`).
 - `[characters.py:Character]` — `class Character`: Historical Uyghur scholar persona definition.
@@ -20,7 +20,6 @@ Houses system-wide configuration, environment settings, pipeline lifecycle defin
 - `[prompts.py:OCR_PROMPT]` — Prompt for Gemini OCR text extraction.
 - `[prompts.py:BOOK_SUMMARY_PROMPT]` — Prompt for generating structured book summaries.
 - `[prompts.py:RAG_PROMPT_TEMPLATE]` — Grounded Q&A prompt template for RAG answer generation.
-- `[prompts.py:LLM_SPELL_CHECK_PROMPT]` — Prompt for contextual Uyghur spell checking.
 - `[protocols.py:EmbeddingProvider]` — Protocol for document and query vector embedding generators.
 - `[protocols.py:LLMProvider]` — Protocol for language model completion and generation providers.
 - `[protocols.py:VectorStore]` — Protocol for vector similarity search engines.
@@ -30,7 +29,7 @@ Houses system-wide configuration, environment settings, pipeline lifecycle defin
 
 ## Invariants
 - `[config.py:Settings]` — Strictly parses environment variables; validates database URLs, API keys, and CORS origins on startup.
-- `[pipeline.py:PIPELINE_ORDER]` — Enforces linear pipeline progression: OCR -> Chunking -> Embedding -> Spell Check -> Summary.
+- `[pipeline.py:PIPELINE_ORDER]` — Enforces linear pipeline progression: OCR -> Spell Check -> Structure -> Chunking -> Embedding -> Summary.
 - `[i18n.py:I18n]` — Falls back to the default language (`ug`) when translation keys are missing in the requested locale.
 - `[prompts.py]` — LLM system prompts are authored strictly in English while requiring modern Uyghur Arabic script for user-facing outputs.
 

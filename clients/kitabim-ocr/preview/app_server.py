@@ -17,17 +17,20 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
+from backfill import acquire_surya_gpu_lock
 from engine.config import (
     get_configured_concurrency,
     get_configured_engine,
     get_configured_page_timeout,
     resolve_concurrency,
 )
+from engine.line_ends import apply_cross_page_dehyphenation, text_ends_with_hyphen
 from engine.queue import BookQueueManager
 from engine.recognize import (
     LowConfidenceOcrError,
     get_recognition_predictor,
     ocr_page,
+    pop_last_page_ocr_meta,
 )
 from engine.text_cleanup import is_toc_page
 from engine.workdir import OcrWorkDir
@@ -2663,116 +2666,144 @@ async def _run_ocr_background(
         state.engine, concurrency if concurrency is not None else state.concurrency
     )
     try:
-        doc = fitz.open(workdir.source_pdf)
-        predictor = await get_recognition_predictor(state.engine)
-        sem = asyncio.Semaphore(max(1, target_concurrency))
+        with acquire_surya_gpu_lock(state.work_root):
+            doc = fitz.open(workdir.source_pdf)
+            predictor = await get_recognition_predictor(state.engine)
+            sem = asyncio.Semaphore(max(1, target_concurrency))
+            fresh_pages: set[int] = set()
+            hyphen_pages: set[int] = set()
 
-        async def process_one(page_number: int):
-            current_page = workdir._pages.get(page_number)
-            if current_page and current_page.status in (
-                "ocrd",
-                "reviewed",
-                "from_kitabim",
-            ):
-                return
+            async def process_one(page_number: int):
+                current_page = workdir._pages.get(page_number)
+                if current_page and current_page.status in (
+                    "ocrd",
+                    "reviewed",
+                    "from_kitabim",
+                ):
+                    return
 
-            async with sem:
-                with workdir.save_lock:
-                    workdir.set_page(
-                        page_number,
-                        text="",
-                        is_toc=False,
-                        confidence=0.0,
-                        status="processing",
-                    )
-                    workdir.save()
-
-                fitz_page = doc.load_page(page_number - 1)
-                img_path = workdir.image_path(page_number)
-                if not img_path.exists():
-                    try:
-                        img_path.parent.mkdir(parents=True, exist_ok=True)
-                        img_path.write_bytes(render_page_png(doc, page_number))
-                    except Exception:
-                        pass
-                try:
-                    text = await ocr_page(
-                        fitz_page,
-                        predictor,
-                        max_parallel_pages=target_concurrency,
-                        timeout=get_configured_page_timeout(),
-                    )
+                async with sem:
                     with workdir.save_lock:
-                        existing = workdir._pages.get(page_number)
-                        if existing and existing.status == "reviewed":
-                            workdir.set_page(
-                                page_number,
-                                text=existing.text,
-                                is_toc=existing.is_toc,
-                                confidence=1.0,
-                                status="reviewed",
-                            )
-                        else:
-                            is_toc = bool(existing and existing.is_toc) or is_toc_page(
-                                text
-                            )
-                            workdir.set_page(
-                                page_number,
-                                text=text,
-                                is_toc=is_toc,
-                                confidence=1.0,
-                                status="ocrd",
-                            )
+                        workdir.set_page(
+                            page_number,
+                            text="",
+                            is_toc=False,
+                            confidence=0.0,
+                            status="processing",
+                        )
                         workdir.save()
-                except (TimeoutError, asyncio.TimeoutError) as exc:
-                    logger.warning("Page %s timed out during OCR: %s", page_number, exc)
-                    with workdir.save_lock:
-                        existing = workdir._pages.get(page_number)
-                        if existing and existing.status == "reviewed":
-                            pass
-                        else:
-                            workdir.set_page(
-                                page_number,
-                                text=existing.text if existing else "",
-                                is_toc=existing.is_toc if existing else False,
-                                confidence=0.0,
-                                status="failed",
-                                error=str(exc) or "OCR timed out",
-                            )
-                            workdir.save()
-                except LowConfidenceOcrError as exc:
-                    with workdir.save_lock:
-                        existing = workdir._pages.get(page_number)
-                        if existing and existing.status == "reviewed":
-                            pass
-                        else:
-                            workdir.set_page(
-                                page_number,
-                                text=existing.text if existing else "",
-                                is_toc=existing.is_toc if existing else False,
-                                confidence=0.0,
-                                status="failed",
-                                error=str(exc),
-                            )
-                            workdir.save()
-                except Exception as exc:
-                    with workdir.save_lock:
-                        existing = workdir._pages.get(page_number)
-                        if existing and existing.status == "reviewed":
-                            pass
-                        else:
-                            workdir.set_page(
-                                page_number,
-                                text=existing.text if existing else "",
-                                is_toc=existing.is_toc if existing else False,
-                                confidence=0.0,
-                                status="failed",
-                                error=f"Unexpected OCR error: {exc}",
-                            )
-                            workdir.save()
 
-        tasks = [process_one(p) for p in range(1, workdir.total_pages + 1)]
-        await asyncio.gather(*tasks)
+                    fitz_page = doc.load_page(page_number - 1)
+                    img_path = workdir.image_path(page_number)
+                    if not img_path.exists():
+                        try:
+                            img_path.parent.mkdir(parents=True, exist_ok=True)
+                            img_path.write_bytes(render_page_png(doc, page_number))
+                        except Exception:
+                            pass
+                    try:
+                        text = await ocr_page(
+                            fitz_page,
+                            predictor,
+                            max_parallel_pages=target_concurrency,
+                            timeout=get_configured_page_timeout(),
+                        )
+                        meta = pop_last_page_ocr_meta(fitz_page)
+                        detected_num = meta.detected_page_number if meta else None
+                        ended_hyphen = (
+                            meta.ended_with_hyphen
+                            if meta
+                            else text_ends_with_hyphen(text)
+                        )
+                        with workdir.save_lock:
+                            existing = workdir._pages.get(page_number)
+                            if existing and existing.status == "reviewed":
+                                workdir.set_page(
+                                    page_number,
+                                    text=existing.text,
+                                    is_toc=existing.is_toc,
+                                    confidence=1.0,
+                                    status="reviewed",
+                                    detected_page_number=existing.detected_page_number
+                                    or detected_num,
+                                )
+                            else:
+                                is_toc = bool(
+                                    existing and existing.is_toc
+                                ) or is_toc_page(text)
+                                workdir.set_page(
+                                    page_number,
+                                    text=text,
+                                    is_toc=is_toc,
+                                    confidence=1.0,
+                                    status="ocrd",
+                                    detected_page_number=detected_num,
+                                    ended_with_hyphen=ended_hyphen,
+                                )
+                                fresh_pages.add(page_number)
+                                if ended_hyphen:
+                                    hyphen_pages.add(page_number)
+                            workdir.save()
+                    except (TimeoutError, asyncio.TimeoutError) as exc:
+                        logger.warning(
+                            "Page %s timed out during OCR: %s", page_number, exc
+                        )
+                        with workdir.save_lock:
+                            existing = workdir._pages.get(page_number)
+                            if existing and existing.status == "reviewed":
+                                pass
+                            else:
+                                workdir.set_page(
+                                    page_number,
+                                    text=existing.text if existing else "",
+                                    is_toc=existing.is_toc if existing else False,
+                                    confidence=0.0,
+                                    status="failed",
+                                    error=str(exc) or "OCR timed out",
+                                )
+                                workdir.save()
+                    except LowConfidenceOcrError as exc:
+                        with workdir.save_lock:
+                            existing = workdir._pages.get(page_number)
+                            if existing and existing.status == "reviewed":
+                                pass
+                            else:
+                                workdir.set_page(
+                                    page_number,
+                                    text=existing.text if existing else "",
+                                    is_toc=existing.is_toc if existing else False,
+                                    confidence=0.0,
+                                    status="failed",
+                                    error=str(exc),
+                                )
+                                workdir.save()
+                    except Exception as exc:
+                        with workdir.save_lock:
+                            existing = workdir._pages.get(page_number)
+                            if existing and existing.status == "reviewed":
+                                pass
+                            else:
+                                workdir.set_page(
+                                    page_number,
+                                    text=existing.text if existing else "",
+                                    is_toc=existing.is_toc if existing else False,
+                                    confidence=0.0,
+                                    status="failed",
+                                    error=f"Unexpected OCR error: {exc}",
+                                )
+                                workdir.save()
+
+            tasks = [process_one(p) for p in range(1, workdir.total_pages + 1)]
+            await asyncio.gather(*tasks)
+            if fresh_pages and hyphen_pages:
+                with workdir.save_lock:
+                    pages_list = workdir.all_pages()
+                    if apply_cross_page_dehyphenation(
+                        pages_list,
+                        fresh_page_numbers=fresh_pages,
+                        hyphen_ended_pages=hyphen_pages,
+                    ):
+                        workdir.save()
         if not _was_abandoned(state, workdir):
             has_next = bool(
                 state.queue_manager and state.queue_manager.queued_session_ids

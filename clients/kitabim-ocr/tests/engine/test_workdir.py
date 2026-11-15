@@ -192,3 +192,27 @@ def test_workdir_reentrant_lock(tmp_path: Path):
     loaded = OcrWorkDir.load(session_dir)
     assert loaded.get_page(1).text == "nested lock"
     assert loaded.get_page(1).is_toc is True
+
+
+def test_workdir_persists_detected_page_number_and_skipped(tmp_path: Path):
+    pdf = tmp_path / "book.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    session_dir = tmp_path / "work_meta"
+    wd = OcrWorkDir.create(session_dir, source_pdf=pdf, total_pages=2)
+    wd.set_page(
+        1,
+        text="content",
+        is_toc=False,
+        confidence=0.95,
+        status="ocrd",
+        detected_page_number=17,
+        skipped=False,
+        ended_with_hyphen=True,
+    )
+    wd.save()
+
+    loaded = OcrWorkDir.load(session_dir)
+    p1 = loaded.get_page(1)
+    assert p1.detected_page_number == 17
+    assert p1.skipped is False
+    assert p1.ended_with_hyphen is True

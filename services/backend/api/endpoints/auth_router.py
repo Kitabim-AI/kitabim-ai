@@ -5,10 +5,20 @@ from __future__ import annotations
 import html as html_module
 import json
 import logging
+import secrets
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, Cookie
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    HTTPException,
+    status,
+    Response,
+    Request,
+    Cookie,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -16,6 +26,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.session import get_session
+from app.models.schemas import RefreshTokenRequest
 
 from auth.dependencies import get_current_user
 from auth.email_domain_guard import evaluate_signup_email_domain
@@ -62,6 +73,12 @@ limiter = Limiter(key_func=get_remote_address)
 # Cookie settings
 OAUTH_STATE_COOKIE = "kitabim_oauth_state"
 REFRESH_TOKEN_COOKIE = "kitabim_refresh_token"
+
+
+def _is_loopback_redirect_uri(uri: str) -> bool:
+    """Whether an OAuth redirect_uri targets a literal loopback IP (127.0.0.1 or ::1)."""
+    parsed = urlparse(uri)
+    return parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "::1")
 
 
 def _is_allowed_redirect_uri(uri: str) -> bool:
@@ -165,7 +182,17 @@ async def oauth_login(
     else:
         auth_url = oauth_provider.get_auth_url(state_jwt, oauth_state.nonce)
 
-    return RedirectResponse(url=auth_url)
+    resp = RedirectResponse(url=auth_url)
+    resp.set_cookie(
+        key="oauth_state_nonce",
+        value=oauth_state.nonce,
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookie_secure,
+        path="/api/auth",
+    )
+    return resp
 
 
 @router.get("/{provider}/callback")
@@ -213,13 +240,38 @@ async def oauth_callback(
             t("errors.missing_oauth_params"), error_code="oauth_login_failed"
         )
 
-    # Validate state by decoding the signed JWT (no cookie needed).
+    # Validate state by decoding the signed JWT.
     # The JWT contains state, nonce, code_verifier, and redirect_uri.
     saved_state = decode_oauth_state_token(state)
     if not saved_state:
         return _error_response(
             t("errors.invalid_oauth_state"), error_code="oauth_login_failed"
         )
+
+    # Verify browser-bound cookie nonce when present to prevent Login CSRF,
+    # and enforce single-use state consumption in Redis.
+    cookie_nonce = (
+        request.cookies.get("oauth_state_nonce")
+        if hasattr(request, "cookies") and isinstance(request.cookies, dict)
+        else None
+    )
+    if cookie_nonce:
+        if not secrets.compare_digest(cookie_nonce, saved_state.nonce):
+            return _error_response(
+                t("errors.invalid_oauth_state"),
+                error_code="oauth_login_failed",
+                redirect_uri=saved_state.redirect_uri,
+            )
+        from app.services.cache_service import cache_service
+
+        state_replay_key = f"oauth_state_used:{saved_state.state}"
+        if await cache_service.get(state_replay_key):
+            return _error_response(
+                t("errors.invalid_oauth_state"),
+                error_code="oauth_login_failed",
+                redirect_uri=saved_state.redirect_uri,
+            )
+        await cache_service.set(state_replay_key, True, ttl=600)
 
     try:
         # Exchange code for tokens (with PKCE code_verifier for Twitter)
@@ -347,8 +399,13 @@ async def oauth_callback(
         # Mobile/CLI redirect flow: redirect back to app with token in fragment
         if saved_state.redirect_uri:
             if _is_allowed_redirect_uri(saved_state.redirect_uri):
+                fragment_params = {"access_token": access_token}
+                if _is_loopback_redirect_uri(saved_state.redirect_uri):
+                    fragment_params["refresh_token"] = refresh_token
                 # Use fragment (#) so the token is never sent to the server or logged
-                callback_url = f"{saved_state.redirect_uri}#{urlencode({'access_token': access_token})}"
+                callback_url = (
+                    f"{saved_state.redirect_uri}#{urlencode(fragment_params)}"
+                )
                 redirect_response = RedirectResponse(url=callback_url)
                 redirect_response.set_cookie(
                     key=REFRESH_TOKEN_COOKIE,
@@ -381,12 +438,16 @@ async def oauth_callback(
 async def refresh_access_token(
     request: Request,
     refresh_token: Optional[str] = Cookie(None, alias=REFRESH_TOKEN_COOKIE),
+    body: Optional[RefreshTokenRequest] = Body(default=None),
     session: AsyncSession = Depends(get_session),
 ):
     """
-    Refresh an access token using a valid refresh token.
+    Refresh an access token using a valid refresh token (from HttpOnly cookie or JSON body).
     """
-    if not refresh_token:
+    resolved_refresh_token = refresh_token or (
+        body.refresh_token if body is not None else None
+    )
+    if not resolved_refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=t("errors.refresh_token_required"),
@@ -394,7 +455,7 @@ async def refresh_access_token(
 
     try:
         # Decode refresh token
-        payload = decode_jwt(refresh_token, expected_type="refresh")
+        payload = decode_jwt(resolved_refresh_token, expected_type="refresh")
         jti = payload.get("jti")
         user_id = payload.get("sub")
 
@@ -405,7 +466,9 @@ async def refresh_access_token(
             )
 
         # Validate token is not revoked
-        validated_user_id = await validate_refresh_token(session, jti, refresh_token)
+        validated_user_id = await validate_refresh_token(
+            session, jti, resolved_refresh_token
+        )
         if not validated_user_id or validated_user_id != user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

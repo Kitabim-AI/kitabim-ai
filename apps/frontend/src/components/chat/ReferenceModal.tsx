@@ -284,7 +284,22 @@ export const ReferenceModal: React.FC<ReferenceModalProps> = ({
                 <div className="flex items-center justify-between mb-4 border-b border-[#0369a1]/5 dark:border-slate-800 pb-3">
                   <div />
                   <span className="text-xs font-bold text-[#94a3b8] dark:text-slate-500 uppercase flex items-center gap-1.5">
-                    <span>{t('chat.pageNumber', { page: currentPageNum })}</span>
+                    <span>
+                      {t('chat.pageNumber', {
+                        page:
+                          currentPageData.contentPageNumber ??
+                          currentPageData.content_page_number ??
+                          currentPageData.displayPageNumber ??
+                          currentPageData.display_page_number ??
+                          currentPageNum
+                      })}
+                    </span>
+                    {(currentPageData.contentPageNumber ?? currentPageData.content_page_number ?? currentPageData.displayPageNumber ?? currentPageData.display_page_number) != null &&
+                      String(currentPageData.contentPageNumber ?? currentPageData.content_page_number ?? currentPageData.displayPageNumber ?? currentPageData.display_page_number) !== String(currentPageNum) && (
+                      <span className="text-[10px] opacity-60" dir="ltr">
+                        (PDF {currentPageNum})
+                      </span>
+                    )}
                   </span>
                 </div>
                 <MarkdownContent

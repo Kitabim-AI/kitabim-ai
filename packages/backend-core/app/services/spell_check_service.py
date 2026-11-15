@@ -14,7 +14,8 @@ from typing import List, TypedDict, Dict
 from sqlalchemy import delete, func, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Page, PageSpellIssue, AutoCorrectRule
+from app.db.models import AutoCorrectRule, Page, PageSpellIssue
+from app.services.book_structure_service import mark_structure_dirty
 from app.services.cache_service import cache_service
 from app.utils.text import normalize_uyghur_chars
 from sqlalchemy import select
@@ -554,6 +555,8 @@ async def run_spell_check_for_page(
                 "is_indexed": False,
             }
         )
+        if getattr(page, "book_id", None):
+            await mark_structure_dirty(session, page.book_id)
 
     # Tokenize against the (possibly updated) raw_text
     tokens = tokenize(raw_text)

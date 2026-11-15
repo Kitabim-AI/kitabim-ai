@@ -62,3 +62,48 @@ def test_get_valid_token_logs_in_when_no_cache_exists(tmp_path: Path):
 
     assert result == new_token
     mock_login.assert_called_once()
+
+
+def test_get_valid_token_auto_refreshes_using_refresh_token(tmp_path: Path):
+    from unittest.mock import MagicMock
+
+    config_path = tmp_path / "token.json"
+    expiring_soon = _fake_jwt(exp=time.time() + 120)
+    config_path.write_text(
+        json.dumps({"access_token": expiring_soon, "refresh_token": "ref_old"})
+    )
+
+    refreshed_access = _fake_jwt(exp=time.time() + 3600)
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.json.return_value = {
+        "access_token": refreshed_access,
+        "refresh_token": "ref_new",
+    }
+
+    with (
+        patch("kitabim_client.auth.httpx.post", return_value=mock_res) as mock_post,
+        patch("kitabim_client.auth._login") as mock_login,
+    ):
+        result = auth.get_valid_token("http://localhost:8000", config_path)
+
+    assert result == refreshed_access
+    mock_login.assert_not_called()
+    mock_post.assert_called_once()
+    saved = json.loads(config_path.read_text())
+    assert saved["access_token"] == refreshed_access
+    assert saved["refresh_token"] == "ref_old"
+
+
+def test_get_valid_token_headless_raises_auth_error_without_browser(tmp_path: Path):
+    import pytest
+
+    config_path = tmp_path / "token.json"
+    expired = _fake_jwt(exp=time.time() - 60)
+    config_path.write_text(json.dumps({"access_token": expired}))
+
+    with patch("kitabim_client.auth._login") as mock_login:
+        with pytest.raises(auth.AuthError, match="python main.py login"):
+            auth.get_valid_token("http://localhost:8000", config_path, headless=True)
+
+    mock_login.assert_not_called()

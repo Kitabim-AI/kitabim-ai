@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,7 +39,7 @@ class WordOut(BaseModel):
 @router.get("/spell-check/words/search", response_model=List[WordOut])
 async def search_words(
     q: str,
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
 ):
     """Search for words in the spell check list (autocomplete)."""
@@ -83,8 +83,8 @@ async def list_letter_groups(
 
 @router.get("/spell-check/words", response_model=List[WordOut])
 async def list_words(
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
     letter_group: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):

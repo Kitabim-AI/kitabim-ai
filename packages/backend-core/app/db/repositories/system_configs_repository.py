@@ -20,17 +20,24 @@ class SystemConfigsRepository(BaseRepository[SystemConfig]):
     async def get_value(self, key: str, default: Optional[str] = None) -> Optional[str]:
         """Get config value by key with cache"""
         cache_key = f"config:{key}"
-        cached_value = await cache_service.get(cache_key)
+        try:
+            cached_value = await cache_service.get(cache_key)
+        except Exception:
+            cached_value = None
         if cached_value is not None:
             return cached_value
 
         config = await self.get(key)
-        value = config.value if config else default
+        raw_val = getattr(config, "value", None) if config else None
+        value = raw_val if isinstance(raw_val, str) else default
 
         if value is not None:
-            await cache_service.set(
-                cache_key, value, ttl=settings.cache_ttl_system_config
-            )
+            try:
+                await cache_service.set(
+                    cache_key, value, ttl=settings.cache_ttl_system_config
+                )
+            except Exception:
+                pass
 
         return value
 

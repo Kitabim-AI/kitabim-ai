@@ -5,9 +5,10 @@ Provides async SQLAlchemy data access repositories encapsulating database querie
 
 ## Interface
 - `[base_repository.py:BaseRepository]` — Generic base repository providing CRUD primitives (`get_by_id`, `get_all`, `create`, `update`, `delete`, `count`).
-- `[books_repository.py:BooksRepository]` — Manages book metadata, processing milestones, catalog searching, and entity query matching.
-- `[pages_repository.py:PagesRepository]` — Manages page records, OCR text storage, milestone status transitions, and TOC offsets.
-- `[chunks_repository.py:ChunksRepository]` — Handles text chunk storage, pgvector similarity lookups, and keyword searches.
+- `[books_repository.py:BooksRepository]` — Manages book metadata, processing milestones, backfill candidate queries, catalog searching, and entity query matching.
+- `[book_sections_repository.py:BookSectionsRepository]` — Manages two-tier `BookSection` hierarchies (`chapter` -> `work`), leaf section queries, and normalized/fuzzy short-work lookups.
+- `[pages_repository.py:PagesRepository]` — Manages page records, OCR text storage, bulk OCR replacement, milestone status transitions, `contentPageMap`, and manual start-page alignment.
+- `[chunks_repository.py:ChunksRepository]` — Handles text chunk storage, `text_hash` vector carry-over maps, section/page-span pgvector similarity lookups, and keyword searches.
 - `[book_summaries_repository.py:BookSummariesRepository]` — Persists and queries book summaries, character profiles, and thematic outlines.
 - `[users_repository.py:UsersRepository]` — Manages user profiles, OAuth identity bindings, role updates, and user listing.
 - `[refresh_tokens_repository.py:RefreshTokensRepository]` — Stores, validates, and revokes hashed JWT refresh tokens.

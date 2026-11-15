@@ -18,6 +18,9 @@ Core OCR processing, layout analysis, dictionary validation, queue scheduling, a
 - `[dictionary.py:get_valid_words]`: Retrieves valid words set via in-memory cache, disk cache, or remote API.
 - `[line_ends.py:get_line_detector]`: Thread-safe getter for process-wide Surya text-line detector.
 - `[line_ends.py:read_line_end_words]`: Detects normalized words ending with line-break hyphens on page margins.
+- `[line_ends.py:read_bottom_line_end_word]`: Crops only the bottom body line to verify a trailing hyphenated stem.
+- `[line_ends.py:join_cross_page_hyphenated_words]`: Joins words split by line-break hyphens across contiguous body pages `(p, p + 1)`.
+- `[line_ends.py:apply_cross_page_dehyphenation]`: Applies cross-page dehyphenation across contiguous freshly Surya-OCR'd body pages.
 - `[queue.py:BookQueueManager]`: Sequential background queue manager coordinating single-book OCR execution.
   - `[queue.py:BookQueueManager.enqueue]`: Enqueues session ID and transitions metadata status.
   - `[queue.py:BookQueueManager.cancel]`: Cancels pending queued session before execution.
@@ -25,20 +28,24 @@ Core OCR processing, layout analysis, dictionary validation, queue scheduling, a
   - `[queue.py:BookQueueManager.recover_queue]`: Recovers and re-enqueues unfinished sessions on startup.
   - `[queue.py:BookQueueManager.wait_all]`: Waits for all active and queued sessions to complete.
 - `[recognize.py:LowConfidenceOcrError]`: Exception raised on empty or low-confidence OCR output for non-blank pages.
+- `[recognize.py:PageOcrResult]`: Dataclass returned by `ocr_page_with_meta` carrying `text`, `detected_page_number`, and `ended_with_hyphen`.
 - `[recognize.py:get_recognition_predictor]`: Instantiates or returns Surya recognition predictor.
 - `[recognize.py:ocr_page]`: Async page OCR executor orchestrating zoom, preprocessing, inference, Table-of-Contents line-aware recovery and pipe-table formatting, and retry loops.
+- `[recognize.py:ocr_page_with_meta]`: Async page OCR executor returning `PageOcrResult` with bleed-through-safe sidecar `detected_page_number` and `ended_with_hyphen`.
 - `[recognize.py:is_page_blank]`: Checks rendered Pixmap variance against blank page threshold.
 - `[recognize.py:suppress_bleed_through]`: Cleans background show-through ink from scanned pages.
 - `[recognize.py:enhance_dots_and_contrast]`: Enhances diacritics and dots for Uyghur Arabic script.
 - `[recognize.py:get_adaptive_page_zoom]`: Computes rendering zoom factor based on input page dimensions.
 - `[text_cleanup.py:clean_uyghur_text]`: Sanitizes OCR output, strips isolated page numbers, and normalizes typography.
+- `[text_cleanup.py:strip_page_numbers_with_capture]`: Strips isolated header/footer page numbers and captures the printed page number sidecar.
+- `[text_cleanup.py:extract_standalone_page_number]`: Extracts pure-digit printed page candidates (`1 <= n <= 5000`) from header/footer lines.
 - `[text_cleanup.py:normalize_uyghur_chars]`: Normalizes unicode codepoints for Uyghur Arabic characters.
 - `[text_cleanup.py:is_toc_page]`: Evaluates if page text represents a Table of Contents.
 - `[text_cleanup.py:is_block_repetition_loop]`: Identifies degenerate looping hallucinations while preserving punctuated literary vocalizations and table rows.
 - `[text_cleanup.py:is_hallucinated_arabic_block]`: Identifies unvocalized non-Uyghur Arabic bleed-through hallucinations while preserving Turkic consonants and vocalized quotations.
 - `[text_cleanup.py:is_hallucinated_ghost_text]`: Identifies pseudo-Uyghur bleed-through hallucinations with garbled internal syllable loops or extreme content-word duplication.
 - `[text_cleanup.py:is_degenerate_ocr_output]`: Enforces upper bounds on character counts and catches per-block or consecutive-line runaway loops without rejecting structured quiz/form pages.
-- `[workdir.py:PageState]`: Dataclass modeling individual page OCR results and review state.
+- `[workdir.py:PageState]`: Dataclass modeling individual page OCR results, sidecar `detected_page_number`, `skipped`, and review state.
 - `[workdir.py:OcrWorkDir]`: Local filesystem manager for session state, `book.json`, `pages.json`, and rendered PNGs.
 
 ## Invariants

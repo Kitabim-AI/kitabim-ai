@@ -12,7 +12,8 @@ from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
-from jose import jwt, JWTError
+import jwt
+from jwt import PyJWTError as JWTError
 
 from app.core.config import settings
 
@@ -276,6 +277,7 @@ def create_oauth_state_token(oauth_state: OAuthState) -> str:
         Signed JWT string valid for 10 minutes.
     """
     payload: dict = {
+        "type": "oauth_state",
         "state": oauth_state.state,
         "nonce": oauth_state.nonce,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
@@ -320,6 +322,12 @@ def decode_oauth_state_token(token: str) -> Optional[OAuthState]:
 
     try:
         payload = jwt.decode(token, secret, algorithms=[settings.jwt_algorithm])
+        if payload.get("type") not in (None, "oauth_state"):
+            return None
+        if not isinstance(payload.get("state"), str) or not isinstance(
+            payload.get("nonce"), str
+        ):
+            return None
         return OAuthState(
             state=payload["state"],
             nonce=payload["nonce"],

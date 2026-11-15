@@ -198,3 +198,28 @@ def test_cmd_push_resubmits_as_new_book_when_book_deleted_on_cloud(tmp_path: Pat
     reloaded = main.OcrWorkDir.load(workdir_path)
     assert reloaded.book_id == "new_cloud_id"
     assert reloaded.uploaded is True
+
+
+def test_build_parser_login_and_backfill_commands():
+    parser = main.build_parser()
+    login_args = parser.parse_args(["login", "--base-url", "http://localhost:8000"])
+    assert login_args.command == "login"
+    assert login_args.base_url == "http://localhost:8000"
+
+    bf_args = parser.parse_args(
+        [
+            "backfill",
+            "--book-id",
+            "b1",
+            "--limit",
+            "5",
+            "--max-server-backlog",
+            "3",
+            "--dry-run",
+        ]
+    )
+    assert bf_args.command == "backfill"
+    assert bf_args.book_id == "b1"
+    assert bf_args.limit == 5
+    assert bf_args.max_server_backlog == 3
+    assert bf_args.dry_run is True

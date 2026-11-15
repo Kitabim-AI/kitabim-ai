@@ -1,11 +1,11 @@
 # Kitabim.AI Worker Blueprint
 
 ## System Overview
-Asynchronous background worker service running ARQ task queues over Redis for Kitabim.AI, executing pipeline workflows including document OCR, text chunking, vector embeddings, Uyghur dictionary spell-checking, book summarization, historical term extraction, Neo4j knowledge graph construction, and scheduled watchdog tasks.
+Asynchronous background worker service running ARQ task queues over Redis for Kitabim.AI, executing pipeline workflows including document OCR, text chunking, vector embeddings, Uyghur dictionary spell-checking, book summarization, Neo4j knowledge graph construction, and scheduled watchdog tasks.
 
 ## Local Interface & Invariants
 - `[worker.py:WorkerSettings]`: ARQ worker configuration defining Redis connection parameters, registered functions, scheduled cron jobs, concurrency limits, job timeouts, and lifecycle hooks (`on_startup=worker_startup`, `on_shutdown=worker_shutdown`).
-- `[worker.py:WorkerSettings.functions]`: ARQ job handler list (`ocr_job`, `chunking_job`, `embedding_job`, `spell_check_job`, `llm_spell_check_job`, `summary_job`, `auto_correct_job`, `knowledge_graph_job`, `graph_resolution_job`, `rag_eval_job`, `extract_book_history_terms_task`) wrapped with request tracking.
+- `[worker.py:WorkerSettings.functions]`: ARQ job handler list (`ocr_job`, `structure_job`, `chunking_job`, `embedding_job`, `spell_check_job`, `summary_job`, `auto_correct_job`, `knowledge_graph_job`, `graph_resolution_job`, `rag_eval_job`) wrapped with request tracking.
 - `[worker.py:WorkerSettings.cron_jobs]`: Scheduled ARQ cron jobs wrapped with `safe_cron_job` to isolate failures.
 - `[worker.py:safe_cron_job]`: Decorator catching and logging unhandled exceptions to prevent cron task failures from crashing the worker process.
 - `[manual_scan.py:main]`: Standalone CLI utility to execute `run_spell_check_scanner` against PostgreSQL and Redis manually.

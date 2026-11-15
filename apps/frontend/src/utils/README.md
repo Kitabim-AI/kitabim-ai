@@ -1,7 +1,7 @@
 # Frontend Utilities
 
 ## Overview
-Provides text formatting, bidirectional script handling, Arabic/Quranic normalization, social share link generation, Uyghur alphabetical sorting, and word-level diff algorithms.
+Provides text formatting, bidirectional script handling, Arabic/Quranic normalization, social share link generation, and Uyghur alphabetical sorting.
 
 ## Interface
 - `[costUtils.ts:formatAnswerCost]`: Formats dollar costs and token counts into bidirectional-safe Uyghur/English strings.
@@ -20,14 +20,11 @@ Provides text formatting, bidirectional script handling, Arabic/Quranic normaliz
 - `[uyghurAlphabet.ts:sortByUyghurAlphabet]`: Sorts strings according to canonical Uyghur alphabetical precedence.
 - `[uyghurAlphabet.ts:parseDefinition]`: Splits dictionary definition text into chunks of text, metadata tags (`[...]`), and line breaks (`[CRLF]`).
 - `[uyghurAlphabet.ts:ParsedChunk]`: Interface representing a parsed definition chunk (`type: 'text' | 'metadata' | 'br'`, `content`).
-- `[wordDiff.ts:diffChangedWordRanges]`: Identifies character ranges of changed or inserted words relative to a baseline text via LCS.
-- `[wordDiff.ts:ChangedRange]`: Interface representing changed character offsets and replaced original words (`start`, `end`, `original`).
 
 ## Invariants
 - `[costUtils.ts:formatAnswerCost]`: Enforces Left-to-Right Mark (`\u200E`) wrapping around numerals and dollar values to prevent bidirectional layout distortion.
 - `[shareText.ts:buildSafeTweetText]`: Output text is guaranteed to produce an encoded tweet intent URL within the specified `maxUrlLength`.
 - `[uyghurAlphabet.ts:sortByUyghurAlphabet]`: Characters not present in `UYGHUR_ALPHABET` sort after all known alphabet characters.
-- `[wordDiff.ts:diffChangedWordRanges]`: Pure insertions have `original: ''`; deleted words without a target position in current text are excluded from returned character ranges.
 
 ## Side Effects
 - `None`: Pure computational and transformation functions with zero side effects.

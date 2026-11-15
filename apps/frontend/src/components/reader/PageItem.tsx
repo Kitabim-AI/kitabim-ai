@@ -1,4 +1,4 @@
-import { Bookmark as BookmarkIcon, BookmarkCheck as BookmarkFilledIcon, Edit3, ListTree, ListX, Loader2, RotateCcw, Save, Share2, Sparkles } from 'lucide-react';
+import { Bookmark as BookmarkIcon, BookmarkCheck as BookmarkFilledIcon, Edit3, ListTree, ListX, Loader2, RotateCcw, Save, Share2 } from 'lucide-react';
 import { Bookmark } from '@shared/types';
 import React from 'react';
 import { createPortal } from 'react-dom';
@@ -12,9 +12,6 @@ import { ShareSearchResultModal } from '../share/ShareSearchResultModal';
 import { BookmarkPrompt } from './BookmarkPrompt';
 
 import { normalizeArabic } from '../../utils/quranUtils';
-import { useLlmSpellCheckPreview } from '../../hooks/useLlmSpellCheckPreview';
-import { diffChangedWordRanges } from '../../utils/wordDiff';
-import { ChangedWordsLayer } from './ChangedWordsLayer';
 
 interface PageItemProps {
   page: any;
@@ -31,12 +28,13 @@ interface PageItemProps {
 
   tempText: string;
   onTempTextChange: (text: string) => void;
-  onSave: (llmSpellChecked: boolean) => void;
+  onSave: () => void;
   onCancel: () => void;
   isLoading: boolean;
   isSaving?: boolean;
   isFullscreen?: boolean;
   contentPageOffset?: number;
+  contentPageMap?: Record<string, number> | null;
   onTocPageClick?: (targetPage: number) => void;
 
   bookId?: string;
@@ -53,7 +51,7 @@ interface PageItemProps {
 
 export const PageItem: React.FC<PageItemProps> = React.memo(({
   page, isActive, isEditing, fontSize, contentFontFamily, contentFontClassName, onSetActive, onEdit, onReprocess, onSetStartPage, onToggleToc,
-  tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, onTocPageClick,
+  tempText, onTempTextChange, onSave, onCancel, isLoading, isSaving, isFullscreen, contentPageOffset, contentPageMap, onTocPageClick,
   bookId, bookTitle, bookAuthor, highlightQuote, onHighlightApplied,
   bookmarks = [], onCreateBookmark, onRenameBookmark, onDeleteBookmark,
 }) => {
@@ -72,7 +70,8 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
 
   const textSelection = useTextSelectionShare(contentRef, isActive);
 
-  const displayPage = page.displayPageNumber || page.display_page_number;
+  const contentPageNum = page.contentPageNumber ?? page.content_page_number;
+  const displayPage = (contentPageNum !== undefined && contentPageNum !== null ? String(contentPageNum) : null) || page.displayPageNumber || page.display_page_number;
 
   const adjustHeight = React.useCallback(() => {
     if (!isEditing || !textareaRef.current || !containerRef.current) return;
@@ -112,68 +111,11 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
     [fontSize, contentFontFamily]
   );
 
-  const llmCheck = useLlmSpellCheckPreview(bookId, page.pageNumber, tempText, onTempTextChange);
-  const { reset: resetLlmCheck } = llmCheck;
-  React.useEffect(() => {
-    if (!isEditing) resetLlmCheck();
-  }, [isEditing, resetLlmCheck]);
-
   const toEditorText = React.useCallback(
     (s: string) => (contentFontClassName === 'reader-font-adobe' ? normalizeArabic(s) : s),
     [contentFontClassName]
   );
   const editorValue = toEditorText(tempText);
-  const changedRanges = React.useMemo(
-    () => (llmCheck.baselineText === null ? [] : diffChangedWordRanges(toEditorText(llmCheck.baselineText), editorValue)),
-    [llmCheck.baselineText, editorValue, toEditorText]
-  );
-  const highlightLayerRef = React.useRef<HTMLDivElement>(null);
-  const isHighlighting = llmCheck.baselineText !== null;
-
-  // Original-word tooltip over a replaced word. The textarea sits above the
-  // highlight layer, so hits are found by testing the pointer against the
-  // layer's <mark> boxes; the caret inside a replaced word (touch, keyboard)
-  // shows it too. Hover wins over the caret.
-  type OriginalTip = { original: string; top: number; left: number };
-  const [hoverTip, setHoverTip] = React.useState<OriginalTip | null>(null);
-  const [caretTip, setCaretTip] = React.useState<OriginalTip | null>(null);
-  const originalTip = hoverTip ?? caretTip;
-
-  const tipAt = React.useCallback((idx: number, box: DOMRect | DOMRectReadOnly): OriginalTip | null => {
-    const original = changedRanges[idx]?.original;
-    const container = containerRef.current;
-    if (!original || !container) return null;
-    const c = container.getBoundingClientRect();
-    return { original, top: box.top - c.top, left: box.left - c.left + box.width / 2 };
-  }, [changedRanges]);
-
-  const handleEditorMouseMove = (e: React.MouseEvent<HTMLTextAreaElement>) => {
-    const marks = highlightLayerRef.current?.querySelectorAll<HTMLElement>('mark[data-range-index]');
-    if (!marks) return;
-    for (const mark of Array.from(marks)) {
-      for (const box of Array.from(mark.getClientRects())) {
-        if (e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom) {
-          setHoverTip(tipAt(Number(mark.dataset.rangeIndex), box));
-          return;
-        }
-      }
-    }
-    setHoverTip(null);
-  };
-
-  const handleEditorSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
-    const { selectionStart, selectionEnd } = e.currentTarget;
-    const idx = selectionStart === selectionEnd
-      ? changedRanges.findIndex(r => selectionStart >= r.start && selectionStart <= r.end)
-      : -1;
-    const mark = idx < 0 ? null : highlightLayerRef.current?.querySelector<HTMLElement>(`mark[data-range-index="${idx}"]`);
-    setCaretTip(mark ? tipAt(idx, mark.getClientRects()[0] ?? mark.getBoundingClientRect()) : null);
-  };
-
-  React.useEffect(() => {
-    setHoverTip(null);
-    setCaretTip(null);
-  }, [changedRanges]);
 
   const displayText = React.useMemo(
     () => (contentFontClassName === 'reader-font-adobe' ? normalizeArabic(page.text || '') : (page.text || "...")),
@@ -249,83 +191,31 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
       {isEditing ? (
         <div className="flex-1 flex flex-col gap-4 min-h-0">
           <div ref={containerRef} className="relative flex-1 flex flex-col min-h-[300px]">
-            {isHighlighting && (
-              <ChangedWordsLayer
-                ref={highlightLayerRef}
-                text={editorValue}
-                ranges={changedRanges}
-                className={`p-4 uyghur-text border-2 border-transparent rounded-xl bg-white dark:bg-slate-800 leading-relaxed ${contentFontClassName || ''}`}
-                style={contentStyle}
-              />
-            )}
             <textarea
               ref={textareaRef}
               value={editorValue}
               onChange={(e) => onTempTextChange(contentFontClassName === 'reader-font-adobe' ? normalizeArabic(e.target.value) : e.target.value)}
-              onScroll={(e) => {
-                if (highlightLayerRef.current) highlightLayerRef.current.scrollTop = e.currentTarget.scrollTop;
-                setHoverTip(null);
-                setCaretTip(null);
-              }}
-              onMouseMove={isHighlighting ? handleEditorMouseMove : undefined}
-              onMouseLeave={() => setHoverTip(null)}
-              onSelect={isHighlighting ? handleEditorSelect : undefined}
-              readOnly={llmCheck.isChecking}
-              className={`flex-1 w-full h-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none ${isHighlighting ? 'bg-transparent' : 'bg-white dark:bg-slate-800'} text-[#1a1a1a] dark:text-slate-100 relative z-10 custom-scrollbar leading-relaxed ${contentFontClassName || ''}`}
+              className={`flex-1 w-full h-full p-4 uyghur-text border-2 border-[#0369a1] dark:border-[#38bdf8] rounded-xl outline-none resize-none bg-white dark:bg-slate-800 text-[#1a1a1a] dark:text-slate-100 relative z-10 custom-scrollbar leading-relaxed ${contentFontClassName || ''}`}
               style={contentStyle}
               dir="rtl"
             />
-            {originalTip && (
-              <div
-                data-testid="llm-original-tooltip"
-                role="tooltip"
-                dir="rtl"
-                className={`absolute z-30 -translate-x-1/2 -translate-y-full -mt-1.5 px-3 py-1 rounded-lg bg-slate-900 dark:bg-slate-700 text-white dark:text-slate-100 text-sm whitespace-nowrap shadow-lg pointer-events-none uyghur-text ${contentFontClassName || ''}`}
-                style={{ top: originalTip.top, left: originalTip.left }}
-              >
-                {originalTip.original}
-              </div>
-            )}
-            {llmCheck.isChecking && (
-              <div
-                role="status"
-                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl bg-white/70 dark:bg-slate-900/70 backdrop-blur-[1px]"
-              >
-                <Loader2 size={32} className="animate-spin text-[#0369a1] dark:text-[#38bdf8]" />
-                <span className="text-sm font-bold text-[#0369a1] dark:text-[#38bdf8]">{t('reader.llmSpellCheckRunning')}</span>
-              </div>
-            )}
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <button
-              onClick={() => onSave(isHighlighting)}
-              disabled={isSaving || llmCheck.isChecking}
+              onClick={() => onSave()}
+              disabled={isSaving}
               className="px-6 py-2 bg-[#0369a1] text-white rounded-xl text-sm hover:bg-[#0284c7] transition-all flex items-center gap-2 disabled:opacity-50"
             >
               {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
               {t('common.save')}
             </button>
             <button
-              onClick={() => { resetLlmCheck(); onCancel(); }}
+              onClick={onCancel}
               disabled={isSaving}
               className="px-6 py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl text-sm transition-all disabled:opacity-30"
             >
               {t('common.cancel')}
             </button>
-            {bookId && (
-              <button
-                onClick={() => { void llmCheck.runCheck(); }}
-                disabled={isSaving || llmCheck.isChecking || !tempText.trim()}
-                title={t('reader.llmSpellCheckTitle')}
-                className="px-4 py-2 bg-[#0369a1]/10 dark:bg-[#38bdf8]/10 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1] dark:hover:bg-[#38bdf8] hover:text-white dark:hover:text-slate-950 rounded-xl text-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {llmCheck.isChecking ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                {t('reader.llmSpellCheck')}
-              </button>
-            )}
-            {llmCheck.error && (
-              <span className="text-sm text-red-600 dark:text-red-400">{llmCheck.error}</span>
-            )}
           </div>
         </div>
       ) : (
@@ -338,6 +228,7 @@ export const PageItem: React.FC<PageItemProps> = React.memo(({
               className={`uyghur-text text-[#1a1a1a] dark:text-slate-100 ${contentFontClassName || ''}`}
               style={contentStyle}
               contentPageOffset={contentPageOffset}
+              contentPageMap={contentPageMap}
               onTocPageClick={onTocPageClick}
               isTocPage={page?.isToc ?? page?.is_toc}
             />

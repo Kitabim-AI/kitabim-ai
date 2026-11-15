@@ -1768,3 +1768,132 @@ def test_needs_toc_line_reocr_triggers_on_orphaned_dot_leaders_missing_page_numb
     ]
     assert svc._is_unformatted_toc_page(blocks) is True
     assert svc._needs_toc_line_reocr(blocks) is True
+
+
+def test_block_html_to_markdown_prefixes_title_and_section_header_wrapped_in_p():
+    assert svc._block_html_to_markdown("<p>بىرىنچى باب</p>", "Title") == "# بىرىنچى باب"
+    assert (
+        svc._block_html_to_markdown("<p>كىرىش سۆز</p>", "SectionHeader")
+        == "## كىرىش سۆز"
+    )
+    # Multi-line SectionHeader wrapped in <p> with <br> joins onto a single heading line
+    assert (
+        svc._block_html_to_markdown(
+            "<p>بىرىنچى باب<br/>تارىخىي ئارقا كۆرۈنۈشى</p>", "SectionHeader"
+        )
+        == "## بىرىنچى باب تارىخىي ئارقا كۆرۈنۈشى"
+    )
+    # Already prefixed or h1-h6 stays intact
+    assert (
+        svc._block_html_to_markdown("<h1>چوڭ ماۋزۇ</h1>", "SectionHeader")
+        == "# چوڭ ماۋزۇ"
+    )
+
+
+def test_process_page_sync_captures_detected_page_number_preferring_footer_and_rejecting_phantom():
+    import numpy as np
+
+    # Page background 245, real ink at 30, phantom bleed-through header at 220
+    img_arr = np.full((300, 200), 245, dtype=np.uint8)
+    img_arr[10:30, 20:180] = 220  # Phantom PageHeader ("99")
+    img_arr[60:150, 20:180] = 30  # Real Text block
+    img_arr[250:280, 20:180] = 30  # Real PageFooter ("24")
+    img = Image.fromarray(img_arr, mode="L")
+
+    b_header = _boxed_block("PageHeader", "<p>99</p>", 0, 10, 30)
+    b_text = _boxed_block("Text", "<p>بۇ ھەقىقىي تېكىست.</p>", 1, 60, 150)
+    b_footer = _boxed_block("PageFooter", "<p>— 24 —</p>", 2, 250, 280)
+
+    mock_result = MagicMock()
+    mock_result.blocks = [b_header, b_text, b_footer]
+    mock_predictor = MagicMock(return_value=[mock_result])
+
+    markdown, _, footer_num, header_num = svc._run_process_page_sync(
+        img, mock_predictor
+    )
+    assert markdown == "بۇ ھەقىقىي تېكىست."
+    assert footer_num == 24
+    assert header_num is None
+
+
+def test_toc_tablizes_anthology_entries_with_authors_and_parenthesized_page_numbers():
+    from types import SimpleNamespace
+    import numpy as np
+
+    collapsed_anthology = (
+        "تۇل خوتۇن ..... ئۆمەرجان ساۋۇت ( 1 ) "
+        "بۇ چۈش ئەمەس..... مەمتىمىن ھوشۇر ( 12 ) "
+        "مۆڭگۈز ..... توختى ئايۇپ ( 47 ) "
+        "قارىغايسۇ جىلغىسىدىكى كۆلكە ۋە كۆز يېشى.... زوردۇن سابىر ( 93 ) "
+        "سادا ..... زۇلپىقار (121) "
+        "ئىمامنىڭ خوتۇنى ..... ئاتاۋۇللا تۇرسۇنتوختى (143) "
+        "يېڭى قوشنا ..... نۇرمەھەممەت توختى (166) "
+        "ھاڭگىرت كۆلى ..... خالىدە ئىسرايىل (210) "
+        "قۇتلۇق كېچە ..... تۇردىھاجى ئابدۇغوپۇر (250) "
+        "ئايالىمنىڭ كۈندىلىك خاتىرىسى ..... ئەنۋەر غوپۇر (286) "
+        "گۈزەل قىرغاق ..... ماخمۇت مەھەممەت (315) "
+        "سىزنى سۆيەتتىم ..... ياسىن نىياز (335) "
+        "ھالاكەت ..... پەرھات تۇرسۇن (369)"
+    )
+    expected_table = (
+        "## مۇندەرىجە\n\n"
+        "| تۇل خوتۇن ئۆمەرجان ساۋۇت | 1 |\n"
+        "| بۇ چۈش ئەمەس مەمتىمىن ھوشۇر | 12 |\n"
+        "| مۆڭگۈز توختى ئايۇپ | 47 |\n"
+        "| قارىغايسۇ جىلغىسىدىكى كۆلكە ۋە كۆز يېشى زوردۇن سابىر | 93 |\n"
+        "| سادا زۇلپىقار | 121 |\n"
+        "| ئىمامنىڭ خوتۇنى ئاتاۋۇللا تۇرسۇنتوختى | 143 |\n"
+        "| يېڭى قوشنا نۇرمەھەممەت توختى | 166 |\n"
+        "| ھاڭگىرت كۆلى خالىدە ئىسرايىل | 210 |\n"
+        "| قۇتلۇق كېچە تۇردىھاجى ئابدۇغوپۇر | 250 |\n"
+        "| ئايالىمنىڭ كۈندىلىك خاتىرىسى ئەنۋەر غوپۇر | 286 |\n"
+        "| گۈزەل قىرغاق ماخمۇت مەھەممەت | 315 |\n"
+        "| سىزنى سۆيەتتىم ياسىن نىياز | 335 |\n"
+        "| ھالاكەت پەرھات تۇرسۇن | 369 |"
+    )
+
+    # 1. Text fallback when full-page OCR collapsed all entries onto one paragraph
+    blocks = [
+        _boxed_block("SectionHeader", "<h2>مۇندەرىجە</h2>", 0, 40, 80),
+        _boxed_block("Text", f"<p>{collapsed_anthology}</p>", 1, 100, 500),
+    ]
+    assert svc._is_unformatted_toc_page(blocks) is True
+    assert svc._needs_toc_line_reocr(blocks) is True
+    assert svc._format_toc_blocks_to_markdown(blocks) == expected_table
+
+    # 2. Line-by-line re-OCR path where each row is recognized as one wide title crop
+    img = Image.fromarray(np.full((600, 1000, 3), 250, dtype=np.uint8))
+    full_page = MagicMock()
+    full_page.blocks = blocks
+    row_lines = [
+        "تۇل خوتۇن ..... ئۆمەرجان ساۋۇت ( 1 )",
+        "بۇ چۈش ئەمەس..... مەمتىمىن ھوشۇر ( 12 )",
+        "مۆڭگۈز ..... توختى ئايۇپ ( 47 )",
+        "قارىغايسۇ جىلغىسىدىكى كۆلكە ۋە كۆز يېشى.... زوردۇن سابىر ( 93 )",
+        "سادا ..... زۇلپىقار (121)",
+        "ئىمامنىڭ خوتۇنى ..... ئاتاۋۇللا تۇرسۇنتوختى (143)",
+        "يېڭى قوشنا ..... نۇرمەھەممەت توختى (166)",
+        "ھاڭگىرت كۆلى ..... خالىدە ئىسرايىل (210)",
+        "قۇتلۇق كېچە ..... تۇردىھاجى ئابدۇغوپۇر (250)",
+        "ئايالىمنىڭ كۈندىلىك خاتىرىسى ..... ئەنۋەر غوپۇر (286)",
+        "گۈزەل قىرغاق ..... ماخمۇت مەھەممەت (315)",
+        "سىزنى سۆيەتتىم ..... ياسىن نىياز (335)",
+        "ھالاكەت ..... پەرھات تۇرسۇن (369)",
+    ]
+    det_boxes = [SimpleNamespace(bbox=[420.0, 40.0, 580.0, 70.0])]
+    crop_blocks = [SimpleNamespace(html="<h2>مۇندەرىجە</h2>", error=False)]
+    for idx, r_line in enumerate(row_lines):
+        y0 = 100.0 + idx * 30.0
+        det_boxes.append(SimpleNamespace(bbox=[180.0, y0, 880.0, y0 + 22.0]))
+        crop_blocks.append(SimpleNamespace(html=f"<p>{r_line}</p>", error=False))
+
+    mock_detector = MagicMock(return_value=[SimpleNamespace(bboxes=det_boxes)])
+    predictor = MagicMock(return_value=[SimpleNamespace(blocks=crop_blocks)])
+    with (
+        patch("engine.recognize.recognize_page", return_value=full_page),
+        patch("engine.recognize._get_toc_line_detector", return_value=mock_detector),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        markdown, _ = svc._process_page_sync(img, predictor)
+
+    assert markdown == expected_table

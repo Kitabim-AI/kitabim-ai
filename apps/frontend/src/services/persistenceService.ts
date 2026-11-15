@@ -245,6 +245,37 @@ export const PersistenceService = {
     }
   },
 
+  async reprocessStructure(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/structure`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      throw new Error("Failed to start structure re-extraction");
+    }
+  },
+
+  async setStartPage(bookId: string, pageNum: number, startContentPage: number = 1): Promise<{
+    status: string;
+    contentPageOffset: number;
+    contentPageMap?: Record<string, number>;
+  }> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/set-start-page`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ startContentPage }),
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      throw new Error("Failed to set start page");
+    }
+    return response.json();
+  },
+
   async reprocessChunking(bookId: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/chunking`, {
       method: 'POST',
@@ -282,33 +313,6 @@ export const PersistenceService = {
     }
   },
 
-  async reprocessLlmSpellCheck(bookId: string): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/llm-spell-check`, {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Admin access required");
-      }
-      throw new Error("Failed to start LLM spell check");
-    }
-  },
-
-  async previewLlmSpellCheck(bookId: string, pageNum: number, text: string, signal?: AbortSignal): Promise<string> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/llm-spell-check/preview`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-      signal,
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to run LLM spell check");
-    }
-    const data = await response.json();
-    return data.corrected_text;
-  },
-
   async reprocessGraph(bookId: string, scope: 'fiction' | 'nonfiction'): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/graph`, {
       method: 'POST',
@@ -320,20 +324,6 @@ export const PersistenceService = {
         throw new Error("Permission denied: Editor access required");
       }
       throw new Error("Failed to start reprocessing graph");
-    }
-  },
-
-  async reprocessHistory(bookId: string, minSignificance = 5): Promise<void> {
-    const response = await authFetch(`${API_BASE}/admin/books/${bookId}/extract-history`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ min_significance: minSignificance }),
-    });
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Admin access required");
-      }
-      throw new Error("Failed to start history extraction");
     }
   },
 
@@ -375,11 +365,11 @@ export const PersistenceService = {
     return response.json();
   },
 
-  async updatePage(bookId: string, pageNum: number, text: string, llmSpellChecked: boolean = false): Promise<void> {
+  async updatePage(bookId: string, pageNum: number, text: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/update`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, llm_spell_checked: llmSpellChecked })
+      body: JSON.stringify({ text })
     });
     if (!response.ok) {
       throw new Error("Failed to update page text");

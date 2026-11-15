@@ -9,7 +9,7 @@ Wraps Google Gemini client operations, multimodal generation, circuit breakers, 
 - `[models.py:is_llm_available]` — `is_llm_available() -> bool`: Inspects circuit breaker state for LLM availability.
 - `[models.py:reset_circuit_breakers]` / `[models.py:get_circuit_breaker_status]` — Circuit breaker administrative controls and telemetry.
 - `[models.py:ProtectedLLM]` — LangChain-compatible LLM wrapper guarded by circuit breaker checks.
-- `[models.py:GeminiEmbeddings]` — Embeddings client implementing document and query embedding generation.
+- `[models.py:GeminiEmbeddings]` — Embeddings client implementing document (`batchEmbedContents` sliced into sub-batches of `<= 64` texts) and query embedding generation with configurable `embed_gemini_timeout` (default `45s`).
 - `[models.py:DegenerateOcrOutputError]` — Exception raised when OCR generation produces repetitive or degenerate token loops.
 - `[models.py:is_transient_error]` — Identifies retryable HTTP/API errors (429, 503, ResourceExhausted).
 - `[chains.py:TextChain]` — LangChain text generation pipeline wrapper.

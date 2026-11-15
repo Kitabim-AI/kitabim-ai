@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select, func, distinct, delete, or_, case, String
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,7 +91,7 @@ async def list_history_letter_groups(
 @router.get("/history-dictionary/search", response_model=List[HistoryEntryOut])
 async def search_history_dictionary(
     q: str,
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
 ):
     q = q.strip()
@@ -120,8 +120,8 @@ async def search_history_dictionary(
 
 @router.get("/history-dictionary", response_model=List[HistoryEntryOut])
 async def list_history_entries(
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
     letter_group: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):

@@ -377,10 +377,10 @@ export const ReaderView: React.FC = () => {
 
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleUpdatePage = async (id: string, num: number, text: string, llmSpellChecked: boolean = false) => {
+  const handleUpdatePage = async (id: string, num: number, text: string) => {
     setIsSaving(true);
     try {
-      await bookActions.handleUpdatePage(id, num, text, setEditingPageNum, llmSpellChecked);
+      await bookActions.handleUpdatePage(id, num, text, setEditingPageNum);
     } finally {
       setIsSaving(false);
     }
@@ -397,16 +397,32 @@ export const ReaderView: React.FC = () => {
       onConfirm: async () => {
         setModal((prev: any) => ({ ...prev, isLoading: true }));
         try {
-          const success = await bookActions.handleSaveBookRow(selectedBook.id, {
-            contentPageOffset: newOffset
-          }, { silent: true });
-          if (success) {
+          if (typeof PersistenceService.setStartPage === 'function') {
+            const res = await PersistenceService.setStartPage(selectedBook.id, pageNumber, 1);
+            await bookActions.handleSaveBookRow(selectedBook.id, {
+              contentPageOffset: res?.contentPageOffset ?? newOffset,
+              ...(res?.contentPageMap ? { contentPageMap: res.contentPageMap } : {}),
+            }, { silent: true });
             addNotification(
-              t('reader.setStartPageSuccess', { page: pageNumber, offset: newOffset }) ||
-              `Physical page ${pageNumber} marked as Content Page 1 (Offset: +${newOffset})`,
+              t('reader.setStartPageSuccess', { page: pageNumber, offset: res?.contentPageOffset ?? newOffset }) ||
+              `Physical page ${pageNumber} marked as Content Page 1 (Offset: +${res?.contentPageOffset ?? newOffset})`,
               "success"
             );
+          } else {
+            const success = await bookActions.handleSaveBookRow(selectedBook.id, {
+              contentPageOffset: newOffset
+            }, { silent: true });
+            if (success) {
+              addNotification(
+                t('reader.setStartPageSuccess', { page: pageNumber, offset: newOffset }) ||
+                `Physical page ${pageNumber} marked as Content Page 1 (Offset: +${newOffset})`,
+                "success"
+              );
+            }
           }
+        } catch (err) {
+          console.error("Failed to set start page", err);
+          addNotification(t('common.error') || "Failed to set start page", "error");
         } finally {
           setModal((prev: any) => ({ ...prev, isOpen: false, isLoading: false }));
         }
@@ -415,6 +431,7 @@ export const ReaderView: React.FC = () => {
   };
 
   const contentPageOffset = selectedBook.contentPageOffset ?? (selectedBook as any).content_page_offset ?? 0;
+  const contentPageMap = selectedBook.contentPageMap ?? (selectedBook as any).content_page_map ?? null;
 
   const handleTocPageClick = useCallback((targetPage: number) => {
     if (isGuest && targetPage > 20) {
@@ -669,13 +686,14 @@ export const ReaderView: React.FC = () => {
                 onSetStartPage={isEditor ? (pageNum) => handleSetStartPage(pageNum) : undefined}
                 onToggleToc={isEditor ? (pageNum, nextIsToc) => bookActions.handleToggleToc(selectedBook.id, pageNum, nextIsToc) : undefined}
                 onTempTextChange={setTempPageText}
-                onSave={(pageNum, text, llmSpellChecked) => {
-                  handleUpdatePage(selectedBook.id, pageNum, text, llmSpellChecked === true);
+                onSave={(pageNum, text) => {
+                  handleUpdatePage(selectedBook.id, pageNum, text);
                 }}
                 onCancel={() => setEditingPageNum(null)}
                 isSaving={isSaving}
                 selectedBookPages={selectedBook.pages}
                 contentPageOffset={contentPageOffset}
+                contentPageMap={contentPageMap}
                 onTocPageClick={handleTocPageClick}
                 bookmarks={bookmarks}
                 onCreateBookmark={createBookmark}
@@ -714,8 +732,8 @@ export const ReaderView: React.FC = () => {
                         onToggleToc={isEditor ? (nextIsToc) => bookActions.handleToggleToc(selectedBook.id, page.pageNumber, nextIsToc) : undefined}
                         tempText={tempPageText}
                         onTempTextChange={setTempPageText}
-                        onSave={(llmSpellChecked) => {
-                          handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText, llmSpellChecked === true);
+                        onSave={() => {
+                          handleUpdatePage(selectedBook.id, page.pageNumber, tempPageText);
                           window.scrollTo(0, 0);
                         }}
                         onCancel={() => {
@@ -726,6 +744,7 @@ export const ReaderView: React.FC = () => {
                         isSaving={isSaving}
                         isFullscreen={isFullscreen}
                         contentPageOffset={contentPageOffset}
+                        contentPageMap={contentPageMap}
                         onTocPageClick={handleTocPageClick}
                         bookmarks={bookmarks}
                         onCreateBookmark={createBookmark}

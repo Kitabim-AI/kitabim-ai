@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timezone, timedelta
-from jose import jwt
+import jwt
 from app.core.config import Settings
 from app.models.user import UserRole
 from auth.jwt_handler import (

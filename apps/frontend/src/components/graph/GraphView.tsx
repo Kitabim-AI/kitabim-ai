@@ -262,6 +262,18 @@ export const GraphView: React.FC<GraphViewProps> = ({
     fetchGraphData();
   }, []);
 
+  // Zoom in by default when graph data loads so node and relationship labels are immediately readable
+  useEffect(() => {
+    if (rawGraphData.nodes.length === 0) return;
+    const timer = setTimeout(() => {
+      if (fgRef.current) {
+        fgRef.current.centerAt(0, 0, 300);
+        fgRef.current.zoom(2.2, 400);
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [rawGraphData]);
+
   const navigateToEntity = async (entityId: string, entityName?: string) => {
     const normName = entityName ? entityName.trim().toLowerCase() : '';
     
