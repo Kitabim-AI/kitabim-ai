@@ -678,3 +678,38 @@ async def test_update_page_text_rebuilds_full_multi_page_span_when_overlapping_c
     assert "5-بەت يېڭى تېكىستى" in combined_chunk_text
     assert "6-بەت تېكىستى" in combined_chunk_text
     mock_enqueue.assert_awaited_once_with("b1")
+
+
+@pytest.mark.asyncio
+async def test_count_pending_index_books_requires_ocr_complete_across_all_conditions():
+    setup_paths()
+    from sqlalchemy.dialects import postgresql
+
+    from app.db.repositories.books_repository import BooksRepository
+
+    captured_stmt = []
+    mock_session = AsyncMock()
+
+    async def _fake_execute(stmt):
+        captured_stmt.append(stmt)
+        res = MagicMock()
+        res.scalar_one.return_value = 0
+        return res
+
+    mock_session.execute = _fake_execute
+    repo = BooksRepository(mock_session)
+
+    for spell_enabled in (False, True):
+        captured_stmt.clear()
+        count = await repo.count_pending_index_books(spell_check_enabled=spell_enabled)
+        assert count == 0
+        assert len(captured_stmt) == 1
+        compiled_sql = str(
+            captured_stmt[0].compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        )
+        # Ensure books.ocr_milestone = 'complete' is a top-level AND condition,
+        # not buried only inside the spell_check branch
+        assert "books.ocr_milestone = 'complete'" in compiled_sql
+        assert "books.ocr_milestone = 'complete' AND (" in compiled_sql

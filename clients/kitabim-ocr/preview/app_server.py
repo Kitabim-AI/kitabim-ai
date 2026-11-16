@@ -9,7 +9,7 @@ import time
 import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional
 
 import fitz
 import uvicorn
@@ -17,7 +17,13 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
-from backfill import acquire_surya_gpu_lock
+from backfill import (
+    _append_page_checkpoint,
+    acquire_surya_gpu_lock_async,
+    backfill_single_book,
+    prevent_macos_sleep,
+    read_backfill_audit_log,
+)
 from engine.config import (
     get_configured_concurrency,
     get_configured_engine,
@@ -27,13 +33,14 @@ from engine.config import (
 from engine.line_ends import apply_cross_page_dehyphenation, text_ends_with_hyphen
 from engine.queue import BookQueueManager
 from engine.recognize import (
+    OCR_ENGINE_VERSION,
     LowConfidenceOcrError,
     get_recognition_predictor,
     ocr_page,
     pop_last_page_ocr_meta,
 )
 from engine.text_cleanup import is_toc_page
-from engine.workdir import OcrWorkDir
+from engine.workdir import OcrWorkDir, PageState
 from kitabim_client.api import KitabimClient
 from locales.i18n import get_translations, get_translations_json
 from preview.server import (
@@ -449,18 +456,24 @@ _APP_HTML = """<!doctype html>
 
     /* Tables */
     .table-container {
-      overflow-x: auto;
+      overflow: auto;
+      max-inline-size: 100%;
+      container-type: inline-size;
       border-radius: 16px;
       border: 1px solid rgba(3, 105, 161, 0.12);
       background: white;
     }
     table.books-table {
       width: 100%;
-      border-collapse: collapse;
+      border-collapse: separate;
+      border-spacing: 0;
       text-align: right;
     }
     table.books-table thead {
-      background: rgba(3, 105, 161, 0.05);
+      position: sticky;
+      inset-block-start: 0;
+      z-index: 1;
+      background: #f3f9fc;
       border-bottom: 1px solid rgba(3, 105, 161, 0.12);
     }
     table.books-table th {
@@ -565,6 +578,15 @@ _APP_HTML = """<!doctype html>
       background: linear-gradient(135deg, #10b981, #059669);
       color: white;
       box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+    }
+    .btn-warning {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: white;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
+    }
+    .btn-warning:hover {
+      box-shadow: 0 6px 16px rgba(245, 158, 11, 0.35);
+      transform: translateY(-1px);
     }
     .btn:disabled {
       opacity: 0.6;
@@ -692,7 +714,13 @@ _APP_HTML = """<!doctype html>
       box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
     }
     .matrix-tile.done { background: #dcfce7; color: #15803d; border-color: #86efac; }
+    .matrix-tile.skipped { background: #e0f2fe; color: #0369a1; border-color: #7dd3fc; }
     .matrix-tile.failed { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+    .matrix-tile.selected-tile {
+      outline: 3px solid var(--primary);
+      outline-offset: 1px;
+      transform: translateY(-2px);
+    }
     .matrix-tile.clickable {
       cursor: pointer;
     }
@@ -700,6 +728,17 @@ _APP_HTML = """<!doctype html>
       transform: translateY(-2px);
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
       border-color: #10b981;
+    }
+    .backfill-sbs-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      align-items: stretch;
+    }
+    @media (max-width: 960px) {
+      .backfill-sbs-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     /* Review Screen Layout */
@@ -798,6 +837,32 @@ _APP_HTML = """<!doctype html>
     }
 
     /* Modal dialog */
+    dialog:modal {
+      overscroll-behavior: contain;
+    }
+    dialog::backdrop {
+      overflow: hidden;
+      overscroll-behavior: contain;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(6px);
+    }
+    dialog.backfill-completed-dialog {
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 20px;
+      padding: 0;
+      max-width: 960px;
+      width: 92vw;
+      max-height: 85vh;
+      margin: auto;
+      color: var(--slate-900);
+      direction: rtl;
+      box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+    }
+    dialog.backfill-completed-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
     .modal-overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -913,7 +978,7 @@ _APP_HTML = """<!doctype html>
       <div class="steps-indicator">
         <div class="step-item active" id="step1Indicator" onclick="backToLibrary()" style="cursor: pointer;" title="باش بەتكە قايتىش">1. كىتاب تاللاش</div>
         <div>&larr;</div>
-        <div class="step-item" id="step2Indicator">2. OCR نازارەت</div>
+        <div class="step-item" id="step2Indicator" onclick="openActiveProcessingMonitor()" style="cursor: pointer;" title="OCR نازارەت بېتىگە ئۆتۈش">2. OCR نازارەت</div>
         <div>&larr;</div>
         <div class="step-item" id="step3Indicator">3. تەكشۈرۈش &amp; تەھرىرلەش</div>
       </div>
@@ -1000,56 +1065,144 @@ _APP_HTML = """<!doctype html>
         </div>
       </div>
 
-      <!-- TAB 1: KITABIM CLOUD BOOKS TABLE -->
+      <!-- TAB 1: KITABIM CLOUD BOOKS TABLE (WITH INTEGRATED BACKFILL CONTROLS & LIVE MONITOR) -->
       <div id="tabLibraryContent" class="glass-panel" style="padding: 1.5rem; display: none;">
-        <div class="search-row">
-          <div class="search-input-wrap">
-            <span class="search-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            </span>
-            <input type="text" id="bookSearch" class="search-input" placeholder="كىتاب نامى ياكى ئاپتور بويىچە ئىزدەش...">
-            <button id="bookSearchClear" class="search-clear" onclick="clearBookSearch()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+        <!-- Backfill Toolbar & Status Bar -->
+        <div class="glass-card" style="padding: 1.1rem 1.25rem; margin-bottom: 1.25rem; border: 1px solid rgba(3, 105, 161, 0.14); background: rgba(240, 249, 255, 0.55);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+            <div>
+              <div style="font-size: 1.05rem; font-weight: 800; color: var(--slate-900);" data-i18n="backfill.title">
+                ئىشلەپچىقىرىش كىتابلىرىنى قايتا تونۇتۇش (Backfill نازارەتچىسى)
+              </div>
+              <div style="font-size: 0.85rem; color: var(--slate-600); margin-top: 0.15rem;" data-i18n="backfill.subtitle">
+                ئاپتوماتىك بىر تەرەپ قىلىش ئەڭ كونا يۈكلەنگەن كىتابتىن باشلاپ تەرتىپ بويىچە ئىشلەيدۇ. توختىتىلغاندا ھەر بىر كىتابنى ئايرىم تاللاپ ئىجرا قىلالايسىز.
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+              <button type="button" class="btn btn-success" id="backfillAutoToggleBtn" onclick="toggleAutoBackfill()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span id="backfillAutoToggleLabel" data-i18n="backfill.btn_start_auto">ئاپتوماتىك بىر تەرەپ قىلىشنى باشلاش</span>
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="loadBackfillCandidates(true); searchBooks(bookSearchQuery, true);" id="backfillRefreshBtn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                <span data-i18n="backfill.btn_refresh">يېڭىلاش</span>
+              </button>
+            </div>
           </div>
-          <div class="count-pill" id="bookCountBadge">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>
-            <span id="totalBooksCount">0</span> كىتاب تېپىلدى
+
+          <div id="backfillErrorBanner" class="error-banner" style="display: none; margin-top: 0.85rem; margin-bottom: 0;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span id="backfillErrorText"></span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px solid rgba(3, 105, 161, 0.1);">
+            <div class="status-pill" id="backfillModePill">
+              <span class="status-dot" id="backfillModeDot"></span>
+              <span id="backfillModeText" data-i18n="backfill.status_idle">توختىتىلغان (قولدا تاللاشقا بولىدۇ)</span>
+            </div>
+            <div class="status-pill" id="backfillCurrentBookPill" onclick="openActiveProcessingMonitor()" title="OCR نازارەت بېتىنى ئېچىش" style="display: none; background: #fef3c7; border-color: #f59e0b; color: #92400e; font-weight: 700; cursor: pointer;">
+              <span>⚡</span>
+              <span id="backfillCurrentBookText"></span>
+            </div>
+            <button type="button" class="status-pill" id="backfillEligibleStatPill" onclick="setLibraryViewMode('all')" title="بارلىق كىتابلار تىزىملىكىنى كۆرۈش" style="cursor: pointer;">
+              <span id="backfillEligibleStatText">قالغان كىتابلار: 0</span>
+            </button>
+            <div class="status-pill" id="backfillBacklogStatPill">
+              <span id="backfillBacklogStatText">مۇلازىمېتىر ئىندېكس نۆۋىتى: 0 / 3</span>
+            </div>
+            <button type="button" class="status-pill" id="backfillSessionDoneStatPill" onclick="toggleBackfillCompletedView()" title="تاماملانغان كىتابلار تىزىملىكىنى كۆرۈش" style="cursor: pointer; background: #ecfdf5; border-color: #a7f3d0; color: #065f46; font-weight: 700;">
+              <span>✓</span>
+              <span id="backfillSessionDoneStatText">تاماملانغان كىتابلار: 0</span>
+            </button>
           </div>
         </div>
 
-        <div class="table-container">
-          <table class="books-table">
-            <thead>
-              <tr>
-                <th>كىتاب نامى</th>
-                <th>توم / بەت سانى</th>
-                <th>ئاپتور</th>
-                <th>OCR ھالىتى</th>
-                <th style="text-align: left;">مەشغۇلات</th>
-              </tr>
-            </thead>
-            <tbody id="booksTableBody">
-              <tr>
-                <td colspan="5" style="text-align: center; padding: 3rem; color: var(--slate-400);">
-                  <div style="display: inline-flex; align-items: center; gap: 0.5rem; justify-content: center;">
-                    <span style="width: 18px; height: 18px; border: 2px solid rgba(3, 105, 161, 0.2); border-top-color: var(--primary); border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite;"></span>
-                    <span>كىتابلار يۈكلىنىۋاتىدۇ...</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <div id="booksLoader" style="display: none; padding: 1.5rem; text-align: center; background: rgba(3, 105, 161, 0.02);">
-            <div style="display: inline-flex; align-items: center; gap: 0.5rem; color: var(--primary); font-size: 0.9rem; font-weight: 600;">
-              <span class="spinner" style="width: 18px; height: 18px; border: 2px solid rgba(3, 105, 161, 0.2); border-top-color: var(--primary); border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite;"></span>
-              <span>يۈكلىنىۋاتىدۇ...</span>
+        <div id="libraryAllBooksPanel">
+          <div class="search-row">
+            <div class="search-input-wrap">
+              <span class="search-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              </span>
+              <input type="text" id="bookSearch" class="search-input" placeholder="كىتاب نامى ياكى ئاپتور بويىچە ئىزدەش...">
+              <button id="bookSearchClear" class="search-clear" onclick="clearBookSearch()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;">
+              <button type="button" class="btn btn-secondary btn-sm" id="bookSortOrderBtn" onclick="toggleBookSortOrder()" title="يوللانغان ۋاقتى بويىچە تىزىش">
+                <span id="bookSortOrderLabel">تەرتىپى: ئەڭ كونا ئاۋۋال ↑</span>
+              </button>
+              <div class="count-pill" id="bookCountBadge">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>
+                <span id="totalBooksCount">0</span> كىتاب تېپىلدى
+              </div>
             </div>
           </div>
-          <div id="booksEndOfList" style="display: none; padding: 1.25rem; text-align: center; color: var(--slate-400); font-size: 0.85rem; border-top: 1px solid var(--slate-100);">
-            <span>باشقا كىتاب قالمىدى</span>
+
+          <div class="table-container" tabindex="0" role="region" aria-label="Kitabim books library">
+            <table class="books-table">
+              <thead>
+                <tr>
+                  <th>كىتاب نامى</th>
+                  <th>توم / بەت سانى</th>
+                  <th>ئاپتور</th>
+                  <th>OCR ھالىتى / نەشرى</th>
+                  <th style="text-align: left;">مەشغۇلات</th>
+                </tr>
+              </thead>
+              <tbody id="booksTableBody">
+                <tr>
+                  <td colspan="5" style="text-align: center; padding: 3rem; color: var(--slate-400);">
+                    <div style="display: inline-flex; align-items: center; gap: 0.5rem; justify-content: center;">
+                      <span style="width: 18px; height: 18px; border: 2px solid rgba(3, 105, 161, 0.2); border-top-color: var(--primary); border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite;"></span>
+                      <span>كىتابلار يۈكلىنىۋاتىدۇ...</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div id="booksLoader" style="display: none; padding: 1.5rem; text-align: center; background: rgba(3, 105, 161, 0.02);">
+              <div style="display: inline-flex; align-items: center; gap: 0.5rem; color: var(--primary); font-size: 0.9rem; font-weight: 600;">
+                <span class="spinner" style="width: 18px; height: 18px; border: 2px solid rgba(3, 105, 161, 0.2); border-top-color: var(--primary); border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite;"></span>
+                <span>يۈكلىنىۋاتىدۇ...</span>
+              </div>
+            </div>
+            <div id="booksEndOfList" style="display: none; padding: 1.25rem; text-align: center; color: var(--slate-400); font-size: 0.85rem; border-top: 1px solid var(--slate-100);">
+              <span>باشقا كىتاب قالمىدى</span>
+            </div>
+            <div id="booksScrollSentinel" style="height: 20px; width: 100%;"></div>
           </div>
-          <div id="booksScrollSentinel" style="height: 20px; width: 100%;"></div>
+        </div>
+
+        <div id="libraryCompletedBooksPanel" style="display: none;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.65rem;">
+              <h3 style="font-size: 1.1rem; font-weight: 800; color: var(--slate-900); margin: 0;" data-i18n="backfill.history_title">قايتا تونۇتۇلغان كىتابلار تىزىملىكى</h3>
+              <span id="backfillCompletedCountBadge" class="count-pill" style="font-size: 0.85rem; padding: 0.25rem 0.7rem;">0</span>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="setLibraryViewMode('all')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              <span>بارلىق كىتابلار تىزىملىكىگە قايتىش</span>
+            </button>
+          </div>
+          <div class="table-container" tabindex="0" role="region" aria-label="Completed backfill books">
+            <table class="books-table">
+              <thead>
+                <tr>
+                  <th style="width: 48px;">#</th>
+                  <th>كىتاب نامى</th>
+                  <th>بەت تەپسىلاتى</th>
+                  <th>ۋاقتى</th>
+                  <th style="text-align: left;">مەشغۇلات</th>
+                </tr>
+              </thead>
+              <tbody id="backfillCompletedTableBody">
+                <tr>
+                  <td colspan="5" style="text-align: center; padding: 2.5rem; color: var(--slate-400);">ھازىرچە قايتا تونۇتۇلغان كىتاب يوق</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -1093,6 +1246,9 @@ _APP_HTML = """<!doctype html>
           <button class="btn btn-secondary" onclick="backToLibrary()" id="processingBackBtn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
             <span id="processingBackLabel">باش بەتكە قايتىش</span>
+          </button>
+          <button type="button" class="btn btn-warning" onclick="toggleAutoBackfill()" id="processingBackfillToggleBtn" style="display: none; align-items: center; gap: 0.4rem;">
+            <span id="processingBackfillToggleLabel">ئاپتوماتىك بىر تەرەپ قىلىشنى توختىتىش</span>
           </button>
           <button class="btn btn-primary" onclick="openCompletedReview()" id="processingReviewBtn" style="display: none; align-items: center; gap: 0.4rem;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -1308,15 +1464,32 @@ _APP_HTML = """<!doctype html>
       document.getElementById('tabSessionsContent').style.display = tab === 'sessions' ? 'block' : 'none';
       document.getElementById('tabLibraryContent').style.display = tab === 'library' ? 'block' : 'none';
       document.getElementById('tabUploadContent').style.display = tab === 'upload' ? 'block' : 'none';
+
+      if (tab === 'library') {
+        loadBackfillCandidates(false);
+        pollBackfillStatus();
+      }
     }
 
     let bookSearchQuery = '';
     let bookCurrentPage = 1;
+    let bookSortOrder = 1; // 1 = oldest upload first (matches backfill order), -1 = newest first
     const BOOK_PAGE_SIZE = 40;
     let bookIsLoading = false;
     let bookHasMore = true;
     let totalBooksCount = 0;
     let booksObserver = null;
+
+    function toggleBookSortOrder() {
+      bookSortOrder = bookSortOrder === 1 ? -1 : 1;
+      const lbl = document.getElementById('bookSortOrderLabel');
+      if (lbl) {
+        lbl.textContent = bookSortOrder === 1
+          ? 'تەرتىپى: ئەڭ كونا ئاۋۋال ↑'
+          : 'تەرتىپى: ئەڭ يېڭى ئاۋۋال ↓';
+      }
+      searchBooks(bookSearchQuery, true);
+    }
 
     let searchTimer = null;
     document.getElementById('bookSearch').addEventListener('input', (e) => {
@@ -1370,7 +1543,7 @@ _APP_HTML = """<!doctype html>
 
       try {
         const pageToFetch = reset ? 1 : bookCurrentPage + 1;
-        const url = `/api/books?q=${encodeURIComponent(bookSearchQuery)}&page=${pageToFetch}&pageSize=${BOOK_PAGE_SIZE}&sortBy=uploadDate&order=-1`;
+        const url = `/api/books?q=${encodeURIComponent(bookSearchQuery)}&page=${pageToFetch}&pageSize=${BOOK_PAGE_SIZE}&sortBy=uploadDate&order=${bookSortOrder}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error(await res.text());
         const body = await res.json();
@@ -1425,6 +1598,14 @@ _APP_HTML = """<!doctype html>
       const tbody = document.getElementById('booksTableBody');
       for (const b of books) {
         const tr = document.createElement('tr');
+        tr.id = `book-row-${b.id}`;
+        tr.dataset.bookId = String(b.id);
+        tr.dataset.bookTitle = b.title || '';
+        tr.dataset.bookAuthor = b.author || '';
+        tr.dataset.bookTotalPages = String(b.totalPages || 0);
+        tr.dataset.bookUploadDate = b.uploadDate || b.upload_date || '';
+        tr.dataset.ocrVersion = b.ocrVersion || b.ocr_version || '';
+
         const milestone = b.ocrMilestone || 'idle';
         let milestoneClass = 'milestone-idle';
         let milestoneText = t('processing.status_pending');
@@ -1440,6 +1621,10 @@ _APP_HTML = """<!doctype html>
           milestoneText = t('processing.status_failed');
         }
 
+        const uploadDateStr = (b.uploadDate || b.upload_date)
+          ? new Date(b.uploadDate || b.upload_date).toLocaleDateString()
+          : '';
+
         tr.innerHTML = `
           <td>
             <div class="book-title-cell">
@@ -1448,25 +1633,33 @@ _APP_HTML = """<!doctype html>
               </div>
               <div>
                 <div class="book-main-title">${escapeHtml(b.title || '—')}</div>
-                <div class="book-sub-info">${b.totalPages || 0} ${t('library.pages_suffix')}</div>
+                <div class="book-sub-info">${b.totalPages || 0} ${t('library.pages_suffix')} ${uploadDateStr ? '· ' + escapeHtml(uploadDateStr) : ''} · <span style="font-family: monospace;">${escapeHtml(String(b.id))}</span></div>
               </div>
             </div>
           </td>
           <td>${b.volume !== null && b.volume !== undefined ? b.volume + '-' + t('library.vol_prefix') : '—'}</td>
           <td>${escapeHtml(b.author || t('library.author_unknown'))}</td>
           <td>
-            <span class="milestone-badge ${milestoneClass}">${milestoneText}</span>
+            <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+              <span class="milestone-badge ${milestoneClass}">${milestoneText}</span>
+              <span id="ocr-ver-badge-${b.id}"></span>
+            </div>
           </td>
           <td style="text-align: left;">
-            <button class="btn btn-primary btn-sm" id="btn-start-${b.id}">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              ${t('library.btn_download_correct')}
-            </button>
+            <div style="display: flex; align-items: center; gap: 0.45rem; justify-content: flex-end; flex-wrap: wrap;">
+              <span id="backfill-action-slot-${b.id}"></span>
+              <button class="btn btn-primary btn-sm" id="btn-start-${b.id}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                ${t('library.btn_download_correct')}
+              </button>
+            </div>
           </td>
         `;
         tr.querySelector(`#btn-start-${b.id}`).onclick = () => startExisting(b.id);
         tbody.appendChild(tr);
       }
+      syncLibraryBackfillRows();
+      updateBackfillHeaderStats();
     }
 
     function initBooksInfiniteScroll() {
@@ -1664,6 +1857,24 @@ _APP_HTML = """<!doctype html>
       }
     }
 
+    async function openActiveProcessingMonitor() {
+      try {
+        const res = await fetch('/api/state');
+        if (res.ok) {
+          const st = await res.json();
+          if (st.activeSessionId || st.isBackfill) {
+            showSection('processing');
+            pollProgress();
+            return;
+          }
+        }
+      } catch (_) {}
+      if (backfillStatus && backfillStatus.isBusy) {
+        showSection('processing');
+        pollProgress();
+      }
+    }
+
     async function pollProgress() {
       clearProgressPoll();
       if (!sections.processing.classList.contains('active')) {
@@ -1676,13 +1887,35 @@ _APP_HTML = """<!doctype html>
           return;
         }
 
-        if (state.stage === 'landing') {
+        const isBackfill = Boolean(state.isBackfill);
+        const bfBtn = document.getElementById('processingBackfillToggleBtn');
+        if (bfBtn) {
+          if (isBackfill) {
+            bfBtn.style.display = 'inline-flex';
+            if (state.backfillAutoRunning) {
+              bfBtn.className = 'btn btn-warning';
+              bfBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg><span>${escapeHtml(t('backfill.btn_pause_auto'))}</span>`;
+            } else if (state.backfillMode === 'pausing') {
+              bfBtn.className = 'btn btn-primary';
+              bfBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>${escapeHtml(t('backfill.btn_resume_auto'))}</span>`;
+            } else {
+              bfBtn.className = 'btn btn-success';
+              bfBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>${escapeHtml(t('backfill.btn_start_auto'))}</span>`;
+            }
+          } else {
+            bfBtn.style.display = 'none';
+          }
+        }
+
+        if (state.stage === 'landing' && !isBackfill) {
           currentProcessingSessionId = null;
           currentProcessingBookTitle = '';
           lastCompletedSessionId = null;
           queueCompletionToastShown = false;
           showSection('landing');
           loadLocalSessions();
+          loadBackfillCandidates(false);
+          searchBooks(bookSearchQuery, true);
           return;
         }
         if (state.stage === 'error') {
@@ -1697,9 +1930,9 @@ _APP_HTML = """<!doctype html>
 
         const activeId = state.activeSessionId;
         const queuedCount = Array.isArray(state.queuedSessions) ? state.queuedSessions.length : 0;
-        const isQueueActive = Boolean(activeId || queuedCount > 0);
+        const isQueueActive = Boolean(activeId || queuedCount > 0 || isBackfill);
 
-        // Transition from finished book to next active book in queue
+        // Transition from finished book to next active book in queue / auto-backfill
         if (activeId && currentProcessingSessionId && activeId !== currentProcessingSessionId) {
           lastCompletedSessionId = currentProcessingSessionId;
           const finishedTitle = currentProcessingBookTitle || t('processing.previous_book');
@@ -1710,6 +1943,7 @@ _APP_HTML = """<!doctype html>
           currentProcessingSessionId = activeId;
           currentProcessingBookTitle = state.title || '';
           currentProcessingPages = [];
+          currentSessionVersion = Date.now();
           const grid = document.getElementById('pageMatrixGrid');
           if (grid) grid.innerHTML = '';
           const fill = document.getElementById('progressFill');
@@ -1719,7 +1953,7 @@ _APP_HTML = """<!doctype html>
             const pTitle = document.getElementById('processingBookTitle');
             if (pTitle) pTitle.textContent = state.title;
           }
-          progressPollTimer = setTimeout(pollProgress, 800);
+          progressPollTimer = setTimeout(pollProgress, 4800);
           return;
         } else if (activeId && !currentProcessingSessionId) {
           currentProcessingSessionId = activeId;
@@ -1730,13 +1964,25 @@ _APP_HTML = """<!doctype html>
           const pTitle = document.getElementById('processingBookTitle');
           if (pTitle) pTitle.textContent = state.title;
         }
+        if (isBackfill) {
+          const subLabel = document.getElementById('progressSubLabel');
+          if (subLabel) {
+            if (state.backfillPhase === 'downloading') {
+              subLabel.textContent = t('backfill.phase_downloading');
+            } else if (state.backfillPhase === 'submitting') {
+              subLabel.textContent = t('backfill.phase_submitting');
+            } else {
+              subLabel.textContent = t('backfill.phase_ocr');
+            }
+          }
+        }
 
         let isDone = false;
         const res = await fetch('/api/pages');
         if (res.ok) {
           const pages = await res.json();
           const total = pages.length;
-          const done = pages.filter(p => p.status === 'ocrd' || p.status === 'from_kitabim' || p.status === 'reviewed' || p.status === 'failed').length;
+          const done = pages.filter(p => p.status === 'ocrd' || p.status === 'skipped' || p.status === 'from_kitabim' || p.status === 'reviewed' || p.status === 'failed').length;
           document.getElementById('progressLabel').textContent = t('sessions.pages_completed_stat', {done: done, total: total});
           document.getElementById('progressFill').style.width = total ? ((done / total) * 100) + '%' : '0%';
           renderPageMatrix(pages);
@@ -1749,10 +1995,10 @@ _APP_HTML = """<!doctype html>
           return;
         }
 
-        // If current book is done but queue is still processing or has queued items:
+        // If current book is done but queue or backfill is still processing:
         // Continue polling to advance to next book smoothly without opening review page.
         if (isDone && isQueueActive) {
-          progressPollTimer = setTimeout(pollProgress, 800);
+          progressPollTimer = setTimeout(pollProgress, 4800);
           return;
         }
 
@@ -1762,8 +2008,9 @@ _APP_HTML = """<!doctype html>
           if (currentProcessingSessionId) {
             lastCompletedSessionId = currentProcessingSessionId;
           }
+          const isBackfillSession = String(lastCompletedSessionId || '').startsWith('backfill-');
           const reviewBtn = document.getElementById('processingReviewBtn');
-          if (reviewBtn) reviewBtn.style.display = 'inline-flex';
+          if (reviewBtn) reviewBtn.style.display = isBackfillSession ? 'none' : 'inline-flex';
           const dot = document.getElementById('processingStatusDot');
           if (dot) {
             dot.className = 'status-dot';
@@ -1782,10 +2029,10 @@ _APP_HTML = """<!doctype html>
           return;
         }
 
-        progressPollTimer = setTimeout(pollProgress, 2000);
+        progressPollTimer = setTimeout(pollProgress, 9000);
       } catch (err) {
         if (sections.processing.classList.contains('active')) {
-          progressPollTimer = setTimeout(pollProgress, 4000);
+          progressPollTimer = setTimeout(pollProgress, 24000);
         }
       }
     }
@@ -1810,6 +2057,11 @@ _APP_HTML = """<!doctype html>
           statusIcon = '✓';
           isClickable = true;
           tooltip = `${t('review.page_title_format', {pageNumber: p.pageNumber})}: ${t('review.status_ocrd_badge')}`;
+        } else if (p.status === 'skipped') {
+          statusClass = 'skipped';
+          statusIcon = '↷';
+          isClickable = true;
+          tooltip = `${t('review.page_title_format', {pageNumber: p.pageNumber})}: ${t('backfill.badge_skipped')}`;
         } else if (p.status === 'failed') {
           statusClass = 'failed';
           statusIcon = '✕';
@@ -1853,6 +2105,9 @@ _APP_HTML = """<!doctype html>
       if (page.status === 'failed') {
         badge.className = 'milestone-badge milestone-failed';
         badge.textContent = t('processing.status_failed');
+      } else if (page.status === 'skipped') {
+        badge.className = 'milestone-badge milestone-idle';
+        badge.textContent = t('backfill.badge_skipped');
       } else {
         badge.className = 'milestone-badge milestone-ready';
         badge.textContent = page.status === 'from_kitabim' ? t('review.status_from_kitabim_badge') : t('review.status_ocrd_badge');
@@ -1868,7 +2123,7 @@ _APP_HTML = """<!doctype html>
         textArea.value = page.text || (page.error ? `${t('errors.generic', {error: page.error})}` : '');
       }
 
-      const completedPages = currentProcessingPages.filter(p => p.status === 'ocrd' || p.status === 'from_kitabim' || p.status === 'reviewed' || p.status === 'failed');
+      const completedPages = currentProcessingPages.filter(p => p.status === 'ocrd' || p.status === 'skipped' || p.status === 'from_kitabim' || p.status === 'reviewed' || p.status === 'failed');
       const currentIndex = completedPages.findIndex(p => p.pageNumber === page.pageNumber);
       document.getElementById('previewPrevBtn').disabled = currentIndex <= 0;
       document.getElementById('previewNextBtn').disabled = currentIndex === -1 || currentIndex >= completedPages.length - 1;
@@ -1991,7 +2246,7 @@ _APP_HTML = """<!doctype html>
 
     function navigateLivePreview(direction) {
       if (currentPreviewPageNumber === null) return;
-      const completedPages = currentProcessingPages.filter(p => p.status === 'ocrd' || p.status === 'from_kitabim' || p.status === 'reviewed' || p.status === 'failed');
+      const completedPages = currentProcessingPages.filter(p => p.status === 'ocrd' || p.status === 'skipped' || p.status === 'from_kitabim' || p.status === 'reviewed' || p.status === 'failed');
       const currentIndex = completedPages.findIndex(p => p.pageNumber === currentPreviewPageNumber);
       if (currentIndex === -1) return;
       const targetIndex = currentIndex + direction;
@@ -2329,7 +2584,7 @@ _APP_HTML = """<!doctype html>
         if (isLanding && (isSessionsTab || window._hasQueuedOrProcessing)) {
           loadLocalSessions();
         }
-      }, 10000);
+      }, 60000);
     }
 
     async function loadLocalSessions() {
@@ -2513,6 +2768,433 @@ _APP_HTML = """<!doctype html>
         .replace(/'/g, '&#039;');
     }
 
+    // --- BACKFILL MONITOR LOGIC (INTEGRATED INTO KITABIM LIBRARY TAB) ---
+    let backfillCandidates = [];
+    let backfillAuditHistory = [];
+    let backfillCompletedIds = new Set();
+    let backfillStatus = {
+      mode: 'idle',
+      autoRunning: false,
+      pauseRequested: false,
+      isBusy: false,
+      activeBook: null,
+      sessionProcessedCount: 0,
+      pendingIndexBooks: 0,
+      maxServerBacklog: 3,
+      error: null,
+    };
+    let backfillPollTimer = null;
+    let backfillAutoFollow = true;
+    let backfillSelectedPageNumber = null;
+    let backfillActiveBookIdTracker = null;
+    let backfillLastProcessedCount = 0;
+    let backfillSaveTimeout = null;
+
+    function isLibraryTabVisible() {
+      const landingActive = sections.landing && sections.landing.classList.contains('active');
+      const tabEl = document.getElementById('tabLibraryContent');
+      return Boolean(landingActive && tabEl && tabEl.style.display !== 'none');
+    }
+
+    async function loadBackfillCandidates(force = false) {
+      try {
+        const res = await fetch('/api/backfill/candidates');
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        backfillCandidates = data.candidates || [];
+        backfillAuditHistory = data.auditHistory || [];
+        for (const item of backfillAuditHistory) {
+          if (item && item.book_id) {
+            backfillCompletedIds.add(String(item.book_id));
+          }
+        }
+        if (typeof data.pendingIndexBooks === 'number') {
+          backfillStatus.pendingIndexBooks = data.pendingIndexBooks;
+        }
+        if (typeof data.maxServerBacklog === 'number') {
+          backfillStatus.maxServerBacklog = data.maxServerBacklog;
+        }
+        updateBackfillHeaderStats();
+        syncLibraryBackfillRows();
+      } catch (err) {
+        console.error('Failed to load backfill candidates:', err);
+        if (force) {
+          showBackfillError(err.message || String(err));
+        }
+      }
+    }
+
+    function showBackfillError(msg) {
+      const banner = document.getElementById('backfillErrorBanner');
+      const txt = document.getElementById('backfillErrorText');
+      if (!banner || !txt) return;
+      if (msg) {
+        banner.style.display = 'flex';
+        txt.textContent = msg;
+      } else {
+        banner.style.display = 'none';
+        txt.textContent = '';
+      }
+    }
+
+    let libraryViewMode = 'all';
+
+    function updateBackfillHeaderStats() {
+      const eligEl = document.getElementById('backfillEligibleStatText');
+      if (eligEl) {
+        eligEl.textContent = t('backfill.stat_eligible', {count: backfillCandidates.length});
+      }
+      const backlogEl = document.getElementById('backfillBacklogStatText');
+      if (backlogEl) {
+        backlogEl.textContent = t('backfill.stat_backlog', {
+          current: backfillStatus.pendingIndexBooks || 0,
+          max: backfillStatus.maxServerBacklog || 3,
+        });
+      }
+      const doneEl = document.getElementById('backfillSessionDoneStatText');
+      if (doneEl) {
+        const completedCount = Math.max(
+          getBackfillCompletedBooks().length,
+          backfillStatus.totalCompletedCount || 0,
+          backfillStatus.sessionProcessedCount || 0
+        );
+        doneEl.textContent = t('backfill.stat_completed', {count: completedCount});
+      }
+      if (libraryViewMode === 'completed') {
+        renderBackfillCompletedList();
+      }
+    }
+
+    function getBackfillCompletedBooks() {
+      const merged = [];
+      const seen = new Set();
+      const statusCompleted = Array.isArray(backfillStatus.completedBooks) ? backfillStatus.completedBooks : [];
+      const lastOne = backfillStatus.lastCompletedBook ? [backfillStatus.lastCompletedBook] : [];
+      const auditList = Array.isArray(backfillAuditHistory) ? backfillAuditHistory : [];
+      for (const item of [...statusCompleted, ...lastOne, ...auditList]) {
+        if (!item || !item.book_id) continue;
+        const bid = String(item.book_id);
+        if (seen.has(bid)) continue;
+        seen.add(bid);
+        merged.push(item);
+      }
+      const tbody = document.getElementById('booksTableBody');
+      if (tbody) {
+        const rows = tbody.querySelectorAll('tr[data-book-id]');
+        rows.forEach(tr => {
+          const bid = String(tr.dataset.bookId || '');
+          const ocrVer = tr.dataset.ocrVersion || '';
+          const uploadDate = tr.dataset.bookUploadDate || '';
+          if (bid && !seen.has(bid) && ocrVer === 'surya-2.5-v2' && (!uploadDate || uploadDate < '2026-11-08')) {
+            seen.add(bid);
+            merged.push({
+              book_id: bid,
+              title: tr.dataset.bookTitle || `Kitabim #${bid}`,
+              author: tr.dataset.bookAuthor || '',
+              total_pages: Number(tr.dataset.bookTotalPages || 0),
+              ocr_version: ocrVer,
+              upload_date: uploadDate,
+            });
+          }
+        });
+      }
+      return merged;
+    }
+
+    function renderBackfillCompletedList() {
+      const tbody = document.getElementById('backfillCompletedTableBody');
+      const badge = document.getElementById('backfillCompletedCountBadge');
+      if (!tbody) return;
+      const items = getBackfillCompletedBooks();
+      if (badge) {
+        badge.textContent = String(items.length);
+      }
+      if (!items.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; padding: 2.5rem; color: var(--slate-400);">
+              ${escapeHtml(t('backfill.empty_history'))}
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      tbody.innerHTML = items.map((item, idx) => {
+        const bid = String(item.book_id || '');
+        const rowEl = document.getElementById(`book-row-${bid}`);
+        const title = item.title || (rowEl && rowEl.dataset.bookTitle) || `Kitabim #${bid}`;
+        const totalPages = item.total_pages || 0;
+        const ocrdPages = item.ocrd_pages || 0;
+        const skippedPages = item.skipped_pages || 0;
+        const updatedPages = item.pages_updated !== undefined ? item.pages_updated : ocrdPages;
+        const elapsedStr = item.elapsed_s ? `${item.elapsed_s}s` : '';
+        const tsStr = item.timestamp ? new Date(item.timestamp * 1000).toLocaleString() : '—';
+        return `
+          <tr>
+            <td style="font-weight: 700; color: var(--slate-500);">${idx + 1}</td>
+            <td>
+              <div style="font-weight: 700; color: var(--slate-900); font-size: 0.95rem;">${escapeHtml(title)}</div>
+              <div style="font-size: 0.78rem; color: var(--slate-400); font-family: monospace;">#${escapeHtml(bid)}</div>
+            </td>
+            <td>
+              <div style="font-size: 0.85rem; color: var(--slate-700); font-weight: 600;">
+                ${totalPages} ${escapeHtml(t('library.pages_suffix'))} · OCR: ${ocrdPages} · ${escapeHtml(t('backfill.badge_skipped'))}: ${skippedPages}
+              </div>
+              <div style="font-size: 0.76rem; color: var(--slate-500); margin-top: 0.15rem;">
+                يېڭىلانغان: ${updatedPages} بەت ${elapsedStr ? '· ' + escapeHtml(elapsedStr) : ''}
+              </div>
+            </td>
+            <td style="font-size: 0.82rem; color: var(--slate-500);">${escapeHtml(tsStr)}</td>
+            <td style="text-align: left;">
+              <button type="button" class="btn btn-primary btn-sm" onclick="startExisting('${escapeHtml(bid)}')">
+                ${escapeHtml(t('library.btn_download_correct'))}
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function setLibraryViewMode(mode) {
+      libraryViewMode = mode === 'completed' ? 'completed' : 'all';
+      const allPanel = document.getElementById('libraryAllBooksPanel');
+      const completedPanel = document.getElementById('libraryCompletedBooksPanel');
+      const donePill = document.getElementById('backfillSessionDoneStatPill');
+      const eligPill = document.getElementById('backfillEligibleStatPill');
+      if (allPanel) {
+        allPanel.style.display = libraryViewMode === 'all' ? 'block' : 'none';
+      }
+      if (completedPanel) {
+        completedPanel.style.display = libraryViewMode === 'completed' ? 'block' : 'none';
+      }
+      if (donePill) {
+        donePill.style.boxShadow = libraryViewMode === 'completed' ? '0 0 0 2px #059669' : '';
+      }
+      if (eligPill) {
+        eligPill.style.boxShadow = libraryViewMode === 'all' ? '0 0 0 2px var(--primary)' : '';
+      }
+      if (libraryViewMode === 'completed') {
+        renderBackfillCompletedList();
+        try {
+          const res = await fetch('/api/backfill/status');
+          if (res.ok) {
+            const st = await res.json();
+            renderBackfillState(st);
+            renderBackfillCompletedList();
+          }
+        } catch (_) {}
+      }
+    }
+
+    function toggleBackfillCompletedView() {
+      setLibraryViewMode(libraryViewMode === 'completed' ? 'all' : 'completed');
+    }
+
+    async function toggleAutoBackfill() {
+      const btn = document.getElementById('backfillAutoToggleBtn');
+      const procBtn = document.getElementById('processingBackfillToggleBtn');
+      if (btn) btn.disabled = true;
+      if (procBtn) procBtn.disabled = true;
+      try {
+        const shouldPause = Boolean(backfillStatus.autoRunning);
+        const endpoint = shouldPause ? '/api/backfill/pause' : '/api/backfill/start';
+        const res = await fetch(endpoint, {method: 'POST'});
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        const status = await res.json();
+        renderBackfillState(status);
+        pollBackfillStatus();
+        if (!shouldPause) {
+          showSection('processing');
+          pollProgress();
+        } else if (sections.processing.classList.contains('active')) {
+          pollProgress();
+        }
+      } catch (err) {
+        showBackfillError(err.message || String(err));
+      } finally {
+        if (btn) btn.disabled = false;
+        if (procBtn) procBtn.disabled = false;
+      }
+    }
+
+    async function runBackfillOnDemand(bookId) {
+      try {
+        showBackfillError('');
+        const row = document.getElementById(`book-row-${bookId}`);
+        const cand = backfillCandidates.find(c => String(c.id) === String(bookId)) || {};
+        const title = (row && row.dataset.bookTitle) || cand.title || null;
+        const author = (row && row.dataset.bookAuthor) || cand.author || null;
+        const uploadDate = (row && row.dataset.bookUploadDate) || cand.uploadDate || cand.upload_date || null;
+
+        const res = await fetch(`/api/backfill/run/${encodeURIComponent(bookId)}`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            title: title,
+            author: author,
+            uploadDate: uploadDate,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        const status = await res.json();
+        renderBackfillState(status);
+        pollBackfillStatus();
+        showSection('processing');
+        pollProgress();
+      } catch (err) {
+        showBackfillError(err.message || String(err));
+      }
+    }
+
+    async function pollBackfillStatus() {
+      if (backfillPollTimer) {
+        clearTimeout(backfillPollTimer);
+        backfillPollTimer = null;
+      }
+      try {
+        const res = await fetch('/api/backfill/status');
+        if (res.ok) {
+          const status = await res.json();
+          const prevProcessed = backfillLastProcessedCount;
+          if (status.lastCompletedBook && status.lastCompletedBook.book_id) {
+            backfillCompletedIds.add(String(status.lastCompletedBook.book_id));
+          }
+          renderBackfillState(status);
+          if ((status.sessionProcessedCount || 0) !== prevProcessed) {
+            backfillLastProcessedCount = status.sessionProcessedCount || 0;
+            loadBackfillCandidates(false);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to poll backfill status:', err);
+      }
+
+      if (backfillStatus.isBusy || isLibraryTabVisible()) {
+        const delay = backfillStatus.isBusy ? 7200 : 30000;
+        backfillPollTimer = setTimeout(pollBackfillStatus, delay);
+      }
+    }
+
+    function renderBackfillState(status) {
+      backfillStatus = status || backfillStatus;
+
+      if (backfillStatus.error) {
+        showBackfillError(backfillStatus.error);
+      } else {
+        showBackfillError('');
+      }
+
+      // Update Mode Pill & Auto Toggle Button
+      const dot = document.getElementById('backfillModeDot');
+      const modeText = document.getElementById('backfillModeText');
+      const toggleBtn = document.getElementById('backfillAutoToggleBtn');
+
+      if (backfillStatus.autoRunning) {
+        if (dot) dot.className = 'status-dot active';
+        if (modeText) {
+          modeText.textContent = backfillStatus.mode === 'throttled'
+            ? t('backfill.status_throttled')
+            : t('backfill.status_auto');
+        }
+        if (toggleBtn) {
+          toggleBtn.className = 'btn btn-warning';
+          toggleBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg><span>${escapeHtml(t('backfill.btn_pause_auto'))}</span>`;
+        }
+      } else if (backfillStatus.mode === 'pausing') {
+        if (dot) dot.className = 'status-dot pulsing';
+        if (modeText) modeText.textContent = t('backfill.status_pausing');
+        if (toggleBtn) {
+          toggleBtn.className = 'btn btn-primary';
+          toggleBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>${escapeHtml(t('backfill.btn_resume_auto'))}</span>`;
+        }
+      } else if (backfillStatus.mode === 'on_demand') {
+        if (dot) dot.className = 'status-dot active';
+        if (modeText) modeText.textContent = t('backfill.status_on_demand');
+        if (toggleBtn) {
+          toggleBtn.className = 'btn btn-success';
+          toggleBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>${escapeHtml(t('backfill.btn_start_auto'))}</span>`;
+        }
+      } else {
+        if (dot) dot.className = 'status-dot';
+        if (modeText) modeText.textContent = t('backfill.status_idle');
+        if (toggleBtn) {
+          toggleBtn.className = 'btn btn-success';
+          toggleBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>${escapeHtml(t('backfill.btn_start_auto'))}</span>`;
+        }
+      }
+
+      updateBackfillHeaderStats();
+
+      const currentBookPill = document.getElementById('backfillCurrentBookPill');
+      const currentBookText = document.getElementById('backfillCurrentBookText');
+      const activeBook = backfillStatus.activeBook;
+
+      if (!activeBook) {
+        if (currentBookPill) currentBookPill.style.display = 'none';
+        syncLibraryBackfillRows();
+        return;
+      }
+
+      if (currentBookPill && currentBookText) {
+        currentBookPill.style.display = 'inline-flex';
+        const doneCount = activeBook.donePages || 0;
+        const totalCount = activeBook.totalPages || 0;
+        const progressSuffix = totalCount > 0 ? ` (${doneCount} / ${totalCount} بەت)` : '';
+        currentBookText.textContent = `${activeBook.title || activeBook.bookId} (#${activeBook.bookId})${progressSuffix}`;
+      }
+
+      syncLibraryBackfillRows();
+      updateBackfillHeaderStats();
+    }
+
+    function syncLibraryBackfillRows() {
+      const tbody = document.getElementById('booksTableBody');
+      if (!tbody) return;
+      const activeId = backfillStatus.activeBook ? String(backfillStatus.activeBook.bookId) : null;
+      const canRunOnDemand = !backfillStatus.autoRunning && !backfillStatus.isBusy;
+
+      const rows = tbody.querySelectorAll('tr[data-book-id]');
+      rows.forEach(tr => {
+        const bid = tr.dataset.bookId;
+        const ocrVer = tr.dataset.ocrVersion || '';
+        const isUpgraded = ocrVer === 'surya-2.5-v2' || backfillCompletedIds.has(bid);
+        const isCurrent = activeId === bid;
+
+        tr.style.background = isCurrent ? 'rgba(245, 158, 11, 0.08)' : '';
+
+        const verBadgeSlot = document.getElementById(`ocr-ver-badge-${bid}`);
+        if (verBadgeSlot) {
+          if (isUpgraded) {
+            verBadgeSlot.innerHTML = `<span class="tag-badge success" style="font-size: 0.72rem; font-family: var(--font-ui);">✓ surya-2.5-v2</span>`;
+          } else {
+            verBadgeSlot.innerHTML = `<span class="tag-badge pending" style="font-size: 0.72rem;">Backfill كېرەك</span>`;
+          }
+        }
+
+        const actionSlot = document.getElementById(`backfill-action-slot-${bid}`);
+        if (actionSlot) {
+          if (isCurrent) {
+            actionSlot.innerHTML = `<span class="milestone-badge milestone-in_progress">⚡ ${escapeHtml(t('processing.status_processing'))}</span>`;
+          } else if (isUpgraded) {
+            actionSlot.innerHTML = '';
+          } else {
+            actionSlot.innerHTML = `
+              <button type="button" class="btn btn-success btn-sm" id="btn-backfill-${escapeHtml(bid)}" onclick="runBackfillOnDemand('${escapeHtml(bid)}')" ${canRunOnDemand ? '' : 'disabled'}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                ${escapeHtml(t('backfill.btn_process_now'))}
+              </button>
+            `;
+          }
+        }
+      });
+    }
+
     function applyStaticI18n() {
       const tabSessionsLabel = document.getElementById('tabSessionsLabel');
       if (tabSessionsLabel) tabSessionsLabel.textContent = t('tabs.sessions');
@@ -2547,6 +3229,8 @@ _APP_HTML = """<!doctype html>
       } else {
         showSection('landing');
         const sessions = await loadLocalSessions();
+        loadBackfillCandidates(false);
+        pollBackfillStatus();
         if (sessions && sessions.length > 0) {
           switchLandingTab('sessions');
         } else {
@@ -2666,7 +3350,7 @@ async def _run_ocr_background(
         state.engine, concurrency if concurrency is not None else state.concurrency
     )
     try:
-        with acquire_surya_gpu_lock(state.work_root):
+        async with acquire_surya_gpu_lock_async(state.work_root):
             doc = fitz.open(workdir.source_pdf)
             predictor = await get_recognition_predictor(state.engine)
             sem = asyncio.Semaphore(max(1, target_concurrency))
@@ -2907,6 +3591,536 @@ def _start_background_task(coro) -> asyncio.Task:
 
 
 @dataclass
+class BackfillManager:
+    client: KitabimClient
+    work_root: Path
+    engine: str
+    get_concurrency: Callable[[], int]
+    is_queue_busy: Optional[Callable[[], bool]] = None
+    on_idle: Optional[Callable[[], None]] = None
+    max_server_backlog: int = 3
+    poll_interval: float = 15.0
+    ocr_version: str = OCR_ENGINE_VERSION
+
+    auto_running: bool = False
+    pause_requested: bool = False
+    mode: str = "idle"
+    active_book_id: Optional[str] = None
+    active_book_title: Optional[str] = None
+    active_book_author: Optional[str] = None
+    active_book_upload_date: Optional[str] = None
+    active_phase: Optional[str] = None
+    active_total_pages: int = 0
+    active_pages: dict[int, PageState] = field(default_factory=dict)
+    active_user_edits: dict[int, dict[str, Any]] = field(default_factory=dict)
+    latest_completed_page: Optional[int] = None
+    last_completed_book: Optional[dict[str, Any]] = None
+    session_completed_books: list[dict[str, Any]] = field(default_factory=list)
+    _server_backfilled_cache: Optional[list[dict[str, Any]]] = None
+    session_processed_count: int = 0
+    pending_index_books: int = 0
+    _baseline_server_backlog: Optional[int] = None
+    error: Optional[str] = None
+    seen_book_ids: set[str] = field(default_factory=set)
+    failed_book_ids: set[str] = field(default_factory=set)
+    _task: Optional[asyncio.Task] = None
+    _wake_event: Optional[asyncio.Event] = None
+
+    @property
+    def audit_log_path(self) -> Path:
+        return self.work_root / "backfill_audit.jsonl"
+
+    def _collect_completed_books(self) -> list[dict[str, Any]]:
+        completed_books: list[dict[str, Any]] = []
+        seen_completed: set[str] = set()
+        for item in (
+            list(self.session_completed_books)
+            + list(read_backfill_audit_log(self.audit_log_path, limit=500))
+            + list(self._server_backfilled_cache or [])
+        ):
+            bid = str(item.get("book_id") or "")
+            if bid and bid not in seen_completed:
+                seen_completed.add(bid)
+                completed_books.append(item)
+        return completed_books
+
+    def get_status(self) -> dict[str, Any]:
+        active_book_payload: Optional[dict[str, Any]] = None
+        active_id = self.active_book_id
+        if active_id is not None:
+            snapshot = dict(self.active_pages)
+            ordered = [snapshot[p] for p in sorted(snapshot)]
+            ocrd_count = sum(1 for p in ordered if p.status in ("ocrd", "reviewed"))
+            skipped_count = sum(1 for p in ordered if p.status == "skipped")
+            failed_count = sum(1 for p in ordered if p.status == "failed")
+            processing_count = sum(1 for p in ordered if p.status == "processing")
+            done_count = ocrd_count + skipped_count + failed_count
+            active_book_payload = {
+                "bookId": active_id,
+                "title": self.active_book_title or active_id,
+                "author": self.active_book_author or "",
+                "uploadDate": self.active_book_upload_date,
+                "phase": self.active_phase or "downloading",
+                "totalPages": self.active_total_pages or len(ordered),
+                "donePages": done_count,
+                "ocrdPages": ocrd_count,
+                "skippedPages": skipped_count,
+                "failedPages": failed_count,
+                "processingPages": processing_count,
+                "latestCompletedPage": self.latest_completed_page,
+                "pages": [
+                    {
+                        "pageNumber": p.page_number,
+                        "status": p.status,
+                        "text": p.text,
+                        "isToc": p.is_toc,
+                        "skipped": p.skipped,
+                        "detectedPageNumber": p.detected_page_number,
+                        "error": p.error,
+                    }
+                    for p in ordered
+                ],
+            }
+        completed_books = self._collect_completed_books()
+
+        return {
+            "mode": self.mode,
+            "autoRunning": self.auto_running,
+            "pauseRequested": self.pause_requested,
+            "isBusy": bool(active_id is not None or self.auto_running),
+            "activeBook": active_book_payload,
+            "lastCompletedBook": self.last_completed_book,
+            "completedBooks": completed_books,
+            "totalCompletedCount": len(completed_books),
+            "sessionProcessedCount": self.session_processed_count,
+            "pendingIndexBooks": self.pending_index_books,
+            "maxServerBacklog": self.max_server_backlog,
+            "failedBookIds": sorted(self.failed_book_ids),
+            "error": self.error,
+        }
+
+    def fetch_candidates_and_history(self, limit: int = 500) -> dict[str, Any]:
+        cand_resp = self.client.get_backfill_candidates(
+            ocr_version=self.ocr_version, limit=limit
+        )
+        pending_backlog = int(
+            cand_resp.get(
+                "pending_index_books",
+                cand_resp.get("pendingIndexBooks", 0),
+            )
+            or 0
+        )
+        # Note: Unlike the CLI (which uses raw `pending_backlog`), when GUI auto-backfill
+        # starts with `session_processed_count == 0` against a server that already has
+        # pre-existing stuck books (`pending_backlog >= max_server_backlog`), we capture
+        # that initial count as `_baseline_server_backlog` so legacy stuck rows do not
+        # permanently deadlock the GUI auto-runner before any book is processed.
+        if self.auto_running and self._baseline_server_backlog is None:
+            if (
+                self.session_processed_count == 0
+                and pending_backlog >= self.max_server_backlog
+            ):
+                self._baseline_server_backlog = pending_backlog
+            else:
+                self._baseline_server_backlog = 0
+        elif (
+            self._baseline_server_backlog is not None
+            and pending_backlog < self._baseline_server_backlog
+        ):
+            self._baseline_server_backlog = pending_backlog
+        effective_backlog = max(
+            0, pending_backlog - (self._baseline_server_backlog or 0)
+        )
+        self.pending_index_books = effective_backlog
+        raw_candidates = cand_resp.get("candidates") or []
+        normalized: list[dict[str, Any]] = []
+        for c in raw_candidates:
+            cid = str(c.get("id") or "")
+            if not cid or cid in self.seen_book_ids or cid in self.failed_book_ids:
+                continue
+            upload_date = c.get("uploadDate") or c.get("upload_date")
+            total_pages = c.get("totalPages") or c.get("total_pages") or 0
+            ocr_ver = c.get("ocrVersion") or c.get("ocr_version")
+            normalized.append(
+                {
+                    "id": cid,
+                    "title": c.get("title") or "",
+                    "author": c.get("author") or "",
+                    "volume": c.get("volume"),
+                    "totalPages": int(total_pages),
+                    "status": c.get("status") or "pending",
+                    "ocrVersion": ocr_ver,
+                    "uploadDate": upload_date,
+                }
+            )
+        # Ensure oldest uploaded book is strictly first
+        normalized.sort(key=lambda item: (item.get("uploadDate") or "", item["id"]))
+        if self._server_backfilled_cache is None:
+            server_backfilled: list[dict[str, Any]] = []
+            try:
+                books_resp = self.client.list_books(
+                    page=1, page_size=50, sort_by="uploadDate", order=1
+                )
+                for b in (
+                    books_resp.get("books") if isinstance(books_resp, dict) else []
+                ) or []:
+                    bid = str(b.get("id") or "")
+                    b_ver = b.get("ocrVersion") or b.get("ocr_version")
+                    up_date = str(b.get("uploadDate") or b.get("upload_date") or "")
+                    if (
+                        bid
+                        and b_ver == self.ocr_version
+                        and (not up_date or up_date < "2026-11-08")
+                    ):
+                        server_backfilled.append(
+                            {
+                                "book_id": bid,
+                                "title": b.get("title") or "",
+                                "author": b.get("author") or "",
+                                "ocr_version": b_ver,
+                                "total_pages": int(
+                                    b.get("totalPages") or b.get("total_pages") or 0
+                                ),
+                                "ocrd_pages": int(
+                                    b.get("totalPages") or b.get("total_pages") or 0
+                                ),
+                                "skipped_pages": 0,
+                                "failed_pages": 0,
+                                "upload_date": up_date,
+                                "timestamp": None,
+                            }
+                        )
+            except Exception:
+                pass
+            self._server_backfilled_cache = server_backfilled
+
+        audit_history = self._collect_completed_books()
+        return {
+            "candidates": normalized,
+            "pendingIndexBooks": self.pending_index_books,
+            "maxServerBacklog": self.max_server_backlog,
+            "auditHistory": audit_history,
+        }
+
+    async def _process_book(
+        self,
+        book_id: str,
+        title: Optional[str] = None,
+        author: Optional[str] = None,
+        upload_date: Optional[str] = None,
+    ) -> dict[str, Any]:
+        self.active_book_id = book_id
+        self.active_book_title = title or book_id
+        self.active_book_author = author or ""
+        self.active_book_upload_date = upload_date
+        self.active_phase = "downloading"
+        self.active_total_pages = 0
+        self.active_pages.clear()
+        self.active_user_edits.clear()
+        self.latest_completed_page = None
+        completed_cleanly = False
+
+        def _on_progress(evt: dict[str, Any]) -> None:
+            phase = evt.get("phase")
+            if phase:
+                self.active_phase = str(phase)
+            if evt.get("title"):
+                self.active_book_title = str(evt["title"])
+            if evt.get("total_pages"):
+                self.active_total_pages = int(evt["total_pages"])
+            pno = evt.get("page_number")
+            st = evt.get("status")
+            if isinstance(pno, int) and st in ("ocrd", "skipped", "failed"):
+                if st == "ocrd" or self.latest_completed_page is None:
+                    self.latest_completed_page = pno
+
+        try:
+            async with acquire_surya_gpu_lock_async(self.work_root):
+                entry = await backfill_single_book(
+                    book_id,
+                    self.client,
+                    self.work_root,
+                    title=title,
+                    engine=self.engine,
+                    concurrency=self.get_concurrency(),
+                    audit_log_path=self.audit_log_path,
+                    ocr_version=self.ocr_version,
+                    on_progress=_on_progress,
+                    pages_sink=self.active_pages,
+                    user_edits=self.active_user_edits,
+                    install_signal_handlers=False,
+                )
+            completed_cleanly = int(entry.get("failed_pages", 0) or 0) == 0
+            self.seen_book_ids.add(book_id)
+            self.failed_book_ids.discard(book_id)
+            self.last_completed_book = entry
+            self.session_completed_books.insert(0, entry)
+            self.session_processed_count += 1
+            return entry
+        finally:
+            self.active_book_id = None
+            self.active_book_title = None
+            self.active_book_author = None
+            self.active_book_upload_date = None
+            self.active_phase = None
+            self.active_total_pages = 0
+            self.active_pages.clear()
+            self.active_user_edits.clear()
+            self.latest_completed_page = None
+            if completed_cleanly:
+                shutil.rmtree(
+                    self.work_root / f"backfill-{book_id}", ignore_errors=True
+                )
+
+    async def _auto_loop(self) -> None:
+        try:
+            with prevent_macos_sleep():
+                while self.auto_running and not self.pause_requested:
+                    data = await asyncio.to_thread(
+                        self.fetch_candidates_and_history, 100
+                    )
+                    if not self.auto_running or self.pause_requested:
+                        break
+                    candidates = data.get("candidates") or []
+                    if not candidates:
+                        break
+
+                    if self.pending_index_books >= self.max_server_backlog:
+                        self.mode = "throttled"
+                        if self._wake_event is None:
+                            self._wake_event = asyncio.Event()
+                        self._wake_event.clear()
+                        try:
+                            await asyncio.wait_for(
+                                self._wake_event.wait(), timeout=self.poll_interval
+                            )
+                        except asyncio.TimeoutError:
+                            pass
+                        continue
+
+                    target = candidates[0]
+                    target_id = str(target["id"])
+                    self.mode = "pausing" if self.pause_requested else "auto"
+                    try:
+                        await self._process_book(
+                            target_id,
+                            title=target.get("title"),
+                            author=target.get("author"),
+                            upload_date=target.get("uploadDate"),
+                        )
+                    except Exception as book_exc:
+                        logger.warning(
+                            "Auto backfill failed on book %s (recording failure and continuing): %s",
+                            target_id,
+                            book_exc,
+                        )
+                        self.failed_book_ids.add(target_id)
+                        self.error = f"Book {target_id} failed: {book_exc}"
+                        continue
+        except Exception as exc:
+            logger.exception("Auto backfill loop failed: %s", exc)
+            self.error = str(exc)
+        finally:
+            self.auto_running = False
+            self.pause_requested = False
+            self.mode = "idle"
+            if self.on_idle is not None:
+                self.on_idle()
+
+    async def _on_demand_then_maybe_auto(
+        self,
+        book_id: str,
+        title: Optional[str] = None,
+        author: Optional[str] = None,
+        upload_date: Optional[str] = None,
+    ) -> None:
+        try:
+            await self._process_book(
+                book_id, title=title, author=author, upload_date=upload_date
+            )
+            if self.auto_running and not self.pause_requested:
+                await self._auto_loop()
+        except Exception as exc:
+            logger.exception("On-demand backfill failed for book %s: %s", book_id, exc)
+            self.failed_book_ids.add(book_id)
+            self.error = str(exc)
+        finally:
+            if not self.auto_running:
+                self.pause_requested = False
+                self.mode = "idle"
+                if self.on_idle is not None:
+                    self.on_idle()
+
+    def start_auto(self) -> dict[str, Any]:
+        if self.is_queue_busy is not None and self.is_queue_busy():
+            raise HTTPException(
+                status_code=409,
+                detail="Local OCR queue is currently busy; wait for it to finish before starting backfill",
+            )
+        self.error = None
+        self.auto_running = True
+        self.pause_requested = False
+        if self._task is not None and not self._task.done():
+            self.mode = "auto"
+            if self._wake_event is not None:
+                self._wake_event.set()
+            return self.get_status()
+        self.mode = "auto"
+        self._wake_event = asyncio.Event()
+        self._task = _start_background_task(self._auto_loop())
+        return self.get_status()
+
+    def pause_auto(self) -> dict[str, Any]:
+        self.auto_running = False
+        if self.active_book_id is not None:
+            self.pause_requested = True
+            self.mode = "pausing"
+        else:
+            self.pause_requested = False
+            self.mode = "idle"
+        if self._wake_event is not None:
+            self._wake_event.set()
+        return self.get_status()
+
+    def start_on_demand(
+        self,
+        book_id: str,
+        title: Optional[str] = None,
+        author: Optional[str] = None,
+        upload_date: Optional[str] = None,
+    ) -> dict[str, Any]:
+        if self.is_queue_busy is not None and self.is_queue_busy():
+            raise HTTPException(
+                status_code=409,
+                detail="Local OCR queue is currently busy; wait for it to finish before starting backfill",
+            )
+        if self.auto_running:
+            raise HTTPException(
+                status_code=409,
+                detail="Pause automatic backfill before running a book on-demand",
+            )
+        if self.active_book_id is not None or (
+            self._task is not None and not self._task.done()
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Another book is currently being processed",
+            )
+        self.error = None
+        self.auto_running = False
+        self.pause_requested = False
+        self.mode = "on_demand"
+        self._wake_event = asyncio.Event()
+        self._task = _start_background_task(
+            self._on_demand_then_maybe_auto(
+                book_id, title=title, author=author, upload_date=upload_date
+            )
+        )
+        return self.get_status()
+
+    def get_active_page_image_bytes(self, page_number: int) -> bytes:
+        book_id = self.active_book_id
+        if not book_id:
+            raise HTTPException(status_code=404, detail="No active backfill book")
+        tmp_dir = self.work_root / f"backfill-{book_id}"
+        pdf_path = tmp_dir / "book.pdf"
+        if not pdf_path.exists():
+            raise HTTPException(status_code=404, detail="Backfill PDF not ready yet")
+        img_path = tmp_dir / "pages" / f"{page_number:04d}.png"
+        if img_path.exists():
+            return img_path.read_bytes()
+        with fitz.open(pdf_path) as doc:
+            if page_number < 1 or page_number > len(doc):
+                raise HTTPException(status_code=404, detail="Page not found")
+            png_bytes = render_page_png(doc, page_number)
+        # Only cache to disk if the book is still active and its PDF still exists,
+        # so a racing request at book completion never recreates an orphan folder.
+        if self.active_book_id == book_id and pdf_path.exists():
+            try:
+                img_path.parent.mkdir(parents=True, exist_ok=True)
+                img_path.write_bytes(png_bytes)
+            except Exception:
+                pass
+        return png_bytes
+
+    def list_active_pages(self) -> list[dict[str, Any]]:
+        snapshot = dict(self.active_pages)
+        ordered = [snapshot[p] for p in sorted(snapshot)]
+        return [
+            {
+                "pageNumber": p.page_number,
+                "text": p.text,
+                "isToc": p.is_toc,
+                "confidence": p.confidence,
+                "status": p.status,
+                "error": p.error,
+            }
+            for p in ordered
+        ]
+
+    def update_active_page(
+        self, page_number: int, body: UpdatePageRequest
+    ) -> dict[str, Any]:
+        book_id = self.active_book_id
+        snapshot = dict(self.active_pages)
+        if not book_id or page_number not in snapshot:
+            raise HTTPException(
+                status_code=404, detail="Active backfill page not found"
+            )
+        if self.active_phase == "submitting":
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot edit page while book is submitting to server",
+            )
+        page = snapshot[page_number]
+        if page.status in ("pending", "processing"):
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot edit a page while it is pending or processing",
+            )
+        edit_entry = dict(self.active_user_edits.get(page_number) or {})
+        if body.text is not None:
+            page.text = body.text
+            page.status = "reviewed"
+            edit_entry["text"] = body.text
+        if body.isToc is not None:
+            page.is_toc = bool(body.isToc)
+            page.status = "reviewed"
+            edit_entry["is_toc"] = bool(body.isToc)
+        self.active_user_edits[page_number] = edit_entry
+
+        ckpt_path = self.work_root / f"backfill-{book_id}" / "checkpoint.jsonl"
+        if ckpt_path.parent.exists():
+            try:
+                _append_page_checkpoint(
+                    ckpt_path,
+                    {
+                        "ocr_version": self.ocr_version,
+                        "page_number": page.page_number,
+                        "text": page.text,
+                        "is_toc": page.is_toc,
+                        "detected_page_number": page.detected_page_number,
+                        "ended_with_hyphen": page.ended_with_hyphen,
+                    },
+                )
+            except Exception:
+                pass
+
+        return {
+            "pageNumber": page.page_number,
+            "text": page.text,
+            "isToc": page.is_toc,
+            "status": page.status,
+        }
+
+
+class BackfillOnDemandRequest(BaseModel):
+    title: Optional[str] = None
+    author: Optional[str] = None
+    uploadDate: Optional[str] = None
+
+
+@dataclass
 class AppState:
     client: KitabimClient
     work_root: Path
@@ -2918,6 +4132,7 @@ class AppState:
     queue_manager: Optional[BookQueueManager] = None
     abandoned_session_ids: set[str] = field(default_factory=set)
     manual_review_session_id: Optional[str] = None
+    backfill_manager: Optional[BackfillManager] = None
 
 
 def _require_landing_stage(state: AppState) -> None:
@@ -2986,6 +4201,28 @@ def create_landing_app(
         work_root=work_root, runner=ocr_runner, task_launcher=launch_bg
     )
     state.queue_manager = queue_manager
+
+    def _is_queue_busy() -> bool:
+        return bool(
+            state.queue_manager
+            and (
+                state.queue_manager.active_session_id is not None
+                or bool(state.queue_manager.queued_session_ids)
+            )
+        )
+
+    def _on_backfill_idle() -> None:
+        if state.workdir is None and state.stage == "processing":
+            state.stage = "landing"
+
+    state.backfill_manager = BackfillManager(
+        client=client,
+        work_root=work_root,
+        engine=target_engine,
+        get_concurrency=lambda: state.concurrency,
+        is_queue_busy=_is_queue_busy,
+        on_idle=_on_backfill_idle,
+    )
     queue_manager.reset_interrupted_sessions()
 
     app = FastAPI()
@@ -3027,6 +4264,11 @@ def create_landing_app(
                 state.queue_manager.active_workdir.original_filename
                 or state.queue_manager.active_workdir.root.name
             )
+        bm = state.backfill_manager
+        is_backfill = bool(bm and (bm.active_book_id or bm.auto_running))
+        if not active_id and bm and bm.active_book_id:
+            active_id = f"backfill-{bm.active_book_id}"
+            active_title = bm.active_book_title or bm.active_book_id
         return {
             "stage": state.stage,
             "error": state.error,
@@ -3039,6 +4281,10 @@ def create_landing_app(
             "manualReviewSessionId": getattr(state, "manual_review_session_id", None),
             "engine": state.engine,
             "concurrency": state.concurrency,
+            "isBackfill": is_backfill,
+            "backfillAutoRunning": bool(bm and bm.auto_running),
+            "backfillMode": bm.mode if bm else "idle",
+            "backfillPhase": bm.active_phase if bm else None,
         }
 
     @app.post("/api/concurrency")
@@ -3124,6 +4370,14 @@ def create_landing_app(
             if p.status not in ("ocrd", "reviewed", "from_kitabim", "failed")
         ]
         if pending:
+            if state.backfill_manager and (
+                state.backfill_manager.active_book_id is not None
+                or state.backfill_manager.auto_running
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Backfill is currently running; pause backfill first",
+                )
             pos, is_active = await state.queue_manager.enqueue(workdir.root.name)
             is_reviewing_other = (
                 state.stage == "review"
@@ -3247,6 +4501,14 @@ def create_landing_app(
 
     @app.post("/api/start/existing")
     async def start_existing(body: StartExistingRequest):
+        if state.backfill_manager and (
+            state.backfill_manager.active_book_id is not None
+            or state.backfill_manager.auto_running
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Backfill is currently running; pause backfill first",
+            )
         state.manual_review_session_id = None
         try:
             workdir = _start_existing_book(body.bookId, state.client, state.work_root)
@@ -3279,6 +4541,14 @@ def create_landing_app(
 
     @app.post("/api/start/upload")
     async def start_upload(file: UploadFile = File(...)):
+        if state.backfill_manager and (
+            state.backfill_manager.active_book_id is not None
+            or state.backfill_manager.auto_running
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Backfill is currently running; pause backfill first",
+            )
         state.manual_review_session_id = None
         pdf_bytes = await file.read()
         try:
@@ -3302,11 +4572,31 @@ def create_landing_app(
 
     @app.get("/api/pages")
     def list_pages():
+        if (
+            state.workdir is None
+            and state.backfill_manager
+            and state.backfill_manager.active_book_id
+        ):
+            return state.backfill_manager.list_active_pages()
         _require_active_workdir(state)
         return list_pages_response(state.workdir)
 
     @app.get("/api/pages/{page_number}/image")
     def get_page_image(page_number: int):
+        if (
+            state.workdir is None
+            and state.backfill_manager
+            and state.backfill_manager.active_book_id
+        ):
+            return Response(
+                content=state.backfill_manager.get_active_page_image_bytes(page_number),
+                media_type="image/png",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
         _require_active_workdir(state)
         return Response(
             content=get_page_image_bytes(state.workdir, page_number),
@@ -3330,6 +4620,12 @@ def create_landing_app(
 
     @app.post("/api/pages/{page_number}/update")
     def update_page(page_number: int, body: UpdatePageRequest):
+        if (
+            state.workdir is None
+            and state.backfill_manager
+            and state.backfill_manager.active_book_id
+        ):
+            return state.backfill_manager.update_active_page(page_number, body)
         _require_active_workdir(state)
         return update_page_response(state.workdir, page_number, body)
 
@@ -3345,6 +4641,62 @@ def create_landing_app(
                 detail="Cannot push while book is actively processing in the queue",
             )
         return push_response(state.workdir, state.client)
+
+    @app.get("/api/backfill/status")
+    def get_backfill_status():
+        return state.backfill_manager.get_status()
+
+    @app.get("/api/backfill/candidates")
+    def get_backfill_candidates_route(limit: int = 500):
+        try:
+            return state.backfill_manager.fetch_candidates_and_history(limit=limit)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+
+    @app.post("/api/backfill/start")
+    async def start_backfill_auto():
+        res = state.backfill_manager.start_auto()
+        state.workdir = None
+        state.manual_review_session_id = None
+        state.stage = "processing"
+        state.error = None
+        return res
+
+    @app.post("/api/backfill/pause")
+    async def pause_backfill_auto():
+        return state.backfill_manager.pause_auto()
+
+    @app.post("/api/backfill/run/{book_id}")
+    async def run_backfill_on_demand_route(
+        book_id: str, body: Optional[BackfillOnDemandRequest] = None
+    ):
+        res = state.backfill_manager.start_on_demand(
+            book_id,
+            title=body.title if body else None,
+            author=body.author if body else None,
+            upload_date=body.uploadDate if body else None,
+        )
+        state.workdir = None
+        state.manual_review_session_id = None
+        state.stage = "processing"
+        state.error = None
+        return res
+
+    @app.get("/api/backfill/pages/{page_number}/image")
+    def get_backfill_page_image(page_number: int):
+        return Response(
+            content=state.backfill_manager.get_active_page_image_bytes(page_number),
+            media_type="image/png",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
+    @app.post("/api/backfill/pages/{page_number}/update")
+    def update_backfill_page(page_number: int, body: UpdatePageRequest):
+        return state.backfill_manager.update_active_page(page_number, body)
 
     return app
 

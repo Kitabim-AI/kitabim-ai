@@ -35,7 +35,8 @@
   "tabs": {
     "sessions": "Local Sessions",
     "library": "Kitabim Cloud Library",
-    "upload": "Upload New PDF"
+    "upload": "Upload New PDF",
+    "backfill": "Backfill Monitor"
   },
   "sessions": {
     "title": "Local OCR Sessions",
@@ -162,5 +163,47 @@
     "push_without_client": "Cannot push without KitabimClient configured",
     "page_not_found": "Page not found",
     "font_not_found": "Font not found"
+  },
+  "backfill": {
+    "title": "Production Books Backfill Monitor",
+    "subtitle": "Eligible production books ordered oldest upload first. Start/pause automatic sequential processing or run individual books on-demand when paused.",
+    "btn_start_auto": "Start Auto Processing",
+    "btn_pause_auto": "Pause Auto Processing",
+    "btn_resume_auto": "Resume Auto Processing",
+    "btn_process_now": "Process Now",
+    "btn_refresh": "Refresh",
+    "status_idle": "Paused (On-demand ready)",
+    "status_auto": "Auto-processing active",
+    "status_pausing": "Pausing after current book finishes...",
+    "status_on_demand": "On-demand processing active",
+    "status_throttled": "Waiting for server index backlog...",
+    "phase_downloading": "Downloading PDF...",
+    "phase_ocr": "Recognizing pages with Surya OCR...",
+    "phase_submitting": "Submitting OCR results to server (replace-ocr)...",
+    "phase_completed": "Completed successfully",
+    "stat_eligible": "Eligible remaining: {count}",
+    "stat_backlog": "Server index backlog: {current} / {max}",
+    "stat_completed": "Completed books: {count}",
+    "stat_ocrd": "OCR'd: {count}",
+    "stat_skipped": "Skipped (Cover/ToC): {count}",
+    "stat_failed": "Failed: {count}",
+    "auto_follow_label": "Auto-follow latest completed page",
+    "side_by_side_title": "Side-by-Side Live View (Original PDF Page & OCR Result)",
+    "original_pdf_page": "Original PDF Page",
+    "ocr_result_text": "Surya OCR Text Result",
+    "no_page_selected": "No page selected or completed yet. Click a page tile above to inspect.",
+    "th_order": "#",
+    "th_book": "Book Title",
+    "th_author": "Author / Vol",
+    "th_pages": "Pages",
+    "th_upload_date": "Upload Date (Oldest First)",
+    "th_ocr_version": "OCR Version",
+    "th_action": "Action",
+    "empty_candidates": "No eligible books remaining — all production PDFs are up to date!",
+    "subtab_queue": "Backfill Queue (Eligible Books)",
+    "subtab_completed": "Already Backfilled Books",
+    "history_title": "Already Backfilled Production Books",
+    "empty_history": "No backfilled books found yet",
+    "badge_skipped": "Skipped"
   }
 }
