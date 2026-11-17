@@ -38,7 +38,7 @@ Provides API client services communicating with backend REST endpoints, handling
 - `[pdfService.ts:getPageCount]`: Calculates total page count of a PDF file using client-side PDF.js.
 - `[pdfService.ts:generateFileHash]`: Calculates SHA-256 hexadecimal checksum of a File buffer via `crypto.subtle`.
 - `[pdfService.ts:convertPageToBase64Image]`: Renders a PDF page to canvas and outputs a base64 JPEG string.
-- `[persistenceService.ts:PersistenceService]`: REST client handling books, page images, bookmarks, reading progress, and administrative triggers.
+- `[persistenceService.ts:PersistenceService]`: REST client handling books, page images, bookmarks, reading progress, `setStartPage`, `reprocessStructure`, and administrative triggers.
 - `[searchTabsService.ts:SearchTabsService]`: REST client querying dictionaries, historical terms, proverbs, synonyms, and Quran ayahs.
 - `[searchTabsService.ts:DictionaryEntry]`: Interface describing dictionary search results.
 - `[searchTabsService.ts:NameEntry]`: Interface describing Uyghur name search results.

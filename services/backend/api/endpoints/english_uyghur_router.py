@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func, distinct, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,7 +66,7 @@ async def list_english_uyghur_letter_groups(
 )
 async def search_english_uyghur_dictionary(
     q: str,
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
 ):
     q = q.strip()
@@ -87,8 +87,8 @@ async def search_english_uyghur_dictionary(
 
 @router.get("/english-uyghur-dictionary", response_model=List[EnglishUyghurEntryOut])
 async def list_english_uyghur_entries(
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
     letter_group: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):

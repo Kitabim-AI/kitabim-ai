@@ -29,9 +29,6 @@ async def seed_system_configs(session: AsyncSession):
         "gemini_batch_embedding_enabled": "embed_batch_enabled",
         "log_level": "sys_log_level",
         "gemini_batch_embedding_timeout_hours": "embed_batch_timeout_hours",
-        "history_extraction_model": "history_gemini_model",
-        "gemini_batch_history_extraction_enabled": "history_batch_enabled",
-        "history_extraction_batch_size": "history_batch_size",
         "gemini_batch_embedding_max_chunks_per_job": "embed_batch_max_chunks_per_job",
         "gemini_batch_embedding_max_retry_count": "embed_batch_max_retry_count",
         "gemini_judge_model": "rag_gemini_judge_model",
@@ -76,21 +73,6 @@ async def seed_system_configs(session: AsyncSession):
             "key": "ocr_gemini_model",
             "value": "gemini-3.7-flash",
             "description": "Gemini model used for OCR page processing.",
-        },
-        {
-            "key": "llm_spell_check_batch_enabled",
-            "value": "false",
-            "description": "When true, the per-book LLM spell-check trigger submits a Gemini Batch API job instead of live concurrent calls",
-        },
-        {
-            "key": "gemini_llm_spell_check_model",
-            "value": "gemini-3.1-flash-lite",
-            "description": "Gemini model used for LLM-based spell correction, both live and batch paths",
-        },
-        {
-            "key": "gemini_llm_spell_check_timeout",
-            "value": "180",
-            "description": "Timeout in seconds for Gemini LLM spell check generation API calls.",
         },
         {
             "key": "ocr_batch_enabled",
@@ -174,7 +156,7 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "embed_gemini_timeout",
-            "value": "15",
+            "value": "45",
             "description": "Timeout in seconds for Gemini vector embedding API calls.",
         },
         {
@@ -193,29 +175,9 @@ async def seed_system_configs(session: AsyncSession):
             "description": "Timeout threshold in hours after which a pending/running batch embedding job is marked stale and retried.",
         },
         {
-            "key": "history_extraction_enabled",
-            "value": "true",
-            "description": "Globally enable/disable Uyghur history dictionary term extraction feature. Set to 'true' to enable or 'false' to disable.",
-        },
-        {
-            "key": "history_gemini_model",
-            "value": "gemini-3.5-flash-lite",
-            "description": "Gemini model used for structured Uyghur history dictionary term extraction and factual synthesis.",
-        },
-        {
-            "key": "history_batch_enabled",
-            "value": "false",
-            "description": "Globally enable/disable Gemini Batch API for history dictionary extraction. Set to 'true' to use Batch API (50% cost discount) or 'false' for online sliding-window extraction.",
-        },
-        {
-            "key": "history_batch_size",
-            "value": "15",
-            "description": "Number of book pages grouped per sliding window / batch request during history dictionary extraction.",
-        },
-        {
             "key": "embed_batch_max_chunks_per_job",
-            "value": "100",
-            "description": "Maximum number of chunks packaged into a single Gemini Batch API embedding submission. Sized for the Tier 1 batch enqueued-tokens budget (500K) assuming several concurrent jobs — raise if the Gemini API key is upgraded to a higher tier.",
+            "value": "5000",
+            "description": "Maximum number of chunks packaged into a single Gemini Batch API embedding submission per book.",
         },
         {
             "key": "embed_batch_max_retry_count",

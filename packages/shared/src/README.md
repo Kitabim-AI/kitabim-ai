@@ -5,8 +5,8 @@ Shared TypeScript type definitions and OpenAPI contract models consumed across t
 
 ## Interface
 - `[index.ts:export * from './types']`: Main entry point re-exporting shared TypeScript interfaces.
-- `[types.ts:Book]`: Client domain interface extending OpenAPI schema with typed Dates, nested pages, and pipeline milestones.
-- `[types.ts:ExtractionResult]`: Page-level OCR and indexing progress state (`status`, `pipelineStep`, `milestone`, `llmSpellCheckStatus`).
+- `[types.ts:Book]`: Client domain interface extending OpenAPI schema with typed Dates, nested pages, `ocrVersion`, `contentPageMap`, and pipeline milestones (`ocrMilestone`, `structureMilestone`, `chunkingMilestone`, `embeddingMilestone`, `spellCheckMilestone`).
+- `[types.ts:ExtractionResult]`: Page-level OCR, page-number (`detectedPageNumber`, `contentPageNumber`, `contentPageNumberManual`), and indexing progress state (`status`, `pipelineStep`, `milestone`).
 - `[types.ts:ErrorEvent]`: Standardized error event model with timestamp and contextual metadata.
 - `[types.ts:PaginatedBooks]`: Paginated wrapper containing an array of `Book` models.
 - `[types.ts:Message]`: Turn-by-turn chat message payload including token costs and RAG evaluation IDs.

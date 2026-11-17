@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func, distinct, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,7 +41,7 @@ class SynonymStatsOut(BaseModel):
 @router.get("/synonyms/search", response_model=List[SynonymEntryOut])
 async def search_synonyms(
     q: str,
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
 ):
     """Search synonyms by word prefix/substring (autocomplete)."""
@@ -100,8 +100,8 @@ async def get_synonym_stats(
 @router.get("/synonyms", response_model=List[SynonymEntryOut])
 async def list_synonyms(
     letter_group: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
 ):
     """List synonym entries with optional letter-group filter and pagination."""

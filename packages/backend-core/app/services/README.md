@@ -8,14 +8,12 @@ Houses core business logic and domain processing pipelines for Kitabim AI, inclu
 - `[batch_ocr_service.py:submit_batch_ocr_job]` / `[batch_ocr_service.py:poll_and_process_batch_ocr_jobs]` — Manages batch OCR jobs.
 - `[pdf_service.py:read_pdf_page_count]` / `[pdf_service.py:extract_pdf_cover]` / `[pdf_service.py:create_page_stubs]` — Extracts PDF page counts, rendered covers, and initializes page records.
 - `[docx_service.py:extract_docx_pages]` / `[docx_service.py:extract_docx_cover]` — Ingests DOCX files, extracting text, headings, footnotes, and covers.
-- `[chunking_service.py:ChunkingService]` — Splits page text into overlapping semantic chunks with Markdown structure awareness.
-- `[batch_embedding_service.py:submit_batch_embedding_job]` / `[batch_embedding_service.py:poll_and_process_batch_embedding_jobs]` — Batch embedding pipeline.
+- `[book_structure_service.py:BookStructureService]` — Deterministic printed-page alignment (`solve_content_page_numbers`) and two-tier section extraction (`extract_book_sections`).
+- `[chunking_service.py:ChunkingService]` — Splits book sections into overlapping semantic chunks (`chunk_book_sections`) with page-local footnotes, cross-page prose stitching, and `text_hash` computation.
+- `[batch_embedding_service.py:submit_batch_embedding_job]` / `[batch_embedding_service.py:poll_and_process_batch_embedding_jobs]` — Book-scoped and page-scoped Gemini Batch embedding pipeline.
 - `[spell_check_service.py:run_spell_check_for_page]` — Uyghur spell checker identifying unknown words and calculating correction confidences.
-- `[llm_spell_check_service.py:correct_page_text]` — Contextual LLM-based spell correction over full page text.
 - `[auto_correct_service.py:apply_auto_corrections_to_page]` — Applies deterministic auto-correction rules to page text.
 - `[entity_resolution_service.py:resolve_entity]` / `[entity_resolution_service.py:execute_merge]` — Entity deduplication, vector similarity matching, and alias management.
-- `[history_extraction_service.py:HistoryExtractionService]` — Extracts historical entities, definitions, and facts from book text.
-- `[dictionary_staging_service.py:DictionaryStagingService]` — Manages review, staging, and approval workflow for extracted historical terms.
 - `[storage_service.py:StorageProvider]` / `[storage_service.py:storage]` — Unified file storage provider abstraction (`FileSystemStorageProvider`, `GCSStorageProvider`).
 - `[cache_service.py:CacheService]` / `[cache_service.py:cache_service]` — Redis caching service providing get, set, delete, and pattern invalidation.
 - `[chat_limit_service.py:ChatLimitService]` — Enforces daily query limits per user or IP address using Redis Lua atomic counters.

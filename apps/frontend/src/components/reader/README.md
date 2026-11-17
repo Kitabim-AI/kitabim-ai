@@ -1,15 +1,14 @@
 # Reader Component (`reader`)
 
 ## Overview
-Provides the full book reading and text editing experience, featuring virtualized page-by-page scrolling, inline OCR text editing and spell-check preview, diff highlighting, text selection sharing, bookmark creation, and integrated side-by-side RAG chat.
+Provides the full book reading and text editing experience, featuring virtualized page-by-page scrolling, inline OCR text editing, text selection sharing, bookmark creation, and integrated side-by-side RAG chat.
 
 ## Interface
 - `[BookmarkPrompt.tsx:BookmarkPrompt]` — Modal and popover dialog for creating, naming, and updating a book bookmark.
 - `[BookmarksDrawer.tsx:BookmarksDrawer]` — Slide-out side drawer displaying book bookmarks with jump-to-page and delete controls.
-- `[ChangedWordsLayer.tsx:ChangedWordsLayer]` — ForwardRef visual overlay highlighting character and word differences between original OCR text and spell-corrected text.
 - `[GuestAuthWall.tsx:GuestAuthWall]` — Authentication prompt card shown to unauthenticated users attempting to access bookmarks or reading history.
-- `[PageItem.tsx:PageItem]` — Individual book page component rendering text, typography styling, text selection sharing triggers, TOC jump buttons, and inline editor.
-- `[ReaderView.tsx:ReaderView]` — Primary reading workspace integrating virtual scrolling, reading progress tracking, book exports, and book-level chat assistant.
+- `[PageItem.tsx:PageItem]` — Individual book page component rendering text (`contentPageNumber` / `displayPageNumber` with `(PDF N)` footer), typography styling, text selection sharing triggers, `contentPageMap`-aware TOC jump buttons, and inline editor.
+- `[ReaderView.tsx:ReaderView]` — Primary reading workspace integrating virtual scrolling, `POST /api/books/{id}/pages/{page_num}/set-start-page` start-page anchoring, reading progress tracking, book exports, and book-level chat assistant.
 - `[VirtualScrollReader.tsx:default]` — Windowed virtualized scrolling list component handling dynamic page measurement and smooth scrolling.
 
 ## Invariants

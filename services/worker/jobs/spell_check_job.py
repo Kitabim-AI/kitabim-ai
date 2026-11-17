@@ -168,13 +168,33 @@ async def spell_check_job(ctx, page_ids: List[int]) -> None:
         # Update book-level spell_check milestone after processing batch
         # Get unique book IDs from processed pages
         if pages:
-            book_ids = {page.book_id for page in pages}
+            from app.services.book_structure_service import (
+                claim_books_for_structure,
+                enqueue_claimed_structure_jobs,
+            )
+
+            book_ids = {page.book_id for page in pages if page.book_id}
+            claimed_for_structure: list[str] = []
+            redis = ctx.get("redis")
             for book_id in book_ids:
                 async with db_session.async_session_factory() as session:
                     await BookMilestoneService.update_book_milestone_for_step(
                         session, book_id, "spell_check"
                     )
+                    if redis is not None:
+                        claimed = await claim_books_for_structure(
+                            session,
+                            book_ids=[book_id],
+                            require_spell_check_terminal=True,
+                        )
+                        claimed_for_structure.extend(claimed)
                     await session.commit()
+            if redis is not None and claimed_for_structure:
+                await enqueue_claimed_structure_jobs(
+                    redis,
+                    claimed_for_structure,
+                    session_factory=db_session.async_session_factory,
+                )
 
         # Get cache statistics for performance monitoring
         cache_stats = cache.get_stats()

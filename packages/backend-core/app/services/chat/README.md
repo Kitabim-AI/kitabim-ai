@@ -9,8 +9,8 @@ Coordinates conversational AI queries over Uyghur literary works, managing query
 - `[context.py:ToolDependencies]` — Dependency container providing repository and service references to retrieval tools.
 - `[query_signals.py:analyze_query_signals]` — `analyze_query_signals(...)`: Analyzes query intents (catalog, author, content, page reference, entity search).
 - `[query_signals.py:repair_json_unescaped_quotes]` — Utility fixing malformed JSON quotes returned by LLM classification.
-- `[exact_phrase.py:run_exact_phrase_retrieval]` — Direct search for exact text phrases across book pages.
-- `[context_grading.py:_grade_context]` — Filters and grades candidate text chunks for query relevance before final answer construction.
+- `[exact_phrase.py:run_exact_phrase_retrieval]` — Direct search for exact text phrases across book pages, forwarding section and printed-page metadata.
+- `[context_grading.py:_grade_context]` — Filters, deduplicates by `(book_id, page, section_id)`, and grades candidate text chunks for query relevance before final answer construction.
 - `[retrieval_agent.py:build_retrieval_agent]` — Assembles the multi-step agentic retrieval LangChain workflow.
 - `[retrieval_agent.py:ALL_TOOLS]` — Complete registry of tools accessible to the retrieval agent.
 - `[answer_agent.py:build_answer_agent]` — Assembles the final answer synthesis agent.

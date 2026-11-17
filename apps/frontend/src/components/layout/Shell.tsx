@@ -56,9 +56,9 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
                   className="flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
                 >
                   <img
-                    src="https://dallasuyghurcommunity.org/wp-content/uploads/2025/01/DUC_Logo_3ai_Artboard-2-photoaidcom-cropped-1.png"
+                    src="/duc-logo.png"
                     alt="Dallas Uyghur Community"
-                    className="h-10 sm:h-12 w-auto object-contain"
+                    className="h-10 sm:h-12 w-auto object-contain rounded-full"
                   />
                 </a>
                 <a

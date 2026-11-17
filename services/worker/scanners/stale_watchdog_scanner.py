@@ -1,8 +1,8 @@
 """
-Stale Watchdog — resets pages stuck in_progress back to idle.
+Stale Watchdog — resets pages and book-scoped milestones stuck `in_progress` back to `idle`.
 
 Handles crashed jobs or pods that were killed mid-processing.
-One rule covers all pipeline steps. Runs every 30 minutes.
+Runs every 30 minutes.
 """
 
 from __future__ import annotations
@@ -10,19 +10,19 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import update, func, select
+from sqlalchemy import and_, case, func, or_, select, update
 
+from app.core.pipeline import BOOK_MILESTONE_IDLE, BOOK_MILESTONE_IN_PROGRESS
 from app.db import session as db_session
 from app.db.models import (
+    BatchEmbeddingJob,
+    BatchOCRJob,
     Book,
     Page,
-    BatchOCRJob,
-    BatchEmbeddingJob,
-    BatchLlmSpellCheckJob,
 )
 from app.services.book_milestone_service import BookMilestoneService
-from app.utils.observability import log_json
 from app.utils.circuit_breaker import get_redis
+from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.stale_watchdog")
 
@@ -36,52 +36,41 @@ async def run_stale_watchdog(ctx) -> None:
     now = func.now()
 
     async with db_session.async_session_factory() as session:
-        from sqlalchemy import or_, case
-
-        # Pages locked by an in-flight Gemini Batch OCR, Batch Embedding, or Batch
-        # LLM Spell Check job can legitimately stay "in_progress" for up to timeout_hours
-        # (default 24h) — the batch poller's own timeout handles their recovery, so
-        # exempt them here to avoid the two timeout mechanisms fighting each other.
         batch_ocr_result = await session.execute(
             select(BatchOCRJob.page_ids).where(
                 BatchOCRJob.status.in_(["submitting", "submitted", "running"])
             )
         )
         batch_embed_result = await session.execute(
-            select(BatchEmbeddingJob.page_ids).where(
+            select(BatchEmbeddingJob.page_ids, BatchEmbeddingJob.book_ids).where(
                 BatchEmbeddingJob.status.in_(["submitting", "submitted", "running"])
             )
         )
-        batch_spell_result = await session.execute(
-            select(BatchLlmSpellCheckJob.page_ids).where(
-                BatchLlmSpellCheckJob.status.in_(["submitting", "submitted", "running"])
-            )
-        )
+        active_batch_embed_rows = list(batch_embed_result.fetchall())
         active_batch_page_ids = {
-            pid
-            for (page_ids,) in list(batch_ocr_result.fetchall())
-            + list(batch_embed_result.fetchall())
-            + list(batch_spell_result.fetchall())
-            for pid in page_ids
+            pid for row in list(batch_ocr_result.fetchall()) for pid in (row[0] or [])
+        } | {pid for row in active_batch_embed_rows for pid in (row[0] or [])}
+        active_batch_book_ids = {
+            bid
+            for row in active_batch_embed_rows
+            if len(row) > 1
+            for bid in (row[1] or [])
         }
 
-        # Build conditions and update values dynamically based on feature flags
         where_conditions = [
             Page.ocr_milestone == "in_progress",
             Page.chunking_milestone == "in_progress",
             Page.embedding_milestone == "in_progress",
             Page.spell_check_milestone == "in_progress",
-            Page.milestone == "in_progress",  # Legacy support
+            Page.milestone == "in_progress",
         ]
 
-        # Load in-progress pages
         stmt = select(Page.id, Page.book_id, Page.worker_id, Page.claimed_at).where(
             or_(*where_conditions)
         )
         result = await session.execute(stmt)
         rows = result.fetchall()
 
-        # Fetch active worker heartbeats from Redis
         redis = ctx.get("redis") or get_redis()
         keys = []
         cursor = 0
@@ -102,7 +91,7 @@ async def run_stale_watchdog(ctx) -> None:
 
         stale_page_ids = []
         for pid, book_id, worker_id, claimed_at in rows:
-            if pid in active_batch_page_ids:
+            if pid in active_batch_page_ids or book_id in active_batch_book_ids:
                 continue
 
             c_at = claimed_at
@@ -167,39 +156,90 @@ async def run_stale_watchdog(ctx) -> None:
             for book_id in reset_book_ids_from_pages:
                 await BookMilestoneService.update_book_milestones(session, book_id)
 
-        # Reset stale books stuck in graph_milestone == "in_progress" for > 1 hour
+        # Reset stale book-scoped milestones (structure, chunking, embedding > 30m; graph > 1h)
         book_threshold = datetime.now(timezone.utc) - timedelta(hours=1)
+        structure_stale_cond = or_(
+            and_(
+                Book.structure_milestone == BOOK_MILESTONE_IN_PROGRESS,
+                or_(
+                    Book.structure_claimed_at.is_(None),
+                    Book.structure_claimed_at < max_duration_threshold,
+                ),
+            ),
+            and_(
+                Book.structure_milestone == BOOK_MILESTONE_IDLE,
+                Book.structure_claimed_at.isnot(None),
+                Book.structure_claimed_at < max_duration_threshold,
+            ),
+        )
+        chunking_stale_cond = and_(
+            Book.chunking_milestone == BOOK_MILESTONE_IN_PROGRESS,
+            or_(
+                Book.chunking_claimed_at.is_(None),
+                Book.chunking_claimed_at < max_duration_threshold,
+            ),
+        )
+        embed_stale_cond = and_(
+            Book.embedding_milestone == BOOK_MILESTONE_IN_PROGRESS,
+            or_(
+                Book.embedding_claimed_at.is_(None),
+                Book.embedding_claimed_at < book_threshold,
+            ),
+        )
+        if active_batch_book_ids:
+            embed_stale_cond = and_(
+                embed_stale_cond, ~Book.id.in_(list(active_batch_book_ids))
+            )
+        graph_stale_cond = and_(
+            Book.graph_milestone == "in_progress",
+            Book.last_updated < book_threshold,
+        )
+
         book_stmt = (
             update(Book)
             .where(
-                Book.graph_milestone == "in_progress",
-                Book.last_updated < book_threshold,
+                or_(
+                    structure_stale_cond,
+                    chunking_stale_cond,
+                    embed_stale_cond,
+                    graph_stale_cond,
+                )
             )
-            .values(graph_milestone="idle", last_updated=now)
+            .values(
+                structure_milestone=case(
+                    (structure_stale_cond, BOOK_MILESTONE_IDLE),
+                    else_=Book.structure_milestone,
+                ),
+                structure_claimed_at=case(
+                    (structure_stale_cond, None),
+                    else_=Book.structure_claimed_at,
+                ),
+                chunking_milestone=case(
+                    (chunking_stale_cond, BOOK_MILESTONE_IDLE),
+                    else_=Book.chunking_milestone,
+                ),
+                chunking_claimed_at=case(
+                    (chunking_stale_cond, None),
+                    else_=Book.chunking_claimed_at,
+                ),
+                embedding_milestone=case(
+                    (embed_stale_cond, BOOK_MILESTONE_IDLE),
+                    else_=Book.embedding_milestone,
+                ),
+                embedding_claimed_at=case(
+                    (embed_stale_cond, None),
+                    else_=Book.embedding_claimed_at,
+                ),
+                graph_milestone=case(
+                    (graph_stale_cond, "idle"),
+                    else_=Book.graph_milestone,
+                ),
+                last_updated=now,
+            )
             .returning(Book.id)
         )
         book_result = await session.execute(book_stmt)
         reset_book_ids = [row[0] for row in book_result.fetchall()]
-
-        # Reset stale pages stuck in llm_spell_check_status == "in_progress" (excluding active batch jobs)
-        stale_llm_query = select(Page.id).where(
-            Page.llm_spell_check_status == "in_progress",
-            Page.last_updated < max_duration_threshold,
-        )
-        if active_batch_page_ids:
-            stale_llm_query = stale_llm_query.where(~Page.id.in_(active_batch_page_ids))
-
-        stale_llm_res = await session.execute(stale_llm_query)
-        reset_llm_spell_page_ids = [row[0] for row in stale_llm_res.fetchall()]
-        if reset_llm_spell_page_ids:
-            await session.execute(
-                update(Page)
-                .where(Page.id.in_(reset_llm_spell_page_ids))
-                .values(
-                    llm_spell_check_status="failed",
-                    last_updated=now,
-                )
-            )
 
         await session.commit()
 
@@ -214,16 +254,8 @@ async def run_stale_watchdog(ctx) -> None:
         log_json(
             logger,
             logging.INFO,
-            "stale watchdog reset books graph milestone",
+            "stale watchdog reset books milestone",
             count=len(reset_book_ids),
         )
     else:
         log_json(logger, logging.DEBUG, "stale watchdog: no stale books found")
-
-    if reset_llm_spell_page_ids:
-        log_json(
-            logger,
-            logging.WARNING,
-            "stale watchdog reset stuck llm spell check pages",
-            count=len(reset_llm_spell_page_ids),
-        )

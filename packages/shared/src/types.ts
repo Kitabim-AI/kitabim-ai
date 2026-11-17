@@ -7,16 +7,18 @@ export interface ErrorEvent extends Omit<ErrorEventSchema, 'ts' | 'context'> {
 }
 
 export type ExtractionResultSchema = components['schemas']['ExtractionResult'];
-export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' | 'pipelineStep' | 'milestone' | 'llmSpellCheckStatus'> {
+export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' | 'pipelineStep' | 'milestone' | 'contentPageNumber'> {
   status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'indexed' | 'error';
   pipelineStep?: 'ocr' | 'chunking' | 'embedding' | null;
   milestone?: 'idle' | 'running' | 'succeeded' | 'failed' | null;
-  contentPageNumber?: string | null;
-  content_page_number?: string | null;
+  detectedPageNumber?: number | null;
+  detected_page_number?: number | null;
+  contentPageNumber?: string | number | null;
+  content_page_number?: string | number | null;
+  contentPageNumberManual?: boolean;
+  content_page_number_manual?: boolean;
   displayPageNumber?: string | null;
   display_page_number?: string | null;
-  llmSpellCheckStatus?: 'idle' | 'in_progress' | 'succeeded' | 'failed';
-  llmSpellCheckAt?: string | null;
 }
 
 export type BookSchema = components['schemas']['Book'];
@@ -30,6 +32,7 @@ export interface Book extends Omit<
   | 'visibility'
   | 'pipelineStep'
   | 'ocrMilestone'
+  | 'structureMilestone'
   | 'chunkingMilestone'
   | 'embeddingMilestone'
   | 'spellCheckMilestone'
@@ -38,12 +41,17 @@ export interface Book extends Omit<
   lastUpdated: Date | null;
   lastError?: ErrorEvent | null;
   pages: ExtractionResult[];
+  ocrVersion?: number;
+  ocr_version?: number;
   contentPageOffset?: number;
   content_page_offset?: number;
+  contentPageMap?: Record<string, number> | null;
+  content_page_map?: Record<string, number> | null;
   status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'ready' | 'error';
   visibility?: 'public' | 'private';
-  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'spell_check' | 'ready' | null;
+  pipelineStep?: 'ocr' | 'structure' | 'chunking' | 'embedding' | 'spell_check' | 'ready' | null;
   ocrMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
+  structureMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   chunkingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   embeddingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   spellCheckMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';

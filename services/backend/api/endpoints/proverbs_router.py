@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,7 +46,7 @@ class ProverbUpdate(BaseModel):
 @router.get("/proverbs/search", response_model=List[ProverbEntryOut])
 async def search_proverbs(
     q: str,
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
 ):
     """Search for proverbs (autocomplete)."""
@@ -81,8 +81,8 @@ async def get_proverbs_stats(
 
 @router.get("/proverbs", response_model=List[ProverbEntryOut])
 async def list_proverbs_entries(
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
     letter_group: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):

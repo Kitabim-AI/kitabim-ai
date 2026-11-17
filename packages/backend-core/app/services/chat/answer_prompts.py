@@ -124,7 +124,7 @@ def build_answer_instructions(
         ),
         (
             "If the context contains the information, ALWAYS cite the source clearly.\n"
-            "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Page: N]\n"
+            "   Each document in the context starts with a header like: [BookID: abc123, Book: title, Author: name, Volume: N, Section: section_title, Page: N, PrintedPage: M, RefPages: N1,N2]\n"
             "   Book summaries use the marker SUMMARY instead of Page: [BookID: abc123, Book: title, Author: name, SUMMARY]\n"
             "   Dictionary sources use headers like: [Dictionary Source: Uyghur Dictionary, Term: X], [Dictionary Source: History Dictionary, Term: X], [Dictionary Source: English-Uyghur Dictionary, English: X], or [Dictionary Source: Spelling Word List, Word: X]\n"
             "   Quran sources use headers like: [Source: Holy Quran, Surah: SurahNumber - SurahName (EnglishName), Ayah: N]\n"
@@ -133,12 +133,14 @@ def build_answer_instructions(
         _MULTI_VOLUME_INSTRUCTION,
         (
             f"Format citations in Uyghur as a markdown link.\n"
-            "   For page-based sources, the link URL MUST be in the format 'ref:book_id:page_number'.\n"
-            "   If multiple pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
+            "   For page-based sources, the link URL MUST be in the format 'ref:book_id:page_number' using the physical page number(s) from 'RefPages:' (or 'Page:' when 'RefPages:' is absent).\n"
+            "   If multiple physical pages are referenced, separate the page numbers with commas in the URL (e.g. 'ref:book_id:9,10').\n"
+            "   In the visible Uyghur link text label, display the 'PrintedPage:' value when present in the header (e.g. '46-بەت' or '46–47-بەت'); otherwise display the 'Page:' value.\n"
             "   For SUMMARY-marked sources (no Page field), use 'ref:book_id:summary' as the URL.\n"
             "   For Quran sources, the link URL MUST be in the format 'ref:quran:surah_number:ayah_number' (e.g., 'ref:quran:1:1' or 'ref:quran:2:255'). If multiple ayahs are referenced, separate them with commas in the URL (e.g., 'ref:quran:2:255,256').\n"
             "   STRICT RULE: Do NOT include the 'BookID: abc123' part in the visible text label of the link! Keep the book ID ONLY in the URL parenthesis.\n"
             "   Example (page): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 25-بەت](ref:abc123:25)\n"
+            "   Example (multi-page with PrintedPage): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر)، 1-توم، 46–47-بەت](ref:abc123:52,53)\n"
             "   Example (summary): **مەنبە:** [ئانا يۇرت (زوردۇن سابىر) — قىسقىچە مەزمۇنى](ref:abc123:summary)\n"
             "   Example (Quran): **مەنبە:** [قۇرئان كەرىم، سۈرە فاتىھە، 1-ئايەت](ref:quran:1:1)\n"
             f"   For Knowledge Graph sources (where title contains '{kg_label}' or 'Knowledge Graph'), format citations using the title provided in the header (e.g. **مەنبە:** [«مۇغۇلىستان تارىخى» ({kg_label})، 25-بەت](ref:graph:abc123:25) or **مەنبە:** [{kg_label}](ref:graph:abc123)). NEVER write the English string 'Knowledge Graph' in citations or text labels.\n"

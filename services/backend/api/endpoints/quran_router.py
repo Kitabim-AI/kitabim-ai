@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,7 +80,7 @@ async def list_surahs(
 @router.get("/quran/search", response_model=List[QuranAyahOut])
 async def search_quran(
     q: str,
-    limit: int = 15,
+    limit: int = Query(15, ge=1, le=300),
     session: AsyncSession = Depends(get_session),
 ):
     """Search for verses in Arabic, English or Uyghur."""
@@ -117,8 +117,8 @@ async def get_quran_stats(
 
 @router.get("/quran", response_model=List[QuranAyahOut])
 async def list_quran_entries(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=300),
     surah: Optional[int] = None,
     session: AsyncSession = Depends(get_session),
 ):

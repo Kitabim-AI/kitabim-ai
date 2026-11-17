@@ -10,7 +10,7 @@ Provides administrative key-value system configuration management, category filt
 ## Invariants
 - `[SystemConfigPanel.tsx:isAdmin]` — Editing, creating, and circuit breaker reset/trip actions are guarded for administrators via `useIsAdmin()`.
 - `[SystemConfigPanel.tsx:isJsonConfig]` — Configurations with key `'sys_llm_model_pricing'` or values delimited with `{...}` / `[...]` are validated via `JSON.parse` before save; invalid JSON alerts the user and aborts save.
-- `[SystemConfigPanel.tsx:FEATURE_GROUPS]` — Configs are mapped to feature categories (`ocr_`, `rag_`, `embed_`, `kg_`, `history_`, `summary_`, `spell_`, `sys_`) based on key prefix, falling back to `'sys'`.
+- `[SystemConfigPanel.tsx:FEATURE_GROUPS]` — Configs are mapped to feature categories (`ocr_`, `rag_`, `embed_`, `kg_`, `summary_`, `spell_`, `sys_`) based on key prefix, falling back to `'sys'`.
 
 ## Side Effects
 - `[SystemConfigPanel.tsx:loadConfigs]` — Authenticated HTTP `GET` to `/api/system-configs/`.

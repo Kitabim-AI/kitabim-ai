@@ -45,6 +45,27 @@ _LOCATE_MARKERS = (
     # rather than "show me"), but included because it's the exact phrasing
     # used in real failing queries; the Answer Agent can still synthesize
     # an explanation once handed the real content.
+    "مەزمۇن",  # unpossessed form (e.g. "قانداق ئاساسى مەزمۇن بار؟")
+    "ناملىق باب",  # "chapter named «X»"
+    "دېگەن باب",  # "chapter called «X»"
+    "ناملىق بۆلەك",  # "section named «X»"
+    "دېگەن بۆلەك",  # "section called «X»"
+    "ناملىق شېئىر",  # "poem named «X»"
+    "دېگەن شېئىر",  # "poem called «X»"
+    "ناملىق غەزەل",  # "ghazal named «X»"
+    "دېگەن غەزەل",  # "ghazal called «X»"
+)
+
+# Explicit requests to find/show/quote the full verbatim text of a short work
+# (bypass Answer Agent synthesis only when one of these is present; analytical
+# or summary questions like "قانداق ئاساسى مەزمۇن بار؟" or "مەزمۇنى نېمە؟"
+# should feed the resolved text/chunks to the Answer Agent).
+_VERBATIM_MARKERS = (
+    "تېپىپ بەر",
+    "كۆرسەت",
+    "تولۇق تېكىستى",
+    "تېكىستى قانداق",
+    "تېكىستىنى",
 )
 
 # Authorship questions ("whose work is «X»?") are already handled by the
@@ -62,6 +83,7 @@ _AUTHORSHIP_MARKERS = (
 class ShortWorkIntent:
     applies: bool
     title: Optional[str] = None
+    is_verbatim_request: bool = True
 
 
 def _extract_quoted_phrases(text: str) -> List[str]:
@@ -92,10 +114,16 @@ def detect_short_work_intent(text: str) -> ShortWorkIntent:
     if not any(marker in stripped for marker in _LOCATE_MARKERS):
         return ShortWorkIntent(applies=False)
 
+    is_verbatim = any(marker in stripped for marker in _VERBATIM_MARKERS)
+
     phrases = _extract_quoted_phrases(stripped)
     if len(phrases) == 1:
-        return ShortWorkIntent(applies=True, title=phrases[0])
+        return ShortWorkIntent(
+            applies=True, title=phrases[0], is_verbatim_request=is_verbatim
+        )
     if len(phrases) == 2:
-        return ShortWorkIntent(applies=True, title=phrases[1])
+        return ShortWorkIntent(
+            applies=True, title=phrases[1], is_verbatim_request=is_verbatim
+        )
 
     return ShortWorkIntent(applies=False)

@@ -7,7 +7,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
-from jose import jwt, JWTError, ExpiredSignatureError
+import jwt
+from jwt import PyJWTError as JWTError, ExpiredSignatureError
 
 from app.core.config import settings
 from app.models.user import User

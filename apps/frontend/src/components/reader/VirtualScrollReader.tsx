@@ -30,13 +30,14 @@ interface VirtualScrollReaderProps {
   onEdit?: (pageNum: number, text: string) => void;
   onReprocess?: (pageNum: number) => void;
   onTempTextChange?: (text: string) => void;
-  onSave?: (pageNum: number, text: string, llmSpellChecked: boolean) => void;
+  onSave?: (pageNum: number, text: string) => void;
   onCancel?: () => void;
   onSetStartPage?: (pageNum: number) => void;
   onToggleToc?: (pageNum: number, nextIsToc: boolean) => void;
   isSaving?: boolean;
   selectedBookPages?: any[];
   contentPageOffset?: number;
+  contentPageMap?: Record<string, number> | null;
   onTocPageClick?: (targetPage: number) => void;
   bookmarks?: any[];
   onCreateBookmark?: (pageNumber: number, name: string, quoteText?: string) => Promise<unknown>;
@@ -71,6 +72,7 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
   isSaving = false,
   selectedBookPages = [],
   contentPageOffset,
+  contentPageMap,
   onTocPageClick,
   bookmarks = [],
   onCreateBookmark,
@@ -365,13 +367,13 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
     onToggleToc?.(pageNum, nextIsToc);
   }, [onToggleToc]);
 
-  const handlePageSave = useCallback((pageNum: number, text: string, llmSpellChecked: boolean) => {
+  const handlePageSave = useCallback((pageNum: number, text: string) => {
     setPages(prev => {
       const existing = prev.get(pageNum);
       if (!existing) return prev;
       return new Map(prev).set(pageNum, { ...existing, text });
     });
-    onSave?.(pageNum, text, llmSpellChecked);
+    onSave?.(pageNum, text);
   }, [onSave]);
 
   const handlePageCancel = useCallback(() => {
@@ -432,12 +434,13 @@ const VirtualScrollReader: React.FC<VirtualScrollReaderProps> = ({
                   onToggleToc={onToggleToc ? (nextIsToc) => handlePageToggleToc(pageNum, nextIsToc) : undefined}
                   tempText={isEditingThisPage ? tempPageText : ''}
                   onTempTextChange={onTempTextChange}
-                  onSave={(llmSpellChecked) => handlePageSave(pageNum, tempPageText, llmSpellChecked)}
+                  onSave={() => handlePageSave(pageNum, tempPageText)}
                   onCancel={handlePageCancel}
                   isLoading={page.status === 'processing' || page.status === 'indexing'}
                   isSaving={isSaving}
                   isFullscreen={isFullscreen}
                   contentPageOffset={contentPageOffset}
+                  contentPageMap={contentPageMap}
                   onTocPageClick={handleTocPageClick}
                   bookmarks={bookmarks}
                   onCreateBookmark={onCreateBookmark}

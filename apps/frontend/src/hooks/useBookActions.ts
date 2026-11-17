@@ -184,9 +184,9 @@ export const useBookActions = (
   };
 
 
-  const handleUpdatePage = async (bookId: string, pageNum: number, newText: string, setEditingPageNum: any, llmSpellChecked: boolean = false) => {
+  const handleUpdatePage = async (bookId: string, pageNum: number, newText: string, setEditingPageNum: any) => {
     try {
-      await PersistenceService.updatePage(bookId, pageNum, newText, llmSpellChecked);
+      await PersistenceService.updatePage(bookId, pageNum, newText);
 
       setSelectedBook(prev => {
         if (!prev || prev.id !== bookId) return prev;
@@ -440,13 +440,16 @@ export const useBookActions = (
       author?: string;
       volume?: number | null;
       contentPageOffset?: number;
+      contentPageMap?: Record<string, number>;
       categories?: string[];
     },
     options?: { silent?: boolean }
   ) => {
     try {
-      await PersistenceService.updateBookMetadata(bookId, data);
+      const { contentPageMap, ...metadataPayload } = data;
+      await PersistenceService.updateBookMetadata(bookId, metadataPayload);
       setBooks(prev => prev.map(b => b.id === bookId ? { ...b, ...data } : b));
+      setSelectedBook(prev => prev && prev.id === bookId ? { ...prev, ...data } : prev);
       if (!options?.silent) {
         addNotification(t('common.saveSuccess'), "success");
       }
@@ -518,13 +521,12 @@ export const useBookActions = (
   const handleReprocessStep = (bookId: string, step: ReprocessStep, graphScope?: 'fiction' | 'nonfiction') => {
     const titles: Record<string, string> = {
       [REPROCESS_STEP.OCR]: t('modal.reprocessOcr.title') || 'OCR نى قايتا ئىشلەش',
+      [REPROCESS_STEP.STRUCTURE]: t('modal.reprocessStructure.title') || 'قۇرۇلمىنى قايتا ئانالىزلاش',
       [REPROCESS_STEP.CHUNKING]: t('modal.reprocessChunking.title') || 'پارچىلاشنى قايتا ئىشلەش',
       [REPROCESS_STEP.EMBEDDING]: t('modal.reprocessEmbedding.title') || 'ۋېكتورلاشتۇرۇشنى قايتا ئىشلەش',
       [REPROCESS_STEP.SPELL_CHECK]: t('modal.reprocessSpellCheck.title') || 'ئىملا تەكشۈرۈشنى قايتا ئىشلەش',
-      [REPROCESS_STEP.LLM_SPELL_CHECK]: t('modal.reprocessLlmSpellCheck.title') || 'LLM ئارقىلىق كوررېكتورلاشنى قايتا ئىشلەش',
       [REPROCESS_STEP.GRAPH]: t('modal.reprocessGraph.title') || 'بىلىم گىرافىنى قايتا ئىشلەش',
       [REPROCESS_STEP.SUMMARY]: t('modal.reprocessSummary.title') || 'قىسقىچە مەزمۇننى قايتا ھاسىللاش',
-      [REPROCESS_STEP.HISTORY]: t('admin.table.extractHistory') || 'تارىخىي ئاتالغۇلارنى بايقاش',
     };
 
     setModal({
@@ -542,13 +544,12 @@ export const useBookActions = (
         try {
           switch (step) {
             case REPROCESS_STEP.OCR: await PersistenceService.reprocessOcr(bookId); break;
+            case REPROCESS_STEP.STRUCTURE: await PersistenceService.reprocessStructure(bookId); break;
             case REPROCESS_STEP.CHUNKING: await PersistenceService.reprocessChunking(bookId); break;
             case REPROCESS_STEP.EMBEDDING: await PersistenceService.reprocessEmbedding(bookId); break;
             case REPROCESS_STEP.SPELL_CHECK: await PersistenceService.reprocessSpellCheck(bookId); break;
-            case REPROCESS_STEP.LLM_SPELL_CHECK: await PersistenceService.reprocessLlmSpellCheck(bookId); break;
             case REPROCESS_STEP.GRAPH: await PersistenceService.reprocessGraph(bookId, graphScope ?? 'nonfiction'); break;
             case REPROCESS_STEP.SUMMARY: await PersistenceService.reprocessSummary(bookId); break;
-            case REPROCESS_STEP.HISTORY: await PersistenceService.reprocessHistory(bookId); break;
           }
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));

@@ -34,7 +34,7 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
 
         embedding_str = str(query_embedding)
         limit_clause = "LIMIT :limit" if limit is not None else ""
-        join_clause = "JOIN books b ON s.book_id = b.id" if categories else ""
+        join_clause = "JOIN books b ON s.book_id = b.id"
         cat_filter = (
             "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
@@ -49,6 +49,8 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
                 FROM book_summaries s
                 {join_clause}
                 WHERE s.book_id = ANY(:book_ids)
+                  AND b.status = 'ready'
+                  AND (b.visibility = 'public' OR b.visibility IS NULL)
                   {cat_filter}
                   AND 1 - (s.embedding <=> CAST(:embedding AS vector(3072))) > :threshold
                 ORDER BY similarity DESC
@@ -67,6 +69,8 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
                 FROM book_summaries s
                 {join_clause}
                 WHERE 1 - (s.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
+                  AND b.status = 'ready'
+                  AND (b.visibility = 'public' OR b.visibility IS NULL)
                   {cat_filter}
                 ORDER BY similarity DESC
                 {limit_clause}
@@ -84,17 +88,20 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
 
     async def upsert(self, book_id: str, summary: str, embedding: List[float]) -> None:
         """Insert or replace the summary for a book."""
+        from sqlalchemy import func
+
         stmt = insert(BookSummary).values(
             book_id=book_id,
             summary=summary,
             embedding=embedding,
+            generated_at=func.now(),
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=["book_id"],
             set_={
                 "summary": stmt.excluded.summary,
                 "embedding": stmt.excluded.embedding,
-                "generated_at": stmt.excluded.generated_at,
+                "generated_at": func.now(),
             },
         )
         await self.session.execute(stmt)
