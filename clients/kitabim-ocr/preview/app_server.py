@@ -1456,7 +1456,10 @@ _APP_HTML = """<!doctype html>
       document.getElementById('step3Indicator').classList.toggle('active', name === 'review');
     }
 
+    let currentLandingTab = 'library';
+
     function switchLandingTab(tab) {
+      currentLandingTab = tab;
       document.getElementById('tabSessionsBtn').classList.toggle('active', tab === 'sessions');
       document.getElementById('tabLibraryBtn').classList.toggle('active', tab === 'library');
       document.getElementById('tabUploadBtn').classList.toggle('active', tab === 'upload');
@@ -1570,7 +1573,9 @@ _APP_HTML = """<!doctype html>
         appendBooksToTable(books);
         bookCurrentPage = pageToFetch;
 
-        const renderedCount = document.getElementById('booksTableBody').querySelectorAll('tr').length;
+        const allRows = Array.from(document.getElementById('booksTableBody').querySelectorAll('tr[data-book-id]'));
+        const renderedCount = allRows.length;
+        const visibleCount = allRows.filter(tr => tr.style.display !== 'none').length;
         bookHasMore = renderedCount < totalBooksCount && books.length > 0;
 
         const end = document.getElementById('booksEndOfList');
@@ -1580,6 +1585,13 @@ _APP_HTML = """<!doctype html>
           } else {
             end.style.display = 'none';
           }
+        }
+        if (visibleCount < 15 && bookHasMore) {
+          setTimeout(() => {
+            if (!bookIsLoading && bookHasMore) {
+              searchBooks(bookSearchQuery, false);
+            }
+          }, 50);
         }
       } catch (err) {
         if (reset) {
@@ -2748,13 +2760,10 @@ _APP_HTML = """<!doctype html>
       } catch (_) {}
       showLandingError('');
       showSection('landing');
-      const sessions = await loadLocalSessions();
-      if (sessions && sessions.length > 0) {
-        switchLandingTab('sessions');
-      } else {
-        switchLandingTab('library');
-      }
-      searchBooks('', true);
+      const targetTab = currentLandingTab === 'upload' ? 'sessions' : (currentLandingTab || 'library');
+      switchLandingTab(targetTab);
+      loadLocalSessions();
+      searchBooks(bookSearchQuery, true);
       initBooksInfiniteScroll();
     }
 
@@ -3083,6 +3092,13 @@ _APP_HTML = """<!doctype html>
 
     function renderBackfillState(status) {
       backfillStatus = status || backfillStatus;
+      if (Array.isArray(backfillStatus.completedBooks)) {
+        for (const item of backfillStatus.completedBooks) {
+          if (item && item.book_id) {
+            backfillCompletedIds.add(String(item.book_id));
+          }
+        }
+      }
 
       if (backfillStatus.error) {
         showBackfillError(backfillStatus.error);
@@ -3160,12 +3176,17 @@ _APP_HTML = """<!doctype html>
       const canRunOnDemand = !backfillStatus.autoRunning && !backfillStatus.isBusy;
 
       const rows = tbody.querySelectorAll('tr[data-book-id]');
+      let visibleCount = 0;
       rows.forEach(tr => {
         const bid = tr.dataset.bookId;
         const ocrVer = tr.dataset.ocrVersion || '';
         const isUpgraded = ocrVer === 'surya-2.5-v2' || backfillCompletedIds.has(bid);
         const isCurrent = activeId === bid;
 
+        tr.style.display = isUpgraded ? 'none' : '';
+        if (!isUpgraded) {
+          visibleCount += 1;
+        }
         tr.style.background = isCurrent ? 'rgba(245, 158, 11, 0.08)' : '';
 
         const verBadgeSlot = document.getElementById(`ocr-ver-badge-${bid}`);
@@ -3193,6 +3214,13 @@ _APP_HTML = """<!doctype html>
           }
         }
       });
+      if (rows.length > 0 && visibleCount < 15 && bookHasMore && !bookIsLoading) {
+        setTimeout(() => {
+          if (!bookIsLoading && bookHasMore) {
+            searchBooks(bookSearchQuery, false);
+          }
+        }, 50);
+      }
     }
 
     function applyStaticI18n() {
