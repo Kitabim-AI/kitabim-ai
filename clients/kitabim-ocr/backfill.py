@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 import fcntl
 import json
 import logging
@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, AsyncIterator, Callable, Iterator, Optional
 
 import fitz
 
@@ -96,6 +96,19 @@ def prevent_macos_sleep() -> Iterator[Optional[subprocess.Popen]]:
                         pass
 
 
+_IN_PROCESS_GPU_ASYNC_LOCK: Optional[asyncio.Lock] = None
+_IN_PROCESS_GPU_LOCK_LOOP: Optional[asyncio.AbstractEventLoop] = None
+
+
+def _get_in_process_gpu_lock() -> asyncio.Lock:
+    global _IN_PROCESS_GPU_ASYNC_LOCK, _IN_PROCESS_GPU_LOCK_LOOP
+    loop = asyncio.get_running_loop()
+    if _IN_PROCESS_GPU_ASYNC_LOCK is None or _IN_PROCESS_GPU_LOCK_LOOP is not loop:
+        _IN_PROCESS_GPU_ASYNC_LOCK = asyncio.Lock()
+        _IN_PROCESS_GPU_LOCK_LOOP = loop
+    return _IN_PROCESS_GPU_ASYNC_LOCK
+
+
 @contextmanager
 def acquire_surya_gpu_lock(work_root: Path) -> Iterator[Path]:
     """Acquire process-exclusive flock on ``$KITABIM_WORK_DIR/.surya_gpu.lock``."""
@@ -114,10 +127,63 @@ def acquire_surya_gpu_lock(work_root: Path) -> Iterator[Path]:
         f.close()
 
 
+@asynccontextmanager
+async def acquire_surya_gpu_lock_async(
+    work_root: Path, poll_interval: float = 0.05
+) -> AsyncIterator[Path]:
+    """Async-safe GPU lock combining an in-process asyncio.Lock with non-blocking flock."""
+    async_lock = _get_in_process_gpu_lock()
+    async with async_lock:
+        work_root.mkdir(parents=True, exist_ok=True)
+        lock_path = work_root / ".surya_gpu.lock"
+        f = open(lock_path, "a+", encoding="utf-8")
+        try:
+            while True:
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    await asyncio.sleep(poll_interval)
+            with prevent_macos_sleep():
+                yield lock_path
+        finally:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            f.close()
+
+
 def _append_audit_log(audit_log_path: Path, entry: dict[str, Any]) -> None:
     audit_log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(audit_log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def read_backfill_audit_log(
+    audit_log_path: Path, limit: int = 50
+) -> list[dict[str, Any]]:
+    """Read recent backfill audit entries (newest first) from a JSONL file."""
+    if not audit_log_path.exists():
+        return []
+    entries: list[dict[str, Any]] = []
+    try:
+        with open(audit_log_path, "r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                    if isinstance(row, dict):
+                        entries.append(row)
+                except json.JSONDecodeError:
+                    continue
+    except Exception as exc:
+        logger.warning("Failed to read audit log %s: %s", audit_log_path, exc)
+        return []
+    entries.reverse()
+    return entries[: max(1, limit)]
 
 
 DEFAULT_CHECKPOINT_OVERLAP_PAGES = 2
@@ -200,6 +266,10 @@ async def backfill_single_book(
     ocr_version: str = OCR_ENGINE_VERSION,
     checkpoint_overlap: int = DEFAULT_CHECKPOINT_OVERLAP_PAGES,
     force_overwrite_manual: bool = True,
+    on_progress: Optional[Callable[[dict[str, Any]], None]] = None,
+    pages_sink: Optional[dict[int, PageState]] = None,
+    user_edits: Optional[dict[int, dict[str, Any]]] = None,
+    install_signal_handlers: bool = True,
 ) -> dict[str, Any]:
     """Download, Surya-2.5 re-OCR, dehyphenate, and bulk-replace one PDF book."""
     t0 = time.time()
@@ -207,6 +277,13 @@ async def backfill_single_book(
     target_concurrency = resolve_concurrency(
         target_engine, concurrency or get_configured_concurrency()
     )
+
+    def _emit(event: dict[str, Any]) -> None:
+        if on_progress is not None:
+            try:
+                on_progress(event)
+            except Exception:
+                pass
 
     work_root.mkdir(parents=True, exist_ok=True)
     # Clean up any legacy random-suffix temp dirs for this book
@@ -219,18 +296,21 @@ async def backfill_single_book(
     checkpoint_path = tmp_dir / "checkpoint.jsonl"
     completed = False
 
-    prev_sigint = signal.getsignal(signal.SIGINT)
-    prev_sigterm = signal.getsignal(signal.SIGTERM)
+    prev_sigint = signal.getsignal(signal.SIGINT) if install_signal_handlers else None
+    prev_sigterm = signal.getsignal(signal.SIGTERM) if install_signal_handlers else None
 
     def _cleanup_on_signal(signum, frame):
         raise KeyboardInterrupt(f"Backfill interrupted by signal {signum}")
 
     try:
-        try:
-            signal.signal(signal.SIGINT, _cleanup_on_signal)
-            signal.signal(signal.SIGTERM, _cleanup_on_signal)
-        except ValueError:
-            pass
+        if install_signal_handlers:
+            try:
+                signal.signal(signal.SIGINT, _cleanup_on_signal)
+                signal.signal(signal.SIGTERM, _cleanup_on_signal)
+            except ValueError:
+                pass
+
+        _emit({"phase": "downloading", "book_id": book_id, "title": title})
 
         pdf_path = tmp_dir / "book.pdf"
         need_download = True
@@ -244,18 +324,18 @@ async def backfill_single_book(
 
         if need_download:
             part_pdf_path = tmp_dir / "book.pdf.part"
-            client.download_book_pdf(book_id, part_pdf_path)
+            await asyncio.to_thread(client.download_book_pdf, book_id, part_pdf_path)
             if part_pdf_path.exists():
                 part_pdf_path.replace(pdf_path)
 
         if not title and hasattr(client, "get_book"):
             try:
-                book_meta = client.get_book(book_id) or {}
+                book_meta = await asyncio.to_thread(client.get_book, book_id) or {}
                 if isinstance(book_meta, dict):
                     title = book_meta.get("title")
             except Exception:
                 pass
-        existing_pages = client.get_book_pages(book_id)
+        existing_pages = await asyncio.to_thread(client.get_book_pages, book_id)
         existing_by_num = {
             int(p["pageNumber"]): p for p in existing_pages if "pageNumber" in p
         }
@@ -276,7 +356,30 @@ async def backfill_single_book(
         predictor = await get_recognition_predictor(target_engine)
         sem = asyncio.Semaphore(max(1, target_concurrency))
 
-        pages_by_num: dict[int, PageState] = {}
+        pages_by_num: dict[int, PageState] = (
+            pages_sink if pages_sink is not None else {}
+        )
+        pages_by_num.clear()
+        for pno in range(1, total_pages + 1):
+            ex = existing_by_num.get(pno, {})
+            pages_by_num[pno] = PageState(
+                page_number=pno,
+                text=ex.get("text") or "",
+                is_toc=bool(ex.get("isToc")),
+                confidence=0.0,
+                status="pending",
+            )
+
+        _emit(
+            {
+                "phase": "ocr",
+                "book_id": book_id,
+                "title": title,
+                "total_pages": total_pages,
+                "pdf_path": str(pdf_path),
+            }
+        )
+
         fresh_page_numbers: set[int] = set()
         hyphen_ended_pages: set[int] = set()
 
@@ -298,6 +401,13 @@ async def backfill_single_book(
                     status="skipped",
                     skipped=True,
                 )
+                _emit(
+                    {
+                        "phase": "ocr",
+                        "page_number": page_number,
+                        "status": "skipped",
+                    }
+                )
                 return
 
             # 2. Skip existing ToC pages that already have >= 2 formatted pipe rows
@@ -309,6 +419,13 @@ async def backfill_single_book(
                     confidence=1.0,
                     status="skipped",
                     skipped=True,
+                )
+                _emit(
+                    {
+                        "phase": "ocr",
+                        "page_number": page_number,
+                        "status": "skipped",
+                    }
                 )
                 return
 
@@ -329,9 +446,30 @@ async def backfill_single_book(
                 fresh_page_numbers.add(page_number)
                 if ended_hyphen:
                     hyphen_ended_pages.add(page_number)
+                _emit(
+                    {
+                        "phase": "ocr",
+                        "page_number": page_number,
+                        "status": "ocrd",
+                    }
+                )
                 return
 
             async with sem:
+                pages_by_num[page_number] = PageState(
+                    page_number=page_number,
+                    text=existing_text,
+                    is_toc=is_toc,
+                    confidence=0.0,
+                    status="processing",
+                )
+                _emit(
+                    {
+                        "phase": "ocr",
+                        "page_number": page_number,
+                        "status": "processing",
+                    }
+                )
                 fitz_page = doc.load_page(page_number - 1)
                 try:
                     res = await ocr_page_with_meta(
@@ -365,6 +503,13 @@ async def backfill_single_book(
                             "ended_with_hyphen": res.ended_with_hyphen,
                         },
                     )
+                    _emit(
+                        {
+                            "phase": "ocr",
+                            "page_number": page_number,
+                            "status": "ocrd",
+                        }
+                    )
                 except (
                     LowConfidenceOcrError,
                     TimeoutError,
@@ -386,6 +531,14 @@ async def backfill_single_book(
                         error=str(exc),
                         skipped=True,
                     )
+                    _emit(
+                        {
+                            "phase": "ocr",
+                            "page_number": page_number,
+                            "status": "failed",
+                            "error": str(exc),
+                        }
+                    )
 
         await asyncio.gather(*(_ocr_one(p) for p in range(1, total_pages + 1)))
         doc.close()
@@ -397,21 +550,40 @@ async def backfill_single_book(
             hyphen_ended_pages=hyphen_ended_pages,
         )
 
+        if user_edits:
+            for p in ordered_pages:
+                edit = user_edits.get(p.page_number)
+                if edit:
+                    if "text" in edit and edit["text"] is not None:
+                        p.text = str(edit["text"])
+                    if "is_toc" in edit and edit["is_toc"] is not None:
+                        p.is_toc = bool(edit["is_toc"])
+                    p.skipped = False
+                    if p.status in ("skipped", "failed"):
+                        p.status = "ocrd"
+                        fresh_page_numbers.add(p.page_number)
+
         skipped_count = sum(
             1 for p in ordered_pages if p.skipped and p.status != "failed"
         )
         failed_count = sum(1 for p in ordered_pages if p.status == "failed")
 
+        _emit({"phase": "submitting", "book_id": book_id, "title": title})
+
         try:
-            replace_res = client.replace_book_ocr(
+            replace_res = await asyncio.to_thread(
+                client.replace_book_ocr,
                 book_id,
                 ordered_pages,
                 ocr_version=ocr_version,
                 force_overwrite_manual=force_overwrite_manual,
             )
         except TypeError:
-            replace_res = client.replace_book_ocr(
-                book_id, ordered_pages, ocr_version=ocr_version
+            replace_res = await asyncio.to_thread(
+                client.replace_book_ocr,
+                book_id,
+                ordered_pages,
+                ocr_version=ocr_version,
             )
         completed = failed_count == 0
         elapsed_s = round(time.time() - t0, 2)
@@ -438,13 +610,17 @@ async def backfill_single_book(
         }
         if audit_log_path is not None:
             _append_audit_log(audit_log_path, audit_entry)
+        _emit({"phase": "completed", "book_id": book_id, "audit_entry": audit_entry})
         return audit_entry
     finally:
-        try:
-            signal.signal(signal.SIGINT, prev_sigint)
-            signal.signal(signal.SIGTERM, prev_sigterm)
-        except ValueError:
-            pass
+        if install_signal_handlers:
+            try:
+                if prev_sigint is not None:
+                    signal.signal(signal.SIGINT, prev_sigint)
+                if prev_sigterm is not None:
+                    signal.signal(signal.SIGTERM, prev_sigterm)
+            except ValueError:
+                pass
         if completed:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -508,13 +684,7 @@ async def run_backfill(
             )
             pending_backlog = int(
                 cand_resp.get(
-                    "activePipelineBookCount",
-                    cand_resp.get(
-                        "active_pipeline_book_count",
-                        cand_resp.get(
-                            "pendingIndexBooks", cand_resp.get("pending_index_books", 0)
-                        ),
-                    ),
+                    "pendingIndexBooks", cand_resp.get("pending_index_books", 0)
                 )
                 or 0
             )

@@ -166,13 +166,13 @@ async def test_run_backfill_throttles_on_server_backlog_and_supports_dry_run(
     client.get_backfill_candidates.side_effect = [
         {
             "candidates": [{"id": "b1", "title": "Book 1", "totalPages": 10}],
-            "activePipelineBookCount": 3,
+            "pending_index_books": 3,
         },
         {
             "candidates": [{"id": "b1", "title": "Book 1", "totalPages": 10}],
-            "activePipelineBookCount": 1,
+            "pendingIndexBooks": 1,
         },
-        {"candidates": [], "activePipelineBookCount": 0},
+        {"candidates": [], "pending_index_books": 0},
     ]
 
     with (
@@ -198,7 +198,7 @@ async def test_run_backfill_throttles_on_server_backlog_and_supports_dry_run(
     client.get_backfill_candidates.side_effect = [
         {
             "candidates": [{"id": "b2", "title": "Book 2", "totalPages": 20}],
-            "activePipelineBookCount": 0,
+            "pending_index_books": 0,
         }
     ]
     with patch("backfill.backfill_single_book", new=AsyncMock()) as mock_dry_single:

@@ -743,14 +743,12 @@ class BooksRepository(BaseRepository[Book]):
         ]
         if spell_check_enabled:
             conditions.append(
-                and_(
-                    Book.ocr_milestone == BOOK_MILESTONE_COMPLETE,
-                    Book.spell_check_milestone.in_(["idle", "in_progress"]),
-                )
+                Book.spell_check_milestone.in_(["idle", "in_progress"]),
             )
         stmt = select(func.count(Book.id)).where(
             Book.status != "error",
             Book.total_pages > 0,
+            Book.ocr_milestone == BOOK_MILESTONE_COMPLETE,
             or_(*conditions),
         )
         res = await self.session.execute(stmt)

@@ -1377,3 +1377,466 @@ async def test_run_ocr_background_auto_sets_is_toc_for_toc_pages(tmp_path: Path)
 
     assert workdir.get_page(1).is_toc is True
     assert workdir.get_page(2).is_toc is False
+
+
+def test_landing_html_contains_backfill_monitor_in_library_tab_and_sbs_elements(
+    tmp_path: Path,
+):
+    app = create_landing_app(MagicMock(), tmp_path / "work")
+    client = TestClient(app)
+
+    res = client.get("/")
+    assert res.status_code == 200
+    assert 'id="tabLibraryBtn"' in res.text
+    assert 'id="tabLibraryContent"' in res.text
+    assert 'id="backfillAutoToggleBtn"' in res.text
+    assert 'id="processingBackfillToggleBtn"' in res.text
+    assert 'id="pageMatrixGrid"' in res.text
+    assert 'id="livePreviewModal"' in res.text
+    assert 'id="libraryCompletedBooksPanel"' in res.text
+    assert "toggleBackfillCompletedView" in res.text
+    assert "syncLibraryBackfillRows" in res.text
+    assert "runBackfillOnDemand" in res.text
+
+
+def test_backfill_candidates_orders_oldest_upload_first(tmp_path: Path):
+    mock_client = MagicMock()
+    mock_client.get_backfill_candidates.return_value = {
+        "pending_index_books": 1,
+        "candidates": [
+            {
+                "id": "newer-book",
+                "title": "Newer Book",
+                "total_pages": 25,
+                "upload_date": "2026-05-10T12:00:00",
+            },
+            {
+                "id": "oldest-book",
+                "title": "Oldest Book",
+                "total_pages": 40,
+                "upload_date": "2025-01-02T08:30:00",
+            },
+        ],
+    }
+    app = create_landing_app(mock_client, tmp_path / "work")
+    client = TestClient(app)
+
+    res = client.get("/api/backfill/candidates")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["pendingIndexBooks"] == 1
+    assert [c["id"] for c in body["candidates"]] == ["oldest-book", "newer-book"]
+
+
+@pytest.mark.asyncio
+async def test_backfill_on_demand_processes_book_with_live_sbs_and_cleans_up(
+    tmp_path: Path,
+):
+    from engine.recognize import PageOcrResult
+
+    work_root = tmp_path / "work"
+    mock_client = MagicMock()
+    mock_client.download_book_pdf.side_effect = (
+        lambda book_id, dest: dest.write_bytes(_minimal_pdf_bytes(2)) or dest
+    )
+    mock_client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "Cover 1", "isToc": False},
+        {"pageNumber": 2, "text": "Old body 2", "isToc": False},
+    ]
+    mock_client.replace_book_ocr.return_value = {
+        "pagesUpdated": 1,
+        "pagesUnchanged": 1,
+    }
+
+    ocr_gate = asyncio.Event()
+    ocr_entered = asyncio.Event()
+
+    async def _controlled_ocr(fitz_page, predictor, **kwargs):
+        ocr_entered.set()
+        await ocr_gate.wait()
+        return PageOcrResult(
+            text="New OCR page 2",
+            detected_page_number=1,
+            ended_with_hyphen=False,
+        )
+
+    app = create_landing_app(mock_client, work_root)
+    state = app.state.app_state
+
+    with (
+        patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
+        patch("backfill.ocr_page_with_meta", side_effect=_controlled_ocr),
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            start_res = await ac.post(
+                "/api/backfill/run/book-od-1",
+                json={"title": "On Demand Book", "author": "Author A"},
+            )
+            assert start_res.status_code == 200
+            assert start_res.json()["mode"] == "on_demand"
+
+            await asyncio.wait_for(ocr_entered.wait(), timeout=2.0)
+
+            # While active, verify standard /api/state, /api/pages, and /api/pages/{n}/image work for backfill
+            state_res = (await ac.get("/api/state")).json()
+            assert state_res["stage"] == "processing"
+            assert state_res["isBackfill"] is True
+            assert state_res["activeSessionId"] == "backfill-book-od-1"
+
+            pages_res = await ac.get("/api/pages")
+            assert pages_res.status_code == 200
+            assert len(pages_res.json()) == 2
+
+            img_res = await ac.get("/api/pages/1/image")
+            assert img_res.status_code == 200
+            assert img_res.headers["content-type"] == "image/png"
+
+            # Reject concurrent on-demand request while busy
+            conflict_res = await ac.post("/api/backfill/run/book-od-2")
+            assert conflict_res.status_code == 409
+
+            ocr_gate.set()
+            if state.backfill_manager._task:
+                await state.backfill_manager._task
+
+            final_status = (await ac.get("/api/backfill/status")).json()
+            assert final_status["mode"] == "idle"
+            assert final_status["isBusy"] is False
+            assert final_status["sessionProcessedCount"] == 1
+            assert final_status["lastCompletedBook"]["book_id"] == "book-od-1"
+            assert [b["book_id"] for b in final_status["completedBooks"]] == [
+                "book-od-1"
+            ]
+
+            # Temp dir cleaned up after replace-ocr
+            assert not (work_root / "backfill-book-od-1").exists()
+
+
+@pytest.mark.asyncio
+async def test_backfill_auto_pause_finishes_current_book_and_stops_before_next(
+    tmp_path: Path,
+):
+    from engine.recognize import PageOcrResult
+
+    work_root = tmp_path / "work"
+    mock_client = MagicMock()
+    mock_client.get_backfill_candidates.return_value = {
+        "pending_index_books": 0,
+        "candidates": [
+            {
+                "id": "b-old-1",
+                "title": "Book Old 1",
+                "total_pages": 2,
+                "upload_date": "2024-01-01T00:00:00",
+            },
+            {
+                "id": "b-old-2",
+                "title": "Book Old 2",
+                "total_pages": 2,
+                "upload_date": "2024-02-01T00:00:00",
+            },
+        ],
+    }
+    mock_client.download_book_pdf.side_effect = (
+        lambda book_id, dest: dest.write_bytes(_minimal_pdf_bytes(2)) or dest
+    )
+    mock_client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "Cover", "isToc": False},
+        {"pageNumber": 2, "text": "Body", "isToc": False},
+    ]
+    mock_client.replace_book_ocr.return_value = {"pagesUpdated": 1, "pagesUnchanged": 1}
+
+    book1_entered = asyncio.Event()
+    book1_gate = asyncio.Event()
+
+    async def _controlled_ocr(fitz_page, predictor, **kwargs):
+        book1_entered.set()
+        await book1_gate.wait()
+        return PageOcrResult(
+            text="New text",
+            detected_page_number=1,
+            ended_with_hyphen=False,
+        )
+
+    app = create_landing_app(mock_client, work_root)
+    state = app.state.app_state
+
+    with (
+        patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
+        patch("backfill.ocr_page_with_meta", side_effect=_controlled_ocr),
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            start_res = await ac.post("/api/backfill/start")
+            assert start_res.status_code == 200
+            assert start_res.json()["autoRunning"] is True
+
+            await asyncio.wait_for(book1_entered.wait(), timeout=2.0)
+
+            # On-demand must be blocked while auto is running
+            od_res = await ac.post("/api/backfill/run/b-old-2")
+            assert od_res.status_code == 409
+
+            # Pause while b-old-1 is mid-OCR
+            pause_res = await ac.post("/api/backfill/pause")
+            assert pause_res.status_code == 200
+            assert pause_res.json()["mode"] == "pausing"
+            assert pause_res.json()["pauseRequested"] is True
+
+            # Release b-old-1 OCR
+            book1_gate.set()
+            if state.backfill_manager._task:
+                await state.backfill_manager._task
+
+            # Verify b-old-1 finished and b-old-2 was NOT started
+            final_st = (await ac.get("/api/backfill/status")).json()
+            assert final_st["mode"] == "idle"
+            assert final_st["sessionProcessedCount"] == 1
+            assert final_st["lastCompletedBook"]["book_id"] == "b-old-1"
+            assert mock_client.replace_book_ocr.call_count == 1
+            assert (await ac.get("/api/state")).json()["stage"] == "landing"
+
+
+@pytest.mark.asyncio
+async def test_backfill_and_ocr_queue_block_each_other_with_409_and_async_lock_does_not_freeze_loop(
+    tmp_path: Path,
+):
+    from backfill import acquire_surya_gpu_lock_async
+
+    work_root = tmp_path / "work"
+    mock_client = MagicMock()
+    app = create_landing_app(mock_client, work_root)
+    state = app.state.app_state
+
+    # 1. Verify two tasks in the same process acquiring acquire_surya_gpu_lock_async do not deadlock the event loop
+    order: list[str] = []
+    first_acquired = asyncio.Event()
+    release_first = asyncio.Event()
+
+    async def _holder_1():
+        async with acquire_surya_gpu_lock_async(work_root, poll_interval=0.01):
+            order.append("h1_enter")
+            first_acquired.set()
+            await release_first.wait()
+            order.append("h1_exit")
+
+    async def _holder_2():
+        await first_acquired.wait()
+        async with acquire_surya_gpu_lock_async(work_root, poll_interval=0.01):
+            order.append("h2_enter")
+
+    t1 = asyncio.create_task(_holder_1())
+    t2 = asyncio.create_task(_holder_2())
+    await asyncio.wait_for(first_acquired.wait(), timeout=1.0)
+    await asyncio.sleep(0.03)
+    assert order == ["h1_enter"]
+    release_first.set()
+    await asyncio.wait_for(asyncio.gather(t1, t2), timeout=2.0)
+    assert order == ["h1_enter", "h1_exit", "h2_enter"]
+
+    # 2. When queue_manager is busy, starting backfill returns 409
+    state.queue_manager._active_session_id = "upload-123"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        res_auto = await ac.post("/api/backfill/start")
+        assert res_auto.status_code == 409
+        res_od = await ac.post("/api/backfill/run/book-1")
+        assert res_od.status_code == 409
+
+    # 3. When backfill is busy, starting upload or existing book returns 409
+    state.queue_manager._active_session_id = None
+    state.backfill_manager.active_book_id = "book-active"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        res_ex = await ac.post("/api/start/existing", json={"bookId": "b1"})
+        assert res_ex.status_code == 409
+        res_up = await ac.post(
+            "/api/start/upload",
+            files={"file": ("test.pdf", _minimal_pdf_bytes(1), "application/pdf")},
+        )
+        assert res_up.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_backfill_page_edits_reject_pending_and_survive_into_replace_ocr(
+    tmp_path: Path,
+):
+    from engine.recognize import PageOcrResult
+
+    work_root = tmp_path / "work"
+    mock_client = MagicMock()
+    mock_client.download_book_pdf.side_effect = (
+        lambda book_id, dest: dest.write_bytes(_minimal_pdf_bytes(3)) or dest
+    )
+    mock_client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "Cover 1", "isToc": False},
+        {"pageNumber": 2, "text": "Old body 2", "isToc": False},
+        {"pageNumber": 3, "text": "Old body 3", "isToc": False},
+    ]
+    mock_client.replace_book_ocr.return_value = {
+        "pagesUpdated": 2,
+        "pagesUnchanged": 1,
+    }
+
+    page2_done = asyncio.Event()
+    page3_gate = asyncio.Event()
+
+    async def _controlled_ocr(fitz_page, predictor, **kwargs):
+        pno = fitz_page.number + 1
+        if pno == 2:
+            return PageOcrResult(
+                text="Auto OCR page 2",
+                detected_page_number=1,
+                ended_with_hyphen=False,
+            )
+        if pno == 3:
+            page2_done.set()
+            await page3_gate.wait()
+            return PageOcrResult(
+                text="Auto OCR page 3",
+                detected_page_number=2,
+                ended_with_hyphen=False,
+            )
+        raise AssertionError(f"Unexpected page {pno}")
+
+    app = create_landing_app(mock_client, work_root, concurrency=1)
+    state = app.state.app_state
+
+    with (
+        patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
+        patch("backfill.ocr_page_with_meta", side_effect=_controlled_ocr),
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            await ac.post("/api/backfill/run/book-edit-test")
+            await asyncio.wait_for(page2_done.wait(), timeout=2.0)
+
+            # Page 3 is currently "processing" -> editing it must return 409
+            conflict_res = await ac.post(
+                "/api/pages/3/update", json={"text": "Premature edit"}
+            )
+            assert conflict_res.status_code == 409
+
+            # Page 2 is already "ocrd" -> editing it succeeds and persists to checkpoint.jsonl
+            ok_res = await ac.post(
+                "/api/pages/2/update", json={"text": "User edited page 2"}
+            )
+            assert ok_res.status_code == 200
+            assert ok_res.json()["text"] == "User edited page 2"
+            assert ok_res.json()["status"] == "reviewed"
+
+            ckpt_file = work_root / "backfill-book-edit-test" / "checkpoint.jsonl"
+            assert ckpt_file.exists()
+            assert "User edited page 2" in ckpt_file.read_text(encoding="utf-8")
+
+            page3_gate.set()
+            if state.backfill_manager._task:
+                await state.backfill_manager._task
+
+    sent_pages = mock_client.replace_book_ocr.call_args.args[1]
+    assert sent_pages[1].page_number == 2
+    assert sent_pages[1].text == "User edited page 2"
+    assert sent_pages[1].skipped is False
+
+
+@pytest.mark.asyncio
+async def test_backfill_auto_continues_after_single_book_failure(tmp_path: Path):
+    from engine.recognize import PageOcrResult
+
+    work_root = tmp_path / "work"
+    mock_client = MagicMock()
+    mock_client.get_backfill_candidates.side_effect = [
+        {
+            "pending_index_books": 0,
+            "candidates": [
+                {
+                    "id": "bad-book",
+                    "title": "Corrupt Book",
+                    "total_pages": 2,
+                    "upload_date": "2024-01-01T00:00:00",
+                },
+                {
+                    "id": "good-book",
+                    "title": "Good Book",
+                    "total_pages": 2,
+                    "upload_date": "2024-01-02T00:00:00",
+                },
+            ],
+        },
+        {
+            "pending_index_books": 0,
+            "candidates": [
+                {
+                    "id": "bad-book",
+                    "title": "Corrupt Book",
+                    "total_pages": 2,
+                    "upload_date": "2024-01-01T00:00:00",
+                },
+                {
+                    "id": "good-book",
+                    "title": "Good Book",
+                    "total_pages": 2,
+                    "upload_date": "2024-01-02T00:00:00",
+                },
+            ],
+        },
+        {
+            "pending_index_books": 0,
+            "candidates": [
+                {
+                    "id": "bad-book",
+                    "title": "Corrupt Book",
+                    "total_pages": 2,
+                    "upload_date": "2024-01-01T00:00:00",
+                },
+            ],
+        },
+    ]
+
+    def _download(book_id: str, dest: Path):
+        if book_id == "bad-book":
+            raise RuntimeError("502 Bad Gateway downloading bad-book")
+        dest.write_bytes(_minimal_pdf_bytes(2))
+        return dest
+
+    mock_client.download_book_pdf.side_effect = _download
+    mock_client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "Cover", "isToc": False},
+        {"pageNumber": 2, "text": "Body", "isToc": False},
+    ]
+    mock_client.replace_book_ocr.return_value = {"pagesUpdated": 1, "pagesUnchanged": 1}
+
+    async def _fast_ocr(fitz_page, predictor, **kwargs):
+        return PageOcrResult(
+            text="Good OCR",
+            detected_page_number=1,
+            ended_with_hyphen=False,
+        )
+
+    app = create_landing_app(mock_client, work_root)
+    state = app.state.app_state
+
+    with (
+        patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
+        patch("backfill.ocr_page_with_meta", side_effect=_fast_ocr),
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            start_res = await ac.post("/api/backfill/start")
+            assert start_res.status_code == 200
+            if state.backfill_manager._task:
+                await state.backfill_manager._task
+
+            st = (await ac.get("/api/backfill/status")).json()
+            assert st["mode"] == "idle"
+            assert "bad-book" in st["failedBookIds"]
+            assert st["sessionProcessedCount"] == 1
+            assert st["lastCompletedBook"]["book_id"] == "good-book"
+            assert (await ac.get("/api/state")).json()["stage"] == "landing"
