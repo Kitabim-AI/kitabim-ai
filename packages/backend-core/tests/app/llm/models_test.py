@@ -75,7 +75,11 @@ async def test_gemini_embeddings_aembed_query(mock_breaker_call):
 
         json_payload = kwargs["json"]
         assert json_payload["model"] == "models/gemini-embedding-2"
-        assert json_payload["content"]["parts"][0]["text"] == "hello"
+        assert (
+            json_payload["content"]["parts"][0]["text"]
+            == "task: question answering | query: hello"
+        )
+        assert "taskType" not in json_payload
 
 
 @pytest.mark.asyncio

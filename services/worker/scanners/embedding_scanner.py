@@ -21,12 +21,12 @@ from app.core.pipeline import (
     BOOK_MILESTONE_FAILED,
     BOOK_MILESTONE_IDLE,
     BOOK_MILESTONE_IN_PROGRESS,
-    PAGE_MILESTONE_COMPLETE,
 )
 from app.db import session as db_session
-from app.db.models import Book, Chunk, Page
+from app.db.models import Book, Chunk
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.services.batch_embedding_service import submit_batch_embedding_job
+from app.services.book_milestone_service import complete_book_embedding_milestone
 from app.services.cache_service import cache_service
 from app.utils.observability import log_json
 
@@ -83,28 +83,7 @@ async def run_embedding_scanner(ctx) -> None:
                 unembedded_count = int(count_res.scalar() or 0)
 
                 if unembedded_count == 0:
-                    await session.execute(
-                        update(Page)
-                        .where(
-                            Page.book_id == book_id,
-                            Page.ocr_milestone == PAGE_MILESTONE_COMPLETE,
-                        )
-                        .values(
-                            embedding_milestone="succeeded",
-                            is_indexed=True,
-                            last_updated=func.now(),
-                        )
-                    )
-                    await session.execute(
-                        update(Book)
-                        .where(Book.id == book_id)
-                        .values(
-                            embedding_milestone=BOOK_MILESTONE_COMPLETE,
-                            embedding_retry_count=0,
-                            embedding_claimed_at=None,
-                            last_updated=func.now(),
-                        )
-                    )
+                    await complete_book_embedding_milestone(session, book_id)
                     await session.commit()
                     try:
                         await cache_service.delete_pattern(f"rag:search:{book_id}:*")

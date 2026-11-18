@@ -126,8 +126,8 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "kg_chunk_batch_size",
-            "value": "5",
-            "description": "Number of chunks combined into a single LLM call during knowledge graph extraction. Higher values reduce API calls and improve coreference resolution at the cost of larger prompts. Default tuned for 1500-char chunks (~7 500 chars per call).",
+            "value": "4",
+            "description": "Number of chunks combined into a single LLM call during knowledge graph extraction. Higher values reduce API calls and improve coreference resolution at the cost of larger prompts. Default tuned for 1500-char v2 section chunks (~5 500 chars per call).",
         },
         {
             "key": "kg_max_parallel_chunks",

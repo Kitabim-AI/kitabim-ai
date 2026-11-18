@@ -16,6 +16,7 @@ Administrative management console providing book pipeline milestone monitoring, 
 - `[StatsPanel.tsx:StatsPanel]` — System-wide analytics and usage statistics dashboard.
 - `[TagEditor.tsx:TagEditor]` — Book genre, era, category, and subject tag editor component.
 - Subdirectories:
+  - `chunks`: Book-scoped Chunk Inspector (`ChunkInspectorView.tsx`) for inspecting `book_sections`, chunk boundaries, overlap/embedding prefixes, semantic question similarity scores, and source `pages.text`.
   - `config`: [./config/README.md](./config/README.md) - System configuration key-value CRUD panel and AI circuit breaker controls.
   - `dictionary`: [./dictionary/README.md](./dictionary/README.md) - Uyghur definition, proverbs, historical vocabulary, names, and English-Uyghur dictionaries.
   - `rules`: [./rules/README.md](./rules/README.md) - Global auto-correction spell-check rules CRUD management and activation toggle.

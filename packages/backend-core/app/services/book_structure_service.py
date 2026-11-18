@@ -30,11 +30,15 @@ from app.db.models import Book
 from app.db.repositories.book_sections_repository import BookSectionsRepository
 from app.db.repositories.pages_repository import PagesRepository
 from app.utils.text import (
+    _OCR_MARKER_RE,
     clean_uyghur_text,
     extract_standalone_page_number,
+    is_colophon_entry_title,
+    is_colophon_page,
     is_isolated_page_number,
     is_metadata_or_key_value_block,
     is_poem_block,
+    is_title_cover_page,
     is_toc_page,
     normalize_digits,
     normalize_section_title,
@@ -56,6 +60,22 @@ _UYGHUR_ORDINAL_PREFIX_RE = (
     r"\d+\s*-\s*"
     r")"
 )
+_STRUCTURAL_PART_RE = re.compile(
+    rf"""^\s*(?:#{{1,3}}\s*)?(?:
+        (?:[0-9\u0660-\u0669\u06F0-\u06F9IVXLCDM]+\s*[-–—.]*\s*)?(?:قىسىم|بۆلۈم)\b
+        |
+        {_UYGHUR_ORDINAL_PREFIX_RE}\s*(?:قىسىم|بۆلۈم)\b
+    )""",
+    re.IGNORECASE | re.VERBOSE,
+)
+_STRUCTURAL_CHAPTER_ONLY_RE = re.compile(
+    rf"""^\s*(?:#{{1,3}}\s*)?(?:
+        (?:[0-9\u0660-\u0669\u06F0-\u06F9IVXLCDM]+\s*[-–—.]*\s*)?(?:باب|پەسىل)\b
+        |
+        {_UYGHUR_ORDINAL_PREFIX_RE}\s*(?:باب|پەسىل)\b
+    )""",
+    re.IGNORECASE | re.VERBOSE,
+)
 _STRUCTURAL_CHAPTER_RE = re.compile(
     rf"""^\s*(?:#{{1,3}}\s*)?(?:
         (?:[0-9\u0660-\u0669\u06F0-\u06F9IVXLCDM]+\s*[-–—.]*\s*)?(?:باب|قىسىم|بۆلۈم|پەسىل)\b
@@ -69,6 +89,50 @@ _STRUCTURAL_CHAPTER_RE = re.compile(
 
 # Noise patterns that must never be promoted to headings
 _DIVIDER_NOISE_RE = re.compile(r"^\s*(?:[*•·\-—–=~_※✦✧❖◆◇▪▫×xX]\s*){2,}\s*$")
+_HTML_COMMENT_RE = re.compile(r"^\s*<!--.*-->\s*$")
+_INLINE_TOC_ENTRY_RE = re.compile(
+    r"^(?:[-*•]|\d+[.)])\s+.*[.\s]\d{1,4}\s*$"
+    r"|^(?:[-*•]|\d+[.)])\s*\d{1,4}\b"
+    r"|.*[.·•∙⋅…]{3,}\s*[\(\[]?\d{1,4}[\)\]]?\s*$"
+    r"|^\|\s*.+\s*\|\s*[\(\[]?[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}[\)\]]?\s*\|?\s*$"
+)
+_GENERIC_SUBSECTION_RUBRICS = frozenset(
+    {
+        "تەرجىمىسى",
+        "تەپسىرى",
+        "مۇھىم نۇقتىلىرى",
+        "مۇھىم نۇقتىلار",
+        "نازىل بولۇش سەۋەبى",
+        "سەۋەبى نۇزۇل",
+        "ئىزاھات",
+        "ئىزاھاتلار",
+        "لۇغەت",
+        "سۆزلۈك",
+        "ئەسكەرتىش",
+        "مەشىق",
+        "تاپشۇرۇق",
+        "قىسقىچە مەزمۇنى",
+        "پايدىلانغان مەنبەلەر",
+        "پايدىلانغان ئەدەبىياتلار",
+        "بۇ ئايەتنىڭ ئالدىنقى ئايەتلەر بىلەن بولغان مۇناسىۋىتى",
+    }
+)
+_POETIC_FORM_TITLES = frozenset(
+    {
+        "غەزەل",
+        "مۇخەممەس",
+        "مۇسەددەس",
+        "مۇستەزاد",
+        "رۇبائىي",
+        "تۇيۇق",
+        "قوشماق",
+        "مەسنەۋى",
+        "قەسىدە",
+        "شېئىر",
+        "ناخشا",
+        "داستان",
+    }
+)
 _STANDALONE_YEAR_OR_DATE_RE = re.compile(
     r"""^\s*(?:#{1,6}\s*)?(?:
         (?:1[0-9]{3}|20[0-2][0-9])\s*(?:-\s*يىل(?:ى)?.*)?
@@ -110,6 +174,34 @@ def is_structural_chapter_title(title: str) -> bool:
     return bool(_STRUCTURAL_CHAPTER_RE.match(cleaned))
 
 
+def is_part_division_title(title: str) -> bool:
+    """Return True if `title` is a book-part / division marker (`قىسىم` or `بۆلۈم`)."""
+    if not title:
+        return False
+    cleaned = normalize_digits(normalize_uyghur_chars(title)).strip()
+    if cleaned.endswith((".", "۔", "؛")) or re.search(r"[\.۔؟!]\s+\S", cleaned):
+        return False
+    return bool(_STRUCTURAL_PART_RE.match(cleaned))
+
+
+def is_chapter_section_title(title: str) -> bool:
+    """Return True if `title` is a chapter / section marker (`باب` or `پەسىل`)."""
+    if not title:
+        return False
+    cleaned = normalize_digits(normalize_uyghur_chars(title)).strip()
+    if cleaned.endswith((".", "۔", "؛")) or re.search(r"[\.۔؟!]\s+\S", cleaned):
+        return False
+    return bool(_STRUCTURAL_CHAPTER_ONLY_RE.match(cleaned))
+
+
+def _looks_like_inline_toc_entries(lines: Sequence[str]) -> bool:
+    clean = [ln.strip() for ln in lines if ln.strip()]
+    if not clean:
+        return False
+    matches = sum(1 for ln in clean if _INLINE_TOC_ENTRY_RE.match(ln))
+    return matches / len(clean) >= 0.5
+
+
 def _is_heading_noise(
     text: str, repeated_running_headers: Optional[set[str]] = None
 ) -> bool:
@@ -120,14 +212,16 @@ def _is_heading_noise(
         return True
     if is_isolated_page_number(stripped):
         return True
-    if _DIVIDER_NOISE_RE.match(stripped):
+    if _DIVIDER_NOISE_RE.match(stripped) or _HTML_COMMENT_RE.match(stripped):
         return True
     ascii_stripped = normalize_digits(stripped)
     if _STANDALONE_YEAR_OR_DATE_RE.match(ascii_stripped):
         return True
     if _BRACKET_META_RE.match(stripped):
         return True
-    if _PUBLISHER_OR_COLOPHON_LINE_RE.match(stripped):
+    if _PUBLISHER_OR_COLOPHON_LINE_RE.match(stripped) or is_colophon_entry_title(
+        stripped
+    ):
         return True
     norm = normalize_section_title(stripped)
     if not norm:
@@ -195,22 +289,20 @@ def parse_page_blocks(
 
     units = _split_raw_chunks_preserving_headings_and_footnotes(normalized_page)
     blocks: List[PageBlock] = []
+    skipping_inline_toc = False
 
     for unit_idx, unit in enumerate(units):
         stripped = unit.strip()
         if not stripped:
             continue
 
-        lines = [ln.strip() for ln in stripped.split("\n") if ln.strip()]
-        if not lines:
-            continue
-
         idx = len(blocks)
         is_last_unit = unit_idx == len(units) - 1
 
-        # 1. Explicit OCR header/footer markers or isolated page numbers -> meta_noise
+        # 1. Explicit OCR header/footer markers, HTML comments, isolated page numbers, or dividers -> meta_noise
         if (
             stripped.startswith(("[Header]", "[Footer]"))
+            or _HTML_COMMENT_RE.match(stripped)
             or is_isolated_page_number(stripped)
             or _DIVIDER_NOISE_RE.match(stripped)
         ):
@@ -223,6 +315,59 @@ def parse_page_blocks(
                 )
             )
             continue
+
+        # Strip mid-line glued [Header]/[Footer] suffixes and inline HTML comments
+        cleaned_unit_lines: List[str] = []
+        for raw_ln in stripped.split("\n"):
+            no_marker = _OCR_MARKER_RE.sub("", raw_ln).rstrip()
+            ln_s = no_marker.strip()
+            if (
+                ln_s
+                and not _HTML_COMMENT_RE.match(ln_s)
+                and not _DIVIDER_NOISE_RE.match(ln_s)
+            ):
+                cleaned_unit_lines.append(no_marker)
+        if not cleaned_unit_lines:
+            blocks.append(
+                PageBlock(
+                    block_index=idx,
+                    kind="meta_noise",
+                    raw_text=stripped,
+                    normalized_text="",
+                )
+            )
+            continue
+
+        stripped = "\n".join(cleaned_unit_lines).strip()
+        lines = [ln.strip() for ln in cleaned_unit_lines if ln.strip()]
+        if not lines:
+            continue
+
+        # 1b. Inline ToC heading ("مۇندەرىجە") and immediately following ToC entry blocks
+        if len(lines) == 1 and normalize_section_title(lines[0]) == "مۇندەرىجە":
+            skipping_inline_toc = True
+            blocks.append(
+                PageBlock(
+                    block_index=idx,
+                    kind="toc",
+                    raw_text=stripped,
+                    normalized_text="مۇندەرىجە",
+                )
+            )
+            continue
+
+        if skipping_inline_toc:
+            if _looks_like_inline_toc_entries(lines):
+                blocks.append(
+                    PageBlock(
+                        block_index=idx,
+                        kind="toc",
+                        raw_text=stripped,
+                        normalized_text=normalize_section_title(stripped),
+                    )
+                )
+                continue
+            skipping_inline_toc = False
 
         # 2. Multi-line colophon / publishing key-value block -> meta_noise
         if len(lines) >= 2 and is_metadata_or_key_value_block(lines):
@@ -274,14 +419,18 @@ def parse_page_blocks(
                     )
                 )
                 continue
-            # Long punctuated sentence accidentally prefixed with # by OCR -> prose
-            # Allow numbered section prefixes like '1. ' or '12. ' at the start of a heading.
+            # Colon-ending introducers ("تەپسىرنى كۆرۈپ چىققۇچىلار:", "ئىزاھات:") or
+            # long punctuated sentences accidentally prefixed with # -> prose
             body_after_num = re.sub(
                 r"^\s*[0-9\u0660-\u0669\u06F0-\u06F9IVXLCDM]+\s*\.\s*",
                 "",
                 heading_body,
             )
-            if len(heading_body) > 110 or re.search(r"[\.؟!]\s+\S", body_after_num):
+            if (
+                len(heading_body) > 110
+                or heading_body.rstrip().endswith((":", "："))
+                or re.search(r"[\.؟!]\s+\S", body_after_num)
+            ):
                 blocks.append(
                     PageBlock(
                         block_index=idx,
@@ -340,7 +489,7 @@ def parse_page_blocks(
                 and len(line.split()) <= 8
                 and not (is_last_unit and len(units) >= 2)
                 and not line.endswith(
-                    (".", "۔", "؟", "!", ":", "؛", "،", ",", "—", "-")
+                    (".", "۔", "؟", "!", ":", "：", "؛", "،", ",", "—", "-")
                 )
                 and not line.startswith(("-", "—", "–", "«", '"', "…", "."))
                 and not re.search(r"[\.؟!،,؛:;：]\s+\S", line)
@@ -380,6 +529,29 @@ def parse_page_blocks(
     return blocks
 
 
+def format_section_hierarchy_title(
+    title: Optional[str],
+    section_type: Optional[str] = None,
+    parent_title: Optional[str] = None,
+    parent_section_type: Optional[str] = None,
+) -> Optional[str]:
+    """Format a `BookSection` title with optional parent prefix (`Parent › Child`),
+    returning `None` for non-topical container types (`front_matter`, `synthetic_body`)."""
+    if section_type in ("front_matter", "synthetic_body"):
+        return None
+    s_clean = (title or "").strip() if isinstance(title, str) else ""
+    if not s_clean:
+        return None
+    p_clean = (parent_title or "").strip() if isinstance(parent_title, str) else ""
+    if (
+        p_clean
+        and parent_section_type not in ("front_matter", "synthetic_body")
+        and p_clean != s_clean
+    ):
+        return f"{p_clean} › {s_clean}"
+    return s_clean
+
+
 def _detect_repeated_running_headers(pages: Sequence[Any]) -> set[str]:
     """Identify short top-of-page lines that repeat across >= 4 pages and >= 20% of body pages."""
 
@@ -401,12 +573,45 @@ def _detect_repeated_running_headers(pages: Sequence[Any]) -> set[str]:
 
     first_line_counts: Counter[str] = Counter()
     for p in body_pages:
-        lines = [ln.strip() for ln in _p_text(p).split("\n") if ln.strip()]
-        if not lines:
-            continue
-        first = re.sub(r"^\s*#{1,6}\s*", "", lines[0]).strip()
-        if 2 <= len(first) <= 70 and not is_structural_chapter_title(first):
-            norm = normalize_section_title(first)
+        raw_lines = [ln.strip() for ln in _p_text(p).split("\n") if ln.strip()]
+        first_candidate: Optional[str] = None
+        for raw_ln in raw_lines:
+            if re.match(r"^\s*\[Footer\]", raw_ln, flags=re.IGNORECASE):
+                continue
+            if re.match(r"^\s*\[Header\]", raw_ln, flags=re.IGNORECASE):
+                header_inner = re.sub(
+                    r"^\s*\[Header\]\s*", "", raw_ln, flags=re.IGNORECASE
+                ).strip()
+                header_inner = re.sub(r"^\s*#{1,6}\s*", "", header_inner).strip()
+                if (
+                    not header_inner
+                    or is_isolated_page_number(header_inner)
+                    or _DIVIDER_NOISE_RE.match(header_inner)
+                    or _HTML_COMMENT_RE.match(header_inner)
+                ):
+                    continue
+                # Explicit [Header] text is already stripped as meta_noise by parse_page_blocks;
+                # never count it toward repeated_running_headers lest a chapter running header
+                # wipe out the real in-page chapter heading.
+                break
+            unwrapped = _OCR_MARKER_RE.sub("", raw_ln).strip()
+            unwrapped = re.sub(r"^\s*#{1,6}\s*", "", unwrapped).strip()
+            if (
+                not unwrapped
+                or is_isolated_page_number(unwrapped)
+                or _DIVIDER_NOISE_RE.match(unwrapped)
+                or _HTML_COMMENT_RE.match(unwrapped)
+            ):
+                continue
+            first_candidate = unwrapped
+            break
+
+        if (
+            first_candidate
+            and 2 <= len(first_candidate) <= 70
+            and not is_structural_chapter_title(first_candidate)
+        ):
+            norm = normalize_section_title(first_candidate)
             if norm:
                 first_line_counts[norm] += 1
 
@@ -685,8 +890,9 @@ def _close_section_boundaries(
     # Link level-2 sections to the most recent preceding level-1 chapter section
     active_chapter_idx: Optional[int] = None
     for sec in raw_sections:
+        can_parent = bool(sec.pop("_can_parent", True))
         if int(sec.get("level", 1)) == 1:
-            if sec.get("section_type") == "chapter":
+            if sec.get("section_type") == "chapter" and can_parent:
                 active_chapter_idx = sec["section_index"]
             else:
                 active_chapter_idx = None
@@ -695,7 +901,7 @@ def _close_section_boundaries(
             if active_chapter_idx is not None:
                 sec["parent_section_index"] = active_chapter_idx
             else:
-                # Promote orphan level-2 work to level-1 work if no chapter precedes it
+                # Promote orphan level-2 work/chapter to level-1 if no chapter precedes it
                 sec["level"] = 1
                 sec["parent_section_index"] = None
 
@@ -934,13 +1140,40 @@ def extract_book_sections(
             for p_blocks in blocks_by_page.values()
             for blk in p_blocks
         )
-        has_level1_chapters = any(
-            blk.kind == "heading" and blk.heading_level == 1
-            for p_blocks in blocks_by_page.values()
-            for blk in p_blocks
-        )
+        norm_book_title = normalize_section_title(book_title or "")
+        cover_pages = {
+            int(p.page_number)
+            for p in body_pages
+            if int(p.page_number) <= 4
+            and getattr(p, "content_page_number", None) is None
+            and is_title_cover_page(
+                getattr(p, "text", "") or "",
+                book_title=book_title,
+                page_number=int(p.page_number),
+            )
+            and not any(
+                (b.kind == "heading" and is_structural_chapter_title(b.raw_text))
+                or (
+                    b.kind == "prose"
+                    and b.raw_text.rstrip().endswith((".", "۔", "؟", "!"))
+                )
+                for b in blocks_by_page.get(int(p.page_number), [])
+            )
+        }
+        title_stack_pages: set[int] = set()
         for pnum, p_blocks in blocks_by_page.items():
-            for blk in p_blocks:
+            if pnum > 2:
+                continue
+            h_cnt = sum(1 for b in p_blocks if b.kind == "heading")
+            body_cnt = sum(1 for b in p_blocks if b.kind in {"prose", "verse", "table"})
+            if h_cnt >= 3 and body_cnt == 0:
+                title_stack_pages.add(pnum)
+
+        # Collect raw candidate headings first so recurring template rubrics and
+        # repeated book-title headers can be filtered before assigning section levels.
+        raw_candidates: List[tuple[int, PageBlock, str]] = []
+        for pnum, p_blocks in blocks_by_page.items():
+            for blk_pos, blk in enumerate(p_blocks):
                 if blk.kind != "heading" or not blk.normalized_text:
                     continue
                 if (
@@ -952,27 +1185,151 @@ def extract_book_sections(
                 clean_h = re.sub(r"^\s*#{1,6}\s*", "", blk.raw_text).strip()
                 if not clean_h:
                     continue
-                if blk.heading_level == 1:
-                    level = 1
-                    sec_type = "chapter"
-                else:
-                    level = 2 if has_level1_chapters else 1
-                    sec_type = "work"
-                raw_sections.append(
-                    {
-                        "level": level,
-                        "section_type": sec_type,
-                        "title": clean_h,
-                        "normalized_title": blk.normalized_text,
-                        "toc_printed_page": None,
-                        "start_page": pnum,
-                        "start_block_index": blk.block_index,
-                        "end_page": pnum,
-                        "end_block_index": 999999,
-                        "source": "header_detected",
-                        "confidence": 0.90,
-                    }
+                is_struct_h = is_structural_chapter_title(clean_h)
+                if not is_struct_h:
+                    if blk.normalized_text in _GENERIC_SUBSECTION_RUBRICS:
+                        continue
+                    if pnum in (cover_pages | title_stack_pages):
+                        continue
+                    # Skip page-1 leading book/genre title line stacked directly above a chapter heading
+                    if pnum <= 2:
+                        following = p_blocks[blk_pos + 1 :]
+                        next_substantive = next(
+                            (b for b in following if b.kind != "meta_noise"), None
+                        )
+                        if (
+                            next_substantive is not None
+                            and next_substantive.kind == "heading"
+                            and is_structural_chapter_title(next_substantive.raw_text)
+                        ):
+                            continue
+                raw_candidates.append((pnum, blk, clean_h))
+
+        cand_norm_counts = Counter(blk.normalized_text for _, blk, _ in raw_candidates)
+        book_title_matches = [
+            (pnum, blk)
+            for pnum, blk, _ in raw_candidates
+            if norm_book_title
+            and len(norm_book_title) >= 3
+            and _title_similarity(blk.normalized_text, norm_book_title) >= 0.88
+        ]
+        has_other_candidates = len(raw_candidates) > len(book_title_matches)
+
+        kept_candidates: List[tuple[int, PageBlock, str]] = []
+        for pnum, blk, clean_h in raw_candidates:
+            is_struct_h = is_structural_chapter_title(clean_h)
+            if (
+                not is_struct_h
+                and cand_norm_counts[blk.normalized_text] >= 3
+                and blk.normalized_text not in _POETIC_FORM_TITLES
+            ):
+                continue
+            if (
+                has_other_candidates
+                and norm_book_title
+                and len(norm_book_title) >= 3
+                and _title_similarity(blk.normalized_text, norm_book_title) >= 0.88
+                and (
+                    len(book_title_matches) >= 2
+                    or pnum in {first_body_page, max_body_page}
                 )
+            ):
+                continue
+            kept_candidates.append((pnum, blk, clean_h))
+
+        has_level1_chapters = any(
+            blk.heading_level == 1 for _, blk, _ in kept_candidates
+        )
+        for pnum, blk, clean_h in kept_candidates:
+            if blk.heading_level == 1:
+                level = 1
+                sec_type = "chapter"
+            else:
+                level = 2 if has_level1_chapters else 1
+                sec_type = "work"
+            raw_sections.append(
+                {
+                    "level": level,
+                    "section_type": sec_type,
+                    "title": clean_h,
+                    "normalized_title": blk.normalized_text,
+                    "toc_printed_page": None,
+                    "start_page": pnum,
+                    "start_block_index": blk.block_index,
+                    "end_page": pnum,
+                    "end_block_index": 999999,
+                    "source": "header_detected",
+                    "confidence": 0.90,
+                }
+            )
+
+    # ── Nest Chapter (`باب`/`پەسىل`) under Part (`قىسىم`/`بۆلۈم`) when both exist ──
+    if raw_sections:
+        has_parts = any(is_part_division_title(s["title"]) for s in raw_sections)
+        has_chapters = any(is_chapter_section_title(s["title"]) for s in raw_sections)
+        if has_parts and has_chapters:
+            has_existing_level2 = any(int(s.get("level", 1)) == 2 for s in raw_sections)
+            if not has_existing_level2:
+                for s in raw_sections:
+                    if is_part_division_title(s["title"]):
+                        s["level"] = 1
+                        s["section_type"] = "chapter"
+                        s["_can_parent"] = True
+                    elif is_chapter_section_title(s["title"]):
+                        s["level"] = 2
+                        s["section_type"] = "chapter"
+                    else:
+                        s["level"] = 1
+                        s["_can_parent"] = False
+            else:
+                # 3-tier book (Part -> Chapter -> Work): fold body-less Part divider
+                # headings into child chapters so 2-level schema holds without divider stubs.
+                raw_sections.sort(
+                    key=lambda s: (
+                        int(s["start_page"]),
+                        int(s.get("start_block_index", 0)),
+                        int(s.get("level", 1)),
+                    )
+                )
+
+                def _span_has_body(sp: int, sb: int, np: int, nb: int) -> bool:
+                    ep, eb = close_span_before_next(sp, sb, np, nb, blocks_by_page)
+                    for pg_n in range(sp, ep + 1):
+                        for b in blocks_by_page.get(pg_n, []):
+                            if (pg_n > sp or b.block_index >= sb) and (
+                                pg_n < ep or b.block_index <= eb
+                            ):
+                                if b.kind in {"prose", "verse", "table", "footnote"}:
+                                    return True
+                    return False
+
+                folded_sections: List[dict[str, Any]] = []
+                active_part_prefix: Optional[str] = None
+                for idx_s, s in enumerate(raw_sections):
+                    if is_part_division_title(s["title"]):
+                        active_part_prefix = s["title"]
+                        if idx_s + 1 < len(raw_sections):
+                            nxt_s = raw_sections[idx_s + 1]
+                            if not _span_has_body(
+                                int(s["start_page"]),
+                                int(s.get("start_block_index", 0)),
+                                int(nxt_s["start_page"]),
+                                int(nxt_s.get("start_block_index", 0)),
+                            ):
+                                continue
+                    elif (
+                        active_part_prefix
+                        and int(s.get("level", 1)) == 1
+                        and is_chapter_section_title(s["title"])
+                    ):
+                        s["title"] = f"{active_part_prefix} — {s['title']}"
+                        s["normalized_title"] = normalize_section_title(s["title"])
+                    elif int(s.get("level", 1)) == 1 and not is_chapter_section_title(
+                        s["title"]
+                    ):
+                        active_part_prefix = None
+                    folded_sections.append(s)
+                raw_sections = folded_sections
 
     # Leading front-matter section when content pages precede the first detected section
     if raw_sections:
@@ -989,8 +1346,8 @@ def extract_book_sections(
                 {
                     "level": 1,
                     "section_type": "front_matter",
-                    "title": "مۇقەددىمە",
-                    "normalized_title": normalize_section_title("مۇقەددىمە"),
+                    "title": "باش قىسىم",
+                    "normalized_title": normalize_section_title("باش قىسىم"),
                     "toc_printed_page": None,
                     "start_page": first_body_page,
                     "start_block_index": 0,
@@ -1041,6 +1398,19 @@ class BookStructureService:
         if not pages:
             await self.sections_repo.replace_for_book(book_id, [])
             return {"book_id": book_id, "sections_count": 0, "content_page_offset": 0}
+
+        # Clear auto-detected is_toc flags on colophon/copyright pages unless manually set by a human editor
+        for p in pages:
+            if (
+                bool(p.is_toc)
+                and p.text
+                and is_colophon_page(p.text)
+                and not (
+                    getattr(p, "updated_by", None)
+                    and "@" in str(getattr(p, "updated_by", ""))
+                )
+            ):
+                p.is_toc = False
 
         # Auto-detect ToC pages if none are flagged yet (skip pages manually edited/unflagged by an editor)
         if not any(bool(p.is_toc) for p in pages):

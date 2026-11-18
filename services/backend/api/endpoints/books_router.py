@@ -48,6 +48,7 @@ from app.db.repositories.chunks_repository import ChunksRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.models import (
     Book as BookDB,
+    BookSection,
     Page,
     Chunk,
     BookSummary,
@@ -71,7 +72,14 @@ from app.models.schemas import (
 from app.models.user import User
 from app.services.storage_service import storage
 from app.utils.categories import normalize_categories
-from app.services.chunking_service import chunking_service, compute_chunk_text_hash
+from app.services.chunking_service import (
+    chunking_service,
+    compute_chunk_text_hash,
+    extract_chunk_embedding_prefix,
+    extract_leading_overlap,
+    format_chunk_embedding_text,
+    load_book_embedding_context,
+)
 from app.utils.markdown import normalize_markdown
 from app.llm.models import GeminiEmbeddings
 from auth.dependencies import (
@@ -86,6 +94,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from app.models.user import UserRole
 import logging
 from app.utils.text import (
+    clean_uyghur_text,
     generate_uyghur_regex,
     normalize_uyghur_chars,
 )
@@ -1622,6 +1631,196 @@ async def get_book_page(
     return ExtractionResult.model_validate(page)
 
 
+@router.get("/{book_id}/chunks")
+async def get_book_chunks_inspector(
+    book_id: str,
+    page: Optional[int] = Query(None, ge=1),
+    section_id: Optional[int] = Query(None, alias="sectionId"),
+    filter_type: str = Query("all", alias="filterType"),
+    mode: str = Query("semantic"),
+    q: Optional[str] = Query(None, max_length=500),
+    rerank: bool = Query(False),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Inspect sections, chunk boundaries, contextual embedding prefixes, and semantic/text/reranked search scores for a book."""
+    if filter_type not in ("all", "cross_page", "unembedded", "short", "oversized"):
+        raise HTTPException(status_code=400, detail="Invalid filterType")
+    if mode not in ("semantic", "text"):
+        raise HTTPException(status_code=400, detail="Invalid mode")
+
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    cleaned_q = (q or "").strip() or None
+    query_embedding: Optional[List[float]] = None
+    text_query: Optional[str] = None
+    configs_repo: Optional[SystemConfigsRepository] = None
+
+    if cleaned_q:
+        if mode == "semantic":
+            configs_repo = SystemConfigsRepository(session)
+            gemini_embedding_model = await configs_repo.get_value("embed_gemini_model")
+            if not gemini_embedding_model:
+                raise HTTPException(
+                    status_code=500,
+                    detail="system_config 'embed_gemini_model' is not set",
+                )
+            embedder = GeminiEmbeddings(gemini_embedding_model)
+            query_embedding = await embedder.aembed_query(cleaned_q)
+        else:
+            text_query = cleaned_q
+
+    rag_threshold = settings.rag_score_threshold
+    chunks_repo = ChunksRepository(session)
+    inspected = await chunks_repo.inspect_for_book(
+        book_id,
+        page=page,
+        section_id=section_id,
+        filter_type=filter_type,
+        text_query=text_query,
+        query_embedding=query_embedding,
+        skip=skip,
+        limit=limit,
+    )
+
+    raw_chunks = list(inspected["chunks"])
+    rerank_rank_by_id: dict[int, int] = {}
+    rerank_pool_ids: set[int] = set()
+    did_rerank = False
+
+    is_rerank = rerank is True
+    if is_rerank and cleaned_q and mode == "semantic" and skip == 0 and raw_chunks:
+        from app.services.rag.agent.config import RERANK_MAX_INPUT_CHUNKS
+        from app.services.rag.agent.reranker import rerank_documents
+        from app.services.rag.answer_builder import Document
+
+        if configs_repo is None:
+            configs_repo = SystemConfigsRepository(session)
+        reranker_model = await configs_repo.get_value(
+            "rag_gemini_reranker_model", "gemini-3.1-flash-lite"
+        )
+        pool_chunks = [
+            c
+            for c in raw_chunks
+            if c.get("similarity") is not None
+            and float(c["similarity"]) >= rag_threshold
+        ][:RERANK_MAX_INPUT_CHUNKS]
+
+        if pool_chunks:
+            cand_docs = [
+                Document(
+                    page_content=c["text"],
+                    metadata={
+                        "chunk_id": c["id"],
+                        "title": book.title or "Unknown",
+                        "author": getattr(book, "author", None) or None,
+                        "volume": getattr(book, "volume", None),
+                        "page": c["page_number"],
+                        "page_number": c["page_number"],
+                        "chunk_index": c["chunk_index"],
+                        "end_page_number": c["end_page_number"],
+                        "section_id": c["section_id"],
+                        "section_title": c["section_title"],
+                        "content_page_number": c["content_page_number"],
+                        "end_content_page_number": c["end_content_page_number"],
+                        "book_id": str(book.id),
+                        "score": c["similarity"],
+                    },
+                )
+                for c in pool_chunks
+            ]
+            graded_docs = await rerank_documents(cleaned_q, cand_docs, reranker_model)
+            rerank_pool_ids = {int(c["id"]) for c in pool_chunks}
+            rerank_rank_by_id = {
+                int(d.metadata["chunk_id"]): rank_pos
+                for rank_pos, d in enumerate(graded_docs, start=1)
+            }
+            did_rerank = True
+            raw_chunks.sort(
+                key=lambda c: (
+                    0 if int(c["id"]) in rerank_rank_by_id else 1,
+                    rerank_rank_by_id.get(int(c["id"]), 999999),
+                    -(
+                        float(c["similarity"])
+                        if c.get("similarity") is not None
+                        else -1.0
+                    ),
+                    int(c["page_number"]),
+                    int(c["chunk_index"]),
+                )
+            )
+
+    book_title = (book.title or "").strip() if isinstance(book.title, str) else None
+    stats = inspected["stats"]
+    return {
+        "bookId": str(book.id),
+        "bookTitle": book.title or "",
+        "contentPageOffset": int(getattr(book, "content_page_offset", 0) or 0),
+        "ragThreshold": rag_threshold,
+        "reranked": did_rerank,
+        "rerankSelectedCount": len(rerank_rank_by_id),
+        "stats": {
+            "totalChunks": stats["total_chunks"],
+            "embeddedChunks": stats["embedded_chunks"],
+            "unembeddedChunks": stats["unembedded_chunks"],
+            "crossPageChunks": stats["cross_page_chunks"],
+            "shortChunks": stats["short_chunks"],
+            "oversizedChunks": stats["oversized_chunks"],
+            "sectionsCount": stats["sections_count"],
+        },
+        "sections": [
+            {
+                "id": s["id"],
+                "parentId": s["parent_id"],
+                "sectionIndex": s["section_index"],
+                "level": s["level"],
+                "sectionType": s["section_type"],
+                "source": s["source"],
+                "title": s["title"],
+                "startPage": s["start_page"],
+                "endPage": s["end_page"],
+                "chunkCount": s["chunk_count"],
+            }
+            for s in inspected["sections"]
+        ],
+        "totalMatching": inspected["total_matching"],
+        "chunks": [
+            {
+                "id": c["id"],
+                "chunkIndex": c["chunk_index"],
+                "pageNumber": c["page_number"],
+                "endPageNumber": c["end_page_number"],
+                "contentPageNumber": c["content_page_number"],
+                "endContentPageNumber": c["end_content_page_number"],
+                "sectionId": c["section_id"],
+                "sectionTitle": c["section_title"],
+                "text": c["text"],
+                "charCount": c["char_count"],
+                "textHash": c["text_hash"],
+                "hasEmbedding": c["has_embedding"],
+                "embeddingPrefix": extract_chunk_embedding_prefix(
+                    c["text"],
+                    book_title=book_title,
+                    section_title=c["section_title"],
+                ),
+                "overlapPrefix": extract_leading_overlap(c["prev_text"], c["text"]),
+                "similarity": c["similarity"],
+                "rerankRank": rerank_rank_by_id.get(int(c["id"])),
+                "rerankDropped": (
+                    int(c["id"]) in rerank_pool_ids
+                    and int(c["id"]) not in rerank_rank_by_id
+                ),
+            }
+            for c in raw_chunks
+        ],
+    }
+
+
 @router.get("/{book_id}/pages", response_model=List[ExtractionResult])
 async def get_book_pages(
     book_id: str,
@@ -2334,42 +2533,56 @@ async def reprocess_chunking(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    # Reset milestones - chunking scanner will handle chunk recreation
+    sec_cnt_res = await session.execute(
+        select(func.count(BookSection.id)).where(BookSection.book_id == book_id)
+    )
+    needs_structure_first = int(sec_cnt_res.scalar_one()) == 0
+
+    now = datetime.now(timezone.utc)
+    # Reset page chunking/embedding milestones without invalidating spell check
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
         .values(
             chunking_milestone=PAGE_MILESTONE_IDLE,
             embedding_milestone=PAGE_MILESTONE_IDLE,
-            spell_check_milestone=PAGE_MILESTONE_IDLE,
             retry_count=0,
             is_indexed=False,
-            last_updated=datetime.now(timezone.utc),
+            last_updated=now,
             updated_by=current_user.email,
         )
     )
 
-    # Update book-level milestones
-    await books_repo.update_one(
-        book_id,
-        chunking_milestone=PAGE_MILESTONE_IDLE,
+    next_status = "ready" if book.status == "ready" else "pending"
+    book_updates = dict(
+        chunking_milestone=BOOK_MILESTONE_IDLE,
         chunking_retry_count=0,
         chunking_claimed_at=None,
-        embedding_milestone=PAGE_MILESTONE_IDLE,
+        embedding_milestone=BOOK_MILESTONE_IDLE,
         embedding_retry_count=0,
         embedding_claimed_at=None,
-        spell_check_milestone=PAGE_MILESTONE_IDLE,
-        status="pending",
-        pipeline_step=PIPELINE_STEP_CHUNKING,
-        last_updated=datetime.now(timezone.utc),
+        status=next_status,
+        pipeline_step=(
+            PIPELINE_STEP_STRUCTURE if needs_structure_first else PIPELINE_STEP_CHUNKING
+        ),
+        last_updated=now,
         updated_by=current_user.email,
     )
+    if needs_structure_first:
+        from app.services.book_structure_service import structure_dirty_values
+
+        book_updates = structure_dirty_values(**book_updates)
+
+    await books_repo.update_one(book_id, **book_updates)
     await session.commit()
 
     # Invalidate cache - fresh data will be cached after reprocessing
     await cache_service.delete(f"book:{book_id}")
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
     await cache_service.delete_pattern("rag:summary_search:*")
+
+    if needs_structure_first:
+        await _enqueue_structure_job_best_effort(book_id)
 
     return {
         "status": "chunking_reprocess_started",
@@ -2396,16 +2609,16 @@ async def reprocess_embedding(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    # Reset page milestones
+    now = datetime.now(timezone.utc)
+    # Reset page embedding milestones without invalidating spell check
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
         .values(
             embedding_milestone=PAGE_MILESTONE_IDLE,
-            spell_check_milestone=PAGE_MILESTONE_IDLE,
             retry_count=0,
             is_indexed=False,
-            last_updated=datetime.now(timezone.utc),
+            last_updated=now,
             updated_by=current_user.email,
         )
     )
@@ -2415,16 +2628,15 @@ async def reprocess_embedding(
         update(Chunk).where(Chunk.book_id == book_id).values(embedding=None)
     )
 
-    # Update book-level milestones
+    # Update book-level milestones (status='pending' while all chunk vectors are cleared)
     await books_repo.update_one(
         book_id,
-        embedding_milestone=PAGE_MILESTONE_IDLE,
+        embedding_milestone=BOOK_MILESTONE_IDLE,
         embedding_retry_count=0,
         embedding_claimed_at=None,
-        spell_check_milestone=PAGE_MILESTONE_IDLE,
         status="pending",
         pipeline_step=PIPELINE_STEP_EMBEDDING,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=now,
         updated_by=current_user.email,
     )
     await session.commit()
@@ -2848,72 +3060,58 @@ async def update_page_text(
 
     await session.flush()
 
-    # 2. Synchronous Re-chunking (Instant Feedback) — rebuild the full span of any overlapping cross-page chunks
+    # 2. Synchronous Re-chunking (Instant Feedback) — transitively widen and delete
+    #    any overlapping cross-page chunks until the affected page span stabilizes.
     text_content = new_text.strip()
-    overlapping_cond = and_(
-        Chunk.book_id == book_id,
-        Chunk.page_number <= page_num,
-        func.coalesce(Chunk.end_page_number, Chunk.page_number) >= page_num,
-    )
     span_start_page = page_num
     span_end_page = page_num
-    try:
-        span_res = await session.execute(
-            select(
-                func.min(Chunk.page_number),
-                func.max(func.coalesce(Chunk.end_page_number, Chunk.page_number)),
-            ).where(overlapping_cond)
+    while True:
+        del_res = await session.execute(
+            delete(Chunk)
+            .where(
+                Chunk.book_id == book_id,
+                Chunk.page_number <= span_end_page,
+                func.coalesce(Chunk.end_page_number, Chunk.page_number)
+                >= span_start_page,
+            )
+            .returning(
+                Chunk.page_number,
+                func.coalesce(Chunk.end_page_number, Chunk.page_number),
+            )
         )
-        span_row = span_res.first() if hasattr(span_res, "first") else None
-        if isinstance(span_row, (tuple, list)) and len(span_row) >= 2:
-            if isinstance(span_row[0], int) and not isinstance(span_row[0], bool):
-                span_start_page = min(page_num, span_row[0])
-            if isinstance(span_row[1], int) and not isinstance(span_row[1], bool):
-                span_end_page = max(page_num, span_row[1])
-    except Exception:
-        span_start_page = page_num
-        span_end_page = page_num
+        deleted_spans = del_res.fetchall()
+        if not deleted_spans:
+            break
+        new_start = min([span_start_page, *(int(r[0]) for r in deleted_spans)])
+        new_end = max([span_end_page, *(int(r[1]) for r in deleted_spans)])
+        if new_start == span_start_page and new_end == span_end_page:
+            break
+        span_start_page = new_start
+        span_end_page = new_end
 
-    if span_start_page < page_num or span_end_page > page_num:
-        overlapping_cond = and_(
-            Chunk.book_id == book_id,
-            Chunk.page_number <= span_end_page,
-            func.coalesce(Chunk.end_page_number, Chunk.page_number) >= span_start_page,
-        )
-    await session.execute(delete(Chunk).where(overlapping_cond))
-
+    from app.db.repositories.book_sections_repository import BookSectionsRepository
     from app.services.book_structure_service import structure_dirty_values
 
-    # Resolve leaf sections covering the affected page span if available (prefer level-2 works over level-1 chapters)
-    leaf_sections: list = []
-    covering_section_id: Optional[int] = None
-    try:
-        from app.db.repositories.book_sections_repository import (
-            BookSectionsRepository,
-        )
+    # Resolve leaf sections and embedding context covering the affected page span
+    leaf_sections = await BookSectionsRepository(session).list_leaf_sections(book_id)
+    book_title, section_titles = await load_book_embedding_context(session, book_id)
 
-        loaded_sections = await BookSectionsRepository(session).list_leaf_sections(
-            book_id
+    covering_section_id: Optional[int] = None
+    matching_sections = [
+        sec
+        for sec in leaf_sections
+        if sec.start_page is not None
+        and sec.end_page is not None
+        and sec.start_page <= page_num <= sec.end_page
+    ]
+    if matching_sections:
+        matching_sections.sort(
+            key=lambda sec: (
+                -int(getattr(sec, "level", 1) or 1),
+                int(getattr(sec, "section_index", 0) or 0),
+            )
         )
-        if isinstance(loaded_sections, list):
-            leaf_sections = loaded_sections
-            matching_sections = [
-                sec
-                for sec in leaf_sections
-                if isinstance(getattr(sec, "start_page", None), int)
-                and isinstance(getattr(sec, "end_page", None), int)
-                and sec.start_page <= page_num <= sec.end_page
-            ]
-            if matching_sections:
-                matching_sections.sort(
-                    key=lambda sec: (
-                        -int(getattr(sec, "level", 1) or 1),
-                        int(getattr(sec, "section_index", 0) or 0),
-                    )
-                )
-                covering_section_id = getattr(matching_sections[0], "id", None)
-    except Exception:
-        covering_section_id = None
+        covering_section_id = getattr(matching_sections[0], "id", None)
 
     chunk_records: list[Chunk] = []
     if span_start_page < page_num or span_end_page > page_num:
@@ -2926,43 +3124,53 @@ async def update_page_text(
             )
             .order_by(Page.page_number.asc())
         )
-        span_scalars = (
-            span_pages_res.scalars() if hasattr(span_pages_res, "scalars") else None
-        )
-        span_pages = (
-            list(span_scalars.all())
-            if span_scalars is not None and hasattr(span_scalars, "all")
-            else []
-        )
-        if not span_pages:
-            span_pages = [page]
+        span_pages = list(span_pages_res.scalars().all()) or [page]
         rebuilt_section_chunks = chunking_service.chunk_book_sections(
-            span_pages, leaf_sections or None
+            span_pages,
+            leaf_sections or None,
+            book_title=book_title,
+            section_titles=section_titles,
         )
         for sc in rebuilt_section_chunks:
+            resolved_sec_id = (
+                sc.section_id if sc.section_id is not None else covering_section_id
+            )
+            resolved_hash = (
+                sc.text_hash
+                if sc.section_id is not None or resolved_sec_id is None
+                else compute_chunk_text_hash(
+                    sc.text,
+                    book_title=book_title,
+                    section_title=section_titles.get(resolved_sec_id),
+                )
+            )
             chunk = Chunk(
                 book_id=book_id,
                 page_number=sc.page_number,
                 end_page_number=sc.end_page_number,
-                section_id=sc.section_id
-                if sc.section_id is not None
-                else covering_section_id,
+                section_id=resolved_sec_id,
                 chunk_index=sc.chunk_index,
                 text=sc.text,
-                text_hash=sc.text_hash,
+                text_hash=resolved_hash,
                 embedding=None,
                 created_at=now_ts,
             )
             session.add(chunk)
             chunk_records.append(chunk)
     elif text_content:
-        # Split single page into chunks
+        # Split single page into chunks after running canonical Uyghur text cleaning
+        cleaned_single = clean_uyghur_text(text_content) or text_content
         chunks_text = [
-            c for c in chunking_service.split_text(text_content) if c.strip()
+            c for c in chunking_service.split_text(cleaned_single) if c.strip()
         ]
-        if not chunks_text:
-            chunks_text = [text_content]
+        if not chunks_text and cleaned_single.strip():
+            chunks_text = [cleaned_single.strip()]
 
+        covering_sec_title = (
+            section_titles.get(covering_section_id)
+            if covering_section_id is not None
+            else None
+        )
         for idx, txt in enumerate(chunks_text):
             chunk = Chunk(
                 book_id=book_id,
@@ -2971,7 +3179,11 @@ async def update_page_text(
                 section_id=covering_section_id,
                 chunk_index=idx,
                 text=txt,
-                text_hash=compute_chunk_text_hash(txt),
+                text_hash=compute_chunk_text_hash(
+                    txt,
+                    book_title=book_title,
+                    section_title=covering_sec_title,
+                ),
                 embedding=None,
                 created_at=now_ts,
             )
@@ -2998,7 +3210,15 @@ async def update_page_text(
         # 3. Synchronous Embedding (Instant Feedback) - RELEASED TRANSACTION
         try:
             embedder = GeminiEmbeddings(gemini_embedding_model)
-            vectors = await embedder.aembed_documents([c.text for c in chunk_records])
+            embed_inputs = [
+                format_chunk_embedding_text(
+                    c.text,
+                    book_title=book_title,
+                    section_title=section_titles.get(c.section_id),
+                )
+                for c in chunk_records
+            ]
+            vectors = await embedder.aembed_documents(embed_inputs)
 
             # Start a new transaction for vectors
             for chunk, vector in zip(chunk_records, vectors):
@@ -3023,6 +3243,7 @@ async def update_page_text(
             logger.error(
                 f"Failed to embed page {page_num} for book {book_id} during update: {e}"
             )
+            await session.rollback()
             # Page remains 'chunked'; batch cron will embed it on next cycle
             await session.execute(
                 update(BookDB)
@@ -3186,7 +3407,9 @@ async def bulk_reset_incomplete_ocr(
 
     Set include_error=true to also reset books already marked status='error'.
     """
-    status_filter = [BookDB.ocr_milestone != PAGE_MILESTONE_SUCCEEDED]
+    status_filter = [
+        BookDB.ocr_milestone.notin_([BOOK_MILESTONE_COMPLETE, PAGE_MILESTONE_SUCCEEDED])
+    ]
     if not include_error:
         status_filter.append(BookDB.status.notin_(["ready", "error"]))
 
@@ -3417,6 +3640,29 @@ async def update_book_details(
         from app.services.book_structure_service import structure_dirty_values
 
         book_update.update(structure_dirty_values())
+    elif (
+        "title" in book_update
+        and isinstance(book_update.get("title"), str)
+        and isinstance(getattr(book, "title", None), str)
+        and book_update["title"].strip() != book.title.strip()
+        and getattr(book, "ocr_milestone", None)
+        in (BOOK_MILESTONE_COMPLETE, PAGE_MILESTONE_SUCCEEDED)
+    ):
+        from app.services.book_structure_service import (
+            preserve_active_chunking_claim,
+            structure_dirty_values,
+        )
+
+        book_update.update(
+            structure_dirty_values(
+                chunking_milestone=BOOK_MILESTONE_IDLE,
+                chunking_retry_count=0,
+                chunking_claimed_at=preserve_active_chunking_claim(),
+                embedding_milestone=BOOK_MILESTONE_IDLE,
+                embedding_retry_count=0,
+                embedding_claimed_at=None,
+            )
+        )
 
     # Remove pages from book_update (already processed above)
     book_update.pop("pages", None)

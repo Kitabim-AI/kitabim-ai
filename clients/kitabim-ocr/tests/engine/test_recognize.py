@@ -337,7 +337,7 @@ async def test_ocr_page_passes_max_parallel_to_executor():
 
 
 @pytest.mark.asyncio
-async def test_ocr_page_caps_surya_concurrency_to_max_four():
+async def test_ocr_page_caps_surya_concurrency_to_max_eight():
     mock_page = MagicMock()
     mock_pix = MagicMock()
     mock_pix.samples = bytes([10, 250] * 1500)
@@ -348,11 +348,11 @@ async def test_ocr_page_caps_surya_concurrency_to_max_four():
         patch("engine.recognize._process_page_sync", return_value=("متن", 0.9)),
         patch("engine.recognize.clean_uyghur_text", side_effect=lambda t: t),
     ):
-        result = await svc.ocr_page(mock_page, MagicMock(), max_parallel_pages=8)
+        result = await svc.ocr_page(mock_page, MagicMock(), max_parallel_pages=16)
 
     assert result == "متن"
     assert svc._executor is not None
-    assert svc._executor._max_workers == 4
+    assert svc._executor._max_workers == 8
     svc._executor = None
 
 
@@ -1897,3 +1897,157 @@ def test_toc_tablizes_anthology_entries_with_authors_and_parenthesized_page_numb
         markdown, _ = svc._process_page_sync(img, predictor)
 
     assert markdown == expected_table
+
+
+def test_pixmap_to_pil_rgb_zero_copy_matches_samples():
+    import fitz
+    import numpy as np
+
+    doc = fitz.open()
+    page = doc.new_page(width=100, height=80)
+    page.insert_text((20, 40), "Test", fontsize=14)
+    pix = page.get_pixmap()
+    doc.close()
+
+    with patch.object(
+        pix, "tobytes", side_effect=AssertionError("Must not PNG-encode")
+    ):
+        pil_img = svc._pixmap_to_pil_rgb(pix)
+
+    assert pil_img.mode == "RGB"
+    assert pil_img.size == (pix.width, pix.height)
+    expected = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+        pix.height, pix.width, 3
+    )
+    assert np.array_equal(np.array(pil_img), expected)
+
+
+@pytest.mark.asyncio
+async def test_ocr_page_fast_exits_border_shadow_blank_or_photo_page_without_retry():
+    import numpy as np
+    from types import SimpleNamespace
+
+    # White 300x400 scan with a dark outer scanner-edge shadow (pushes full-page var > 25)
+    arr = np.full((400, 300, 3), 255, dtype=np.uint8)
+    arr[:4, :, :] = 0
+    mock_page = MagicMock()
+    mock_pix = SimpleNamespace(width=300, height=400, n=3, samples=arr.tobytes())
+    mock_page.get_pixmap.return_value = mock_pix
+    mock_page.rect.width = 500.0
+
+    with (
+        patch("engine.recognize._process_page_sync", return_value=("", 0.0)),
+        patch("engine.recognize.OCR_MAX_RETRIES", 3),
+    ):
+        res = await svc.ocr_page_with_meta(mock_page, MagicMock())
+
+    assert res.text == ""
+    # Fast-exited on Attempt 1 without triggering zoom+0.5 retries
+    assert mock_page.get_pixmap.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_ocr_prepared_wave_batches_pages_and_isolates_single_page_retry():
+    import fitz
+    import threading
+    from types import SimpleNamespace
+
+    doc = fitz.open()
+    for i in range(3):
+        p = doc.new_page(width=300, height=400)
+        p.draw_rect(fitz.Rect(30, 40 + i * 20, 260, 180 + i * 20), fill=(0, 0, 0))
+    doc_lock = threading.Lock()
+
+    prepared = await svc.prepare_page_wave_async(
+        doc, [1, 2, 3], doc_lock, max_parallel_pages=3
+    )
+    assert [it.page_number for it in prepared] == [1, 2, 3]
+    assert all(not it.is_blank and it.image is not None for it in prepared)
+
+    batch_calls: list[int] = []
+
+    def _fake_predictor(images, full_page=True):
+        batch_calls.append(len(images))
+        if len(images) == 3:
+            b1 = _boxed_block("Text", "<p>بىرىنچى بەت تېكىستى.</p>", 0, 40, 180)
+            # Page 2 loops/degenerates on Attempt 1 -> triggers single-page retry
+            loop_txt = " ".join(["مۇزىكا"] * 300)
+            b2 = _boxed_block("Text", f"<p>{loop_txt}</p>", 0, 60, 200)
+            b3 = _boxed_block("Text", "<p>ئۈچىنچى بەت تېكىستى-</p>", 0, 80, 220)
+            return [
+                SimpleNamespace(blocks=[b1]),
+                SimpleNamespace(blocks=[b2]),
+                SimpleNamespace(blocks=[b3]),
+            ]
+        # Single-page retry for page 2 succeeds
+        b2_fixed = _boxed_block("Text", "<p>ئىككىنچى بەت تۈزىتىلدى.</p>", 0, 60, 200)
+        return [SimpleNamespace(blocks=[b2_fixed])]
+
+    with patch("engine.recognize._is_phantom_bleed_through_block", return_value=False):
+        outcomes = await svc.ocr_prepared_wave_with_meta(
+            doc,
+            prepared,
+            _fake_predictor,
+            doc_lock=doc_lock,
+            max_parallel_pages=3,
+            max_retries=2,
+        )
+    doc.close()
+
+    # Attempt 1 ran as ONE synchronized 3-page batch, followed by ONE single-page retry for page 2
+    assert batch_calls == [3, 1]
+    assert outcomes[1].text == "بىرىنچى بەت تېكىستى."
+    assert outcomes[2].text == "ئىككىنچى بەت تۈزىتىلدى."
+    assert outcomes[3].text == "ئۈچىنچى بەت تېكىستى-"
+    assert outcomes[3].ended_with_hyphen is True
+
+
+@pytest.mark.asyncio
+async def test_ocr_prepared_wave_timeout_falls_back_per_page_and_fails_only_slow_page():
+    import fitz
+    import threading
+    import time
+    from types import SimpleNamespace
+
+    doc = fitz.open()
+    for i in range(3):
+        p = doc.new_page(width=300, height=400)
+        p.draw_rect(fitz.Rect(30, 40 + i * 20, 260, 180 + i * 20), fill=(0, 0, 0))
+    doc_lock = threading.Lock()
+
+    prepared = await svc.prepare_page_wave_async(
+        doc, [1, 2, 3], doc_lock, max_parallel_pages=3
+    )
+
+    call_Counter = {"single": 0}
+
+    def _fake_predictor(images, full_page=True):
+        if len(images) > 1:
+            # Simulate wave batch hanging past wave_timeout
+            time.sleep(0.25)
+            return []
+        call_Counter["single"] += 1
+        idx = call_Counter["single"]
+        if idx == 2:
+            # Only the 2nd single-page call is slow and times out
+            time.sleep(0.25)
+        blk = _boxed_block("Text", f"<p>بەت تېكىستى {idx}.</p>", 0, 40, 180)
+        return [SimpleNamespace(blocks=[blk])]
+
+    with patch("engine.recognize._is_phantom_bleed_through_block", return_value=False):
+        outcomes = await svc.ocr_prepared_wave_with_meta(
+            doc,
+            prepared,
+            _fake_predictor,
+            doc_lock=doc_lock,
+            timeout=0.05,
+            max_parallel_pages=1,
+            max_retries=2,
+        )
+    doc.close()
+
+    assert isinstance(outcomes[1], svc.PageOcrResult)
+    assert isinstance(outcomes[2], TimeoutError)
+    assert isinstance(outcomes[3], svc.PageOcrResult)
+    # Slow page timed out once and did not zoom-retry
+    assert call_Counter["single"] == 3

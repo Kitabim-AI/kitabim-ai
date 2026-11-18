@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { AdminTabs } from './components/admin/AdminTabs';
 import { AdminView } from './components/admin/AdminView';
+import { ChunkInspectorView } from './components/admin/chunks/ChunkInspectorView';
 import { ChatInterface } from './components/chat/ChatInterface';
 import { Shell } from './components/layout/Shell';
 import { HomeView } from './components/library/HomeView';
@@ -50,7 +51,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const handleGuard = () => {
       if (authLoading) return;
-      const protectedViews = ['admin', 'spell-check'];
+      const protectedViews = ['admin', 'spell-check', 'chunk-inspector'];
       if (protectedViews.includes(view) && !isEditor) {
         console.warn(`Unauthorized access attempt to ${view}. Redirecting to home.`);
         setView('home');
@@ -93,7 +94,7 @@ const AppContent: React.FC = () => {
   }, [view, selectedBook?.id, selectedBook?.status, setSelectedBook]);
 
   // Auth Loading Shield
-  if (authLoading && (view === 'admin' || view === 'spell-check')) {
+  if (authLoading && (view === 'admin' || view === 'spell-check' || view === 'chunk-inspector')) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-white z-[999]">
         <div className="w-12 h-12 border-4 border-[#0369a1]/10 border-t-[#0369a1] rounded-full animate-spin"></div>
@@ -102,14 +103,11 @@ const AppContent: React.FC = () => {
   }
 
   // Determine authorized content
-  const isAuthorizedToView = !(['admin', 'spell-check'].includes(view)) || isEditor;
+  const isAuthorizedToView = !(['admin', 'spell-check', 'chunk-inspector'].includes(view)) || isEditor;
 
-  // Keep HomeView mounted (just hidden) while the reader is open on top of it, instead of
-  // unmounting it — so the active search tab, typed query, AND already-fetched results
-  // (content hits, dictionary/quran/etc. lookups) survive closing the book instead of
-  // resetting and re-fetching from scratch.
+  // Keep HomeView mounted (just hidden) while the reader or chunk-inspector is open on top of it
   const showHome = view === 'home';
-  const keepHomeMounted = showHome || (view === 'reader' && previousView === 'home');
+  const keepHomeMounted = showHome || ((view === 'reader' || view === 'chunk-inspector') && previousView === 'home');
 
   return (
     <Shell>
@@ -120,6 +118,9 @@ const AppContent: React.FC = () => {
       {/* Protected Views - Strictly Conditional */}
       {view === 'admin' && isAuthorizedToView && (
         <AdminTabs bookManagementPanel={<AdminView />} />
+      )}
+      {view === 'chunk-inspector' && isAuthorizedToView && selectedBook && (
+        <ChunkInspectorView />
       )}
       {view === 'spell-check' && isAuthorizedToView && (
         <SpellCheckView />

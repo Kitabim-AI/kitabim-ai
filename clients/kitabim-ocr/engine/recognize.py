@@ -28,6 +28,7 @@ from engine.config import (
     DEFAULT_OCR_MAX_RETRIES,
     DEFAULT_OCR_PAGE_ZOOM_FACTOR,
     MAX_SURYA_CONCURRENCY,
+    apply_surya_inference_defaults,
     apply_surya_token_limits,
     get_configured_concurrency,
     get_configured_engine,
@@ -141,6 +142,7 @@ _predictor_lock = asyncio.Lock()
 _toc_line_detector: Any = None
 _toc_detector_lock = threading.Lock()
 _executor: ThreadPoolExecutor | None = None
+_preprocess_executor: ThreadPoolExecutor | None = None
 _llamacpp_restart_lock = threading.Lock()
 _last_llamacpp_restart_ts: float = 0.0
 _llamacpp_hook_installed: bool = False
@@ -259,6 +261,7 @@ async def get_recognition_predictor(engine: str | None = None) -> Any:
     target_engine = (engine or get_configured_engine()).strip().lower()
 
     if target_engine == "surya":
+        apply_surya_inference_defaults()
         _install_llamacpp_auto_restart_hook()
         if _surya_predictor is not None:
             return _surya_predictor
@@ -300,6 +303,34 @@ def _get_executor(max_workers: int | None = None) -> ThreadPoolExecutor:
     return _executor
 
 
+def _reset_executor(max_workers: int | None = None) -> ThreadPoolExecutor:
+    global _executor
+    if _executor is not None:
+        _executor.shutdown(wait=False)
+        _executor = None
+    return _get_executor(max_workers)
+
+
+def _get_preprocess_executor(max_workers: int | None = None) -> ThreadPoolExecutor:
+    global _preprocess_executor
+    workers = (
+        max_workers
+        if max_workers is not None
+        else get_configured_concurrency(max_limit=MAX_SURYA_PARALLEL_PAGES)
+    )
+    target_workers = min(max(1, workers), MAX_SURYA_PARALLEL_PAGES)
+    if (
+        _preprocess_executor is None
+        or getattr(_preprocess_executor, "_max_workers", 0) != target_workers
+    ):
+        if _preprocess_executor is not None:
+            _preprocess_executor.shutdown(wait=False)
+        _preprocess_executor = ThreadPoolExecutor(
+            max_workers=target_workers, thread_name_prefix="ocr-prep"
+        )
+    return _preprocess_executor
+
+
 _BLANK_PAGE_VARIANCE_THRESHOLD = 25.0
 
 
@@ -308,6 +339,77 @@ def is_page_blank(pix: fitz.Pixmap) -> bool:
     if arr.size == 0:
         return True
     return float(np.var(arr)) < _BLANK_PAGE_VARIANCE_THRESHOLD
+
+
+def _pixmap_to_pil_rgb(pix: fitz.Pixmap) -> Image.Image:
+    """Convert a PyMuPDF Pixmap directly to an RGB PIL Image without PNG re-encoding.
+
+    Falls back to ``pix.tobytes("png")`` only when ``pix`` is a test mock without
+    concrete integer dimensions matching ``pix.samples``.
+    """
+    w = getattr(pix, "width", None)
+    h = getattr(pix, "height", None)
+    samples = getattr(pix, "samples", None)
+    if (
+        isinstance(w, int)
+        and isinstance(h, int)
+        and w > 0
+        and h > 0
+        and isinstance(samples, (bytes, bytearray, memoryview))
+    ):
+        n = getattr(pix, "n", 3)
+        raw = bytes(samples) if not isinstance(samples, bytes) else samples
+        if n == 3 and len(raw) == w * h * 3:
+            return Image.frombytes("RGB", (w, h), raw)
+        if n == 4 and len(raw) == w * h * 4:
+            return Image.frombytes("RGBA", (w, h), raw).convert("RGB")
+        if n == 1 and len(raw) == w * h:
+            return Image.frombytes("L", (w, h), raw).convert("RGB")
+    return Image.open(io.BytesIO(pix.tobytes("png")))
+
+
+def _preprocess_rendered_image(image: Image.Image) -> Image.Image:
+    """Apply lossless bleed-through suppression and dot sharpening to a rendered page."""
+    if is_bleed_through_suppression_enabled():
+        image = suppress_bleed_through(image)
+    if is_dot_enhancement_enabled():
+        image = enhance_dots_and_contrast(image)
+    return image
+
+
+def _page_has_detected_text_lines(image: Image.Image, min_box_dim: float = 8.0) -> bool:
+    """Confirm whether an image with empty OCR output actually contains text lines.
+
+    Fast-exits scanned blank pages (where only outer scanner-edge shadows push
+    full-page variance above 25) and full-page photo/illustration plates so they
+    don't trigger wasteful zoom+0.5 retries or false ``failed`` page statuses.
+    Conservatively returns ``True`` if the detector itself is unavailable.
+    """
+    w, h = image.size
+    if w >= 200 and h >= 200:
+        mx = max(1, int(w * 0.04))
+        my = max(1, int(h * 0.04))
+        gray = np.array(image.convert("L"))
+        interior = gray[my : h - my, mx : w - mx]
+        if interior.size > 0 and (int(np.max(interior)) - int(np.min(interior))) < 20:
+            return False
+
+    try:
+        detector = _get_toc_line_detector()
+        det_res = detector([image])
+        det_boxes = det_res[0].bboxes if det_res else []
+    except Exception as exc:
+        logger.debug("Text-line check unavailable on empty OCR output: %s", exc)
+        return True
+
+    for db in det_boxes or []:
+        bbox = getattr(db, "bbox", None)
+        if bbox and len(bbox) >= 4:
+            bw = float(bbox[2]) - float(bbox[0])
+            bh = float(bbox[3]) - float(bbox[1])
+            if bw >= min_box_dim and bh >= min_box_dim:
+                return True
+    return False
 
 
 _SURYA_COMPACT_TOKEN_RE = re.compile(r"<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>")
@@ -1540,11 +1642,11 @@ def _reocr_toc_page_lines(
     return formatted if formatted.strip() else None
 
 
-def _process_page_sync(
+def _process_page_from_result_sync(
     image: Image.Image,
     recognition_predictor: Any,
+    result: Any,
 ) -> tuple[str, float]:
-    result = recognize_page(recognition_predictor, image)
     img_w, img_h = image.size
     non_marginalia_blocks = [
         b for b in result.blocks if not _is_vertical_marginalia_block(b, img_w, img_h)
@@ -1780,6 +1882,28 @@ def _process_page_sync(
     return markdown, mean_confidence
 
 
+def _process_page_sync(
+    image: Image.Image,
+    recognition_predictor: Any,
+) -> tuple[str, float]:
+    result = recognize_page(recognition_predictor, image)
+    return _process_page_from_result_sync(image, recognition_predictor, result)
+
+
+def _run_process_page_from_result_sync(
+    image: Image.Image,
+    recognition_predictor: Any,
+    result: Any,
+) -> tuple[str, float, int | None, int | None]:
+    tid = threading.get_ident()
+    _LAST_SYNC_META.pop(tid, None)
+    markdown, mean_confidence = _process_page_from_result_sync(
+        image, recognition_predictor, result
+    )
+    footer_num, header_num = _LAST_SYNC_META.pop(tid, (None, None))
+    return markdown, mean_confidence, footer_num, header_num
+
+
 def _run_process_page_sync(
     image: Image.Image,
     recognition_predictor: Any,
@@ -1789,6 +1913,352 @@ def _run_process_page_sync(
     markdown, mean_confidence = _process_page_sync(image, recognition_predictor)
     footer_num, header_num = _LAST_SYNC_META.pop(tid, (None, None))
     return markdown, mean_confidence, footer_num, header_num
+
+
+def _validate_and_build_page_result_sync(
+    markdown: str,
+    mean_confidence: float,
+    footer_num: int | None,
+    header_num: int | None,
+    image: Image.Image,
+    *,
+    min_confidence: float,
+    attempt: int,
+) -> PageOcrResult:
+    if not markdown.strip():
+        if not _page_has_detected_text_lines(image):
+            logger.info(
+                "No text recognized and line detector found 0 text regions; treating page as blank/illustration"
+            )
+            return PageOcrResult(
+                text="",
+                detected_page_number=(
+                    footer_num if footer_num is not None else header_num
+                ),
+                ended_with_hyphen=False,
+            )
+        raise LowConfidenceOcrError(
+            f"No text recognized on a non-blank page (attempt {attempt + 1})"
+        )
+
+    if mean_confidence < min_confidence:
+        raise LowConfidenceOcrError(
+            f"Mean OCR confidence {mean_confidence:.2f} below "
+            f"threshold {min_confidence} (attempt {attempt + 1})"
+        )
+
+    _, edge_page_num = strip_page_numbers_with_capture(markdown)
+    cleaned = clean_uyghur_text(markdown)
+    if is_degenerate_ocr_output(cleaned):
+        raise LowConfidenceOcrError(
+            f"OCR output looks like a runaway repetition/reasoning-leak "
+            f"loop ({len(cleaned)} chars, attempt {attempt + 1})"
+        )
+    detected_page_number = (
+        footer_num
+        if footer_num is not None
+        else (edge_page_num if edge_page_num is not None else header_num)
+    )
+    return PageOcrResult(
+        text=cleaned,
+        detected_page_number=detected_page_number,
+        ended_with_hyphen=text_ends_with_hyphen(cleaned),
+    )
+
+
+@dataclass
+class PreparedPageWaveItem:
+    page_number: int
+    is_blank: bool
+    image: Image.Image | None
+    adaptive_zoom: float
+
+
+def _rasterize_wave_raw_sync(
+    doc: fitz.Document,
+    page_numbers: list[int],
+    doc_lock: threading.Lock,
+    base_zoom: float,
+) -> list[tuple[int, bool, Image.Image | None, float]]:
+    """Sequentially rasterize a wave of PDF pages under ``doc_lock`` without PNG compression."""
+    out: list[tuple[int, bool, Image.Image | None, float]] = []
+    with doc_lock:
+        for pno in page_numbers:
+            page = doc.load_page(pno - 1)
+            adaptive_zoom = get_adaptive_page_zoom(page, base_zoom)
+            pix = page.get_pixmap(matrix=fitz.Matrix(adaptive_zoom, adaptive_zoom))
+            if is_page_blank(pix):
+                out.append((pno, True, None, adaptive_zoom))
+            else:
+                out.append((pno, False, _pixmap_to_pil_rgb(pix), adaptive_zoom))
+    return out
+
+
+async def prepare_page_wave_async(
+    doc: fitz.Document,
+    page_numbers: list[int],
+    doc_lock: threading.Lock,
+    *,
+    max_parallel_pages: int = DEFAULT_MAX_PARALLEL_PAGES,
+) -> list[PreparedPageWaveItem]:
+    """Pre-render and filter a wave of pages on background CPU threads (double-buffer safe)."""
+    if not page_numbers:
+        return []
+    workers = min(max(1, max_parallel_pages), MAX_SURYA_PARALLEL_PAGES)
+    prep_exec = _get_preprocess_executor(workers)
+    loop = asyncio.get_running_loop()
+    base_zoom = OCR_PAGE_ZOOM_FACTOR
+
+    raw_items = await loop.run_in_executor(
+        prep_exec, _rasterize_wave_raw_sync, doc, page_numbers, doc_lock, base_zoom
+    )
+
+    async def _prep_one(
+        pno: int, blank: bool, raw_img: Image.Image | None, azoom: float
+    ) -> PreparedPageWaveItem:
+        if blank or raw_img is None:
+            return PreparedPageWaveItem(
+                page_number=pno, is_blank=True, image=None, adaptive_zoom=azoom
+            )
+        proc_img = await loop.run_in_executor(
+            prep_exec, _preprocess_rendered_image, raw_img
+        )
+        return PreparedPageWaveItem(
+            page_number=pno, is_blank=False, image=proc_img, adaptive_zoom=azoom
+        )
+
+    return list(await asyncio.gather(*(_prep_one(*item) for item in raw_items)))
+
+
+async def _retry_single_page_from_doc_async(
+    doc: fitz.Document,
+    page_number: int,
+    adaptive_zoom: float,
+    recognition_predictor: Any,
+    *,
+    doc_lock: threading.Lock,
+    start_attempt: int,
+    total_attempts: int,
+    effective_timeout: float | None,
+    workers: int,
+    min_confidence: float,
+    prepared_image: Image.Image | None = None,
+) -> PageOcrResult:
+    """Retry a single failed page from a wave starting at ``start_attempt``."""
+    loop = asyncio.get_running_loop()
+    last_exc: Exception | None = None
+
+    def _render_at_zoom(zoom_val: float) -> tuple[bool, Image.Image | None]:
+        with doc_lock:
+            page = doc.load_page(page_number - 1)
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom_val, zoom_val))
+            if is_page_blank(pix):
+                return True, None
+            return False, _pixmap_to_pil_rgb(pix)
+
+    for attempt in range(start_attempt, total_attempts):
+        executor = _get_executor(workers)
+        zoom = adaptive_zoom + (attempt * 0.5)
+        try:
+            if attempt == 0 and prepared_image is not None:
+                image = prepared_image
+            else:
+                blank, raw_img = await loop.run_in_executor(
+                    executor, _render_at_zoom, zoom
+                )
+                if blank or raw_img is None:
+                    return PageOcrResult(
+                        text="", detected_page_number=None, ended_with_hyphen=False
+                    )
+                image = await loop.run_in_executor(
+                    executor, _preprocess_rendered_image, raw_img
+                )
+            coro = loop.run_in_executor(
+                executor, _run_process_page_sync, image, recognition_predictor
+            )
+            try:
+                markdown, mean_confidence, footer_num, header_num = await (
+                    asyncio.wait_for(coro, timeout=effective_timeout)
+                    if effective_timeout
+                    else coro
+                )
+            except (TimeoutError, asyncio.TimeoutError) as err:
+                _reset_executor(workers)
+                raise TimeoutError(
+                    f"OCR timed out after {effective_timeout:.0f}s (attempt {attempt + 1})"
+                ) from err
+
+            return await loop.run_in_executor(
+                executor,
+                partial(
+                    _validate_and_build_page_result_sync,
+                    markdown,
+                    mean_confidence,
+                    footer_num,
+                    header_num,
+                    image,
+                    min_confidence=min_confidence,
+                    attempt=attempt,
+                ),
+            )
+        except Exception as exc:
+            last_exc = exc
+            if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+                raise
+            if attempt < total_attempts - 1:
+                logger.warning(
+                    "Wave retry failed on page=%s, retrying: attempt=%s/%s error=%s",
+                    page_number,
+                    attempt + 1,
+                    total_attempts,
+                    exc,
+                )
+                continue
+            raise
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("OCR retry failed with no attempts")  # pragma: no cover
+
+
+async def ocr_prepared_wave_with_meta(
+    doc: fitz.Document,
+    prepared_items: list[PreparedPageWaveItem],
+    recognition_predictor: Any,
+    *,
+    doc_lock: threading.Lock,
+    timeout: float | None = None,
+    max_parallel_pages: int = DEFAULT_MAX_PARALLEL_PAGES,
+    min_confidence: float = 0.3,
+    max_retries: int | None = None,
+) -> dict[int, PageOcrResult | Exception]:
+    """Run synchronized full-page VLM batch inference on a pre-rendered wave of pages."""
+    results: dict[int, PageOcrResult | Exception] = {}
+    if not prepared_items:
+        return results
+
+    workers = min(max(1, max_parallel_pages), MAX_SURYA_PARALLEL_PAGES)
+    executor = _get_executor(workers)
+    loop = asyncio.get_running_loop()
+    effective_timeout = (
+        timeout if timeout is not None else get_configured_page_timeout()
+    )
+    total_attempts = max(1, max_retries) if max_retries is not None else OCR_MAX_RETRIES
+
+    active_items: list[PreparedPageWaveItem] = []
+    for item in prepared_items:
+        if item.is_blank or item.image is None:
+            results[item.page_number] = PageOcrResult(
+                text="", detected_page_number=None, ended_with_hyphen=False
+            )
+        else:
+            active_items.append(item)
+
+    if not active_items:
+        return results
+
+    wave_images = [it.image for it in active_items if it.image is not None]
+    batch_call = partial(recognition_predictor, wave_images, full_page=True)
+    batch_coro = loop.run_in_executor(executor, batch_call)
+    wave_timeout = (
+        effective_timeout * max(1, len(wave_images)) if effective_timeout else None
+    )
+
+    raw_batch_results: list[Any] | None = None
+    batch_exc: Exception | None = None
+    try:
+        raw_batch_results = await (
+            asyncio.wait_for(batch_coro, timeout=wave_timeout)
+            if wave_timeout
+            else batch_coro
+        )
+    except Exception as exc:
+        batch_exc = exc
+        if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+            executor = _reset_executor(workers)
+        logger.warning(
+            "Batch full-page VLM call failed on wave of %d page(s), falling back per-page: %s",
+            len(active_items),
+            exc,
+        )
+
+    retry_sem = asyncio.Semaphore(workers)
+
+    async def _postprocess_or_retry(
+        idx: int, item: PreparedPageWaveItem
+    ) -> tuple[int, PageOcrResult | Exception]:
+        assert item.image is not None
+        first_exc: Exception | None = batch_exc
+        if raw_batch_results is not None and idx < len(raw_batch_results):
+            try:
+                post_fn = partial(
+                    _run_process_page_from_result_sync,
+                    item.image,
+                    recognition_predictor,
+                    raw_batch_results[idx],
+                )
+                (
+                    markdown,
+                    mean_conf,
+                    footer_num,
+                    header_num,
+                ) = await loop.run_in_executor(executor, post_fn)
+                res = await loop.run_in_executor(
+                    executor,
+                    partial(
+                        _validate_and_build_page_result_sync,
+                        markdown,
+                        mean_conf,
+                        footer_num,
+                        header_num,
+                        item.image,
+                        min_confidence=min_confidence,
+                        attempt=0,
+                    ),
+                )
+                return item.page_number, res
+            except Exception as exc:
+                first_exc = exc
+                if total_attempts > 1:
+                    logger.warning(
+                        "Wave attempt 1 failed on page=%s, retrying at adjusted zoom: %s",
+                        item.page_number,
+                        exc,
+                    )
+
+        start_att = 0 if raw_batch_results is None else 1
+        if start_att < total_attempts and (
+            raw_batch_results is None
+            or not isinstance(first_exc, (TimeoutError, asyncio.TimeoutError))
+        ):
+            try:
+                async with retry_sem:
+                    retried = await _retry_single_page_from_doc_async(
+                        doc,
+                        item.page_number,
+                        item.adaptive_zoom,
+                        recognition_predictor,
+                        doc_lock=doc_lock,
+                        start_attempt=start_att,
+                        total_attempts=total_attempts,
+                        effective_timeout=effective_timeout,
+                        workers=workers,
+                        min_confidence=min_confidence,
+                        prepared_image=item.image,
+                    )
+                return item.page_number, retried
+            except Exception as retry_exc:
+                return item.page_number, retry_exc
+
+        return item.page_number, (
+            first_exc if first_exc is not None else RuntimeError("Wave OCR failed")
+        )
+
+    settled = await asyncio.gather(
+        *(_postprocess_or_retry(i, it) for i, it in enumerate(active_items))
+    )
+    for pno, outcome in settled:
+        results[pno] = outcome
+    return results
 
 
 async def ocr_page_with_meta(
@@ -1822,11 +2292,10 @@ async def ocr_page_with_meta(
                     text="", detected_page_number=None, ended_with_hyphen=False
                 )
 
-            image = Image.open(io.BytesIO(pix.tobytes("png")))
-            if is_bleed_through_suppression_enabled():
-                image = suppress_bleed_through(image)
-            if is_dot_enhancement_enabled():
-                image = enhance_dots_and_contrast(image)
+            raw_image = _pixmap_to_pil_rgb(pix)
+            image = await loop.run_in_executor(
+                executor, _preprocess_rendered_image, raw_image
+            )
 
             process_fn = partial(_run_process_page_sync, image, recognition_predictor)
             coro = loop.run_in_executor(executor, process_fn)
@@ -1847,33 +2316,18 @@ async def ocr_page_with_meta(
                     f"OCR timed out after {effective_timeout:.0f}s (attempt {attempt + 1})"
                 ) from err
 
-            if not markdown.strip():
-                raise LowConfidenceOcrError(
-                    f"No text recognized on a non-blank page (attempt {attempt + 1})"
-                )
-
-            if mean_confidence < min_confidence:
-                raise LowConfidenceOcrError(
-                    f"Mean OCR confidence {mean_confidence:.2f} below "
-                    f"threshold {min_confidence} (attempt {attempt + 1})"
-                )
-
-            _, edge_page_num = strip_page_numbers_with_capture(markdown)
-            cleaned = clean_uyghur_text(markdown)
-            if is_degenerate_ocr_output(cleaned):
-                raise LowConfidenceOcrError(
-                    f"OCR output looks like a runaway repetition/reasoning-leak "
-                    f"loop ({len(cleaned)} chars, attempt {attempt + 1})"
-                )
-            detected_page_number = (
-                footer_num
-                if footer_num is not None
-                else (edge_page_num if edge_page_num is not None else header_num)
-            )
-            return PageOcrResult(
-                text=cleaned,
-                detected_page_number=detected_page_number,
-                ended_with_hyphen=text_ends_with_hyphen(cleaned),
+            return await loop.run_in_executor(
+                executor,
+                partial(
+                    _validate_and_build_page_result_sync,
+                    markdown,
+                    mean_confidence,
+                    footer_num,
+                    header_num,
+                    image,
+                    min_confidence=min_confidence,
+                    attempt=attempt,
+                ),
             )
 
         except Exception as exc:

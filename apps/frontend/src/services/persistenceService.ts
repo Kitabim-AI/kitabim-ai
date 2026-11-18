@@ -1,5 +1,5 @@
 
-import { Book, PaginatedBooks, Bookmark, ReadingProgressEntry } from '@shared/types';
+import { Book, PaginatedBooks, Bookmark, ReadingProgressEntry, ChunkInspectorResponse, ChunkInspectorFilterType, ChunkInspectorSearchMode } from '@shared/types';
 import { authFetch } from './authService';
 
 const API_BASE = '/api';
@@ -571,5 +571,52 @@ export const PersistenceService = {
       console.error("Failed to fetch featured questions", error);
       return [];
     }
+  },
+
+  async getBookChunksInspector(
+    bookId: string,
+    params: {
+      page?: number | null;
+      sectionId?: number | null;
+      filterType?: ChunkInspectorFilterType;
+      mode?: ChunkInspectorSearchMode;
+      q?: string;
+      rerank?: boolean;
+      skip?: number;
+      limit?: number;
+    } = {}
+  ): Promise<ChunkInspectorResponse> {
+    const query = new URLSearchParams();
+    if (params.page !== undefined && params.page !== null && params.page >= 1) {
+      query.set('page', String(params.page));
+    }
+    if (params.sectionId !== undefined && params.sectionId !== null) {
+      query.set('sectionId', String(params.sectionId));
+    }
+    if (params.filterType) {
+      query.set('filterType', params.filterType);
+    }
+    if (params.mode) {
+      query.set('mode', params.mode);
+    }
+    if (params.q && params.q.trim()) {
+      query.set('q', params.q.trim());
+    }
+    if (params.rerank) {
+      query.set('rerank', 'true');
+    }
+    if (params.skip !== undefined) {
+      query.set('skip', String(params.skip));
+    }
+    if (params.limit !== undefined) {
+      query.set('limit', String(params.limit));
+    }
+    const qs = query.toString();
+    const response = await authFetch(`${API_BASE}/books/${bookId}/chunks${qs ? `?${qs}` : ''}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || `Failed to load chunks (${response.status})`);
+    }
+    return await response.json();
   }
 };

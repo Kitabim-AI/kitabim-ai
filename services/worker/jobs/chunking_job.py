@@ -27,8 +27,12 @@ from app.db import session as db_session
 from app.db.models import Book, Page
 from app.db.repositories.book_sections_repository import BookSectionsRepository
 from app.db.repositories.chunks_repository import ChunksRepository
+from app.services.book_milestone_service import complete_book_embedding_milestone
 from app.services.cache_service import cache_service
-from app.services.chunking_service import chunking_service
+from app.services.chunking_service import (
+    chunking_service,
+    load_book_embedding_context,
+)
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.chunking_job")
@@ -64,8 +68,16 @@ async def _chunk_single_book(book_id: str) -> None:
                 )
                 pages = list(pages_res.scalars().all())
                 sections = await sections_repo.list_leaf_sections(book_id)
+                book_title, section_titles = await load_book_embedding_context(
+                    session, book_id
+                )
 
-            section_chunks = chunking_service.chunk_book_sections(pages, sections)
+            section_chunks = chunking_service.chunk_book_sections(
+                pages,
+                sections,
+                book_title=book_title,
+                section_titles=section_titles,
+            )
             chunk_payloads = [
                 {
                     "book_id": book_id,
@@ -91,16 +103,8 @@ async def _chunk_single_book(book_id: str) -> None:
                     .where(Book.id == book_id)
                     .with_for_update()
                 )
-                cur_row = cur_res.first() if hasattr(cur_res, "first") else None
-                cur_chunk_ms = (
-                    cur_row[0]
-                    if isinstance(cur_row, (tuple, list)) and len(cur_row) > 0
-                    else getattr(cur_row, "chunking_milestone", None)
-                )
-                if (
-                    isinstance(cur_chunk_ms, str)
-                    and cur_chunk_ms == BOOK_MILESTONE_IDLE
-                ):
+                cur_chunk_ms = cur_res.scalar_one_or_none()
+                if cur_chunk_ms == BOOK_MILESTONE_IDLE:
                     await session.commit()
                     log_json(
                         logger,
@@ -123,30 +127,15 @@ async def _chunk_single_book(book_id: str) -> None:
                 )
 
                 if unembedded_count == 0:
-                    await session.execute(
-                        update(Page)
-                        .where(
-                            Page.book_id == book_id,
-                            Page.ocr_milestone == PAGE_MILESTONE_COMPLETE,
-                        )
-                        .values(
-                            embedding_milestone="succeeded",
-                            is_indexed=True,
-                            last_updated=func.now(),
-                        )
-                    )
-                    await session.execute(
-                        update(Book)
-                        .where(Book.id == book_id)
-                        .values(
-                            chunking_milestone=BOOK_MILESTONE_COMPLETE,
-                            chunking_retry_count=0,
-                            chunking_claimed_at=None,
-                            embedding_milestone=BOOK_MILESTONE_COMPLETE,
-                            embedding_retry_count=0,
-                            embedding_claimed_at=None,
-                            last_updated=func.now(),
-                        )
+                    await complete_book_embedding_milestone(
+                        session,
+                        book_id,
+                        extra_book_values={
+                            "chunking_milestone": BOOK_MILESTONE_COMPLETE,
+                            "chunking_retry_count": 0,
+                            "chunking_claimed_at": None,
+                            "graph_milestone": BOOK_MILESTONE_IDLE,
+                        },
                     )
                     await session.commit()
                     try:
@@ -164,6 +153,7 @@ async def _chunk_single_book(book_id: str) -> None:
                             embedding_milestone=BOOK_MILESTONE_IDLE,
                             embedding_retry_count=0,
                             embedding_claimed_at=None,
+                            graph_milestone=BOOK_MILESTONE_IDLE,
                             pipeline_step="embedding",
                             last_updated=func.now(),
                         )

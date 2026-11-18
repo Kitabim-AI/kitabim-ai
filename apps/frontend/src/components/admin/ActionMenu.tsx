@@ -1,5 +1,5 @@
 import { Book } from '@shared/types';
-import { BookOpen, BookOpenCheck, Copy, Cuboid, FileText, Image, ListTree, Loader2, Network, RotateCcw, ScanText, Scissors, Trash2 } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Copy, Cuboid, FileText, Image, Layers, ListTree, Loader2, Network, RotateCcw, ScanText, Scissors, Trash2 } from 'lucide-react';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { REPROCESS_STEP } from '../../constants/milestones';
@@ -29,7 +29,7 @@ interface ActionMenuProps {
 }
 
 export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect, menuRef, spellCheckEnabled = true }) => {
-  const { bookActions } = useAppContext();
+  const { bookActions, openChunkInspector } = useAppContext();
   const { t } = useI18n();
   const isAdmin = useIsAdmin();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -90,6 +90,18 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
           <BookOpen size={16} className="text-slate-500" aria-hidden="true" />
           <span className="flex-1 text-right">{t('admin.table.view')}</span>
         </button>
+
+        {typeof openChunkInspector === 'function' && (
+          <button
+            type="button"
+            onClick={() => { openChunkInspector(book, { page: null, from: 'admin' }); close(); }}
+            disabled={book.pipelineStep === null && book.status === 'pending'}
+            className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
+          >
+            <Layers size={16} className="shrink-0" aria-hidden="true" />
+            <span className="flex-1 text-right">{t('admin.table.inspectChunks')}</span>
+          </button>
+        )}
 
         {isAdmin && (
           <button

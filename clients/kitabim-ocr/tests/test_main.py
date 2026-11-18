@@ -223,3 +223,36 @@ def test_build_parser_login_and_backfill_commands():
     assert bf_args.limit == 5
     assert bf_args.max_server_backlog == 3
     assert bf_args.dry_run is True
+
+
+def test_cli_skip_unskip_and_backfill_skip_flags(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(main, "DOTENV_PATH", tmp_path / ".env")
+    monkeypatch.setenv("KITABIM_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.delenv("KITABIM_BASE_URL", raising=False)
+
+    # Standalone `skip` / `unskip` / `backfill --list-skipped` work offline without KITABIM_BASE_URL
+    skip_entries = main.cmd_skip(["book-a", "book-b"], reason="handwritten scan")
+    assert [e["book_id"] for e in skip_entries] == ["book-a", "book-b"]
+
+    listed = main.cmd_backfill(list_skipped=True)
+    assert {e["book_id"] for e in listed} == {"book-a", "book-b"}
+
+    removed = main.cmd_unskip(["book-a"])
+    assert removed == ["book-a"]
+    listed_after = main.cmd_backfill(list_skipped=True)
+    assert [e["book_id"] for e in listed_after] == ["book-b"]
+
+    parser = main.build_parser()
+    args = parser.parse_args(
+        [
+            "backfill",
+            "--skip-book",
+            "book-c",
+            "--unskip-book",
+            "book-b",
+            "--list-skipped",
+        ]
+    )
+    assert args.skip_book == ["book-c"]
+    assert args.unskip_book == ["book-b"]
+    assert args.list_skipped is True

@@ -21,8 +21,14 @@ from backfill import (
     _append_page_checkpoint,
     acquire_surya_gpu_lock_async,
     backfill_single_book,
+    cleanup_unstarted_prefetch_dir,
+    list_skipped_books,
+    load_skipped_books,
+    prefetch_book_assets_async,
     prevent_macos_sleep,
     read_backfill_audit_log,
+    skip_book_locally,
+    unskip_book_locally,
 )
 from engine.config import (
     get_configured_concurrency,
@@ -1114,6 +1120,10 @@ _APP_HTML = """<!doctype html>
               <span>✓</span>
               <span id="backfillSessionDoneStatText">تاماملانغان كىتابلار: 0</span>
             </button>
+            <button type="button" class="status-pill" id="backfillSkippedStatPill" onclick="toggleBackfillSkippedView()" title="ئۆتكۈزۈۋېتىلگەن كىتابلار تىزىملىكىنى كۆرۈش" style="cursor: pointer; background: #f8fafc; border-color: #cbd5e1; color: #475569; font-weight: 700;">
+              <span>⊘</span>
+              <span id="backfillSkippedStatText">ئۆتكۈزۈۋېتىلگەن: 0</span>
+            </button>
           </div>
         </div>
 
@@ -1199,6 +1209,40 @@ _APP_HTML = """<!doctype html>
               <tbody id="backfillCompletedTableBody">
                 <tr>
                   <td colspan="5" style="text-align: center; padding: 2.5rem; color: var(--slate-400);">ھازىرچە قايتا تونۇتۇلغان كىتاب يوق</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="librarySkippedBooksPanel" style="display: none;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.65rem;">
+                <h3 style="font-size: 1.1rem; font-weight: 800; color: var(--slate-900); margin: 0;" data-i18n="backfill.skipped_title">ئۆتكۈزۈۋېتىلگەن كىتابلار تىزىملىكى (يەرلىك)</h3>
+                <span id="backfillSkippedCountBadge" class="count-pill" style="font-size: 0.85rem; padding: 0.25rem 0.7rem;">0</span>
+              </div>
+              <p style="font-size: 0.82rem; color: var(--slate-500); margin: 0.25rem 0 0;" data-i18n="backfill.skipped_subtitle">بۇ كىتابلار مۇلازىمېتىردا ئۆزگەرتىلمەيدۇ، پەقەت مۇشۇ كومپيۇتېردىكى OCR نۆۋىتىدىن ئۆتكۈزۈۋېتىلىدۇ.</p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="setLibraryViewMode('all')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              <span data-i18n="backfill.btn_back_to_all">بارلىق كىتابلار تىزىملىكىگە قايتىش</span>
+            </button>
+          </div>
+          <div class="table-container" tabindex="0" role="region" aria-label="Locally skipped books">
+            <table class="books-table">
+              <thead>
+                <tr>
+                  <th style="width: 48px;">#</th>
+                  <th data-i18n="backfill.th_book">كىتاب نامى</th>
+                  <th data-i18n="backfill.th_pages">بەت سانى</th>
+                  <th>ۋاقتى</th>
+                  <th style="text-align: left;" data-i18n="backfill.th_action">مەشغۇلات</th>
+                </tr>
+              </thead>
+              <tbody id="backfillSkippedTableBody">
+                <tr>
+                  <td colspan="5" style="text-align: center; padding: 2.5rem; color: var(--slate-400);" data-i18n="backfill.empty_skipped">ھازىرچە ئۆتكۈزۈۋېتىلگەن كىتاب يوق</td>
                 </tr>
               </tbody>
             </table>
@@ -2781,6 +2825,8 @@ _APP_HTML = """<!doctype html>
     let backfillCandidates = [];
     let backfillAuditHistory = [];
     let backfillCompletedIds = new Set();
+    let backfillSkippedBooks = [];
+    let backfillSkippedIds = new Set();
     let backfillStatus = {
       mode: 'idle',
       autoRunning: false,
@@ -2816,6 +2862,14 @@ _APP_HTML = """<!doctype html>
           if (item && item.book_id) {
             backfillCompletedIds.add(String(item.book_id));
           }
+        }
+        if (Array.isArray(data.skippedBooks)) {
+          backfillSkippedBooks = data.skippedBooks;
+          backfillSkippedIds = new Set(
+            data.skippedBooks
+              .map(item => (item && item.book_id ? String(item.book_id) : ''))
+              .filter(Boolean)
+          );
         }
         if (typeof data.pendingIndexBooks === 'number') {
           backfillStatus.pendingIndexBooks = data.pendingIndexBooks;
@@ -2869,8 +2923,16 @@ _APP_HTML = """<!doctype html>
         );
         doneEl.textContent = t('backfill.stat_completed', {count: completedCount});
       }
+      const skippedEl = document.getElementById('backfillSkippedStatText');
+      if (skippedEl) {
+        skippedEl.textContent = t('backfill.stat_skipped_books', {
+          count: getBackfillSkippedBooks().length,
+        });
+      }
       if (libraryViewMode === 'completed') {
         renderBackfillCompletedList();
+      } else if (libraryViewMode === 'skipped') {
+        renderBackfillSkippedList();
       }
     }
 
@@ -2964,11 +3026,66 @@ _APP_HTML = """<!doctype html>
       }).join('');
     }
 
+    function getBackfillSkippedBooks() {
+      if (Array.isArray(backfillStatus.skippedBooks)) {
+        return backfillStatus.skippedBooks;
+      }
+      return Array.isArray(backfillSkippedBooks) ? backfillSkippedBooks : [];
+    }
+
+    function renderBackfillSkippedList() {
+      const tbody = document.getElementById('backfillSkippedTableBody');
+      const badge = document.getElementById('backfillSkippedCountBadge');
+      if (!tbody) return;
+      const items = getBackfillSkippedBooks();
+      if (badge) {
+        badge.textContent = String(items.length);
+      }
+      if (!items.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; padding: 2.5rem; color: var(--slate-400);">
+              ${escapeHtml(t('backfill.empty_skipped'))}
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      tbody.innerHTML = items.map((item, idx) => {
+        const bid = String(item.book_id || '');
+        const rowEl = document.getElementById(`book-row-${bid}`);
+        const title = item.title || (rowEl && rowEl.dataset.bookTitle) || `Kitabim #${bid}`;
+        const author = item.author || (rowEl && rowEl.dataset.bookAuthor) || '';
+        const totalPages = item.total_pages || Number((rowEl && rowEl.dataset.bookTotalPages) || 0) || 0;
+        const tsStr = item.skipped_at ? new Date(item.skipped_at * 1000).toLocaleString() : '—';
+        return `
+          <tr>
+            <td style="font-weight: 700; color: var(--slate-500);">${idx + 1}</td>
+            <td>
+              <div style="font-weight: 700; color: var(--slate-900); font-size: 0.95rem;">${escapeHtml(title)}</div>
+              <div style="font-size: 0.78rem; color: var(--slate-400); font-family: monospace;">#${escapeHtml(bid)}${author ? ' · ' + escapeHtml(author) : ''}</div>
+            </td>
+            <td style="font-size: 0.85rem; color: var(--slate-700); font-weight: 600;">
+              ${totalPages ? `${totalPages} ${escapeHtml(t('library.pages_suffix'))}` : '—'}
+            </td>
+            <td style="font-size: 0.82rem; color: var(--slate-500);">${escapeHtml(tsStr)}</td>
+            <td style="text-align: left;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="unskipBackfillBook('${escapeHtml(bid)}')">
+                ${escapeHtml(t('backfill.btn_unskip_book'))}
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
     async function setLibraryViewMode(mode) {
-      libraryViewMode = mode === 'completed' ? 'completed' : 'all';
+      libraryViewMode = (mode === 'completed' || mode === 'skipped') ? mode : 'all';
       const allPanel = document.getElementById('libraryAllBooksPanel');
       const completedPanel = document.getElementById('libraryCompletedBooksPanel');
+      const skippedPanel = document.getElementById('librarySkippedBooksPanel');
       const donePill = document.getElementById('backfillSessionDoneStatPill');
+      const skippedPill = document.getElementById('backfillSkippedStatPill');
       const eligPill = document.getElementById('backfillEligibleStatPill');
       if (allPanel) {
         allPanel.style.display = libraryViewMode === 'all' ? 'block' : 'none';
@@ -2976,8 +3093,14 @@ _APP_HTML = """<!doctype html>
       if (completedPanel) {
         completedPanel.style.display = libraryViewMode === 'completed' ? 'block' : 'none';
       }
+      if (skippedPanel) {
+        skippedPanel.style.display = libraryViewMode === 'skipped' ? 'block' : 'none';
+      }
       if (donePill) {
         donePill.style.boxShadow = libraryViewMode === 'completed' ? '0 0 0 2px #059669' : '';
+      }
+      if (skippedPill) {
+        skippedPill.style.boxShadow = libraryViewMode === 'skipped' ? '0 0 0 2px #475569' : '';
       }
       if (eligPill) {
         eligPill.style.boxShadow = libraryViewMode === 'all' ? '0 0 0 2px var(--primary)' : '';
@@ -2992,11 +3115,75 @@ _APP_HTML = """<!doctype html>
             renderBackfillCompletedList();
           }
         } catch (_) {}
+      } else if (libraryViewMode === 'skipped') {
+        renderBackfillSkippedList();
+        try {
+          const res = await fetch('/api/backfill/status');
+          if (res.ok) {
+            const st = await res.json();
+            renderBackfillState(st);
+            renderBackfillSkippedList();
+          }
+        } catch (_) {}
       }
     }
 
     function toggleBackfillCompletedView() {
       setLibraryViewMode(libraryViewMode === 'completed' ? 'all' : 'completed');
+    }
+
+    function toggleBackfillSkippedView() {
+      setLibraryViewMode(libraryViewMode === 'skipped' ? 'all' : 'skipped');
+    }
+
+    async function skipBackfillBook(bookId) {
+      try {
+        showBackfillError('');
+        const row = document.getElementById(`book-row-${bookId}`);
+        const cand = backfillCandidates.find(c => String(c.id) === String(bookId)) || {};
+        const title = (row && row.dataset.bookTitle) || cand.title || null;
+        const author = (row && row.dataset.bookAuthor) || cand.author || null;
+        const totalPages = Number((row && row.dataset.bookTotalPages) || cand.totalPages || 0) || null;
+        const uploadDate = (row && row.dataset.bookUploadDate) || cand.uploadDate || cand.upload_date || null;
+
+        const res = await fetch(`/api/backfill/skip/${encodeURIComponent(bookId)}`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            title: title,
+            author: author,
+            totalPages: totalPages,
+            uploadDate: uploadDate,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        const status = await res.json();
+        backfillCandidates = backfillCandidates.filter(c => String(c.id) !== String(bookId));
+        renderBackfillState(status);
+      } catch (err) {
+        showBackfillError(err.message || String(err));
+      }
+    }
+
+    async function unskipBackfillBook(bookId) {
+      try {
+        showBackfillError('');
+        const res = await fetch(`/api/backfill/unskip/${encodeURIComponent(bookId)}`, {
+          method: 'POST',
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        const status = await res.json();
+        renderBackfillState(status);
+        loadBackfillCandidates(false);
+      } catch (err) {
+        showBackfillError(err.message || String(err));
+      }
     }
 
     async function toggleAutoBackfill() {
@@ -3099,6 +3286,14 @@ _APP_HTML = """<!doctype html>
           }
         }
       }
+      if (Array.isArray(backfillStatus.skippedBooks)) {
+        backfillSkippedBooks = backfillStatus.skippedBooks;
+        backfillSkippedIds = new Set(
+          backfillStatus.skippedBooks
+            .map(item => (item && item.book_id ? String(item.book_id) : ''))
+            .filter(Boolean)
+        );
+      }
 
       if (backfillStatus.error) {
         showBackfillError(backfillStatus.error);
@@ -3181,10 +3376,11 @@ _APP_HTML = """<!doctype html>
         const bid = tr.dataset.bookId;
         const ocrVer = tr.dataset.ocrVersion || '';
         const isUpgraded = ocrVer === 'surya-2.5-v2' || backfillCompletedIds.has(bid);
+        const isSkipped = backfillSkippedIds.has(bid);
         const isCurrent = activeId === bid;
 
-        tr.style.display = isUpgraded ? 'none' : '';
-        if (!isUpgraded) {
+        tr.style.display = (isUpgraded || isSkipped) ? 'none' : '';
+        if (!isUpgraded && !isSkipped) {
           visibleCount += 1;
         }
         tr.style.background = isCurrent ? 'rgba(245, 158, 11, 0.08)' : '';
@@ -3202,14 +3398,19 @@ _APP_HTML = """<!doctype html>
         if (actionSlot) {
           if (isCurrent) {
             actionSlot.innerHTML = `<span class="milestone-badge milestone-in_progress">⚡ ${escapeHtml(t('processing.status_processing'))}</span>`;
-          } else if (isUpgraded) {
+          } else if (isUpgraded || isSkipped) {
             actionSlot.innerHTML = '';
           } else {
             actionSlot.innerHTML = `
-              <button type="button" class="btn btn-success btn-sm" id="btn-backfill-${escapeHtml(bid)}" onclick="runBackfillOnDemand('${escapeHtml(bid)}')" ${canRunOnDemand ? '' : 'disabled'}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                ${escapeHtml(t('backfill.btn_process_now'))}
-              </button>
+              <span style="display: inline-flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-success btn-sm" id="btn-backfill-${escapeHtml(bid)}" onclick="runBackfillOnDemand('${escapeHtml(bid)}')" ${canRunOnDemand ? '' : 'disabled'}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  ${escapeHtml(t('backfill.btn_process_now'))}
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-skip-backfill-${escapeHtml(bid)}" onclick="skipBackfillBook('${escapeHtml(bid)}')" title="${escapeHtml(t('backfill.skip_tooltip'))}">
+                  ${escapeHtml(t('backfill.btn_skip_book'))}
+                </button>
+              </span>
             `;
           }
         }
@@ -3710,6 +3911,7 @@ class BackfillManager:
                 ],
             }
         completed_books = self._collect_completed_books()
+        skipped_books = list_skipped_books(self.work_root)
 
         return {
             "mode": self.mode,
@@ -3720,6 +3922,9 @@ class BackfillManager:
             "lastCompletedBook": self.last_completed_book,
             "completedBooks": completed_books,
             "totalCompletedCount": len(completed_books),
+            "skippedBooks": skipped_books,
+            "skippedBookIds": [str(b["book_id"]) for b in skipped_books],
+            "skippedCount": len(skipped_books),
             "sessionProcessedCount": self.session_processed_count,
             "pendingIndexBooks": self.pending_index_books,
             "maxServerBacklog": self.max_server_backlog,
@@ -3760,11 +3965,17 @@ class BackfillManager:
             0, pending_backlog - (self._baseline_server_backlog or 0)
         )
         self.pending_index_books = effective_backlog
+        skipped_map = load_skipped_books(self.work_root)
         raw_candidates = cand_resp.get("candidates") or []
         normalized: list[dict[str, Any]] = []
         for c in raw_candidates:
             cid = str(c.get("id") or "")
-            if not cid or cid in self.seen_book_ids or cid in self.failed_book_ids:
+            if (
+                not cid
+                or cid in self.seen_book_ids
+                or cid in self.failed_book_ids
+                or cid in skipped_map
+            ):
                 continue
             upload_date = c.get("uploadDate") or c.get("upload_date")
             total_pages = c.get("totalPages") or c.get("total_pages") or 0
@@ -3823,11 +4034,14 @@ class BackfillManager:
             self._server_backfilled_cache = server_backfilled
 
         audit_history = self._collect_completed_books()
+        skipped_books = list_skipped_books(self.work_root)
         return {
             "candidates": normalized,
             "pendingIndexBooks": self.pending_index_books,
             "maxServerBacklog": self.max_server_backlog,
             "auditHistory": audit_history,
+            "skippedBooks": skipped_books,
+            "skippedBookIds": [str(b["book_id"]) for b in skipped_books],
         }
 
     async def _process_book(
@@ -3901,6 +4115,8 @@ class BackfillManager:
                 )
 
     async def _auto_loop(self) -> None:
+        last_prefetched_id: Optional[str] = None
+        prefetch_task: Optional[asyncio.Task] = None
         try:
             with prevent_macos_sleep():
                 while self.auto_running and not self.pause_requested:
@@ -3929,6 +4145,18 @@ class BackfillManager:
                     target = candidates[0]
                     target_id = str(target["id"])
                     self.mode = "pausing" if self.pause_requested else "auto"
+
+                    if len(candidates) >= 2 and not self.pause_requested:
+                        last_prefetched_id = str(candidates[1]["id"])
+                        prefetch_task = asyncio.create_task(
+                            prefetch_book_assets_async(
+                                last_prefetched_id, self.client, self.work_root
+                            )
+                        )
+                    else:
+                        last_prefetched_id = None
+                        prefetch_task = None
+
                     try:
                         await self._process_book(
                             target_id,
@@ -3945,10 +4173,34 @@ class BackfillManager:
                         self.failed_book_ids.add(target_id)
                         self.error = f"Book {target_id} failed: {book_exc}"
                         continue
+                    finally:
+                        if prefetch_task is not None:
+                            if self.pause_requested or not self.auto_running:
+                                if not prefetch_task.done():
+                                    prefetch_task.cancel()
+                            try:
+                                await prefetch_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
+                            prefetch_task = None
+                            if (
+                                last_prefetched_id
+                                and last_prefetched_id
+                                in load_skipped_books(self.work_root)
+                            ):
+                                cleanup_unstarted_prefetch_dir(
+                                    last_prefetched_id, self.work_root
+                                )
         except Exception as exc:
             logger.exception("Auto backfill loop failed: %s", exc)
             self.error = str(exc)
         finally:
+            if (
+                last_prefetched_id
+                and last_prefetched_id not in self.seen_book_ids
+                and last_prefetched_id not in self.failed_book_ids
+            ):
+                cleanup_unstarted_prefetch_dir(last_prefetched_id, self.work_root)
             self.auto_running = False
             self.pause_requested = False
             self.mode = "idle"
@@ -4044,6 +4296,42 @@ class BackfillManager:
                 book_id, title=title, author=author, upload_date=upload_date
             )
         )
+        return self.get_status()
+
+    def skip_book(
+        self,
+        book_id: str,
+        *,
+        title: Optional[str] = None,
+        author: Optional[str] = None,
+        total_pages: Optional[int] = None,
+        upload_date: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> dict[str, Any]:
+        bid = str(book_id).strip()
+        if not bid:
+            raise HTTPException(status_code=400, detail="book_id is required")
+        if self.active_book_id == bid:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot skip the book currently being processed",
+            )
+        skip_book_locally(
+            self.work_root,
+            bid,
+            title=title,
+            author=author,
+            total_pages=total_pages,
+            upload_date=upload_date,
+            reason=reason,
+        )
+        return self.get_status()
+
+    def unskip_book(self, book_id: str) -> dict[str, Any]:
+        bid = str(book_id).strip()
+        if not bid:
+            raise HTTPException(status_code=400, detail="book_id is required")
+        unskip_book_locally(self.work_root, bid)
         return self.get_status()
 
     def get_active_page_image_bytes(self, page_number: int) -> bytes:
@@ -4146,6 +4434,14 @@ class BackfillOnDemandRequest(BaseModel):
     title: Optional[str] = None
     author: Optional[str] = None
     uploadDate: Optional[str] = None
+
+
+class BackfillSkipRequest(BaseModel):
+    title: Optional[str] = None
+    author: Optional[str] = None
+    totalPages: Optional[int] = None
+    uploadDate: Optional[str] = None
+    reason: Optional[str] = None
 
 
 @dataclass
@@ -4709,6 +5005,27 @@ def create_landing_app(
         state.stage = "processing"
         state.error = None
         return res
+
+    @app.get("/api/backfill/skipped")
+    def get_backfill_skipped_route():
+        return {"skippedBooks": list_skipped_books(state.work_root)}
+
+    @app.post("/api/backfill/skip/{book_id}")
+    def skip_backfill_book_route(
+        book_id: str, body: Optional[BackfillSkipRequest] = None
+    ):
+        return state.backfill_manager.skip_book(
+            book_id,
+            title=body.title if body else None,
+            author=body.author if body else None,
+            total_pages=body.totalPages if body else None,
+            upload_date=body.uploadDate if body else None,
+            reason=body.reason if body else None,
+        )
+
+    @app.post("/api/backfill/unskip/{book_id}")
+    def unskip_backfill_book_route(book_id: str):
+        return state.backfill_manager.unskip_book(book_id)
 
     @app.get("/api/backfill/pages/{page_number}/image")
     def get_backfill_page_image(page_number: int):

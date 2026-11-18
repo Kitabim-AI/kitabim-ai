@@ -673,17 +673,26 @@ class GeminiEmbeddings:
         from app.core.config import settings
 
         model_name = self.model_name
-        dimensions = 3072 if "gemini-embedding-2" in model_name else 768
+        is_embed_v2 = "gemini-embedding-2" in model_name
+        dimensions = 3072 if is_embed_v2 else 768
         timeout = await get_system_config_timeout("embed_gemini_timeout", 15.0)
+
+        stripped_text = text.strip()
+        if is_embed_v2 and not stripped_text.lower().startswith("task:"):
+            formatted_query = f"task: question answering | query: {stripped_text}"
+        else:
+            formatted_query = text
 
         async def _call():
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:embedContent?key={settings.gemini_api_key}"
-            req = {
+            req: dict[str, Any] = {
                 "model": f"models/{model_name}",
-                "content": {"parts": [{"text": text}]},
+                "content": {"parts": [{"text": formatted_query}]},
             }
             if dimensions:
                 req["outputDimensionality"] = dimensions
+            if not is_embed_v2:
+                req["taskType"] = "RETRIEVAL_QUERY"
 
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=timeout)

@@ -118,7 +118,7 @@ async def get_quran_stats(
 @router.get("/quran", response_model=List[QuranAyahOut])
 async def list_quran_entries(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=300),
+    limit: int = Query(50, ge=1, le=500),
     surah: Optional[int] = None,
     session: AsyncSession = Depends(get_session),
 ):

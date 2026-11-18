@@ -6,11 +6,17 @@ import { useBooks } from '../hooks/useBooks';
 import { useChat } from '../hooks/useChat';
 import { PersistenceService } from '../services/persistenceService';
 
+type AppView = 'home' | 'library' | 'admin' | 'reader' | 'chunk-inspector' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran';
+type DashboardView = Exclude<AppView, 'reader' | 'chunk-inspector'>;
+
 interface AppContextType {
-  view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran';
-  setView: (view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran', updateHistory?: boolean) => void;
-  previousView: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran';
-  setPreviousView: (view: 'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran') => void;
+  view: AppView;
+  setView: (view: AppView, updateHistory?: boolean) => void;
+  previousView: DashboardView;
+  setPreviousView: (view: DashboardView) => void;
+  inspectorInitialPage: number | null;
+  inspectorOriginView: 'reader' | 'admin';
+  openChunkInspector: (book: Book, options?: { page?: number | null; from?: 'reader' | 'admin' }) => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   homeSearchQuery: string;
@@ -67,7 +73,7 @@ export const LIBRARY_TABS = ['all-books', 'reading', 'bookmarks'] as const;
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const parsePath = (path: string): {
-    view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran',
+    view: AppView,
     tab: string,
     bookId?: string,
     pageNumber?: number,
@@ -76,7 +82,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const parts = path.toLowerCase().split('/').filter(Boolean);
     const viewPortion = parts[0] || 'home';
 
-    let view: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran' = 'home';
+    let view: AppView = 'home';
     let tab = 'books';
     let bookId: string | undefined;
     let pageNumber: number | undefined;
@@ -113,12 +119,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const initialRoute = parsePath(window.location.pathname);
-  const [view, setViewInternal] = useState<'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran'>(initialRoute.view);
+  const [view, setViewInternal] = useState<AppView>(initialRoute.view);
   const [activeTab, setActiveTabInternal] = useState<string>(initialRoute.tab);
   const initialBookId = initialRoute.bookId;
   const initialPageNumber = initialRoute.pageNumber;
   const initialQuote = initialRoute.quote;
-  const [previousView, setPreviousView] = useState<'home' | 'library' | 'admin' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran'>('home');
+  const [previousView, setPreviousView] = useState<DashboardView>('home');
+  const [inspectorInitialPage, setInspectorInitialPage] = useState<number | null>(null);
+  const [inspectorOriginView, setInspectorOriginView] = useState<'reader' | 'admin'>('reader');
 
   const getPathFromView = (v: string, t?: string) => {
     if (v === 'home') return '/';
@@ -132,7 +140,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return `/${v}`;
   };
 
-  const setView = (newView: 'home' | 'library' | 'admin' | 'reader' | 'global-chat' | 'join-us' | 'spell-check' | 'graph' | 'dictionary' | 'quran', updateHistory = true) => {
+  const setView = (newView: AppView, updateHistory = true) => {
     if (newView !== view) {
       const enteringLibraryFresh = newView === 'library' && view !== 'library';
       const enteringAdminFresh = newView === 'admin' && view !== 'admin';
@@ -144,7 +152,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         effectiveTab = 'books';
       }
 
-      if (updateHistory && newView !== 'reader') {
+      if (updateHistory && newView !== 'reader' && newView !== 'chunk-inspector') {
         const path = getPathFromView(newView, (newView === 'admin' || newView === 'library') ? effectiveTab : undefined);
         if (window.location.pathname !== path) {
           window.history.pushState({ view: newView, tab: effectiveTab }, '', path);
@@ -152,9 +160,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       // Logic: Only clear search if navigating directly BETWEEN main dashboard views.
-      // If we are opening/closing a sub-view (reader, chat), do NOT clear search state.
-      // Exception: If we are navigating TO library or admin, we might be coming from a search box,
-      // so we let the caller handle clearing if needed.
+      // If we are opening/closing a sub-view (reader, chunk-inspector, chat), do NOT clear search state.
       const mainViews = ['home', 'library', 'admin', 'join-us', 'spell-check', 'graph'];
       if (mainViews.includes(view) && mainViews.includes(newView) && newView !== 'library' && newView !== 'admin') {
         setSearchQuery('');
@@ -168,11 +174,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setActiveTabInternal(effectiveTab);
       }
 
-      if (view !== 'reader' && view !== 'global-chat') {
-        setPreviousView(view);
+      if (view !== 'reader' && view !== 'chunk-inspector' && view !== 'global-chat') {
+        setPreviousView(view as DashboardView);
       }
       setViewInternal(newView);
     }
+  };
+
+  const openChunkInspector = (book: Book, options?: { page?: number | null; from?: 'reader' | 'admin' }) => {
+    setSelectedBook(book);
+    setInspectorInitialPage(options?.page ?? null);
+    setInspectorOriginView(options?.from ?? (view === 'reader' ? 'reader' : 'admin'));
+    setView('chunk-inspector');
   };
 
   const setActiveTab = (newTab: string, updateHistory = true) => {
@@ -328,6 +341,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setView,
     previousView,
     setPreviousView,
+    inspectorInitialPage,
+    inspectorOriginView,
+    openChunkInspector,
     searchQuery,
     setSearchQuery,
     homeSearchQuery,

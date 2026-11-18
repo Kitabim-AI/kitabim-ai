@@ -12,6 +12,8 @@ async def test_chunking_job_uses_leaf_sections_and_replaces_chunks_with_book_id(
     mock_pages_res.scalars.return_value.all.return_value = [
         SimpleNamespace(page_number=1, text="بىرىنچى بەت تېكىستى", is_toc=False),
     ]
+    mock_pages_res.scalar_one_or_none.return_value = "in_progress"
+    mock_pages_res.fetchall.return_value = []
     mock_session.execute.return_value = mock_pages_res
 
     mock_cm = AsyncMock()
@@ -85,3 +87,72 @@ async def test_chunking_job_uses_leaf_sections_and_replaces_chunks_with_book_id(
             }
         ],
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unembedded_count", [0, 3])
+async def test_chunking_job_resets_graph_milestone_to_idle_when_chunks_replaced(
+    unembedded_count: int,
+):
+    from sqlalchemy.dialects import postgresql
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.scalars.return_value.all.return_value = [
+        SimpleNamespace(page_number=1, text="بىرىنچى بەت", is_toc=False),
+    ]
+    mock_res.scalar_one_or_none.return_value = "in_progress"
+    mock_res.fetchall.return_value = []
+    mock_session.execute.return_value = mock_res
+
+    mock_cm = AsyncMock()
+    mock_cm.__aenter__.return_value = mock_session
+    mock_cm.__aexit__.return_value = False
+
+    mock_chunks_repo = AsyncMock()
+    mock_chunks_repo.replace_for_book.return_value = unembedded_count
+
+    mock_sections_repo = AsyncMock()
+    mock_sections_repo.list_leaf_sections.return_value = []
+
+    fake_chunk = SimpleNamespace(
+        page_number=1,
+        end_page_number=1,
+        chunk_index=0,
+        text="بىرىنچى بەت",
+        section_id=None,
+        text_hash="h1",
+    )
+
+    with (
+        patch(
+            "services.worker.jobs.chunking_job.db_session.async_session_factory",
+            return_value=mock_cm,
+        ),
+        patch(
+            "services.worker.jobs.chunking_job.ChunksRepository",
+            return_value=mock_chunks_repo,
+        ),
+        patch(
+            "services.worker.jobs.chunking_job.BookSectionsRepository",
+            return_value=mock_sections_repo,
+        ),
+        patch(
+            "services.worker.jobs.chunking_job.chunking_service.chunk_book_sections",
+            return_value=[fake_chunk],
+        ),
+        patch("services.worker.jobs.chunking_job.cache_service") as mock_cache,
+    ):
+        mock_cache.delete_pattern = AsyncMock()
+        await chunking_job({}, book_id="book-ready-1")
+
+    book_updates = [
+        str(
+            call.args[0].compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        )
+        for call in mock_session.execute.call_args_list
+        if "UPDATE books" in str(call.args[0])
+    ]
+    assert any("graph_milestone='idle'" in sql for sql in book_updates)

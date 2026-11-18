@@ -322,6 +322,8 @@
     "close": "Close",
     "fontSize": "Font Size",
     "editBook": "Edit Book",
+    "inspectChunks": "Chunks",
+    "inspectChunksTitle": "Inspect Chunks",
     "editPage": "Edit Page",
     "reprocessPage": "Reprocess Page",
     "loadFullDocument": "Load Full Document",
@@ -470,6 +472,7 @@
       "status": "Status",
       "actions": "Actions",
       "view": "View",
+      "inspectChunks": "Inspect Chunks",
       "copyBookId": "Copy Book ID",
       "edit": "Edit",
       "delete": "Delete",
@@ -689,6 +692,92 @@
       "confirmDelete": "Are you sure you want to delete \"{{word}}\"?",
       "deleteSuccess": "Proverb deleted.",
       "deleteError": "Failed to delete proverb."
+    },
+    "chunkInspector": {
+      "backToReader": "Back to Reader",
+      "backToReaderPage": "Back to Reader (Page {{page}})",
+      "backToAdmin": "Back to Admin",
+      "copyBookIdTitle": "Copy Book ID",
+      "reprocessChunking": "Re-chunk Book",
+      "loadError": "Failed to load chunks.",
+      "modeSemantic": "Question Search",
+      "modeText": "Filter Text",
+      "placeholderSemantic": "Ask a question about this book to inspect chunk similarity scores...",
+      "placeholderText": "Filter exact word or phrase inside chunks...",
+      "searchButton": "Search",
+      "rerankButton": "RAG Rerank",
+      "rerankButtonTitle": "Run Stage-2 Gemini LLM reranker on top vector candidates",
+      "clear": "Clear",
+      "pageLabel": "Page #:",
+      "allPagesPlaceholder": "All",
+      "filters": {
+        "all": "All Chunks",
+        "crossPage": "Cross-Page",
+        "unembedded": "Unembedded",
+        "short": "Short (<350)",
+        "oversized": "Oversized (>2500)"
+      },
+      "toggles": {
+        "overlap": "Highlight Overlap",
+        "prefix": "Embedding Prefix",
+        "sourcePane": "Source Page Text"
+      },
+      "stats": {
+        "totalChunks": "Total Chunks",
+        "embedded": "Embedded",
+        "crossPage": "Cross-Page",
+        "sections": "Sections",
+        "pageOffset": "Page Offset"
+      },
+      "sectionSource": {
+        "frontMatter": "Front Matter",
+        "tocMatched": "ToC",
+        "tocInterpolated": "Interpolated",
+        "headerDetected": "Heading",
+        "auto": "Auto"
+      },
+      "structure": {
+        "title": "Book Structure",
+        "all": "All",
+        "empty": "Book structure has not been generated yet.",
+        "meta": "Pages {{start}}–{{end}} · {{count}} chunks"
+      },
+      "stream": {
+        "count": "{{shown}} / {{total}} chunks",
+        "countPage": "{{shown}} / {{total}} chunks · Page {{page}}",
+        "loading": "Loading...",
+        "ragParams": "RAG threshold: {{threshold}} · target=1500 · overlap=200",
+        "empty": "No matching chunks found.",
+        "pdfPageSingle": "PDF Page {{page}}",
+        "pdfPageRange": "PDF Page {{start}} → {{end}}",
+        "printedPageSingle": "Printed Page {{page}}",
+        "printedPageRange": "Printed Pages {{start}}–{{end}}",
+        "crossPageBadge": "Stitched Across Pages",
+        "ragPass": "✓ Passes RAG",
+        "ragBelowThreshold": "✕ Below Threshold",
+        "rerankedSummary": "· Reranker kept: {{count}}",
+        "rerankRankBadge": "★ Rerank #{{rank}}",
+        "rerankDroppedBadge": "✕ Dropped by Reranker",
+        "charCount": "{{count}} chars",
+        "hasEmbedding": "Embedded",
+        "missingEmbedding": "Unembedded",
+        "embeddingPrefixHint": "Embedding prefix (not stored in Chunk.text):",
+        "overlapTooltip": "Repeated overlap from previous chunk",
+        "copy": "Copy",
+        "openInReader": "Open in Reader (Page {{page}})",
+        "loadMore": "Load more ({{shown}} / {{total}})"
+      },
+      "source": {
+        "title": "Source Page Text",
+        "pageSingle": "Page {{page}}",
+        "pageRange": "Pages {{start}}–{{end}}",
+        "loading": "Loading page text...",
+        "selectPrompt": "Select a chunk to compare.",
+        "stitchBoundary": "── Page stitch boundary ({{prev}} → {{next}}) ──",
+        "frontMatter": "Front Matter",
+        "emptyPage": "(Empty page)",
+        "cleanedNoiseTag": "[Cleaned]"
+      }
     }
   },
   "spellCheck": {

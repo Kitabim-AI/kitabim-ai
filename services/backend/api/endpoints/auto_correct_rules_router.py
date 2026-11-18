@@ -6,10 +6,10 @@ All endpoints require admin role.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Annotated, List, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select, delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -102,8 +102,8 @@ class UpdateAutoCorrectRuleRequest(BaseModel):
 
 @router.get("/auto-correct-rules", response_model=AutoCorrectRulePaginatedOut)
 async def list_auto_correct_rules(
-    skip: int = 0,
-    limit: int = 20,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 20,
     search: Optional[str] = None,
     auto_apply_only: bool = False,
     current_user: User = Depends(require_editor),

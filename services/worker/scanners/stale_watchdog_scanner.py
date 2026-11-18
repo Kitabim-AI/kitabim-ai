@@ -172,17 +172,31 @@ async def run_stale_watchdog(ctx) -> None:
                 Book.structure_claimed_at < max_duration_threshold,
             ),
         )
-        chunking_stale_cond = and_(
-            Book.chunking_milestone == BOOK_MILESTONE_IN_PROGRESS,
-            or_(
-                Book.chunking_claimed_at.is_(None),
+        chunking_stale_cond = or_(
+            and_(
+                Book.chunking_milestone == BOOK_MILESTONE_IN_PROGRESS,
+                or_(
+                    Book.chunking_claimed_at.is_(None),
+                    Book.chunking_claimed_at < max_duration_threshold,
+                ),
+            ),
+            and_(
+                Book.chunking_milestone == BOOK_MILESTONE_IDLE,
+                Book.chunking_claimed_at.isnot(None),
                 Book.chunking_claimed_at < max_duration_threshold,
             ),
         )
-        embed_stale_cond = and_(
-            Book.embedding_milestone == BOOK_MILESTONE_IN_PROGRESS,
-            or_(
-                Book.embedding_claimed_at.is_(None),
+        embed_stale_cond = or_(
+            and_(
+                Book.embedding_milestone == BOOK_MILESTONE_IN_PROGRESS,
+                or_(
+                    Book.embedding_claimed_at.is_(None),
+                    Book.embedding_claimed_at < book_threshold,
+                ),
+            ),
+            and_(
+                Book.embedding_milestone == BOOK_MILESTONE_IDLE,
+                Book.embedding_claimed_at.isnot(None),
                 Book.embedding_claimed_at < book_threshold,
             ),
         )

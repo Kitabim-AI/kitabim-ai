@@ -403,3 +403,57 @@ async def test_rerank_dedup_keeps_distinct_sections_sharing_same_page_and_format
     assert "Section: سالام" in graded_context
     assert "PrintedPage: 8" in graded_context
     assert "RefPages: 20" in graded_context
+
+
+@pytest.mark.asyncio
+async def test_rerank_dedup_drops_indexed_single_page_vector_chunk_when_keyword_page_present_and_keeps_cross_page():
+    keyword_obs = {
+        "tool": "search_keyword_phrase",
+        "result": {
+            "ok": True,
+            "data": {
+                "chunks": [
+                    {
+                        "book_id": "b1",
+                        "page": 5,
+                        "section_id": 10,
+                        "text": "FULL-KEYWORD-PAGE-5",
+                        "rank": 0.12,
+                    }
+                ]
+            },
+        },
+    }
+    vector_obs = _search_obs(
+        [
+            _chunk(
+                book_id="b1",
+                page=5,
+                end_page_number=5,
+                section_id=10,
+                chunk_index=0,
+                text="REDUNDANT-SINGLE-PAGE-CHUNK",
+                score=0.92,
+            ),
+            _chunk(
+                book_id="b1",
+                page=5,
+                end_page_number=6,
+                section_id=10,
+                chunk_index=1,
+                text="CROSS-PAGE-BRIDGE-CHUNK",
+                score=0.88,
+            ),
+        ]
+    )
+    llm = _mock_llm("[1, 2]")
+    with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
+        graded_context, before_count, after_count = await rerank_context(
+            "q", [vector_obs, keyword_obs], model="m"
+        )
+
+    assert before_count == 3
+    assert after_count == 2
+    assert "FULL-KEYWORD-PAGE-5" in graded_context
+    assert "CROSS-PAGE-BRIDGE-CHUNK" in graded_context
+    assert "REDUNDANT-SINGLE-PAGE-CHUNK" not in graded_context

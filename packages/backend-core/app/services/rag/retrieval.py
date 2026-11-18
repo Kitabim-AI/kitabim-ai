@@ -47,8 +47,10 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
     if query_stripped in local_cache:
         return local_cache[query_stripped]
 
-    # 2. Redis/External API check
-    q_hash = hashlib.md5(query_stripped.encode(), usedforsecurity=False).hexdigest()
+    # 2. Redis/External API check (v2 hash namespace includes asymmetric QA query prefix)
+    q_hash = hashlib.md5(
+        f"v2:{query_stripped}".encode(), usedforsecurity=False
+    ).hexdigest()
     emb_cache_key = cache_config.KEY_RAG_EMBEDDING.format(hash=q_hash)
     try:
         vector = await cache_service.get(emb_cache_key)
