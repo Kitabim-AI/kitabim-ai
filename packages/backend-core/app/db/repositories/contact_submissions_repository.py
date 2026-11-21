@@ -54,6 +54,32 @@ class ContactSubmissionsRepository(BaseRepository[ContactSubmission]):
         result = await self.session.execute(stmt)
         return result.scalar_one()
 
+    async def update_submission(
+        self,
+        submission_id: int,
+        *,
+        status: Optional[str] = None,
+        admin_notes: Optional[str] = None,
+        update_notes: bool = False,
+        reviewed_by: Optional[str] = None,
+    ) -> Optional[ContactSubmission]:
+        """Update status and/or admin notes for a contact submission."""
+        values: dict = {}
+        if status is not None:
+            values["status"] = status
+            if status == "new":
+                values["reviewed_by"] = None
+                values["reviewed_at"] = None
+            else:
+                values["reviewed_by"] = reviewed_by
+                values["reviewed_at"] = func.now()
+
+        if update_notes:
+            cleaned_notes = admin_notes.strip() if admin_notes else None
+            values["admin_notes"] = cleaned_notes or None
+
+        return await self.update_one(submission_id, **values)
+
 
 def get_contact_submissions_repository(
     session: AsyncSession,

@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import engine.recognize as svc
@@ -2051,3 +2052,180 @@ async def test_ocr_prepared_wave_timeout_falls_back_per_page_and_fails_only_slow
     assert isinstance(outcomes[3], svc.PageOcrResult)
     # Slow page timed out once and did not zoom-retry
     assert call_Counter["single"] == 3
+
+
+@pytest.mark.asyncio
+async def test_prepare_page_wave_isolates_jbig2_rasterize_error_and_rejects_blank_pdfium_fallback(
+    tmp_path: Path,
+):
+    import fitz
+    import threading
+    from PIL import Image
+    from types import SimpleNamespace
+
+    pdf_file = tmp_path / "corrupt_jbig2.pdf"
+    src_doc = fitz.open()
+    for i in range(3):
+        p = src_doc.new_page(width=300, height=400)
+        p.draw_rect(fitz.Rect(30, 40 + i * 20, 260, 180 + i * 20), fill=(0, 0, 0))
+    src_doc.save(pdf_file)
+    src_doc.close()
+
+    doc = fitz.open(pdf_file)
+    doc_lock = threading.Lock()
+    orig_load_page = doc.load_page
+
+    def _load_with_corrupt_p2(idx: int):
+        real_page = orig_load_page(idx)
+        if idx == 1:
+            bad_page = MagicMock(wraps=real_page)
+            bad_page.rect = real_page.rect
+            bad_page.get_pixmap.side_effect = RuntimeError(
+                "code=3: cannot decode jbig2 globals"
+            )
+            return bad_page
+        return real_page
+
+    # Simulate PDFium silently rendering all-white on unrecoverable JBIG2 stream:
+    # _try_render_page_with_pdfium must reject variance == 0.0 and keep render_error.
+    mock_pdfium_page = MagicMock()
+    mock_pdfium_page.render.return_value.to_pil.return_value = Image.new(
+        "RGB", (600, 800), color=(255, 255, 255)
+    )
+    mock_pdfium_doc = MagicMock()
+    mock_pdfium_doc.__len__.return_value = 3
+    mock_pdfium_doc.__getitem__.return_value = mock_pdfium_page
+
+    with (
+        patch.object(doc, "load_page", side_effect=_load_with_corrupt_p2),
+        patch("pypdfium2.PdfDocument", return_value=mock_pdfium_doc),
+    ):
+        prepared = await svc.prepare_page_wave_async(
+            doc, [1, 2, 3], doc_lock, max_parallel_pages=3
+        )
+
+    assert [it.page_number for it in prepared] == [1, 2, 3]
+    assert prepared[0].render_error is None and prepared[0].image is not None
+    assert prepared[1].render_error is not None
+    assert "cannot decode jbig2 globals" in str(prepared[1].render_error)
+    assert prepared[1].is_blank is False
+    assert prepared[2].render_error is None and prepared[2].image is not None
+
+    def _fake_predictor(images, full_page=True):
+        assert len(images) == 2
+        b1 = _boxed_block("Text", "<p>بىرىنچى بەت.</p>", 0, 40, 180)
+        b3 = _boxed_block("Text", "<p>ئۈچىنچى بەت.</p>", 0, 80, 220)
+        return [SimpleNamespace(blocks=[b1]), SimpleNamespace(blocks=[b3])]
+
+    with patch("engine.recognize._is_phantom_bleed_through_block", return_value=False):
+        outcomes = await svc.ocr_prepared_wave_with_meta(
+            doc,
+            prepared,
+            _fake_predictor,
+            doc_lock=doc_lock,
+            max_parallel_pages=3,
+        )
+    doc.close()
+
+    assert outcomes[1].text == "بىرىنچى بەت."
+    assert isinstance(outcomes[2], RuntimeError)
+    assert "cannot decode jbig2 globals" in str(outcomes[2])
+    assert outcomes[3].text == "ئۈچىنچى بەت."
+
+
+@pytest.mark.asyncio
+async def test_prepare_page_wave_recovers_page_via_pdfium_when_non_blank(
+    tmp_path: Path,
+):
+    import fitz
+    import threading
+    from PIL import Image, ImageDraw
+
+    pdf_file = tmp_path / "recoverable_jbig2.pdf"
+    src_doc = fitz.open()
+    src_doc.new_page(width=300, height=400)
+    src_doc.save(pdf_file)
+    src_doc.close()
+
+    doc = fitz.open(pdf_file)
+    doc_lock = threading.Lock()
+
+    bad_page = MagicMock()
+    bad_page.rect = fitz.Rect(0, 0, 300, 400)
+    bad_page.get_pixmap.side_effect = RuntimeError(
+        "code=3: cannot decode jbig2 globals"
+    )
+
+    recovered_img = Image.new("RGB", (600, 800), color=(255, 255, 255))
+    ImageDraw.Draw(recovered_img).rectangle([(50, 80), (520, 360)], fill=(0, 0, 0))
+    mock_pdfium_page = MagicMock()
+    mock_pdfium_page.render.return_value.to_pil.return_value = recovered_img
+    mock_pdfium_doc = MagicMock()
+    mock_pdfium_doc.__len__.return_value = 1
+    mock_pdfium_doc.__getitem__.return_value = mock_pdfium_page
+
+    with (
+        patch.object(doc, "load_page", return_value=bad_page),
+        patch("pypdfium2.PdfDocument", return_value=mock_pdfium_doc),
+    ):
+        prepared = await svc.prepare_page_wave_async(
+            doc, [1], doc_lock, max_parallel_pages=1
+        )
+    doc.close()
+
+    assert len(prepared) == 1
+    assert prepared[0].render_error is None
+    assert prepared[0].is_blank is False
+    assert prepared[0].image is not None
+
+
+def test_toc_parenthesized_page_numbers_strip_cleanly_without_orphan_parens():
+    lines = [
+        "## مۇندەرىجە",
+        "### بىرىنچى قىسىم توپىلاڭ",
+        "قۇۋا. قىل ئۈستىدە تۇرغان تەقدىرلەر .......................... ( 1 )",
+        "ئاخسى. ئەجەلگە داۋا يوق ....................................... ( 29 )",
+        "ئوش. نىجاتلىق نەدە؟ .......................................... (108)",
+        "تاشكەنت. ئۆرە تۆپە. ئىسپەرە. كۆچكۈن باسقان بۇلاق...",
+        "............................................................... ( 357 )",
+        "### ئىككىنچى قىسىم پەلەكنىڭ گەردىشى",
+        "ھىرات. تولغان پەيمانىلەر ...................................... ( 414 )",
+        "خاتىمە ........................................................ ( 775 )",
+    ]
+    formatted = svc._format_toc_lines_to_markdown(lines)
+    assert formatted == (
+        "## مۇندەرىجە\n\n"
+        "### بىرىنچى قىسىم توپىلاڭ\n\n"
+        "| قۇۋا. قىل ئۈستىدە تۇرغان تەقدىرلەر | 1 |\n"
+        "| ئاخسى. ئەجەلگە داۋا يوق | 29 |\n"
+        "| ئوش. نىجاتلىق نەدە؟ | 108 |\n"
+        "| تاشكەنت. ئۆرە تۆپە. ئىسپەرە. كۆچكۈن باسقان بۇلاق | 357 |\n\n"
+        "### ئىككىنچى قىسىم پەلەكنىڭ گەردىشى\n\n"
+        "| ھىرات. تولغان پەيمانىلەر | 414 |\n"
+        "| خاتىمە | 775 |"
+    )
+
+    # Inline collapsed ToC entries with normal `( N )` and RTL-reversed `) N (`
+    assert (
+        svc._format_toc_lines_to_markdown(["قۇۋا ....... ( 1 ) ئاخسى ....... ( 29 )"])
+        == "| قۇۋا | 1 |\n| ئاخسى | 29 |"
+    )
+    assert (
+        svc._format_toc_lines_to_markdown(["قۇۋا ....... ) 1 ( ئاخسى ....... ) 29 ("])
+        == "| قۇۋا | 1 |\n| ئاخسى | 29 |"
+    )
+
+    # Preserve legitimate parentheticals inside chapter titles while stripping orphan page brackets
+    assert (
+        svc._format_table_row("بىرىنچى باب (مۇقەددىمە) ....... ( 15 )")
+        == "| بىرىنچى باب (مۇقەددىمە) | 15 |"
+    )
+    assert (
+        svc._format_table_row("بىرىنچى باب (1945) 15") == "| بىرىنچى باب (1945) | 15 |"
+    )
+    assert (
+        svc._format_table_row("(1) بىرىنچى باب ....... ( 15 )")
+        == "| (1) بىرىنچى باب | 15 |"
+    )
+    assert svc._format_table_row("قۇۋا ....... ( 15") == "| قۇۋا | 15 |"
+    assert svc._format_table_row("قۇۋا ....... 15 )") == "| قۇۋا | 15 |"

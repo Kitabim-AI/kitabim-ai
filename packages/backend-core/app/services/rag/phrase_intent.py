@@ -24,6 +24,12 @@ _PAGE_FINDING_MARKERS = (
     "find pages with",
     "which pages mention",
     "show me where",
+    "قايسى بەتتە",
+    "قايسى بەتلەردە",
+    "نەچچىنچى بەتتە",
+    "نەچچىنچى بەتلەردە",
+    "بەتلەرنى تېپىپ",
+    "قايسى بەتتىن",
 )
 
 

@@ -74,6 +74,7 @@ async def run_exact_phrase_retrieval(
             "volume": h.get("volume"),
             "author": h.get("author"),
             "score": h.get("rank", 0.0),
+            "rank": h.get("rank", 0.0),
         }
         for h in hits
     ]

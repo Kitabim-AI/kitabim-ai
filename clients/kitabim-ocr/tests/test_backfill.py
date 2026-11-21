@@ -577,3 +577,96 @@ async def test_run_backfill_excludes_locally_skipped_books_with_limit(tmp_path: 
     assert mock_single.await_args.args[0] == "b-process"
     # Requested batch_limit accounted for the 2 skipped IDs so limit=1 did not starve
     assert client.get_backfill_candidates.call_args.kwargs["limit"] == 3
+
+
+@pytest.mark.asyncio
+async def test_backfill_single_book_isolates_jbig2_render_error_and_completes_book(
+    tmp_path: Path,
+):
+    from types import SimpleNamespace
+
+    client = MagicMock()
+
+    def _fake_download(book_id: str, dest: Path):
+        doc = fitz.open()
+        for i in range(4):
+            p = doc.new_page(width=300, height=400)
+            p.draw_rect(fitz.Rect(30, 40 + i * 15, 260, 180 + i * 15), fill=(0, 0, 0))
+        doc.save(dest)
+        doc.close()
+        return dest
+
+    client.download_book_pdf.side_effect = _fake_download
+    client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "Cover", "isToc": False},
+        {"pageNumber": 2, "text": "Old page 2", "isToc": False},
+        {
+            "pageNumber": 3,
+            "text": "[OCR Error: code=3: cannot decode jbig2 globals]",
+            "isToc": False,
+        },
+        {"pageNumber": 4, "text": "Old page 4", "isToc": False},
+    ]
+    client.replace_book_ocr.return_value = {"pagesUpdated": 2, "pagesUnchanged": 2}
+
+    orig_open = fitz.open
+
+    def _open_with_corrupt_p3(*args, **kwargs):
+        real_doc = orig_open(*args, **kwargs)
+        orig_load = real_doc.load_page
+
+        def _load_page(idx: int):
+            p = orig_load(idx)
+            if idx == 2:  # 1-indexed page 3
+                bad = MagicMock(wraps=p)
+                bad.rect = p.rect
+                bad.get_pixmap.side_effect = RuntimeError(
+                    "code=3: cannot decode jbig2 globals"
+                )
+                return bad
+            return p
+
+        real_doc.load_page = _load_page  # type: ignore[method-assign]
+        return real_doc
+
+    def _fake_predictor(images, full_page=True):
+        out = []
+        for idx, _ in enumerate(images, start=1):
+            blk = SimpleNamespace(
+                label="Text",
+                html=f"<p>يېڭى تېكىست {idx}.</p>",
+                reading_order=0,
+                confidence=0.98,
+                skipped=False,
+                error=False,
+                polygon=[[30, 40], [260, 40], [260, 180], [30, 180]],
+            )
+            out.append(SimpleNamespace(blocks=[blk]))
+        return out
+
+    with (
+        patch("backfill.fitz.open", side_effect=_open_with_corrupt_p3),
+        patch("engine.recognize._try_render_page_with_pdfium", return_value=None),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+        patch(
+            "backfill.get_recognition_predictor",
+            new=AsyncMock(return_value=_fake_predictor),
+        ),
+    ):
+        entry = await backfill.backfill_single_book(
+            "201472c91cbe", client, tmp_path, concurrency=2
+        )
+
+    assert entry["total_pages"] == 4
+    assert entry["ocrd_pages"] == 2
+    assert entry["skipped_pages"] == 1
+    assert entry["failed_pages"] == 1
+
+    sent_pages = client.replace_book_ocr.call_args.args[1]
+    assert sent_pages[0].skipped is True  # cover
+    assert sent_pages[1].skipped is False and "يېڭى تېكىست" in sent_pages[1].text
+    assert sent_pages[2].status == "failed"
+    assert sent_pages[2].skipped is True
+    assert "cannot decode jbig2 globals" in (sent_pages[2].error or "")
+    assert sent_pages[2].text == "[OCR Error: code=3: cannot decode jbig2 globals]"
+    assert sent_pages[3].skipped is False and "يېڭى تېكىست" in sent_pages[3].text

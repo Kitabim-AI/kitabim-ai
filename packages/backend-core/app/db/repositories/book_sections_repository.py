@@ -124,6 +124,7 @@ class BookSectionsRepository(BaseRepository[BookSection]):
         book_ids: Optional[List[str]] = None,
         author_filter: Optional[str] = None,
         limit: int = 25,
+        is_staff: Optional[bool] = None,
     ) -> List[dict[str, Any]]:
         """Search `book_sections` by normalized title with exact-before-fuzzy ranking.
 
@@ -139,6 +140,13 @@ class BookSectionsRepository(BaseRepository[BookSection]):
         if book_ids is not None and len(book_ids) == 0:
             return []
 
+        from app.services.rag.context import resolve_rag_is_staff
+
+        access_sql = (
+            "b.status != 'error'"
+            if resolve_rag_is_staff(is_staff)
+            else "b.status = 'ready' AND (b.visibility = 'public' OR b.visibility IS NULL)"
+        )
         escaped_norm = (
             norm.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         )
@@ -182,8 +190,7 @@ class BookSectionsRepository(BaseRepository[BookSection]):
                 ON p_start.book_id = bs.book_id AND p_start.page_number = bs.start_page
             LEFT JOIN pages p_end
                 ON p_end.book_id = bs.book_id AND p_end.page_number = bs.end_page
-            WHERE b.status = 'ready'
-              AND (b.visibility = 'public' OR b.visibility IS NULL)
+            WHERE {access_sql}
               AND bs.section_type IN ('work', 'chapter')
               AND (
                   bs.normalized_title = :norm

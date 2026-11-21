@@ -1,6 +1,10 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from app.llm.models import GeminiEmbeddings, disabled_thinking_config
+from app.llm.models import (
+    GeminiEmbeddings,
+    _embed_http_sessions,
+    disabled_thinking_config,
+)
 
 
 @pytest.mark.parametrize(
@@ -12,6 +16,8 @@ from app.llm.models import GeminiEmbeddings, disabled_thinking_config
         ("gemini-3.7-flash", {"thinking_level": "MEDIUM"}),
         ("gemini-3.5-flash", {"thinking_budget": 0}),
         ("gemini-3.6-flash", {"thinking_level": "LOW"}),
+        ("gemini-3.8-flash", {"thinking_level": "LOW"}),
+        ("gemini-4-argon", {"thinking_level": "LOW"}),
         ("gemini-3.1-pro-preview", {"thinking_level": "LOW"}),
         ("gemini-embedding-2", {"thinking_budget": 0}),
     ],
@@ -41,6 +47,7 @@ async def test_gemini_embeddings_aembed_query(mock_breaker_call):
         return await fn(*args, **kwargs)
 
     mock_breaker_call.side_effect = side_effect
+    _embed_http_sessions.clear()
 
     # Mock response
     mock_resp = MagicMock()
@@ -52,34 +59,39 @@ async def test_gemini_embeddings_aembed_query(mock_breaker_call):
     mock_resp_cm.__aenter__ = AsyncMock(return_value=mock_resp)
     mock_resp_cm.__aexit__ = AsyncMock()
 
-    # Mock session
+    # Mock reusable session
     mock_session = MagicMock()
+    mock_session.closed = False
     mock_session.post = MagicMock(return_value=mock_resp_cm)
 
-    # Mock session context manager
-    mock_session_cm = MagicMock()
-    mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session_cm.__aexit__ = AsyncMock()
+    try:
+        with patch("aiohttp.ClientSession", return_value=mock_session) as mock_cls:
+            ge = GeminiEmbeddings("gemini-embedding-2")
+            result = await ge.aembed_query("hello")
+            result2 = await ge.aembed_query("world")
 
-    with patch("aiohttp.ClientSession", return_value=mock_session_cm):
-        ge = GeminiEmbeddings("gemini-embedding-2")
-        result = await ge.aembed_query("hello")
+            assert result == [0.1, 0.2, 0.3]
+            assert result2 == [0.1, 0.2, 0.3]
+            # Session must be reused on the same event loop
+            mock_cls.assert_called_once()
+            assert mock_session.post.call_count == 2
 
-        assert result == [0.1, 0.2, 0.3]
+            # Verify URL, API key header (not URL query param), and payload format
+            args, kwargs = mock_session.post.call_args_list[0]
+            url = args[0]
+            assert "v1beta/models/gemini-embedding-2" in url
+            assert "key=" not in url
+            assert "x-goog-api-key" in kwargs["headers"]
 
-        # Verify URL and payload format
-        mock_session.post.assert_called_once()
-        args, kwargs = mock_session.post.call_args
-        url = args[0]
-        assert "v1beta/models/gemini-embedding-2" in url
-
-        json_payload = kwargs["json"]
-        assert json_payload["model"] == "models/gemini-embedding-2"
-        assert (
-            json_payload["content"]["parts"][0]["text"]
-            == "task: question answering | query: hello"
-        )
-        assert "taskType" not in json_payload
+            json_payload = kwargs["json"]
+            assert json_payload["model"] == "models/gemini-embedding-2"
+            assert (
+                json_payload["content"]["parts"][0]["text"]
+                == "task: question answering | query: hello"
+            )
+            assert "taskType" not in json_payload
+    finally:
+        _embed_http_sessions.clear()
 
 
 @pytest.mark.asyncio
@@ -89,6 +101,7 @@ async def test_gemini_embeddings_aembed_documents(mock_breaker_call):
         return await fn(*args, **kwargs)
 
     mock_breaker_call.side_effect = side_effect
+    _embed_http_sessions.clear()
 
     # Mock response
     mock_resp = MagicMock()
@@ -102,33 +115,34 @@ async def test_gemini_embeddings_aembed_documents(mock_breaker_call):
     mock_resp_cm.__aenter__ = AsyncMock(return_value=mock_resp)
     mock_resp_cm.__aexit__ = AsyncMock()
 
-    # Mock session
+    # Mock reusable session
     mock_session = MagicMock()
+    mock_session.closed = False
     mock_session.post = MagicMock(return_value=mock_resp_cm)
 
-    # Mock session context manager
-    mock_session_cm = MagicMock()
-    mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session_cm.__aexit__ = AsyncMock()
+    try:
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            ge = GeminiEmbeddings("models/gemini-embedding-2")
+            result = await ge.aembed_documents(["hello", "world"])
 
-    with patch("aiohttp.ClientSession", return_value=mock_session_cm):
-        ge = GeminiEmbeddings("models/gemini-embedding-2")
-        result = await ge.aembed_documents(["hello", "world"])
+            assert result == [[0.1, 0.2], [0.3, 0.4]]
 
-        assert result == [[0.1, 0.2], [0.3, 0.4]]
+            mock_session.post.assert_called_once()
+            args, kwargs = mock_session.post.call_args
+            url = args[0]
+            assert "v1beta/models/gemini-embedding-2" in url
+            assert "key=" not in url
+            assert "x-goog-api-key" in kwargs["headers"]
 
-        mock_session.post.assert_called_once()
-        args, kwargs = mock_session.post.call_args
-        url = args[0]
-        assert "v1beta/models/gemini-embedding-2" in url
-
-        json_payload = kwargs["json"]
-        requests = json_payload["requests"]
-        assert len(requests) == 2
-        assert requests[0]["model"] == "models/gemini-embedding-2"
-        assert requests[0]["content"]["parts"][0]["text"] == "hello"
-        assert requests[1]["model"] == "models/gemini-embedding-2"
-        assert requests[1]["content"]["parts"][0]["text"] == "world"
+            json_payload = kwargs["json"]
+            requests = json_payload["requests"]
+            assert len(requests) == 2
+            assert requests[0]["model"] == "models/gemini-embedding-2"
+            assert requests[0]["content"]["parts"][0]["text"] == "hello"
+            assert requests[1]["model"] == "models/gemini-embedding-2"
+            assert requests[1]["content"]["parts"][0]["text"] == "world"
+    finally:
+        _embed_http_sessions.clear()
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,7 @@ Defines shared Pydantic v2 data transfer objects (DTOs), API request/response sc
 - `[schemas.py:ContactSubmissionCreate]` — `class ContactSubmissionCreate(BaseModel)`: Public contact form request (`name`, `email`, `interest`, `message`).
 - `[schemas.py:ContactSubmissionPublic]` — `class ContactSubmissionPublic(BaseModel)`: Public acknowledgment response (`id`, `status`, `created_at`).
 - `[schemas.py:ContactSubmissionAdmin]` — `class ContactSubmissionAdmin(BaseModel)`: Admin view of a contact submission (`id`, `name`, `email`, `interest`, `message`, `status`, `admin_notes`, `reviewed_by`, `reviewed_at`, `created_at`).
+- `[schemas.py:ContactSubmissionUpdate]` — `class ContactSubmissionUpdate(BaseModel)`: Admin update payload for a contact submission (`status`, `admin_notes`).
 - `[schemas.py:RagQuestionAdmin]` — `class RagQuestionAdmin(BaseModel)`: Admin RAG evaluation and cost record (`id`, `question`, `is_global`, `book_id`, `book_title`, `user_id`, `user_display_name`, `is_first_turn`, `show_on_homepage`, `user_feedback`, `ts`, `eval_status`, `faithfulness_score`, `answer_relevance_score`, `context_precision_score`, `input_tokens`, `output_tokens`, `cost_usd`, `answer`, `retrieved_context`).
 - `[schemas.py:RagQuestionsPage]` — `class RagQuestionsPage(BaseModel)`: Offset/limit paginated RAG evaluation records (`items`, `total`, `offset`, `limit`).
 - `[schemas.py:RagQuestionToggle]` — `class RagQuestionToggle(BaseModel)`: Request payload to toggle `show_on_homepage`.

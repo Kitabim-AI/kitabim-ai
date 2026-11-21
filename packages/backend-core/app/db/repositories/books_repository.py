@@ -810,24 +810,43 @@ class BooksRepository(BaseRepository[Book]):
     # RAG catalog lookup helpers (used by modular RAG handlers)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _rag_book_access_clauses(is_staff: Optional[bool] = None) -> list:
+        from app.services.rag.context import resolve_rag_is_staff
+
+        if resolve_rag_is_staff(is_staff):
+            return [Book.status != "error"]
+        return [
+            Book.status == "ready",
+            or_(
+                Book.visibility == "public",
+                Book.visibility.is_(None),
+                Book.visibility == "",
+            ),
+        ]
+
     async def find_author_by_title_in_question(
         self,
         question: str,
         categories: Optional[List[str]] = None,
+        is_staff: Optional[bool] = None,
     ) -> Optional[tuple[str, str]]:
         """Return (title, author) if a known book title is word-prefix matched in question.
 
         Uses the same Uyghur agglutinative suffix matching as the RAG pipeline.
         Returns None when no title is matched.
         """
+        access_clauses = self._rag_book_access_clauses(is_staff)
         stmt = select(Book.title, Book.author).where(
-            Book.status != "error", Book.author.isnot(None)
+            *access_clauses, Book.author.isnot(None)
         )
         if categories:
             from sqlalchemy import text as sa_text
 
             stmt = stmt.where(
-                sa_text("categories && :cats").bindparams(cats=categories)
+                sa_text("categories && CAST(:cats AS text[])").bindparams(
+                    cats=categories
+                )
             )
 
         result = await self.session.execute(stmt)
@@ -847,22 +866,28 @@ class BooksRepository(BaseRepository[Book]):
         self,
         question: str,
         categories: Optional[List[str]] = None,
+        is_staff: Optional[bool] = None,
     ) -> List[Book]:
         """Return all books by an author whose name is word-prefix matched in question.
 
         Returns an empty list when no author is matched.
         """
-        stmt = (
-            select(Book.author)
-            .where(Book.author.isnot(None), Book.status != "error")
-            .distinct()
-        )
+        access_clauses = self._rag_book_access_clauses(is_staff)
+        cat_clause = None
         if categories:
             from sqlalchemy import text as sa_text
 
-            stmt = stmt.where(
-                sa_text("categories && :cats").bindparams(cats=categories)
+            cat_clause = sa_text("categories && CAST(:cats AS text[])").bindparams(
+                cats=categories
             )
+
+        stmt = (
+            select(Book.author)
+            .where(Book.author.isnot(None), *access_clauses)
+            .distinct()
+        )
+        if cat_clause is not None:
+            stmt = stmt.where(cat_clause)
 
         result = await self.session.execute(stmt)
         authors = [row[0] for row in result.fetchall() if row[0]]
@@ -876,13 +901,17 @@ class BooksRepository(BaseRepository[Book]):
 
         stmt = (
             select(Book)
-            .where(Book.status != "error", Book.author == matched_author)
+            .where(*access_clauses, Book.author == matched_author)
             .order_by(Book.volume.asc().nulls_first(), Book.title.asc())
         )
+        if cat_clause is not None:
+            stmt = stmt.where(cat_clause)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def find_sister_volumes(self, book_id: str) -> "List[Book]":
+    async def find_sister_volumes(
+        self, book_id: str, is_staff: Optional[bool] = None
+    ) -> "List[Book]":
         """Return all volumes of the same title+author as book_id, sorted by volume."""
         stmt = select(Book).where(Book.id == book_id)
         result = await self.session.execute(stmt)
@@ -890,31 +919,40 @@ class BooksRepository(BaseRepository[Book]):
         if not book or not book.title:
             return []
 
+        access_clauses = self._rag_book_access_clauses(is_staff)
         stmt = (
             select(Book)
             .where(
                 Book.title == book.title,
                 Book.author == book.author,
-                Book.status != "error",
+                *access_clauses,
             )
             .order_by(Book.volume.asc().nulls_first())
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def find_existing_ids(self, book_ids: List[str]) -> set[str]:
-        """Return the subset of book_ids that exist in `books`.
+    async def find_existing_ids(
+        self, book_ids: List[str], is_staff: Optional[bool] = None
+    ) -> set[str]:
+        """Return the subset of book_ids that exist and are accessible in `books`.
 
         Used to drop book IDs the retrieval agent invented (e.g. a title passed
         where an ID belongs) before they scope a search down to zero results.
         """
         if not book_ids:
             return set()
-        stmt = select(Book.id).where(Book.id.in_([str(b) for b in book_ids]))
+        access_clauses = self._rag_book_access_clauses(is_staff)
+        stmt = select(Book.id).where(
+            Book.id.in_([str(b) for b in book_ids]),
+            *access_clauses,
+        )
         result = await self.session.execute(stmt)
         return {str(row[0]) for row in result.fetchall()}
 
-    async def find_titles_by_ids(self, book_ids: List[str]) -> List[dict]:
+    async def find_titles_by_ids(
+        self, book_ids: List[str], is_staff: Optional[bool] = None
+    ) -> List[dict]:
         """Return [{id, title, author, volume}] for the given book IDs, title-bearing rows only.
 
         Used to surface human-readable book identity (not just opaque IDs) to the
@@ -922,8 +960,11 @@ class BooksRepository(BaseRepository[Book]):
         """
         if not book_ids:
             return []
+        access_clauses = self._rag_book_access_clauses(is_staff)
         stmt = select(Book.id, Book.title, Book.author, Book.volume).where(
-            Book.id.in_(book_ids), Book.title.is_not(None)
+            Book.id.in_(book_ids),
+            Book.title.is_not(None),
+            *access_clauses,
         )
         result = await self.session.execute(stmt)
         return [
@@ -935,18 +976,24 @@ class BooksRepository(BaseRepository[Book]):
         self,
         question: str,
         categories: Optional[List[str]] = None,
+        is_staff: Optional[bool] = None,
     ) -> List[dict]:
         """Return [{title, volume, total_pages}] for a book title matched in question.
 
         Returns an empty list when no title is matched.
         """
-        stmt = select(Book.title).where(Book.status != "error")
+        access_clauses = self._rag_book_access_clauses(is_staff)
+        cat_clause = None
         if categories:
             from sqlalchemy import text as sa_text
 
-            stmt = stmt.where(
-                sa_text("categories && :cats").bindparams(cats=categories)
+            cat_clause = sa_text("categories && CAST(:cats AS text[])").bindparams(
+                cats=categories
             )
+
+        stmt = select(Book.title).where(*access_clauses)
+        if cat_clause is not None:
+            stmt = stmt.where(cat_clause)
 
         result = await self.session.execute(stmt)
         titles = [row[0] for row in result.fetchall() if row[0]]
@@ -964,9 +1011,11 @@ class BooksRepository(BaseRepository[Book]):
 
         stmt = (
             select(Book.title, Book.volume, Book.total_pages)
-            .where(Book.status != "error", Book.title == matched_title)
+            .where(*access_clauses, Book.title == matched_title)
             .order_by(Book.volume.asc().nulls_first())
         )
+        if cat_clause is not None:
+            stmt = stmt.where(cat_clause)
         result = await self.session.execute(stmt)
         return [
             {"title": row[0], "volume": row[1], "total_pages": row[2]}

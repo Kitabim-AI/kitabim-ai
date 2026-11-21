@@ -56,6 +56,7 @@ from preview.server import (
     list_pages_response,
     push_response,
     redo_pages_response,
+    render_page_png,
     update_page_response,
 )
 
@@ -2997,6 +2998,7 @@ _APP_HTML = """<!doctype html>
         const totalPages = item.total_pages || 0;
         const ocrdPages = item.ocrd_pages || 0;
         const skippedPages = item.skipped_pages || 0;
+        const failedPages = item.failed_pages || 0;
         const updatedPages = item.pages_updated !== undefined ? item.pages_updated : ocrdPages;
         const elapsedStr = item.elapsed_s ? `${item.elapsed_s}s` : '';
         const tsStr = item.timestamp ? new Date(item.timestamp * 1000).toLocaleString() : '—';
@@ -3009,7 +3011,7 @@ _APP_HTML = """<!doctype html>
             </td>
             <td>
               <div style="font-size: 0.85rem; color: var(--slate-700); font-weight: 600;">
-                ${totalPages} ${escapeHtml(t('library.pages_suffix'))} · OCR: ${ocrdPages} · ${escapeHtml(t('backfill.badge_skipped'))}: ${skippedPages}
+                ${totalPages} ${escapeHtml(t('library.pages_suffix'))} · OCR: ${ocrdPages} · ${escapeHtml(t('backfill.badge_skipped'))}: ${skippedPages}${failedPages > 0 ? ` · <span style="color: var(--accent-rose);">${escapeHtml(t('backfill.stat_failed', {count: failedPages}))}</span>` : ''}
               </div>
               <div style="font-size: 0.76rem; color: var(--slate-500); margin-top: 0.15rem;">
                 يېڭىلانغان: ${updatedPages} بەت ${elapsedStr ? '· ' + escapeHtml(elapsedStr) : ''}
@@ -3484,17 +3486,6 @@ def get_app_html(lang: str = "ug", engine: Optional[str] = None) -> str:
     )
 
 
-RENDER_ZOOM = 1.5
-
-
-def render_page_png(
-    doc: "fitz.Document", page_number: int, zoom: float = RENDER_ZOOM
-) -> bytes:
-    page = doc.load_page(page_number - 1)
-    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-    return pix.tobytes("png")
-
-
 def _start_existing_book(
     book_id: str, client: KitabimClient, work_root: Path
 ) -> OcrWorkDir:
@@ -3508,23 +3499,25 @@ def _start_existing_book(
 
     existing_pages = client.get_book_pages(book_id)
     doc = fitz.open(pdf_path)
-
-    workdir = OcrWorkDir.create(
-        out_dir, source_pdf=pdf_path, total_pages=len(doc), book_id=book_id
-    )
-    for page in existing_pages:
-        workdir.image_path(page["pageNumber"]).write_bytes(
-            render_page_png(doc, page["pageNumber"])
+    try:
+        workdir = OcrWorkDir.create(
+            out_dir, source_pdf=pdf_path, total_pages=len(doc), book_id=book_id
         )
-        workdir.set_page(
-            page["pageNumber"],
-            text=page.get("text") or "",
-            is_toc=bool(page.get("isToc")),
-            confidence=1.0,
-            status="from_kitabim",
-        )
-    workdir.save()
-    return workdir
+        for page in existing_pages:
+            workdir.image_path(page["pageNumber"]).write_bytes(
+                render_page_png(doc, page["pageNumber"])
+            )
+            workdir.set_page(
+                page["pageNumber"],
+                text=page.get("text") or "",
+                is_toc=bool(page.get("isToc")),
+                confidence=1.0,
+                status="from_kitabim",
+            )
+        workdir.save()
+        return workdir
+    finally:
+        doc.close()
 
 
 class StartExistingRequest(BaseModel):
@@ -3606,7 +3599,6 @@ async def _run_ocr_background(
                         )
                         workdir.save()
 
-                    fitz_page = doc.load_page(page_number - 1)
                     img_path = workdir.image_path(page_number)
                     if not img_path.exists():
                         try:
@@ -3615,6 +3607,7 @@ async def _run_ocr_background(
                         except Exception:
                             pass
                     try:
+                        fitz_page = doc.load_page(page_number - 1)
                         text = await ocr_page(
                             fitz_page,
                             predictor,

@@ -339,6 +339,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     >
                       <MarkdownContent
                         content={msg.text}
+                        isTocPage={false}
+                        allowDashLists={true}
                         onReferenceClick={handleReferenceClick}
                         className={msg.role === 'user' ? 'uyghur-text' : 'text-white uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50'}
                         style={{ fontSize: `${chatFontSize}px` }}
@@ -439,6 +441,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     >
                       <MarkdownContent
                         content={streamingMessage}
+                        isTocPage={false}
+                        allowDashLists={true}
                         onReferenceClick={handleReferenceClick}
                         className="text-white/90 uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
                         style={{ fontSize: `${chatFontSize}px` }}
@@ -829,6 +833,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 ) : (
                   <MarkdownContent
                     content={msg.text}
+                    isTocPage={false}
+                    allowDashLists={true}
                     onReferenceClick={handleReferenceClick}
                     className="text-white uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
                     style={{ fontSize: `${chatFontSize}px` }}
@@ -928,6 +934,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 >
                   <MarkdownContent
                     content={streamingMessage}
+                    isTocPage={false}
+                    allowDashLists={true}
                     onReferenceClick={handleReferenceClick}
                     className="text-white/90 uyghur-text [&_strong]:font-bold [&_strong]:text-white [&_code]:bg-white/20 [&_code]:text-white [&_blockquote]:text-white/90 [&_blockquote]:border-white/30 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white [&_a]:text-blue-100 [&_button]:text-blue-100 [&_a]:decoration-blue-100/50 [&_button]:decoration-blue-100/50"
                     style={{ fontSize: `${chatFontSize}px` }}

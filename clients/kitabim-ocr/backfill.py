@@ -759,7 +759,12 @@ async def backfill_single_book(
                 )
                 for w_idx, wave_pnos in enumerate(waves):
                     assert next_prep_task is not None
-                    prepared_wave = await next_prep_task
+                    wave_prep_exc: Optional[Exception] = None
+                    try:
+                        prepared_wave = await next_prep_task
+                    except Exception as exc:
+                        wave_prep_exc = exc
+                        prepared_wave = []
                     next_prep_task = (
                         asyncio.create_task(
                             prepare_page_wave_async(
@@ -772,6 +777,10 @@ async def backfill_single_book(
                         if (w_idx + 1) < len(waves)
                         else None
                     )
+                    if wave_prep_exc is not None:
+                        for pno in wave_pnos:
+                            _record_page_failure(pno, wave_prep_exc)
+                        continue
                     for pno in wave_pnos:
                         ex = existing_by_num.get(pno, {})
                         pages_by_num[pno] = PageState(
@@ -830,9 +839,9 @@ async def backfill_single_book(
                                 "status": "processing",
                             }
                         )
-                        with doc_lock:
-                            fitz_page = doc.load_page(page_number - 1)
                         try:
+                            with doc_lock:
+                                fitz_page = doc.load_page(page_number - 1)
                             res = await ocr_page_with_meta(
                                 fitz_page,
                                 predictor,

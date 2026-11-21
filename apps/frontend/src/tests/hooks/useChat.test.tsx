@@ -246,3 +246,66 @@ test('useChat loads conversation messages preserving cost and feedback', async (
   expect(modelMsg.evalId).toBe(42);
 });
 
+test('useChat renders page_hits agent event and restores contextBookIds from loaded conversation', async () => {
+  const { getConversationMessages } = await import('@/src/services/geminiService');
+  vi.mocked(getConversationMessages).mockResolvedValue([
+    {
+      id: 'm1',
+      conversationId: 'conv-global-1',
+      role: 'user',
+      content: 'سۇئال',
+      createdAt: '2026-09-13T00:00:00Z',
+    },
+    {
+      id: 'm2',
+      conversationId: 'conv-global-1',
+      role: 'model',
+      content: 'جاۋاب',
+      usedBookIds: ['book-a', 'book-b'],
+      createdAt: '2026-09-13T00:00:01Z',
+    },
+  ]);
+
+  vi.mocked(chatWithBookStream).mockImplementation(async (_params, callbacks) => {
+    callbacks.onAgentEvent?.({ type: 'answer_start' });
+    callbacks.onAgentEvent?.({
+      type: 'page_hits',
+      hits: [
+        {
+          bookId: 'book-a',
+          title: 'ئانا يۇرت',
+          page: 15,
+          snippet: 'تېپىلغان ئۈزۈندە',
+        },
+      ],
+    });
+    callbacks.onComplete();
+  });
+
+  const { result } = renderHook(() => useChat('global-chat', null, null));
+
+  await act(async () => {
+    await result.current.selectConversation('conv-global-1');
+  });
+
+  act(() => {
+    result.current.setChatInput('«ئانا يۇرت» قايسى بەتتە بار؟');
+  });
+
+  await act(async () => {
+    await result.current.handleSendMessage();
+  });
+
+  await waitFor(() => {
+    expect(result.current.chatMessages).toHaveLength(4);
+  });
+
+  const [streamParams] = vi.mocked(chatWithBookStream).mock.calls[0];
+  expect(streamParams.contextBookIds).toEqual(['book-a', 'book-b']);
+
+  const latestReply = result.current.chatMessages.at(-1)?.text ?? '';
+  expect(latestReply).toContain('ref:book-a:15');
+  expect(latestReply).toContain('تېپىلغان ئۈزۈندە');
+});
+
+

@@ -24,6 +24,10 @@ def test_normalize_alias_trims_and_lowercases():
     assert normalize_alias("  Ismail  ") == "ismail"
 
 
+def test_normalize_alias_unifies_uyghur_ye_and_e_variants():
+    assert normalize_alias("ھاجى") == normalize_alias("ھاجي") == normalize_alias("ھاجې")
+
+
 def test_check_hard_constraints_conflict_on_disjoint_parents():
     entity_facts = {
         "child_of": [{"parent_id": "p1"}],

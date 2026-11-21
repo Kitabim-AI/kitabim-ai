@@ -296,6 +296,11 @@ class DictionaryRepository:
         query = query.strip()
         if not query:
             return []
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        norm_q = normalize_uyghur_spelling(query)
+        escaped_norm = (
+            norm_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
         stmt = (
             select(
                 Proverb.id,
@@ -303,7 +308,12 @@ class DictionaryRepository:
                 Proverb.volume,
                 Proverb.page_number,
             )
-            .where(Proverb.text.op("~*")(query))
+            .where(
+                Proverb.text.ilike(f"%{escaped}%", escape="\\")
+                | _sql_normalize_uyghur(Proverb.text).ilike(
+                    f"%{escaped_norm}%", escape="\\"
+                )
+            )
             .limit(limit)
         )
         res = await self.session.execute(stmt)

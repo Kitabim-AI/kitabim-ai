@@ -51,6 +51,29 @@ class CacheService:
             await self._circuit_breaker._on_failure()
             return None
 
+    async def mget(self, keys: list[str]) -> dict[str, Any]:
+        """Batch-fetch multiple cache keys in a single Redis MGET round-trip."""
+        if not keys or not settings.redis_cache_enabled:
+            return {}
+
+        if await self._circuit_breaker.is_open():
+            return {}
+
+        try:
+            ordered_keys = list(dict.fromkeys(keys))
+            full_keys = [f"{settings.redis_cache_key_prefix}{k}" for k in ordered_keys]
+            raw_values = await self.redis.mget(full_keys)
+            await self._circuit_breaker._on_success()
+            result: dict[str, Any] = {}
+            for orig_key, raw in zip(ordered_keys, raw_values):
+                if raw is not None:
+                    result[orig_key] = json.loads(raw)
+            return result
+        except Exception as e:
+            logger.warning(f"Cache mget failed ({len(keys)} keys): {e}")
+            await self._circuit_breaker._on_failure()
+            return {}
+
     async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
         """Set value in cache."""
         if not settings.redis_cache_enabled:

@@ -91,18 +91,24 @@ async def test_is_within_limit(chat_limit_service, mock_user):
 
 @pytest.mark.asyncio
 async def test_increment_usage(chat_limit_service, mock_user):
+    from app.core.config import settings
+
     session = AsyncMock()
+    fake_redis = AsyncMock()
     with patch(
         "app.db.repositories.user_chat_usage_repository.UserChatUsageRepository.increment_usage",
         return_value=6,
     ):
         with patch(
             "app.services.cache_service.cache_service.get_client",
-            return_value=AsyncMock(),
+            return_value=fake_redis,
         ) as mock_client:
             res = await chat_limit_service.increment_usage(mock_user, session)
             assert res == 6
             assert mock_client.called
+            eval_args = fake_redis.eval.await_args.args
+            redis_key = eval_args[2]
+            assert redis_key.startswith(f"{settings.redis_cache_key_prefix}chat:usage:")
 
 
 @pytest.mark.asyncio

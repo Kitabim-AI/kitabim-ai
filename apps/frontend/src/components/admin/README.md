@@ -10,7 +10,8 @@ Administrative management console providing book pipeline milestone monitoring, 
 - `[ActionMenu.tsx:ActionMenu]` — Dropdown action menu triggering manual pipeline stages (OCR, Structure, Chunking, Embedding, Spell-check, Graph, Summary).
 - `[AdminQuestions.tsx:AdminQuestions]` — Table and filter manager for user questions and search queries.
 - `[AdminTabs.tsx:AdminTabs]` — Guarded tabs container allowing role-based access for editors and administrators.
-- `[ContactSubmissionsPanel.tsx:ContactSubmissionsPanel]` — Panel viewing volunteer submissions and contact inquiries.
+- `[ContactSubmissionsPanel.tsx:ContactSubmissionsPanel]` — Panel viewing, filtering, updating status/notes, and deleting volunteer submissions and contact inquiries.
+- `[ContactDetailModal.tsx:ContactDetailModal]` — Native modal `<dialog>` displaying full contact message details, status controls, admin notes editor, and delete confirmation.
 - `[ProgressBar.tsx:ProgressBar]` — Visual completion bar illustrating page milestone counts across pipeline stages.
 - `[QuestionDetailModal.tsx:QuestionDetailModal]` — Modal displaying question context, answered chunks, and curation status.
 - `[StatsPanel.tsx:StatsPanel]` — System-wide analytics and usage statistics dashboard.

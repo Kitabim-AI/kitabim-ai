@@ -52,7 +52,7 @@ def fix_malformed_citations(text: str) -> str:
     # This pattern looks for: ref:ID]بەت page_numbers text
     # Example: "ref:26]بەت179 ،178 ،2 ،ئوتوم (ئايۇز رىسانياۇ) نىخىرات تۆزۈۇغ :ەنەدم"
     # Note: The word بەت comes BEFORE the page numbers
-    pattern1 = r"ref:(\d+)\]بەت\s*([\d\s،]+)(.*?)(?=\s*(?:ref:|$|\[))"
+    pattern1 = r"ref:([a-zA-Z0-9_-]+)\]بەت\s*([\d\s،]+)(.*?)(?=\s*(?:ref:|$|\[))"
 
     def replace_pattern1(match):
         book_id = match.group(1)
@@ -89,14 +89,23 @@ def fix_malformed_citations(text: str) -> str:
 
     text = re.sub(pattern1, replace_pattern1, text)
 
-    # Pattern 2: Detect standalone "ref:ID:" without proper markdown
+    # Pattern 2: Detect standalone "ref:ID:..." or "ref:graph:ID:..." without proper markdown
     # Example: "text ref:26:178,179 more text" should become "text [مەنبە](ref:26:178,179) more text"
-    # Also handles ref:ID:summary for book summary citations.
-    pattern2 = r"(?<![\(\]])\bref:(\w+):(\d+(?:[:,\d]+)*|summary)\b(?!\))"
+    # Also handles hex/UUID book IDs, ref:ID:summary, and ref:graph:ID[:page].
+    pattern2 = r"(?<![\(\]])\bref:(?:graph:([a-zA-Z0-9_-]+)(?::(\d+(?:[:,\d]+)*))?|([a-zA-Z0-9_-]+):(\d+(?:[:,\d]+)*|summary))\b(?!\))"
 
     def replace_pattern2(match):
-        book_id = match.group(1)
-        pages = match.group(2)
+        graph_id, graph_pages, book_id, pages = match.groups()
+        if graph_id:
+            target = (
+                f"ref:graph:{graph_id}:{graph_pages}"
+                if graph_pages
+                else f"ref:graph:{graph_id}"
+            )
+            label = f"{kg_label}، {graph_pages}-بەت" if graph_pages else kg_label
+            result = f"[{label}]({target})"
+            logger.info(f"Fixed standalone graph reference: {target} -> {result}")
+            return result
 
         result = f"[مەنبە](ref:{book_id}:{pages})"
         logger.info(

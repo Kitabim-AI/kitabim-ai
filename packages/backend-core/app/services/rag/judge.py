@@ -42,7 +42,10 @@ async def score_answer(
     usage isn't auto-attributed via the ContextVar the way it is for the
     reranker/agents — pass a dict via usage_out to read the token counts
     back (see rag_eval_job, which uses this to backfill judge_cost_usd)."""
-    prompt = RAG_JUDGE_PROMPT.format(question=question, context=context, answer=answer)
+    safe_q = (question or "").replace("</question>", "&lt;/question&gt;")
+    safe_c = (context or "").replace("</context>", "&lt;/context&gt;")
+    safe_a = (answer or "").replace("</answer>", "&lt;/answer&gt;")
+    prompt = RAG_JUDGE_PROMPT.format(question=safe_q, context=safe_c, answer=safe_a)
 
     llm = build_text_llm(model)
     res_text = await llm.ainvoke(

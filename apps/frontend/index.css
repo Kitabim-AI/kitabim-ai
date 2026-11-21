@@ -418,6 +418,20 @@ body.graph-fullscreen .navbar-wrapper {
   animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+dialog:modal {
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  background-color: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
 /* Dark Mode Variables */
 .dark {
   --primary-blue: #38bdf8;

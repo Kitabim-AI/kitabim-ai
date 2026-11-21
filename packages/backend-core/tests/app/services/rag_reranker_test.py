@@ -52,6 +52,7 @@ async def test_rerank_context_dedupes_by_book_id_and_page():
     observations = [
         _search_obs([_chunk(book_id="b1", page=1, text="dup")]),
         _search_obs([_chunk(book_id="b1", page=1, text="dup")]),
+        _search_obs([_chunk(book_id="b1", page=2, text="second")]),
     ]
     llm = _mock_llm("[1]")
     with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
@@ -59,10 +60,25 @@ async def test_rerank_context_dedupes_by_book_id_and_page():
             "q", observations, model="gemini-test"
         )
 
-    assert before_count == 2  # raw chunks counted before dedup
-    assert after_count == 1  # deduped down to one candidate
+    assert before_count == 3  # raw chunks counted before dedup
+    assert after_count == 1  # selected [1] out of 2 deduped candidates
     prompt_arg = llm.ainvoke.await_args.args[0]
-    assert prompt_arg.count("[1]") == 1  # only one candidate was numbered
+    assert prompt_arg.count("] [BookID:") == 2  # duplicate page 1 collapsed
+
+
+@pytest.mark.asyncio
+async def test_rerank_context_single_chunk_skips_llm_call():
+    observations = [_search_obs([_chunk(book_id="b1", page=1, text="only-chunk")])]
+    llm = _mock_llm("[1]")
+    with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
+        graded_context, before_count, after_count = await rerank_context(
+            "q", observations, model="gemini-test"
+        )
+
+    assert before_count == 1
+    assert after_count == 1
+    assert "only-chunk" in graded_context
+    llm.ainvoke.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -167,7 +183,14 @@ async def test_rerank_context_caps_final_result_at_agent_max_context_chunks():
 
 @pytest.mark.asyncio
 async def test_rerank_context_raises_on_no_json_array():
-    observations = [_search_obs([_chunk()])]
+    observations = [
+        _search_obs(
+            [
+                _chunk(book_id="b1", page=1, text="first"),
+                _chunk(book_id="b1", page=2, text="second"),
+            ]
+        )
+    ]
     llm = _mock_llm("I cannot decide.")
     with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
         with pytest.raises(ValueError, match="no JSON array"):
@@ -176,7 +199,14 @@ async def test_rerank_context_raises_on_no_json_array():
 
 @pytest.mark.asyncio
 async def test_rerank_context_raises_on_out_of_range_index():
-    observations = [_search_obs([_chunk()])]
+    observations = [
+        _search_obs(
+            [
+                _chunk(book_id="b1", page=1, text="first"),
+                _chunk(book_id="b1", page=2, text="second"),
+            ]
+        )
+    ]
     llm = _mock_llm("[99]")
     with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
         with pytest.raises(ValueError, match="out-of-range"):
@@ -211,7 +241,14 @@ async def test_rerank_context_accepts_numeric_string_indices():
 
 @pytest.mark.asyncio
 async def test_rerank_context_raises_on_malformed_json_inside_brackets():
-    observations = [_search_obs([_chunk()])]
+    observations = [
+        _search_obs(
+            [
+                _chunk(book_id="b1", page=1, text="first"),
+                _chunk(book_id="b1", page=2, text="second"),
+            ]
+        )
+    ]
     llm = _mock_llm("[this is not valid json]")
     with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
         # json.JSONDecodeError is itself a ValueError subclass — either way,
@@ -259,7 +296,14 @@ async def test_rerank_context_requests_integer_array_response_schema():
     "out-of-range" even when the numeric value was valid. Constraining the
     response schema to list[int] via controlled generation prevents the model
     from emitting string-typed elements in the first place."""
-    observations = [_search_obs([_chunk()])]
+    observations = [
+        _search_obs(
+            [
+                _chunk(book_id="b1", page=1, text="first"),
+                _chunk(book_id="b1", page=2, text="second"),
+            ]
+        )
+    ]
     llm = _mock_llm("[1]")
     with patch("app.services.rag.agent.reranker.build_text_llm", return_value=llm):
         await rerank_context("q", observations, model="gemini-test")

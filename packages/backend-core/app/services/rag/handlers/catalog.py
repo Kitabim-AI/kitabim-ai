@@ -5,14 +5,29 @@ from __future__ import annotations
 import logging
 from typing import List, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Book
-from app.services.rag.context import QueryContext
+from app.services.rag.context import QueryContext, resolve_rag_is_staff
 from app.services.rag.utils import entity_matches_question
 
 logger = logging.getLogger("app.rag.catalog")
+
+_CATALOG_FALLBACK_MAX_BOOKS = 100
+
+
+def _book_access_clauses(is_staff: bool) -> list:
+    if is_staff:
+        return [Book.status != "error"]
+    return [
+        Book.status == "ready",
+        or_(
+            Book.visibility == "public",
+            Book.visibility.is_(None),
+            Book.visibility == "",
+        ),
+    ]
 
 
 class CatalogHandler:
@@ -42,24 +57,27 @@ class CatalogHandler:
         question: str,
         session: AsyncSession,
         categories: Optional[List[str]] = None,
+        is_staff: Optional[bool] = None,
     ) -> Tuple[str, int]:
         """Build the most specific context from the books table.
 
         Priority:
         1. Known book title in question  → info about that book (+ author)
         2. Known author name in question → that author's books
-        3. Fallback                      → full library catalog
+        3. Fallback                      → full library catalog (capped)
         """
         q = question.strip()
+        access_clauses = _book_access_clauses(resolve_rag_is_staff(is_staff))
+        cat_clause = (
+            sa_text("categories && CAST(:cats AS text[])").bindparams(cats=categories)
+            if categories
+            else None
+        )
 
         # ── 1. Try to match a book title ────────────────────────────────────
-        stmt = select(Book.title).where(Book.status != "error")
-        if categories:
-            from sqlalchemy import text as sa_text
-
-            stmt = stmt.where(
-                sa_text("categories && :cats").bindparams(cats=categories)
-            )
+        stmt = select(Book.title).where(*access_clauses)
+        if cat_clause is not None:
+            stmt = stmt.where(cat_clause)
 
         title_result = await session.execute(stmt)
         titles = [row[0] for row in title_result.fetchall() if row[0]]
@@ -76,11 +94,13 @@ class CatalogHandler:
                     Book.status,
                 )
                 .where(
-                    Book.status != "error",
+                    *access_clauses,
                     Book.title == matched_title,
                 )
                 .order_by(Book.volume)
             )
+            if cat_clause is not None:
+                stmt = stmt.where(cat_clause)
             result = await session.execute(stmt)
             books = result.fetchall()
             if books:
@@ -105,15 +125,11 @@ class CatalogHandler:
         # ── 2. Try to match an author name ───────────────────────────────────
         stmt = (
             select(Book.author)
-            .where(Book.author.isnot(None), Book.status != "error")
+            .where(Book.author.isnot(None), *access_clauses)
             .distinct()
         )
-        if categories:
-            from sqlalchemy import text as sa_text
-
-            stmt = stmt.where(
-                sa_text("categories && :cats").bindparams(cats=categories)
-            )
+        if cat_clause is not None:
+            stmt = stmt.where(cat_clause)
 
         author_result = await session.execute(stmt)
         authors = [row[0] for row in author_result.fetchall() if row[0]]
@@ -132,11 +148,13 @@ class CatalogHandler:
                     Book.status,
                 )
                 .where(
-                    Book.status != "error",
+                    *access_clauses,
                     Book.author == matched_author,
                 )
                 .order_by(Book.volume, Book.title)
             )
+            if cat_clause is not None:
+                stmt = stmt.where(cat_clause)
             result = await session.execute(stmt)
             books = result.fetchall()
             lines = [f"Books by author '{matched_author}' in the library:"]
@@ -151,16 +169,10 @@ class CatalogHandler:
                 )
             return "\n".join(lines), len(books)
 
-        # ── 3. Full catalog fallback ─────────────────────────────────────────
-        stmt = select(Book.title, Book.author, Book.status).where(
-            Book.status != "error"
-        )
-        if categories:
-            from sqlalchemy import text as sa_text
-
-            stmt = stmt.where(
-                sa_text("categories && :cats").bindparams(cats=categories)
-            )
+        # ── 3. Full catalog fallback (capped to avoid flooding context) ──────
+        stmt = select(Book.title, Book.author, Book.status).where(*access_clauses)
+        if cat_clause is not None:
+            stmt = stmt.where(cat_clause)
         stmt = stmt.order_by(Book.title)
 
         result = await session.execute(stmt)
@@ -169,8 +181,9 @@ class CatalogHandler:
         if not all_books:
             return "NO BOOKS FOUND IN THE LIBRARY.", 0
 
-        lines = ["Library catalog — available books:"]
-        for book in all_books:
+        shown_books = all_books[:_CATALOG_FALLBACK_MAX_BOOKS]
+        lines = [f"Library catalog — available books (total: {len(all_books)}):"]
+        for book in shown_books:
             title = book.title or "Unknown"
             author = book.author
             status_tag = f" [Status: {book.status}]" if book.status != "ready" else ""
@@ -178,4 +191,9 @@ class CatalogHandler:
                 lines.append(f"- {title} (Author: {author}){status_tag}")
             else:
                 lines.append(f"- {title}{status_tag}")
+        remaining = len(all_books) - len(shown_books)
+        if remaining > 0:
+            lines.append(
+                f"... and {remaining} more books in the library (ask about a specific title or author for details)."
+            )
         return "\n".join(lines), len(all_books)

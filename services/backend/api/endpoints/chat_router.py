@@ -179,15 +179,22 @@ async def chat_with_book_stream(
                 if isinstance(event, dict):
                     if event.get("type") == "chunk":
                         yield f"data: {json.dumps({'chunk': event['text']})}\n\n"
+                    elif event.get("type") == "correction":
+                        yield f"data: {json.dumps({'correction': event['text']})}\n\n"
                     elif event.get("type") == "done":
                         await chat_limit_service.increment_usage(current_user, session)
                         updated_usage = await chat_limit_service.get_user_usage_status(
                             current_user, session
                         )
+                        usage_out = (
+                            ChatUsageStatus(**updated_usage).model_dump(by_alias=True)
+                            if isinstance(updated_usage, dict)
+                            else updated_usage
+                        )
                         cost = event.get("cost") or {}
                         done_payload = {
                             "done": True,
-                            "usage": updated_usage,
+                            "usage": usage_out,
                             "conversationId": event.get("conversation_id"),
                             "contextBookIds": event.get("used_book_ids", []),
                             "evalId": event.get("eval_id"),

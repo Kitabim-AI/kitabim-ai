@@ -373,3 +373,28 @@ describe('MarkdownContent numbered entries and ordered lists', () => {
   });
 });
 
+describe('MarkdownContent allowDashLists prop', () => {
+  it('preserves Uyghur dialogue dashes as paragraphs by default (allowDashLists=false)', () => {
+    const dialogueContent = `- نەگە ماڭدىڭ؟\n- مەكتەپكە ماڭدىم.`;
+    const { container } = render(<MarkdownContent content={dialogueContent} />);
+
+    expect(container.querySelector('ul')).toBeNull();
+    expect(screen.getByText(/نەگە ماڭدىڭ/)).toBeInTheDocument();
+  });
+
+  it('renders dash-prefixed lines as semantic <ul><li> bullets when allowDashLists=true (chat responses)', () => {
+    const chatListContent = `- بىرىنچى نۇقتا\n- ئىككىنچى نۇقتا`;
+    const { container } = render(
+      <MarkdownContent content={chatListContent} isTocPage={false} allowDashLists={true} />
+    );
+
+    const ul = container.querySelector('ul');
+    expect(ul).not.toBeNull();
+    const items = container.querySelectorAll('li');
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toContain('بىرىنچى نۇقتا');
+    expect(items[1].textContent).toContain('ئىككىنچى نۇقتا');
+  });
+});
+
+

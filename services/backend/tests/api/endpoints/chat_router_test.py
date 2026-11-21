@@ -90,6 +90,7 @@ async def test_chat_stream_endpoint_uses_chat_orchestrator():
     async def mock_stream_response(*args, **kwargs):
         yield {"type": "chunk", "text": "بىرىنچى"}
         yield {"type": "chunk", "text": "ئىككىنچى"}
+        yield {"type": "correction", "text": "بىرىنچى ئىككىنچى [1-بەت](ref:book-abc:1)"}
         yield {
             "type": "done",
             "eval_id": 42,
@@ -121,6 +122,21 @@ async def test_chat_stream_endpoint_uses_chat_orchestrator():
     assert len(chunks) > 0
     assert f"data: {json.dumps({'chunk': 'بىرىنچى'})}\n\n" in chunks
     assert f"data: {json.dumps({'chunk': 'ئىككىنچى'})}\n\n" in chunks
+    assert (
+        f"data: {json.dumps({'correction': 'بىرىنچى ئىككىنچى [1-بەت](ref:book-abc:1)'})}\n\n"
+        in chunks
+    )
+    done_payloads = [
+        json.loads(c.removeprefix("data: ").strip())
+        for c in chunks
+        if c.startswith("data: ") and '"done"' in c
+    ]
+    assert len(done_payloads) == 1
+    assert done_payloads[0]["usage"] == {
+        "usage": 1,
+        "limit": 10,
+        "hasReachedLimit": False,
+    }
 
 
 @pytest.mark.asyncio

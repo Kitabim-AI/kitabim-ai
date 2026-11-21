@@ -121,7 +121,18 @@ async def summary_job(ctx, book_id: str) -> None:
         is_large_context_model = (
             any(
                 m in gemini_chat_model.lower()
-                for m in ["1.5", "2.0", "flash", "pro", "ultra"]
+                for m in [
+                    "1.5",
+                    "2.0",
+                    "gemini-3",
+                    "gemini-4",
+                    "hydrogen",
+                    "argon",
+                    "carbon",
+                    "flash",
+                    "pro",
+                    "ultra",
+                ]
             )
             and "1.0" not in gemini_chat_model.lower()
         )

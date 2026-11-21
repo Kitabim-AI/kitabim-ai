@@ -16,6 +16,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 import fitz
@@ -368,6 +369,53 @@ def _pixmap_to_pil_rgb(pix: fitz.Pixmap) -> Image.Image:
     return Image.open(io.BytesIO(pix.tobytes("png")))
 
 
+def _try_render_page_with_pdfium(
+    pdf_path: str | None, page_index: int, zoom: float
+) -> Image.Image | None:
+    """Attempt to render a single 0-indexed PDF page via ``pypdfium2`` when MuPDF fails.
+
+    PDFium uses an independent JBIG2/JPX/CCITT decoder that can recover non-conformant
+    scanner streams rejected by MuPDF's ``jbig2dec``. Crucially, when a JBIG2 stream is
+    genuinely corrupted at the binary level, PDFium silently skips the broken XObject
+    and returns a solid white canvas (variance 0.0) instead of raising. We therefore
+    only accept the fallback image when its pixel variance meets
+    ``_BLANK_PAGE_VARIANCE_THRESHOLD``, ensuring truly unrecoverable streams remain
+    flagged as failed pages rather than misclassified as blank pages.
+    """
+    if not pdf_path or page_index < 0:
+        return None
+    try:
+        path_obj = Path(pdf_path)
+        if not path_obj.is_file():
+            return None
+        import pypdfium2 as pdfium
+
+        pdf_doc = pdfium.PdfDocument(str(path_obj))
+        try:
+            if page_index >= len(pdf_doc):
+                return None
+            bitmap = pdf_doc[page_index].render(scale=zoom)
+            pil_img = bitmap.to_pil().convert("RGB")
+        finally:
+            pdf_doc.close()
+
+        arr = np.asarray(pil_img, dtype=np.uint8)
+        if arr.size == 0 or float(np.var(arr)) < _BLANK_PAGE_VARIANCE_THRESHOLD:
+            return None
+        logger.info(
+            "Recovered PDF page=%s via pypdfium2 fallback after MuPDF error",
+            page_index + 1,
+        )
+        return pil_img
+    except Exception as exc:
+        logger.debug(
+            "pypdfium2 fallback could not recover PDF page=%s: %s",
+            page_index + 1,
+            exc,
+        )
+        return None
+
+
 def _preprocess_rendered_image(image: Image.Image) -> Image.Image:
     """Apply lossless bleed-through suppression and dot sharpening to a rendered page."""
     if is_bleed_through_suppression_enabled():
@@ -415,12 +463,11 @@ def _page_has_detected_text_lines(image: Image.Image, min_box_dim: float = 8.0) 
 _SURYA_COMPACT_TOKEN_RE = re.compile(r"<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>")
 _DOT_LEADER_RE = re.compile(r"[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,}")
 _ROW_NUMBER_RE = re.compile(r"[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}")
-_TOC_PAGE_NUM_GROUP_PAT = (
-    r"(?:[\(\[\{（［]\s*)?([0-9\u0660-\u0669\u06F0-\u06F9]{1,4})(?:\s*[\)\]\}）］])?"
-)
-_TOC_PAGE_NUM_NONCAP_PAT = (
-    r"(?:[\(\[\{（［]\s*)?[0-9\u0660-\u0669\u06F0-\u06F9]{1,4}(?:\s*[\)\]\}）］])?"
-)
+_TOC_BRACKET_PAT = r"[\(\)\[\]\{\}（）［］]"
+_TOC_BRACKET_FAMILIES = ("()", "[]", "{}", "（）", "［］")
+_ALL_TOC_BRACKETS = "()[]{}（）［］"
+_TOC_PAGE_NUM_GROUP_PAT = rf"(?:{_TOC_BRACKET_PAT}+\s*)?([0-9\u0660-\u0669\u06F0-\u06F9]{{1,4}})(?:\s*{_TOC_BRACKET_PAT}+)?"
+_TOC_PAGE_NUM_NONCAP_PAT = rf"(?:{_TOC_BRACKET_PAT}+\s*)?[0-9\u0660-\u0669\u06F0-\u06F9]{{1,4}}(?:\s*{_TOC_BRACKET_PAT}+)?"
 _LEADING_DOT_LEADER_RE = re.compile(r"^\s*(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,})")
 _TRAILING_DOT_LEADER_RE = re.compile(
     r"(?:[.·•∙⋅․﹒｡\-—–_]{2,}|…{2,})\s*(?:[^.·•∙⋅․﹒｡…|\n]{0,45}?)\s*$"
@@ -443,7 +490,9 @@ _TOC_LINE_HAS_TARGET_RE = re.compile(
 )
 _TOC_INLINE_SPLIT_RE = re.compile(
     r"((?:[.·•∙⋅․﹒｡]{3,}|…{2,})\s*(?:<\|(?:\d{1,4}|box|[A-Za-z-]+)\|>[\s.]*)*"
-    rf"(?:[^.·•∙⋅․﹒｡…\n]{{0,45}}?\s*)?{_TOC_PAGE_NUM_NONCAP_PAT})\s+(?=\S)"
+    rf"(?:[^.·•∙⋅․﹒｡…\n]{{0,45}}?\s*)?{_TOC_PAGE_NUM_NONCAP_PAT})"
+    rf"(?![0-9\u0660-\u0669\u06F0-\u06F9]|\s*{_TOC_BRACKET_PAT}+\s*$)"
+    rf"\s+(?=[\w\u0600-\u06FF«\"“'‘]|{_TOC_BRACKET_PAT}\s*[\w\u0600-\u06FF])"
 )
 _TOC_TRAILING_PAGE_NUM_RE = re.compile(
     r"((?:[.·•∙⋅․﹒｡…\-—–_]{2,})\s*)"
@@ -499,23 +548,65 @@ def _html_to_text(html: str) -> str:
 
 
 def _strip_enclosing_page_brackets(text: str, start: int, end: int) -> tuple[int, int]:
-    """Expand [start, end) to include immediately enclosing ( ... ) or [ ... ]."""
-    open_chars = "([{（［"
-    close_chars = ")]}）］"
+    """Expand [start, end) to include enclosing page-number brackets.
+
+    Strips standard pairs ``( 15 )``, RTL-mirrored pairs ``) 15 (``, doubled OCR
+    brackets ``((15))``, and single orphan brackets on the outer margin or
+    immediately adjacent to a dot leader (e.g. ``باب ..... ( 15``) while leaving
+    balanced parentheticals inside the title (e.g. ``باب (1945) 15``) intact.
+    """
     l_idx = start - 1
     while l_idx >= 0 and text[l_idx].isspace():
         l_idx -= 1
     r_idx = end
     while r_idx < len(text) and text[r_idx].isspace():
         r_idx += 1
-    if (
+
+    while (
         l_idx >= 0
         and r_idx < len(text)
-        and text[l_idx] in open_chars
-        and text[r_idx] in close_chars
-        and open_chars.index(text[l_idx]) == close_chars.index(text[r_idx])
+        and any(
+            text[l_idx] in fam and text[r_idx] in fam for fam in _TOC_BRACKET_FAMILIES
+        )
     ):
-        return l_idx, r_idx + 1
+        start = l_idx
+        end = r_idx + 1
+        l_idx = start - 1
+        while l_idx >= 0 and text[l_idx].isspace():
+            l_idx -= 1
+        r_idx = end
+        while r_idx < len(text) and text[r_idx].isspace():
+            r_idx += 1
+
+    if (
+        r_idx < len(text)
+        and text[r_idx] in _ALL_TOC_BRACKETS
+        and not text[r_idx + 1 :].strip()
+    ):
+        end = r_idx + 1
+    if l_idx >= 0 and text[l_idx] in _ALL_TOC_BRACKETS and not text[:l_idx].strip():
+        start = l_idx
+
+    l_idx = start - 1
+    while l_idx >= 0 and text[l_idx].isspace():
+        l_idx -= 1
+    if (
+        l_idx >= 0
+        and text[l_idx] in _ALL_TOC_BRACKETS
+        and re.search(r"[.·•∙⋅․﹒｡…\-—–_]{2,}\s*$", text[:l_idx])
+    ):
+        start = l_idx
+
+    r_idx = end
+    while r_idx < len(text) and text[r_idx].isspace():
+        r_idx += 1
+    if (
+        r_idx < len(text)
+        and text[r_idx] in _ALL_TOC_BRACKETS
+        and _LEADING_DOT_LEADER_RE.match(text[r_idx + 1 :])
+    ):
+        end = r_idx + 1
+
     return start, end
 
 
@@ -1572,7 +1663,7 @@ def _reocr_toc_page_lines(
             m_trail = _TOC_TRAILING_PAGE_NUM_RE.search(t_txt)
             if m_trail:
                 n_val = m_trail.group(3)
-                after_dots = m_trail.group(2).strip(" \t.·•∙⋅․﹒｡…-—–_")
+                after_dots = m_trail.group(2).strip(" \t.·•∙⋅․﹒｡…-—–_()[]{}（）［］")
                 prefix = t_txt[: m_trail.start()].strip()
                 t_txt = f"{prefix} {after_dots}".strip() if after_dots else prefix
             else:
@@ -1582,7 +1673,8 @@ def _reocr_toc_page_lines(
                     t_txt = t_txt[m_lead.end() :].strip()
 
         t_txt = re.sub(
-            r"^\s*(?:[.·•∙⋅․﹒｡…_]{2,})\s*|\s*(?:[.·•∙⋅․﹒｡…_]{2,})\s*$",
+            r"^(?:[\s\(\)\[\]\{\}（）［］]*[.·•∙⋅․﹒｡…_]{2,}\s*)"
+            r"|(?:\s*[.·•∙⋅․﹒｡…_]{2,}[\s\(\)\[\]\{\}（）［］]*)$",
             "",
             t_txt,
         ).strip()
@@ -1972,6 +2064,7 @@ class PreparedPageWaveItem:
     is_blank: bool
     image: Image.Image | None
     adaptive_zoom: float
+    render_error: Exception | None = None
 
 
 def _rasterize_wave_raw_sync(
@@ -1979,18 +2072,47 @@ def _rasterize_wave_raw_sync(
     page_numbers: list[int],
     doc_lock: threading.Lock,
     base_zoom: float,
-) -> list[tuple[int, bool, Image.Image | None, float]]:
-    """Sequentially rasterize a wave of PDF pages under ``doc_lock`` without PNG compression."""
-    out: list[tuple[int, bool, Image.Image | None, float]] = []
+) -> list[tuple[int, bool, Image.Image | None, float, Exception | None]]:
+    """Sequentially rasterize a wave of PDF pages under ``doc_lock`` without PNG compression.
+
+    Isolates per-page MuPDF load/decode errors (e.g. ``cannot decode jbig2 globals``)
+    so a single malformed PDF page stream never aborts the wave or the book.
+    """
+    raw_entries: list[
+        tuple[int, bool, Image.Image | None, float, Exception | None]
+    ] = []
+    pdf_path = getattr(doc, "name", None)
     with doc_lock:
         for pno in page_numbers:
-            page = doc.load_page(pno - 1)
-            adaptive_zoom = get_adaptive_page_zoom(page, base_zoom)
-            pix = page.get_pixmap(matrix=fitz.Matrix(adaptive_zoom, adaptive_zoom))
-            if is_page_blank(pix):
-                out.append((pno, True, None, adaptive_zoom))
+            adaptive_zoom = base_zoom
+            try:
+                page = doc.load_page(pno - 1)
+                adaptive_zoom = get_adaptive_page_zoom(page, base_zoom)
+                pix = page.get_pixmap(matrix=fitz.Matrix(adaptive_zoom, adaptive_zoom))
+                if is_page_blank(pix):
+                    raw_entries.append((pno, True, None, adaptive_zoom, None))
+                else:
+                    raw_entries.append(
+                        (pno, False, _pixmap_to_pil_rgb(pix), adaptive_zoom, None)
+                    )
+            except Exception as exc:
+                raw_entries.append((pno, False, None, adaptive_zoom, exc))
+
+    out: list[tuple[int, bool, Image.Image | None, float, Exception | None]] = []
+    for pno, blank, raw_img, azoom, fitz_exc in raw_entries:
+        if fitz_exc is not None:
+            fallback_img = _try_render_page_with_pdfium(pdf_path, pno - 1, azoom)
+            if fallback_img is not None:
+                out.append((pno, False, fallback_img, azoom, None))
             else:
-                out.append((pno, False, _pixmap_to_pil_rgb(pix), adaptive_zoom))
+                logger.warning(
+                    "Failed to rasterize PDF page=%s during wave prep: %s",
+                    pno,
+                    fitz_exc,
+                )
+                out.append((pno, False, None, azoom, fitz_exc))
+        else:
+            out.append((pno, blank, raw_img, azoom, None))
     return out
 
 
@@ -2014,15 +2136,41 @@ async def prepare_page_wave_async(
     )
 
     async def _prep_one(
-        pno: int, blank: bool, raw_img: Image.Image | None, azoom: float
+        pno: int,
+        blank: bool,
+        raw_img: Image.Image | None,
+        azoom: float,
+        render_err: Exception | None,
     ) -> PreparedPageWaveItem:
+        if render_err is not None:
+            return PreparedPageWaveItem(
+                page_number=pno,
+                is_blank=False,
+                image=None,
+                adaptive_zoom=azoom,
+                render_error=render_err,
+            )
         if blank or raw_img is None:
             return PreparedPageWaveItem(
                 page_number=pno, is_blank=True, image=None, adaptive_zoom=azoom
             )
-        proc_img = await loop.run_in_executor(
-            prep_exec, _preprocess_rendered_image, raw_img
-        )
+        try:
+            proc_img = await loop.run_in_executor(
+                prep_exec, _preprocess_rendered_image, raw_img
+            )
+        except Exception as prep_exc:
+            logger.warning(
+                "Failed to preprocess rendered PDF page=%s during wave prep: %s",
+                pno,
+                prep_exc,
+            )
+            return PreparedPageWaveItem(
+                page_number=pno,
+                is_blank=False,
+                image=None,
+                adaptive_zoom=azoom,
+                render_error=prep_exc,
+            )
         return PreparedPageWaveItem(
             page_number=pno, is_blank=False, image=proc_img, adaptive_zoom=azoom
         )
@@ -2050,11 +2198,19 @@ async def _retry_single_page_from_doc_async(
 
     def _render_at_zoom(zoom_val: float) -> tuple[bool, Image.Image | None]:
         with doc_lock:
-            page = doc.load_page(page_number - 1)
-            pix = page.get_pixmap(matrix=fitz.Matrix(zoom_val, zoom_val))
-            if is_page_blank(pix):
-                return True, None
-            return False, _pixmap_to_pil_rgb(pix)
+            try:
+                page = doc.load_page(page_number - 1)
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom_val, zoom_val))
+                if is_page_blank(pix):
+                    return True, None
+                return False, _pixmap_to_pil_rgb(pix)
+            except Exception as fitz_exc:
+                pdf_path = getattr(doc, "name", None)
+                err = fitz_exc
+        fallback_img = _try_render_page_with_pdfium(pdf_path, page_number - 1, zoom_val)
+        if fallback_img is not None:
+            return False, fallback_img
+        raise err
 
     for attempt in range(start_attempt, total_attempts):
         executor = _get_executor(workers)
@@ -2146,7 +2302,9 @@ async def ocr_prepared_wave_with_meta(
 
     active_items: list[PreparedPageWaveItem] = []
     for item in prepared_items:
-        if item.is_blank or item.image is None:
+        if item.render_error is not None:
+            results[item.page_number] = item.render_error
+        elif item.is_blank or item.image is None:
             results[item.page_number] = PageOcrResult(
                 text="", detected_page_number=None, ended_with_hyphen=False
             )
@@ -2286,13 +2444,32 @@ async def ocr_page_with_meta(
     for attempt in range(total_attempts):
         zoom = adaptive_zoom + (attempt * 0.5)
         try:
-            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-            if is_page_blank(pix):
-                return PageOcrResult(
-                    text="", detected_page_number=None, ended_with_hyphen=False
+            try:
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                if is_page_blank(pix):
+                    return PageOcrResult(
+                        text="", detected_page_number=None, ended_with_hyphen=False
+                    )
+                raw_image = _pixmap_to_pil_rgb(pix)
+            except Exception as fitz_exc:
+                parent_doc = getattr(page, "parent", None)
+                pdf_path = getattr(parent_doc, "name", None) if parent_doc else None
+                page_idx = getattr(page, "number", -1)
+                fallback_img = (
+                    await loop.run_in_executor(
+                        executor,
+                        _try_render_page_with_pdfium,
+                        pdf_path,
+                        int(page_idx),
+                        zoom,
+                    )
+                    if isinstance(page_idx, int) and page_idx >= 0
+                    else None
                 )
+                if fallback_img is None:
+                    raise fitz_exc
+                raw_image = fallback_img
 
-            raw_image = _pixmap_to_pil_rgb(pix)
             image = await loop.run_in_executor(
                 executor, _preprocess_rendered_image, raw_image
             )

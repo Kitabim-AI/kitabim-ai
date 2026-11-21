@@ -32,6 +32,8 @@ Core OCR processing, layout analysis, dictionary validation, queue scheduling, a
 - `[recognize.py:get_recognition_predictor]`: Instantiates or returns Surya recognition predictor.
 - `[recognize.py:ocr_page]`: Async page OCR executor orchestrating zoom, preprocessing, inference, Table-of-Contents line-aware recovery and pipe-table formatting, and retry loops.
 - `[recognize.py:ocr_page_with_meta]`: Async page OCR executor returning `PageOcrResult` with bleed-through-safe sidecar `detected_page_number` and `ended_with_hyphen`.
+- `[recognize.py:prepare_page_wave_async]`: Pre-renders and filters waves of PDF pages on background threads with per-page MuPDF error isolation and non-blank `pypdfium2` recovery.
+- `[recognize.py:ocr_prepared_wave_with_meta]`: Executes synchronized full-page VLM batch inference on prepared page waves, isolating per-page render or inference failures without aborting the book.
 - `[recognize.py:is_page_blank]`: Checks rendered Pixmap variance against blank page threshold.
 - `[recognize.py:suppress_bleed_through]`: Cleans background show-through ink from scanned pages.
 - `[recognize.py:enhance_dots_and_contrast]`: Enhances diacritics and dots for Uyghur Arabic script.

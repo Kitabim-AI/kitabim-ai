@@ -294,6 +294,10 @@ class ChatResponse(BaseModel):
 
 
 class ChatUsageStatus(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
     usage: int
     limit: Optional[int]
     has_reached_limit: bool
@@ -337,6 +341,15 @@ class ContactSubmissionAdmin(BaseModel):
     reviewed_by: Optional[str] = None  # DB: reviewed_by, API: reviewedBy
     reviewed_at: Optional[datetime] = None  # DB: reviewed_at, API: reviewedAt
     created_at: datetime  # DB: created_at, API: createdAt
+
+
+class ContactSubmissionUpdate(BaseModel):
+    """Schema for updating status and/or admin notes of a contact submission"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    status: Optional[Literal["new", "reviewed", "contacted", "archived"]] = None
+    admin_notes: Optional[str] = Field(None, max_length=5000)
 
 
 class RagQuestionAdmin(BaseModel):

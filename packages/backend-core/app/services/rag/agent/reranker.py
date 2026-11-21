@@ -169,7 +169,9 @@ async def rerank_documents(
     numbered = "\n\n".join(
         f"[{i}] {format_document(d)}" for i, d in enumerate(capped, start=1)
     )
-    prompt = RAG_RERANK_PROMPT.format(question=question, candidates=numbered)
+    safe_q = (question or "").replace("</question>", "&lt;/question&gt;")
+    safe_cands = numbered.replace("</candidates>", "&lt;/candidates&gt;")
+    prompt = RAG_RERANK_PROMPT.format(question=safe_q, candidates=safe_cands)
 
     llm = build_text_llm(model)
     res_text = await llm.ainvoke(
@@ -251,6 +253,16 @@ async def rerank_context(
 
     if not docs:
         return _join_context(metadata_parts, []), total_raw_chunks, 0
+
+    if len(docs) == 1:
+        # With a single candidate and MIN_CHUNKS_AFTER_GRADING >= 1, every valid
+        # LLM response ([1] or []) yields that same candidate — skip the extra
+        # Gemini round-trip.
+        return (
+            _join_context(metadata_parts, [format_document(docs[0])]),
+            total_raw_chunks,
+            1,
+        )
 
     candidates = docs
     if len(candidates) > RERANK_MAX_INPUT_CHUNKS:

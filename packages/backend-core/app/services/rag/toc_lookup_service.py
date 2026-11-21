@@ -319,6 +319,15 @@ async def resolve_short_work(
     book = await BooksRepository(session).get(target_book_id)
     if book is None:
         return None
+    from app.services.rag.context import resolve_rag_is_staff
+
+    if not resolve_rag_is_staff(None):
+        book_status = getattr(book, "status", None)
+        book_vis = getattr(book, "visibility", None)
+        if (isinstance(book_status, str) and book_status != "ready") or (
+            isinstance(book_vis, str) and book_vis not in ("public", "")
+        ):
+            return None
 
     offset = book.content_page_offset or 0
     start_page = printed_start + offset

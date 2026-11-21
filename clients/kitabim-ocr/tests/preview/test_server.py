@@ -366,3 +366,18 @@ def test_redo_pages_auto_detects_toc_when_reocrd_text_is_toc(tmp_path: Path):
 
     assert response.status_code == 200
     assert wd.get_page(1).is_toc is True
+
+
+def test_render_page_png_returns_placeholder_on_jbig2_decode_error():
+    from preview.server import render_page_png
+
+    mock_doc = MagicMock()
+    mock_doc.name = ""
+    mock_page = MagicMock()
+    mock_page.get_pixmap.side_effect = RuntimeError(
+        "code=3: cannot decode jbig2 globals"
+    )
+    mock_doc.load_page.return_value = mock_page
+
+    png_bytes = render_page_png(mock_doc, 374)
+    assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
