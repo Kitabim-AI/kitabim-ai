@@ -10,6 +10,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import RAGEvaluation
 from app.db.repositories.base_repository import BaseRepository
 
+MIN_SAMPLE_EVAL_SCORE = 0.8
+
+
+def is_qualifying_sample_answer(
+    row: Optional[RAGEvaluation],
+    min_score: float = MIN_SAMPLE_EVAL_SCORE,
+) -> bool:
+    """Return True when a RAGEvaluation row has a non-empty answer and all
+    completed evaluation scores are >= min_score (default 0.8 / 80%)."""
+    if row is None:
+        return False
+    if not row.answer or not row.answer.strip():
+        return False
+    if row.eval_status != "completed":
+        return False
+    required_scores = (
+        row.faithfulness_score,
+        row.answer_relevance_score,
+        row.context_precision_score,
+    )
+    if any(score is None or score < min_score for score in required_scores):
+        return False
+    if row.context_recall_score is not None and row.context_recall_score < min_score:
+        return False
+    return True
+
 
 class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
     """Repository for RAG evaluation metrics and analytics"""
@@ -227,6 +253,99 @@ class RAGEvaluationsRepository(BaseRepository[RAGEvaluation]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_featured_question_items(self, limit: int = 20) -> List[RAGEvaluation]:
+        """Return RAGEvaluation rows flagged show_on_homepage=True, most recent first."""
+        stmt = (
+            select(RAGEvaluation)
+            .where(RAGEvaluation.show_on_homepage.is_(True))
+            .order_by(RAGEvaluation.ts.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_qualifying_sample_evaluation(
+        self,
+        question: str,
+        eval_id: Optional[int] = None,
+        min_score: float = MIN_SAMPLE_EVAL_SCORE,
+    ) -> Optional[RAGEvaluation]:
+        """Look up the original homepage sample question row (show_on_homepage=True)
+        and return it only if it has a stored answer and all eval scores >= min_score."""
+        normalized_q = (question or "").strip()
+        if not normalized_q:
+            return None
+
+        row: Optional[RAGEvaluation] = None
+        if eval_id is not None:
+            stmt = select(RAGEvaluation).where(
+                RAGEvaluation.id == eval_id,
+                RAGEvaluation.show_on_homepage.is_(True),
+                func.trim(RAGEvaluation.question) == normalized_q,
+            )
+            result = await self.session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row is not None:
+                return (
+                    row
+                    if is_qualifying_sample_answer(row, min_score=min_score)
+                    else None
+                )
+
+        fallback_stmt = (
+            select(RAGEvaluation)
+            .where(
+                RAGEvaluation.show_on_homepage.is_(True),
+                func.trim(RAGEvaluation.question) == normalized_q,
+            )
+            .order_by(RAGEvaluation.ts.desc())
+            .limit(1)
+        )
+        fallback_res = await self.session.execute(fallback_stmt)
+        row = fallback_res.scalar_one_or_none()
+        return row if is_qualifying_sample_answer(row, min_score=min_score) else None
+
+    async def resolve_sample_used_book_ids(self, eval_row: RAGEvaluation) -> List[str]:
+        """Recover used_book_ids for a cached RAGEvaluation from its linked
+        ConversationMessage (if any) and/or ref:<book_id>: citations in the answer."""
+        import re
+        from app.db.models import ConversationMessage
+
+        ordered_ids: List[str] = []
+        seen: set[str] = set()
+        non_book_targets = {"quran", "graph", "knowledge_graph"}
+
+        def _add(bid: object) -> None:
+            if isinstance(bid, str):
+                cleaned = bid.strip()
+                if cleaned and cleaned not in non_book_targets and cleaned not in seen:
+                    seen.add(cleaned)
+                    ordered_ids.append(cleaned)
+
+        if eval_row.id is not None:
+            msg_stmt = (
+                select(ConversationMessage.used_book_ids)
+                .where(
+                    ConversationMessage.eval_id == eval_row.id,
+                    ConversationMessage.role == "model",
+                )
+                .limit(1)
+            )
+            msg_res = await self.session.execute(msg_stmt)
+            stored_ids = msg_res.scalar_one_or_none()
+            if isinstance(stored_ids, list):
+                for item in stored_ids:
+                    _add(item)
+
+        if eval_row.answer:
+            for match in re.finditer(r"\(ref:([^:)\s]+)(?::[^)]*)?\)", eval_row.answer):
+                _add(match.group(1))
+
+        if eval_row.book_id:
+            _add(eval_row.book_id)
+
+        return ordered_ids
 
     async def update_feedback(
         self,

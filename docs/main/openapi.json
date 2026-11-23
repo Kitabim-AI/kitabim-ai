@@ -958,6 +958,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 100,
               "title": "Limit"
             }
@@ -1121,6 +1123,11 @@
         "summary": "Get Graph Chunk Detail",
         "description": "Retrieve original text and metadata for a chunk referenced by a graph edge.",
         "operationId": "get_graph_chunk_detail_api_books_graph_chunk_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "ref",
@@ -1692,6 +1699,155 @@
         }
       }
     },
+    "/api/books/{book_id}/chunks": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "summary": "Get Book Chunks Inspector",
+        "description": "Inspect sections, chunk boundaries, contextual embedding prefixes, and semantic/text/reranked search scores for a book.",
+        "operationId": "get_book_chunks_inspector_api_books__book_id__chunks_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Page"
+            }
+          },
+          {
+            "name": "sectionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sectionid"
+            }
+          },
+          {
+            "name": "filterType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Filtertype"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "semantic",
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "rerank",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Rerank"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/books/{book_id}/pages": {
       "get": {
         "tags": [
@@ -1721,6 +1877,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Skip"
             }
@@ -1731,6 +1888,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -2968,6 +3127,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 50,
               "title": "Limit"
             }
@@ -3383,6 +3544,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
               "default": 10,
               "title": "Limit"
             }
@@ -3473,6 +3636,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 50,
               "title": "Limit"
             }
@@ -3483,6 +3648,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Offset"
             }
@@ -3571,6 +3737,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
               "default": 100,
               "title": "Limit"
             }
@@ -4145,6 +4313,12 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "new",
+                    "reviewed",
+                    "contacted",
+                    "archived"
+                  ],
                   "type": "string"
                 },
                 {
@@ -4160,6 +4334,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
               "default": 100,
               "title": "Limit"
             }
@@ -4170,6 +4346,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Offset"
             }
@@ -4189,6 +4366,149 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contact/admin/submissions/{submission_id}": {
+      "get": {
+        "tags": [
+          "contact"
+        ],
+        "summary": "Get Contact Submission",
+        "description": "Get a single contact submission by ID (Admin-only).",
+        "operationId": "get_contact_submission_api_contact_admin_submissions__submission_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactSubmissionAdmin"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "contact"
+        ],
+        "summary": "Update Contact Submission",
+        "description": "Update status and/or admin notes of a contact submission (Admin-only).",
+        "operationId": "update_contact_submission_api_contact_admin_submissions__submission_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactSubmissionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactSubmissionAdmin"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "contact"
+        ],
+        "summary": "Delete Contact Submission",
+        "description": "Delete a contact submission by ID (Admin-only).",
+        "operationId": "delete_contact_submission_api_contact_admin_submissions__submission_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "submission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Submission Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -4586,6 +4906,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Skip"
             }
@@ -4596,6 +4917,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -4933,6 +5256,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 10,
               "title": "Limit"
             }
@@ -5057,6 +5382,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Skip"
             }
@@ -5067,6 +5393,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -5201,6 +5529,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 10,
               "title": "Limit"
             }
@@ -5325,6 +5655,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Skip"
             }
@@ -5335,6 +5666,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -5449,6 +5782,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 10,
               "title": "Limit"
             }
@@ -5632,6 +5967,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Skip"
             }
@@ -5642,6 +5978,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -5813,6 +6151,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 10,
               "title": "Limit"
             }
@@ -5860,6 +6200,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Skip"
             }
@@ -5870,6 +6211,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -6158,6 +6501,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 10,
               "title": "Limit"
             }
@@ -6205,6 +6550,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Skip"
             }
@@ -6215,6 +6561,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -6402,6 +6750,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 10,
               "title": "Limit"
             }
@@ -6449,6 +6799,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Skip"
             }
@@ -6459,6 +6810,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -6795,6 +7148,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -6805,6 +7160,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Offset"
             }
@@ -6923,6 +7279,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -6936,9 +7294,70 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/components/schemas/FeaturedQuestionItem"
                   },
                   "title": "Response Get Featured Questions Api Questions Featured Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/questions/featured/answer": {
+      "get": {
+        "tags": [
+          "questions"
+        ],
+        "summary": "Get Featured Question Answer",
+        "description": "Return the stored answer for a homepage sample question if all evaluation\nscores are >= 80%.\n\nPublic endpoint \u2014 only inspects rows with show_on_homepage=True.",
+        "operationId": "get_featured_question_answer_api_questions_featured_answer_get",
+        "parameters": [
+          {
+            "name": "question",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "title": "Question"
+            }
+          },
+          {
+            "name": "eval_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Eval Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturedQuestionAnswerResponse"
                 }
               }
             }
@@ -6980,6 +7399,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 10,
               "title": "Limit"
             }
@@ -7078,6 +7499,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Skip"
             }
@@ -7088,6 +7510,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
               "default": 20,
               "title": "Limit"
             }
@@ -7284,6 +7708,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 300,
+              "minimum": 1,
               "default": 15,
               "title": "Limit"
             }
@@ -7382,6 +7808,7 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "minimum": 0,
               "default": 0,
               "title": "Skip"
             }
@@ -7392,6 +7819,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
               "default": 50,
               "title": "Limit"
             }
@@ -8319,6 +8748,28 @@
         ],
         "title": "BookStatusCount"
       },
+      "ChatCostInfo": {
+        "properties": {
+          "inputTokens": {
+            "type": "integer",
+            "title": "Inputtokens",
+            "default": 0
+          },
+          "outputTokens": {
+            "type": "integer",
+            "title": "Outputtokens",
+            "default": 0
+          },
+          "costUsd": {
+            "type": "number",
+            "title": "Costusd",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "ChatCostInfo",
+        "description": "Token usage and estimated USD cost for an answer."
+      },
       "ChatRequest": {
         "properties": {
           "bookId": {
@@ -8395,6 +8846,22 @@
             "type": "boolean",
             "title": "Exactphrase",
             "default": false
+          },
+          "fromSampleQuestion": {
+            "type": "boolean",
+            "title": "Fromsamplequestion",
+            "default": false
+          },
+          "sampleEvalId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampleevalid"
           }
         },
         "type": "object",
@@ -8444,16 +8911,16 @@
             ],
             "title": "Limit"
           },
-          "has_reached_limit": {
+          "hasReachedLimit": {
             "type": "boolean",
-            "title": "Has Reached Limit"
+            "title": "Hasreachedlimit"
           }
         },
         "type": "object",
         "required": [
           "usage",
           "limit",
-          "has_reached_limit"
+          "hasReachedLimit"
         ],
         "title": "ChatUsageStatus"
       },
@@ -8628,6 +9095,42 @@
         ],
         "title": "ContactSubmissionPublic",
         "description": "Public response schema for contact submission"
+      },
+      "ContactSubmissionUpdate": {
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "reviewed",
+                  "contacted",
+                  "archived"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "adminNotes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adminnotes"
+          }
+        },
+        "type": "object",
+        "title": "ContactSubmissionUpdate",
+        "description": "Schema for updating status and/or admin notes of a contact submission"
       },
       "ContentSearchHit": {
         "properties": {
@@ -9118,6 +9621,84 @@
         "title": "ExtractionResult",
         "description": "Page extraction result with automatic camelCase conversion"
       },
+      "FeaturedQuestionAnswerResponse": {
+        "properties": {
+          "cached": {
+            "type": "boolean",
+            "title": "Cached"
+          },
+          "evalId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evalid"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "usedBookIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Usedbookids",
+            "default": []
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatCostInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "cached",
+          "question"
+        ],
+        "title": "FeaturedQuestionAnswerResponse",
+        "description": "Cached answer lookup response for a homepage featured sample question."
+      },
+      "FeaturedQuestionItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "question"
+        ],
+        "title": "FeaturedQuestionItem",
+        "description": "Public featured sample question item shown on the homepage rotator."
+      },
       "FeedbackRequest": {
         "properties": {
           "eval_id": {
@@ -9395,6 +9976,7 @@
         "properties": {
           "imageBase64": {
             "type": "string",
+            "maxLength": 15000000,
             "title": "Imagebase64"
           }
         },

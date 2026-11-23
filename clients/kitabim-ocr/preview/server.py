@@ -920,6 +920,7 @@ def push_response(workdir: OcrWorkDir, client) -> dict:
             if isinstance(res, dict) and res.get("bookId"):
                 workdir.book_id = str(res["bookId"])
             workdir.save_metadata()
+            workdir.clear_images()
         return res
 
     try:
@@ -942,6 +943,7 @@ def push_response(workdir: OcrWorkDir, client) -> dict:
             workdir.uploaded = True
             workdir.uploaded_at = time.time()
             workdir.save_metadata()
+            workdir.clear_images()
         return {"status": "corrections_pushed", "count": len(results)}
     except KitabimAPIError as exc:
         if "404 from Kitabim API" in str(exc) and workdir.book_id is not None:

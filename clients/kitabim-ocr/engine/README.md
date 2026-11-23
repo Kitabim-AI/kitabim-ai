@@ -48,7 +48,7 @@ Core OCR processing, layout analysis, dictionary validation, queue scheduling, a
 - `[text_cleanup.py:is_hallucinated_ghost_text]`: Identifies pseudo-Uyghur bleed-through hallucinations with garbled internal syllable loops or extreme content-word duplication.
 - `[text_cleanup.py:is_degenerate_ocr_output]`: Enforces upper bounds on character counts and catches per-block or consecutive-line runaway loops without rejecting structured quiz/form pages.
 - `[workdir.py:PageState]`: Dataclass modeling individual page OCR results, sidecar `detected_page_number`, `skipped`, and review state.
-- `[workdir.py:OcrWorkDir]`: Local filesystem manager for session state, `book.json`, `pages.json`, and rendered PNGs.
+- `[workdir.py:OcrWorkDir]`: Local filesystem manager for session state, `book.json`, `pages.json`, and rendered PNGs (including `[workdir.py:OcrWorkDir.clear_images]` to purge cached `pages/*` images after cloud push).
 
 ## Invariants
 - `[queue.py:BookQueueManager]`: Exactly one book session undergoes OCR processing at any given time; FIFO ordering serialized with `asyncio.Lock` and `threading.RLock`.

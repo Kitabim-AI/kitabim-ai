@@ -109,6 +109,24 @@ export interface ConversationMessage {
   createdAt: string;
 }
 
+export interface FeaturedQuestionItem {
+  id?: number;
+  question: string;
+}
+
+export interface FeaturedQuestionAnswerResponse {
+  cached: boolean;
+  evalId?: number | null;
+  question: string;
+  answer?: string | null;
+  usedBookIds?: string[];
+  cost?: {
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  } | null;
+}
+
 export interface ChatRequest {
   question: string;
   bookId?: string;
@@ -117,6 +135,8 @@ export interface ChatRequest {
   currentPage?: number;
   characterId?: string;
   conversationId?: string;
+  fromSampleQuestion?: boolean;
+  sampleEvalId?: number;
 }
 
 export interface Bookmark {

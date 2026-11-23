@@ -2499,6 +2499,7 @@ async def test_answer_falls_back_to_page_hits_text_when_no_chunks(monkeypatch):
 
 def test_resolve_catalog_shortcut_author_of_single_match():
     signals = {
+        "intent": "catalog",
         "catalog_subtype": "author_of",
         "has_title": True,
         "matched_books": [
@@ -2522,6 +2523,7 @@ def test_resolve_catalog_shortcut_author_of_multi_volume_same_title_still_matche
     is still an unambiguous single match as long as every row shares the
     same title."""
     signals = {
+        "intent": "catalog",
         "catalog_subtype": "author_of",
         "has_title": True,
         "matched_books": [
@@ -2584,6 +2586,7 @@ def test_resolve_catalog_shortcut_author_of_missing_author_returns_none():
 
 def test_resolve_catalog_shortcut_books_by_match():
     signals = {
+        "intent": "catalog",
         "catalog_subtype": "books_by",
         "has_author": True,
         "matched_author_books": [
@@ -2605,6 +2608,50 @@ def test_resolve_catalog_shortcut_books_by_match():
     }
     match = _resolve_catalog_shortcut(signals)
     assert match == {"subtype": "books_by", "books": signals["matched_author_books"]}
+
+
+def test_resolve_catalog_shortcut_rejects_non_catalog_intent():
+    """Production bug regression: Stage 1.5 calls get_books_by_author on author-scoped
+    passage questions ('What views did Erkin Sidick express about President Trump?').
+    Even if catalog_subtype='books_by' leaks onto intent='passage', _resolve_catalog_shortcut
+    must NEVER dump the author's book list."""
+    signals = {
+        "intent": "passage",
+        "catalog_subtype": "books_by",
+        "has_author": True,
+        "matched_author_books": [
+            {
+                "id": "book-1",
+                "title": "دوكتور ئەركىن سىدىق بىلەن سۆھبەت",
+                "author": "ئەركىن سىدىق",
+            }
+        ],
+    }
+    assert _resolve_catalog_shortcut(signals) is None
+
+
+def test_resolve_catalog_shortcut_rejects_author_opinion_question_even_if_misclassified_as_catalog():
+    """Even if Stage 1.5 misclassifies intent='catalog' on an author opinion/topic question,
+    the topic/opinion guard must veto the books_by shortcut."""
+    signals = {
+        "intent": "catalog",
+        "catalog_subtype": "books_by",
+        "has_author": True,
+        "matched_author_books": [
+            {
+                "id": "book-1",
+                "title": "دوكتور ئەركىن سىدىق بىلەن سۆھبەت",
+                "author": "ئەركىن سىدىق",
+            }
+        ],
+    }
+    assert (
+        _resolve_catalog_shortcut(
+            signals,
+            question="ئەركىن سىدىق پرېزىدېنت ترامپ ھەققىدە قانداق قاراشلارنى ئوتتۇرىغا قويغان؟",
+        )
+        is None
+    )
 
 
 def test_resolve_catalog_shortcut_books_by_no_match_returns_none():
@@ -3444,3 +3491,108 @@ async def test_stream_response_emits_correction_event_when_citation_fixer_rewrit
     correction_events = [e for e in events if e.get("type") == "correction"]
     assert len(correction_events) == 1
     assert correction_events[0]["text"] == "جاۋاب تېكىستى [10-بەت](ref:book-1:10)"
+
+
+@pytest.mark.asyncio
+async def test_stream_response_author_opinion_question_routes_to_retrieval_agent_not_books_by_shortcut():
+    """End-to-end regression test for:
+    'ئەركىن سىدىق پرېزىدېنت ترامپ ھەققىدە قانداق قاراشلارنى ئوتتۇرىغا قويغان؟'
+    Even if analyze_query_signals resolves matched_author_books and leaks
+    intent='catalog' / catalog_subtype='books_by', stream_response must normalize
+    intent to 'passage', skip the books_by catalog shortcut, and invoke
+    KitabimRetrievalAgent + KitabimAnswerAgent."""
+    db_session = AsyncMock()
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-erkin", user_id="user-1", book_id=None, is_global=True
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=301)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    async def _answer_gen(*args, **kwargs):
+        ev = MagicMock()
+        part = MagicMock()
+        part.text = "ئەركىن سىدىقنىڭ ترامپ ھەققىدىكى قاراشلىرى..."
+        ev.content.parts = [part]
+        yield ev
+
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(side_effect=_answer_gen)
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({"rag_reranker_enabled": "false"})
+    )
+
+    mock_analyze = AsyncMock(
+        return_value={
+            "intent": "catalog",
+            "catalog_subtype": "books_by",
+            "has_author": True,
+            "matched_author_books": [
+                {
+                    "id": "book-erkin-1",
+                    "title": "دوكتور ئەركىن سىدىق بىلەن سۆھبەت",
+                    "author": "ئەركىن سىدىق",
+                    "total_pages": 357,
+                }
+            ],
+        }
+    )
+
+    with patch(
+        "app.services.chat.orchestrator.ConversationRepository",
+        return_value=conv_repo,
+    ), patch(
+        "app.services.chat.orchestrator.SystemConfigsRepository",
+        return_value=mock_configs_repo,
+    ), patch(
+        "app.services.chat.orchestrator.RAGEvaluationsRepository",
+        return_value=eval_repo,
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze,
+    ), patch(
+        "app.services.chat.orchestrator.InMemorySessionService",
+        return_value=AsyncMock(
+            create_session=AsyncMock(return_value=MagicMock(state={}))
+        ),
+    ), patch(
+        "app.services.chat.orchestrator.Runner", return_value=retrieval_runner
+    ), patch(
+        "app.services.chat.orchestrator.InMemoryRunner", return_value=answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.build_retrieval_agent",
+        return_value=MagicMock(),
+    ) as mock_build_retrieval, patch(
+        "app.services.chat.orchestrator.build_answer_agent",
+        return_value=MagicMock(),
+    ) as mock_build_answer, patch(
+        "app.services.chat.orchestrator.fix_malformed_citations",
+        side_effect=lambda text: text,
+    ):
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="ئەركىن سىدىق پرېزىدېنت ترامپ ھەققىدە قانداق قاراشلارنى ئوتتۇرىغا قويغان؟",
+            user_id="user-1",
+            book_id=None,
+            is_global=True,
+        )
+
+        _ = [event async for event in orchestrator.stream_response(dto, db_session)]
+
+    mock_build_retrieval.assert_called_once()
+    passed_signals = mock_build_retrieval.call_args.kwargs["intent_signals"]
+    assert passed_signals["intent"] == "passage"
+    assert passed_signals["catalog_subtype"] is None
+    mock_build_answer.assert_called_once()
+    saved_answer = conv_repo.save_turn.await_args.kwargs["answer"]
+    assert "كۈتۈپخانىمىزدىكى" not in saved_answer
+    assert "ترامپ ھەققىدىكى قاراشلىرى" in saved_answer

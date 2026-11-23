@@ -1,5 +1,5 @@
 
-import { Book, PaginatedBooks, Bookmark, ReadingProgressEntry, ChunkInspectorResponse, ChunkInspectorFilterType, ChunkInspectorSearchMode } from '@shared/types';
+import { Book, PaginatedBooks, Bookmark, ReadingProgressEntry, ChunkInspectorResponse, ChunkInspectorFilterType, ChunkInspectorSearchMode, FeaturedQuestionItem, FeaturedQuestionAnswerResponse } from '@shared/types';
 import { authFetch } from './authService';
 
 const API_BASE = '/api';
@@ -562,14 +562,44 @@ export const PersistenceService = {
     }
   },
 
-  async getFeaturedQuestions(limit: number = 20): Promise<string[]> {
+  async getFeaturedQuestions(limit: number = 20): Promise<FeaturedQuestionItem[]> {
     try {
       const response = await authFetch(`${API_BASE}/questions/featured?limit=${limit}`);
       if (!response.ok) throw new Error("Failed to fetch featured questions");
-      return await response.json();
+      const data = await response.json();
+      if (!Array.isArray(data)) return [];
+      return data
+        .map((item: unknown): FeaturedQuestionItem | null => {
+          if (typeof item === 'string') {
+            return { question: item };
+          }
+          if (item && typeof item === 'object' && typeof (item as any).question === 'string') {
+            return {
+              id: typeof (item as any).id === 'number' ? (item as any).id : undefined,
+              question: (item as any).question,
+            };
+          }
+          return null;
+        })
+        .filter((item): item is FeaturedQuestionItem => item !== null);
     } catch (error) {
       console.error("Failed to fetch featured questions", error);
       return [];
+    }
+  },
+
+  async getFeaturedQuestionAnswer(question: string, evalId?: number): Promise<FeaturedQuestionAnswerResponse | null> {
+    try {
+      const params = new URLSearchParams({ question });
+      if (typeof evalId === 'number') {
+        params.set('eval_id', String(evalId));
+      }
+      const response = await authFetch(`${API_BASE}/questions/featured/answer?${params.toString()}`);
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.error("Failed to fetch featured question answer", error);
+      return null;
     }
   },
 

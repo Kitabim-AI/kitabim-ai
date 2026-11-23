@@ -80,7 +80,7 @@ async def _build_human_message(ctx: QueryContext, question: str) -> str:
         if pre_books:
             lines.append(
                 "Pre-resolved books mentioned in question (skip redundant title/author discovery): "
-                + "; ".join(pre_books[:15])
+                + "; ".join(pre_books[:30])
             )
 
         if signals.get("is_composite") and isinstance(

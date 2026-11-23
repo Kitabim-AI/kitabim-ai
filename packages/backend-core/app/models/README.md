@@ -26,6 +26,9 @@ Defines shared Pydantic v2 data transfer objects (DTOs), API request/response sc
 - `[schemas.py:RagQuestionsPage]` — `class RagQuestionsPage(BaseModel)`: Offset/limit paginated RAG evaluation records (`items`, `total`, `offset`, `limit`).
 - `[schemas.py:RagQuestionToggle]` — `class RagQuestionToggle(BaseModel)`: Request payload to toggle `show_on_homepage`.
 - `[schemas.py:RagQuestionToggleResponse]` — `class RagQuestionToggleResponse(BaseModel)`: Response payload for `show_on_homepage` toggle (`id`, `show_on_homepage`).
+- `[schemas.py:FeaturedQuestionItem]` — `class FeaturedQuestionItem(BaseModel)`: Public homepage rotator question item (`id`, `question`).
+- `[schemas.py:ChatCostInfo]` — `class ChatCostInfo(BaseModel)`: Token usage and USD cost metadata (`input_tokens`, `output_tokens`, `cost_usd`).
+- `[schemas.py:FeaturedQuestionAnswerResponse]` — `class FeaturedQuestionAnswerResponse(BaseModel)`: Cached answer lookup response for homepage sample questions (`cached`, `eval_id`, `question`, `answer`, `used_book_ids`, `cost`).
 - `[schemas.py:ContentSearchHit]` — `class ContentSearchHit(BaseModel)`: Full-text page search hit (`id`, `book_id`, `book_title`, `book_author`, `book_volume`, `book_cover_url`, `page_number`, `snippet`, `rank`).
 - `[schemas.py:PaginatedContentHits]` — `class PaginatedContentHits(BaseModel)`: Paginated full-text content search response (`hits`, `total`, `page`, `page_size`).
 - `[user.py:UserRole]` — `class UserRole(str, Enum)`: User access role enum (`ADMIN = "admin"`, `EDITOR = "editor"`, `READER = "reader"`).

@@ -59,8 +59,8 @@ _STEP_4_DICTIONARY = (
 )
 
 _STEP_5_CATALOG = (
-    "5. For catalog or metadata questions (who wrote X, what books does Y author have, "
-    "what is available in the library):\n"
+    "5. For pure catalog or metadata questions ONLY (who wrote X, what books does Y author have in the library, "
+    "what is available in the library — NEVER use Step 5 when the user asks what an author or book says, argues, or thinks about a topic; use Step 6 instead):\n"
     '   - "who wrote [title]?" or any authorship/ownership question about a book title → call get_book_author.\n'
     "   - This includes Uyghur genitive patterns like '[title] كىمنىڭ؟' (whose is [title]?), "
     "'[title] كىمگە تەئەللۇق؟', '[title]نىڭ ئاپتورى كىم؟', or any sentence where a known book title "
@@ -80,8 +80,8 @@ _STEP_6_CONTENT = (
     "call get_book_summary with the resulting book IDs. Do NOT call search_chunks for these questions.\n"
     "   b. If the question explicitly names a book title and asks for specific passages or details → use the book IDs from 'Pre-resolved books mentioned in question' in [Context] if present (otherwise call find_books_by_title "
     "to get the book IDs), then call search_chunks with those book IDs for supporting passages.\n"
-    "   c. If the question explicitly names an author → use the book IDs from 'Pre-resolved books mentioned in question' in [Context] if present (otherwise call get_books_by_author and extract "
-    "the book IDs from the result), and call search_chunks with those book IDs.\n"
+    "   c. If the question explicitly names an author and asks about views, opinions, events, or topics in their works → use the book IDs from 'Pre-resolved books mentioned in question' in [Context] if present (otherwise call get_books_by_author and extract "
+    "the book IDs from the result), and call search_chunks with those book IDs. Focus the `search_chunks` `query` (and any supplementary `search_keyword_phrase` `phrase` for specific proper nouns) on the subject, person, or claim being asked about rather than repeating the author's own name, since authors rarely write their own name inside body paragraphs.\n"
     "   d. If no title/author is explicitly named, but [Context] provides a current book_id:\n"
     "      - If the question asks for the plot, themes, summary, or main content of the current book (e.g. 'بۇ كىتاب نېمە توغرىسىدا؟', 'بۇ كىتابنىڭ ئاساسى مەزمۇنى نېمە؟', 'this book summary') → call get_book_summary with [current_book_id] directly. Skip book discovery tools entirely.\n"
     "      - If the question asks about a DIFFERENT volume of the current book (e.g. mentions 'next volume', "
@@ -157,8 +157,8 @@ _HARD_LIMITS = (
 # the whole library directly; vector ranking picks the books.
 
 _STEP_5_CATALOG_DIRECT = (
-    "5. For catalog or metadata questions (who wrote X, what books does Y author have, "
-    "what is available in the library):\n"
+    "5. For pure catalog or metadata questions ONLY (who wrote X, what books does Y author have in the library, "
+    "what is available in the library — NEVER use Step 5 when the user asks what an author or book says, argues, or thinks about a topic; use Step 6 instead):\n"
     '   - "who wrote [title]?" or any authorship/ownership question about a book title → call get_book_author.\n'
     "   - This includes Uyghur genitive patterns like '[title] كىمنىڭ؟' (whose is [title]?), "
     "'[title] كىمگە تەئەللۇق؟', '[title]نىڭ ئاپتورى كىم؟', or any sentence where a known book title "
@@ -181,8 +181,8 @@ _STEP_6_CONTENT_DIRECT = (
     "call get_book_summary with the resulting book IDs. Do NOT call search_chunks for these questions.\n"
     "   b. If the question explicitly names a book title and asks for specific passages or details → use the book IDs from 'Pre-resolved books mentioned in question' in [Context] if present (otherwise call find_books_by_title "
     "to get the book IDs), then call search_chunks with those book IDs for supporting passages.\n"
-    "   c. If the question explicitly names an author → use the book IDs from 'Pre-resolved books mentioned in question' in [Context] if present (otherwise call get_books_by_author and extract "
-    "the book IDs from the result), and call search_chunks with those book IDs.\n"
+    "   c. If the question explicitly names an author and asks about views, opinions, events, or topics in their works → use the book IDs from 'Pre-resolved books mentioned in question' in [Context] if present (otherwise call get_books_by_author and extract "
+    "the book IDs from the result), and call search_chunks with those book IDs. Focus the `search_chunks` `query` (and any supplementary `search_keyword_phrase` `phrase` for specific proper nouns) on the subject, person, or claim being asked about rather than repeating the author's own name, since authors rarely write their own name inside body paragraphs.\n"
     "   d. If no title/author is explicitly named, but [Context] provides a current book_id:\n"
     "      - If the question asks for the plot, themes, summary, or main content of the current book (e.g. 'بۇ كىتاب نېمە توغرىسىدا؟', 'بۇ كىتابنىڭ ئاساسى مەزمۇنى نېمە؟', 'this book summary') → call get_book_summary with [current_book_id] directly. Skip book discovery tools entirely.\n"
     "      - If the question asks about a DIFFERENT volume of the current book (e.g. mentions 'next volume', "

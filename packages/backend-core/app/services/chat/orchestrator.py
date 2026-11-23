@@ -38,7 +38,10 @@ from app.services.chat.context_grading import (
     _extract_used_book_ids,
     _grade_context,
 )
-from app.services.chat.query_signals import analyze_query_signals
+from app.services.chat.query_signals import (
+    analyze_query_signals,
+    normalize_query_signals,
+)
 from app.services.rag.agent.reranker import rerank_context
 from app.services.rag.context import QueryContext, set_current_query_context
 from app.services.rag.short_work_intent import detect_short_work_intent
@@ -240,7 +243,17 @@ def _format_short_work_answer(match: ShortWorkMatch) -> str:
     return "\n\n".join(parts)
 
 
-def _resolve_catalog_shortcut(signals: dict) -> Optional[dict]:
+_CATALOG_SHORTCUT_TOPIC_GUARD_RE = re.compile(
+    r"(?:ھەققىدە|ھەققىدىكى|توغرىسىدا|توغرىسىدىكى|توغرۇلۇق|"
+    r"قانداق\s+قاراش|قاراشلارنى|قاراشلىرى|نېمە\s+دېگەن|نېمە\s+دەيدۇ|"
+    r"قانداق\s+باھا|نېمىنى\s+بايان|نېمىنى\s+تەسۋىرلىگەن|قانداق\s+تەسۋىرلىگەن|"
+    r"قانداق\s+چۈشەندۈرگەن|نېمە\s+ئۈچۈن|"
+    r"\b(?:about|regarding|concerning)\b)",
+    re.IGNORECASE,
+)
+
+
+def _resolve_catalog_shortcut(signals: dict, question: str = "") -> Optional[dict]:
     """Deterministic "author_of" / "books_by" catalog gate.
 
     Stage 1.5 (analyze_query_signals) already runs an LLM classification that
@@ -253,11 +266,18 @@ def _resolve_catalog_shortcut(signals: dict) -> Optional[dict]:
     full LLM turn carrying the whole tool schema/system prompt) are pure
     overhead for what's already a resolved DB lookup.
 
-    Anything not cleanly resolved (no match, ambiguous title, composite
-    question) returns None so the caller falls through to the normal
-    retrieval-agent path unchanged.
+    Anything not cleanly resolved (non-catalog intent, topic/opinion question,
+    no match, ambiguous title, composite question) returns None so the caller
+    falls through to the normal retrieval-agent path unchanged.
     """
     if signals.get("is_composite"):
+        return None
+
+    if signals.get("intent") != "catalog":
+        return None
+
+    effective_q = str(signals.get("rewritten_question") or question or "").strip()
+    if effective_q and _CATALOG_SHORTCUT_TOPIC_GUARD_RE.search(effective_q):
         return None
 
     subtype = signals.get("catalog_subtype")
@@ -435,6 +455,66 @@ class ChatOrchestrator:
             "سۆھبەت",
         ]:
             await conv_repo.update_title(conv_id, question_title)
+
+        # 0.5. Sample-question cache short-circuit: when clicked from the homepage
+        # rotator, reuse the original question's stored answer if all eval scores
+        # are >= 80% instead of calling the LLM to regenerate it.
+        if getattr(request_dto, "from_sample_question", False):
+            eval_repo = RAGEvaluationsRepository(db_session)
+            cached_eval = await eval_repo.get_qualifying_sample_evaluation(
+                question=request_dto.question,
+                eval_id=getattr(request_dto, "sample_eval_id", None),
+            )
+            if cached_eval is not None and cached_eval.answer:
+                fixed_text = fix_malformed_citations(cached_eval.answer)
+                used_book_ids = await eval_repo.resolve_sample_used_book_ids(
+                    cached_eval
+                )
+                cached_cost = {
+                    "input_tokens": int(cached_eval.input_tokens or 0),
+                    "output_tokens": int(cached_eval.output_tokens or 0),
+                    "cost_usd": (
+                        float(cached_eval.cost_usd)
+                        if cached_eval.cost_usd is not None
+                        else 0.0
+                    ),
+                }
+                log_json(
+                    logger,
+                    logging.INFO,
+                    "Serving cached sample question answer",
+                    sample_eval_id=cached_eval.id,
+                    conversation_id=conv_id,
+                )
+                yield {"type": "answer_start"}
+                yield {"type": "chunk", "text": fixed_text}
+                yield {"type": "answer_end"}
+
+                await conv_repo.save_turn(
+                    conversation_id=conv_id,
+                    question=request_dto.question,
+                    answer=fixed_text,
+                    used_book_ids=used_book_ids,
+                    eval_id=None,
+                    current_page=request_dto.current_page,
+                    agent_steps={
+                        "cached_sample_eval_id": cached_eval.id,
+                        "llm_calls": 0,
+                        "tools": [],
+                        "cost": cached_cost,
+                    },
+                )
+                await db_session.commit()
+
+                yield {
+                    "type": "done",
+                    "eval_id": None,
+                    "conversation_id": conv_id,
+                    "used_book_ids": used_book_ids,
+                    "cost": cached_cost,
+                    "cached": True,
+                }
+                return
 
         # Fetch recent turns for pre-processing analysis context
         history_msgs = await conv_repo.get_recent_messages(conv_id, limit=6)
@@ -745,6 +825,7 @@ class ChatOrchestrator:
 
             if not isinstance(signals, dict):
                 signals = {}
+            signals = normalize_query_signals(signals, request_dto.question)
             ctx.query_signals = signals
 
             intent = signals.get("intent", "open")
@@ -774,7 +855,9 @@ class ChatOrchestrator:
             # already resolved the book/author row(s) via a real DB lookup --
             # skip the retrieval Agent + Answer Agent entirely for a clean,
             # unambiguous hit (see _resolve_catalog_shortcut).
-            catalog_match = _resolve_catalog_shortcut(signals)
+            catalog_match = _resolve_catalog_shortcut(
+                signals, question=request_dto.question
+            )
             if catalog_match is not None:
                 phrase_intent.is_exact = False
             elif phrase_intent.is_exact:
@@ -1320,4 +1403,5 @@ class ChatOrchestrator:
             "conversation_id": done_meta.get("conversation_id"),
             "used_book_ids": done_meta.get("used_book_ids", []),
             "eval_id": done_meta.get("eval_id"),
+            **({"cached": True} if done_meta.get("cached") else {}),
         }

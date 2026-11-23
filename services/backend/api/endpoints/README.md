@@ -65,7 +65,7 @@ FastAPI `APIRouter` modules implementing the HTTP route handlers for Kitabim.AI 
   - `[graph_admin_router.py:router]`, `[graph_admin_router.py:SplitEntityRequest]`
   - `POST /entities/{entity_id}/split` (`[graph_admin_router.py:split_entity]`), `POST /merge-log/{merge_log_id}/unmerge` (`[graph_admin_router.py:unmerge_entity]`), `GET /review-queue` (`[graph_admin_router.py:list_review_queue]`), `POST /review-queue/{review_id}/approve` (`[graph_admin_router.py:approve_review]`), `POST /review-queue/{review_id}/reject` (`[graph_admin_router.py:reject_review]`)
 - **Questions (`questions_router.py`)**:
-  - `[questions_router.py:router]`, `GET /admin/questions` (`[questions_router.py:get_admin_questions]`), `PATCH /admin/questions/{eval_id}/featured` (`[questions_router.py:toggle_featured_question]`), `GET /featured` (`[questions_router.py:get_featured_questions]`)
+  - `[questions_router.py:router]`, `GET /admin/questions` (`[questions_router.py:get_admin_questions]`), `PATCH /admin/questions/{eval_id}/featured` (`[questions_router.py:toggle_featured_question]`), `GET /featured` (`[questions_router.py:get_featured_questions]`), `GET /featured/answer` (`[questions_router.py:get_featured_question_answer]`)
 - **Share Previews (`share_router.py`)**:
   - `[share_router.py:router]`, `GET /book/{book_id}` (`[share_router.py:share_book]`), `GET /qa` (`[share_router.py:share_qa]`), `GET /page/{book_id}/{page_number}` (`[share_router.py:share_page]`)
 - **Spell Check (`spell_check_router.py`)**:

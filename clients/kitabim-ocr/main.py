@@ -194,12 +194,14 @@ def cmd_push(workdir_path: Path, base_url: str) -> None:
             workdir.uploaded = True
             workdir.uploaded_at = time.time()
             workdir.save_metadata()
+            workdir.clear_images()
     else:
         for page in workdir.all_pages():
             client.push_page_correction(workdir.book_id, page)
         workdir.uploaded = True
         workdir.uploaded_at = time.time()
         workdir.save_metadata()
+        workdir.clear_images()
         result = {"status": "corrections_pushed", "count": len(workdir.all_pages())}
     print(result)
 

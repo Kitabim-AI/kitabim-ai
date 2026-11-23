@@ -125,7 +125,7 @@ def build_retrieval_agent(
         )
         if pre_matched_ids:
             hints.append(
-                f"- Query hint: Book IDs already resolved from the question: {pre_matched_ids[:15]} "
+                f"- Query hint: Book IDs already resolved from the question: {pre_matched_ids[:30]} "
                 "— pass these book_ids directly to search_chunks / get_book_summary without re-running find_books_by_title or get_books_by_author."
             )
         if intent_signals.get("is_composite") and isinstance(

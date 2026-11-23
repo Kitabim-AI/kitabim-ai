@@ -601,6 +601,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/{book_id}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Book Chunks Inspector
+         * @description Inspect sections, chunk boundaries, contextual embedding prefixes, and semantic/text/reranked search scores for a book.
+         */
+        get: operations["get_book_chunks_inspector_api_books__book_id__chunks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{book_id}/pages": {
         parameters: {
             query?: never;
@@ -1590,6 +1610,34 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/contact/admin/submissions/{submission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Contact Submission
+         * @description Get a single contact submission by ID (Admin-only).
+         */
+        get: operations["get_contact_submission_api_contact_admin_submissions__submission_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Contact Submission
+         * @description Delete a contact submission by ID (Admin-only).
+         */
+        delete: operations["delete_contact_submission_api_contact_admin_submissions__submission_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Contact Submission
+         * @description Update status and/or admin notes of a contact submission (Admin-only).
+         */
+        patch: operations["update_contact_submission_api_contact_admin_submissions__submission_id__patch"];
         trace?: never;
     };
     "/api/books/spell-check/random-book": {
@@ -2603,6 +2651,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/questions/featured/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Featured Question Answer
+         * @description Return the stored answer for a homepage sample question if all evaluation
+         *     scores are >= 80%.
+         *
+         *     Public endpoint — only inspects rows with show_on_homepage=True.
+         */
+        get: operations["get_featured_question_answer_api_questions_featured_answer_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/proverbs/search": {
         parameters: {
             query?: never;
@@ -3174,6 +3245,27 @@ export interface components {
             count: number;
         };
         /**
+         * ChatCostInfo
+         * @description Token usage and estimated USD cost for an answer.
+         */
+        ChatCostInfo: {
+            /**
+             * Inputtokens
+             * @default 0
+             */
+            inputTokens: number;
+            /**
+             * Outputtokens
+             * @default 0
+             */
+            outputTokens: number;
+            /**
+             * Costusd
+             * @default 0
+             */
+            costUsd: number;
+        };
+        /**
          * ChatRequest
          * @description Chat request with automatic camelCase conversion
          */
@@ -3210,6 +3302,13 @@ export interface components {
              * @default false
              */
             exactPhrase: boolean;
+            /**
+             * Fromsamplequestion
+             * @default false
+             */
+            fromSampleQuestion: boolean;
+            /** Sampleevalid */
+            sampleEvalId?: number | null;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -3223,8 +3322,8 @@ export interface components {
             usage: number;
             /** Limit */
             limit: number | null;
-            /** Has Reached Limit */
-            has_reached_limit: boolean;
+            /** Hasreachedlimit */
+            hasReachedLimit: boolean;
         };
         /** ChunkStats */
         ChunkStats: {
@@ -3297,6 +3396,16 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+        };
+        /**
+         * ContactSubmissionUpdate
+         * @description Schema for updating status and/or admin notes of a contact submission
+         */
+        ContactSubmissionUpdate: {
+            /** Status */
+            status?: ("new" | "reviewed" | "contacted" | "archived") | null;
+            /** Adminnotes */
+            adminNotes?: string | null;
         };
         /**
          * ContentSearchHit
@@ -3469,6 +3578,36 @@ export interface components {
              * @default false
              */
             isToc: boolean;
+        };
+        /**
+         * FeaturedQuestionAnswerResponse
+         * @description Cached answer lookup response for a homepage featured sample question.
+         */
+        FeaturedQuestionAnswerResponse: {
+            /** Cached */
+            cached: boolean;
+            /** Evalid */
+            evalId?: number | null;
+            /** Question */
+            question: string;
+            /** Answer */
+            answer?: string | null;
+            /**
+             * Usedbookids
+             * @default []
+             */
+            usedBookIds: string[];
+            cost?: components["schemas"]["ChatCostInfo"] | null;
+        };
+        /**
+         * FeaturedQuestionItem
+         * @description Public featured sample question item shown on the homepage rotator.
+         */
+        FeaturedQuestionItem: {
+            /** Id */
+            id: number;
+            /** Question */
+            question: string;
         };
         /** FeedbackRequest */
         FeedbackRequest: {
@@ -5099,6 +5238,46 @@ export interface operations {
             };
         };
     };
+    get_book_chunks_inspector_api_books__book_id__chunks_get: {
+        parameters: {
+            query?: {
+                page?: number | null;
+                sectionId?: number | null;
+                filterType?: string;
+                mode?: string;
+                q?: string | null;
+                rerank?: boolean;
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                book_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_book_pages_api_books__book_id__pages_get: {
         parameters: {
             query?: {
@@ -6657,7 +6836,7 @@ export interface operations {
     get_contact_submissions_api_contact_admin_submissions_get: {
         parameters: {
             query?: {
-                status?: string | null;
+                status?: ("new" | "reviewed" | "contacted" | "archived") | null;
                 limit?: number;
                 offset?: number;
             };
@@ -6674,6 +6853,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContactSubmissionAdmin"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_contact_submission_api_contact_admin_submissions__submission_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactSubmissionAdmin"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_contact_submission_api_contact_admin_submissions__submission_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_contact_submission_api_contact_admin_submissions__submission_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactSubmissionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactSubmissionAdmin"];
                 };
             };
             /** @description Validation Error */
@@ -8321,7 +8595,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string[];
+                    "application/json": components["schemas"]["FeaturedQuestionItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_featured_question_answer_api_questions_featured_answer_get: {
+        parameters: {
+            query: {
+                question: string;
+                eval_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeaturedQuestionAnswerResponse"];
                 };
             };
             /** @description Validation Error */

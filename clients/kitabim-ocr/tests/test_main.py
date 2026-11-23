@@ -180,6 +180,7 @@ def test_cmd_push_resubmits_as_new_book_when_book_deleted_on_cloud(tmp_path: Pat
         original_filename="book.pdf",
     )
     (workdir_path / "book.pdf").write_bytes(b"%PDF-1.4")
+    wd.image_path(1).write_bytes(b"\x89PNG\r\nfake")
     wd.set_page(1, text="text", is_toc=False, confidence=1.0, status="ocrd")
     wd.save()
 
@@ -195,9 +196,37 @@ def test_cmd_push_resubmits_as_new_book_when_book_deleted_on_cloud(tmp_path: Pat
 
     mock_exists.assert_called_once_with("deleted_cloud_book")
     mock_push_new.assert_called_once()
+    assert not wd.image_path(1).exists()
     reloaded = main.OcrWorkDir.load(workdir_path)
     assert reloaded.book_id == "new_cloud_id"
     assert reloaded.uploaded is True
+
+
+def test_cmd_push_existing_book_clears_cached_page_images(tmp_path: Path):
+    workdir_path = tmp_path / "work_existing"
+    wd = main.OcrWorkDir.create(
+        workdir_path,
+        source_pdf=workdir_path / "book.pdf",
+        total_pages=1,
+        book_id="existing_cloud_book",
+        original_filename="book.pdf",
+    )
+    (workdir_path / "book.pdf").write_bytes(b"%PDF-1.4")
+    wd.image_path(1).write_bytes(b"\x89PNG\r\nfake")
+    wd.set_page(1, text="updated", is_toc=False, confidence=1.0, status="reviewed")
+    wd.save()
+
+    with (
+        patch.object(main.KitabimClient, "book_exists", return_value=True),
+        patch.object(
+            main.KitabimClient, "push_page_correction", return_value={"status": "ok"}
+        ) as mock_corr,
+    ):
+        main.cmd_push(workdir_path, "http://localhost:8000")
+
+    mock_corr.assert_called_once()
+    assert not wd.image_path(1).exists()
+    assert main.OcrWorkDir.load(workdir_path).uploaded is True
 
 
 def test_build_parser_login_and_backfill_commands():
