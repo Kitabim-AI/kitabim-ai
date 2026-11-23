@@ -25,6 +25,14 @@ def get_current_query_context() -> Optional[QueryContext]:
     return _current_query_context.get()
 
 
+def resolve_rag_is_staff(is_staff: Optional[bool] = None) -> bool:
+    """Resolve effective staff privilege from explicit arg or active QueryContext."""
+    if is_staff is not None:
+        return is_staff is True
+    ctx = _current_query_context.get()
+    return getattr(ctx, "is_staff", False) is True
+
+
 @dataclass
 class QueryContext:
     # ── From ChatRequest ────────────────────────────────────────────────────
@@ -63,6 +71,9 @@ class QueryContext:
     # agent searches chunks library-wide instead of pre-narrowing to books via
     # search_books_by_summary. Default True = legacy behavior when unset.
     summary_narrowing_enabled: bool = True
+    is_staff: bool = False
+    had_tool_failure: bool = False
+    query_signals: dict = field(default_factory=dict)
 
     # ── Eval metadata. Set by the deleted legacy pipeline's `_build_context`/
     # `_record_eval`; `ChatOrchestrator` computes its `rag_evaluations` insert

@@ -17,8 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.pipeline import (
     PAGE_MILESTONE_IDLE,
     PAGE_MILESTONE_SUCCEEDED,
-    PIPELINE_STEP_CHUNKING,
-    PIPELINE_STEP_EMBEDDING,
+    PIPELINE_STEP_SPELL_CHECK,
 )
 from app.db.session import get_session
 from app.db.models import Page, PageSpellIssue, Word
@@ -452,17 +451,19 @@ async def apply_spell_corrections(
     # Flush changes so the milestone statistics see the new states
     await session.flush()
 
-    # Update book milestones (calculates from flushed page states)
-    from app.services.book_milestone_service import BookMilestoneService
+    if applied_ids:
+        from app.services.book_structure_service import mark_structure_dirty
 
-    await BookMilestoneService.update_book_milestone_for_step(
-        session, book_id, PIPELINE_STEP_CHUNKING
-    )
-    await BookMilestoneService.update_book_milestone_for_step(
-        session, book_id, PIPELINE_STEP_EMBEDDING
-    )
+        await mark_structure_dirty(session, book_id)
 
     await session.commit()
+
+    if applied_ids:
+        from app.services.book_structure_service import (
+            claim_and_enqueue_structure_for_book,
+        )
+
+        await claim_and_enqueue_structure_for_book(book_id, session=session)
 
     if processed_auto_corrections:
         await invalidate_frequent_corrections_cache()
@@ -486,16 +487,24 @@ async def trigger_spell_check(
             and_(
                 Page.book_id == book_id,
                 or_(
-                    Page.pipeline_step == PIPELINE_STEP_EMBEDDING,
-                    Page.pipeline_step.is_(None),
+                    Page.ocr_milestone == PAGE_MILESTONE_SUCCEEDED,
+                    Page.milestone == PAGE_MILESTONE_SUCCEEDED,
                 ),
-                Page.milestone == PAGE_MILESTONE_SUCCEEDED,
             )
         )
         .values(spell_check_milestone=PAGE_MILESTONE_IDLE)
         .returning(Page.id)
     )
     queued = len(result.fetchall())
+    if queued > 0:
+        from app.services.book_milestone_service import BookMilestoneService
+        from app.services.book_structure_service import mark_structure_dirty
+
+        await session.flush()
+        await BookMilestoneService.update_book_milestone_for_step(
+            session, book_id, PIPELINE_STEP_SPELL_CHECK
+        )
+        await mark_structure_dirty(session, book_id)
     await session.commit()
 
     if queued == 0:
@@ -525,16 +534,26 @@ async def trigger_page_spell_check(
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
 
-    if page.milestone != PAGE_MILESTONE_SUCCEEDED or (
-        page.pipeline_step is not None and page.pipeline_step != PIPELINE_STEP_EMBEDDING
+    if (
+        page.ocr_milestone != PAGE_MILESTONE_SUCCEEDED
+        and page.milestone != PAGE_MILESTONE_SUCCEEDED
     ):
         raise HTTPException(
             status_code=400,
-            detail="Page has not completed OCR/embedding pipeline yet.",
+            detail="Page has not completed OCR pipeline yet.",
         )
 
+    original_text = page.text or ""
     issue_count = await run_spell_check_for_page(session, page)
+    text_changed = (page.text or "") != original_text
     await session.commit()
+
+    if text_changed:
+        from app.services.book_structure_service import (
+            claim_and_enqueue_structure_for_book,
+        )
+
+        await claim_and_enqueue_structure_for_book(book_id, session=session)
 
     return {"issues_found": issue_count}
 

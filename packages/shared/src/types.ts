@@ -7,16 +7,18 @@ export interface ErrorEvent extends Omit<ErrorEventSchema, 'ts' | 'context'> {
 }
 
 export type ExtractionResultSchema = components['schemas']['ExtractionResult'];
-export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' | 'pipelineStep' | 'milestone' | 'llmSpellCheckStatus'> {
+export interface ExtractionResult extends Omit<ExtractionResultSchema, 'status' | 'pipelineStep' | 'milestone' | 'contentPageNumber'> {
   status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'indexed' | 'error';
   pipelineStep?: 'ocr' | 'chunking' | 'embedding' | null;
   milestone?: 'idle' | 'running' | 'succeeded' | 'failed' | null;
-  contentPageNumber?: string | null;
-  content_page_number?: string | null;
+  detectedPageNumber?: number | null;
+  detected_page_number?: number | null;
+  contentPageNumber?: string | number | null;
+  content_page_number?: string | number | null;
+  contentPageNumberManual?: boolean;
+  content_page_number_manual?: boolean;
   displayPageNumber?: string | null;
   display_page_number?: string | null;
-  llmSpellCheckStatus?: 'idle' | 'in_progress' | 'succeeded' | 'failed';
-  llmSpellCheckAt?: string | null;
 }
 
 export type BookSchema = components['schemas']['Book'];
@@ -30,6 +32,7 @@ export interface Book extends Omit<
   | 'visibility'
   | 'pipelineStep'
   | 'ocrMilestone'
+  | 'structureMilestone'
   | 'chunkingMilestone'
   | 'embeddingMilestone'
   | 'spellCheckMilestone'
@@ -38,12 +41,17 @@ export interface Book extends Omit<
   lastUpdated: Date | null;
   lastError?: ErrorEvent | null;
   pages: ExtractionResult[];
+  ocrVersion?: number;
+  ocr_version?: number;
   contentPageOffset?: number;
   content_page_offset?: number;
+  contentPageMap?: Record<string, number> | null;
+  content_page_map?: Record<string, number> | null;
   status: 'pending' | 'ocr_processing' | 'ocr_done' | 'indexing' | 'ready' | 'error';
   visibility?: 'public' | 'private';
-  pipelineStep?: 'ocr' | 'chunking' | 'embedding' | 'spell_check' | 'ready' | null;
+  pipelineStep?: 'ocr' | 'structure' | 'chunking' | 'embedding' | 'spell_check' | 'ready' | null;
   ocrMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
+  structureMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   chunkingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   embeddingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   spellCheckMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
@@ -101,6 +109,24 @@ export interface ConversationMessage {
   createdAt: string;
 }
 
+export interface FeaturedQuestionItem {
+  id?: number;
+  question: string;
+}
+
+export interface FeaturedQuestionAnswerResponse {
+  cached: boolean;
+  evalId?: number | null;
+  question: string;
+  answer?: string | null;
+  usedBookIds?: string[];
+  cost?: {
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  } | null;
+}
+
 export interface ChatRequest {
   question: string;
   bookId?: string;
@@ -109,6 +135,8 @@ export interface ChatRequest {
   currentPage?: number;
   characterId?: string;
   conversationId?: string;
+  fromSampleQuestion?: boolean;
+  sampleEvalId?: number;
 }
 
 export interface Bookmark {
@@ -127,5 +155,64 @@ export interface ReadingProgressEntry {
   bookCoverUrl: string | null;
   pageNumber: number;
   updatedAt: string;
+}
+
+export type ChunkInspectorFilterType = 'all' | 'cross_page' | 'unembedded' | 'short' | 'oversized';
+export type ChunkInspectorSearchMode = 'semantic' | 'text';
+
+export interface ChunkInspectorSection {
+  id: number;
+  parentId: number | null;
+  sectionIndex: number;
+  level: number;
+  sectionType: string;
+  source: string | null;
+  title: string;
+  startPage: number;
+  endPage: number;
+  chunkCount: number;
+}
+
+export interface ChunkInspectorItem {
+  id: number;
+  chunkIndex: number;
+  pageNumber: number;
+  endPageNumber: number;
+  contentPageNumber: string | null;
+  endContentPageNumber: string | null;
+  sectionId: number | null;
+  sectionTitle: string | null;
+  text: string;
+  charCount: number;
+  textHash: string | null;
+  hasEmbedding: boolean;
+  embeddingPrefix: string | null;
+  overlapPrefix: string | null;
+  similarity: number | null;
+  rerankRank?: number | null;
+  rerankDropped?: boolean;
+}
+
+export interface ChunkInspectorStats {
+  totalChunks: number;
+  embeddedChunks: number;
+  unembeddedChunks: number;
+  crossPageChunks: number;
+  shortChunks: number;
+  oversizedChunks: number;
+  sectionsCount: number;
+}
+
+export interface ChunkInspectorResponse {
+  bookId: string;
+  bookTitle: string;
+  contentPageOffset: number;
+  ragThreshold: number;
+  reranked?: boolean;
+  rerankSelectedCount?: number;
+  stats: ChunkInspectorStats;
+  sections: ChunkInspectorSection[];
+  totalMatching: number;
+  chunks: ChunkInspectorItem[];
 }
 

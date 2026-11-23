@@ -5,8 +5,10 @@ Provides shared utility functions, concurrency controls, text processing, struct
 
 ## Interface
 - `[text.py:normalize_uyghur_chars]` — Normalizes Arabic/Uyghur character variants and removes invisible control characters.
-- `[text.py:clean_uyghur_text]` — Strips noise, isolated headers, and page numbers from extracted OCR text.
-- `[text.py:is_toc_page]` / `[text.py:parse_toc_entries]` — Detects table-of-contents pages and parses title/page number mappings.
+- `[text.py:normalize_digits]` / `[text.py:normalize_section_title]` — Normalizes Arabic-Indic/Persian numerals to ASCII and canonicalizes section/work titles.
+- `[text.py:parse_footnote_line]` — Parses circled, superscript, or bracketed footnote definition lines.
+- `[text.py:clean_uyghur_text]` — Strips noise, isolated headers, and page numbers from extracted OCR text while preserving markdown headings and paragraph breaks.
+- `[text.py:is_toc_page]` / `[text.py:parse_toc_entries]` — Detects table-of-contents pages and parses pipe-table and dot-leader title/page number mappings.
 - `[text.py:is_degenerate_ocr_output]` — Detects repetitive or pathological text loops in OCR outputs.
 - `[circuit_breaker.py:CircuitBreaker]` — Async circuit breaker protecting external service calls (e.g. Gemini API) with Redis-coordinated state.
 - `[circuit_breaker.py:CircuitBreakerOpen]` — Exception raised when operations are attempted while a circuit breaker is in an open state.

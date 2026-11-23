@@ -94,18 +94,58 @@ def test_download_book_pdf_writes_response_bytes_to_dest(tmp_path: Path):
     client = _client(tmp_path)
     dest = tmp_path / "downloaded.pdf"
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.content = b"%PDF-content"
+    ticket_response = MagicMock()
+    ticket_response.status_code = 200
+    ticket_response.json.return_value = {
+        "download_url": "https://storage.googleapis.com/bucket/book.pdf?sig=1"
+    }
+
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.content = b"%PDF-1.4\nfake-pdf-body"
 
     with (
         patch("kitabim_client.api.get_valid_token", return_value="tok123"),
-        patch("kitabim_client.api.httpx.get", return_value=mock_response),
+        patch(
+            "kitabim_client.api.httpx.post", return_value=ticket_response
+        ) as mock_post,
+        patch("kitabim_client.api.httpx.get", return_value=mock_get_resp) as mock_get,
     ):
         result = client.download_book_pdf("book123", dest)
 
     assert result == dest
-    assert dest.read_bytes() == b"%PDF-content"
+    assert dest.read_bytes() == b"%PDF-1.4\nfake-pdf-body"
+    assert (
+        mock_post.call_args.args[0]
+        == "http://localhost:8000/books/book123/download-ticket"
+    )
+    # External GCS URL must NOT send Authorization header
+    assert mock_get.call_args.kwargs["headers"] == {}
+
+
+def test_download_book_pdf_rejects_non_pdf_payload(tmp_path: Path):
+    client = _client(tmp_path)
+    dest = tmp_path / "bad.pdf"
+
+    ticket_response = MagicMock()
+    ticket_response.status_code = 200
+    ticket_response.json.return_value = {
+        "download_url": "/books/book123/download?token=abc"
+    }
+
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.content = b"<html>Error</html>"
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.post", return_value=ticket_response),
+        patch("kitabim_client.api.httpx.get", return_value=mock_get_resp),
+    ):
+        with pytest.raises(KitabimAPIError, match="not a valid PDF"):
+            client.download_book_pdf("book123", dest)
+
+    assert not dest.exists()
 
 
 def test_get_book_pages_loops_pagination_until_short_page(tmp_path: Path):
@@ -174,7 +214,7 @@ def test_error_response_raises_kitabim_api_error(tmp_path: Path):
 
     with (
         patch("kitabim_client.api.get_valid_token", return_value="tok123"),
-        patch("kitabim_client.api.httpx.get", return_value=mock_response),
+        patch("kitabim_client.api.httpx.post", return_value=mock_response),
     ):
         with pytest.raises(KitabimAPIError):
             client.download_book_pdf("missing", tmp_path / "x.pdf")
@@ -253,3 +293,67 @@ def test_book_exists_returns_false_when_404(tmp_path: Path):
         patch("kitabim_client.api.httpx.get", return_value=mock_res),
     ):
         assert client.book_exists("deleted_book") is False
+
+
+def test_get_backfill_candidates_calls_endpoint_with_version_and_limit(tmp_path: Path):
+    client = _client(tmp_path)
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.json.return_value = {
+        "candidates": [{"id": "b1", "title": "Book 1", "totalPages": 10}],
+        "activePipelineBookCount": 2,
+    }
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.get", return_value=mock_res) as mock_get,
+    ):
+        data = client.get_backfill_candidates(ocr_version="surya-2.5-v2", limit=25)
+
+    assert data["activePipelineBookCount"] == 2
+    assert len(data["candidates"]) == 1
+    assert (
+        mock_get.call_args.args[0] == "http://localhost:8000/books/backfill-candidates"
+    )
+    assert mock_get.call_args.kwargs["params"] == {
+        "ocr_version": "surya-2.5-v2",
+        "limit": 25,
+    }
+
+
+def test_replace_book_ocr_posts_gzip_compressed_json(tmp_path: Path):
+    import gzip
+    import json
+
+    client = _client(tmp_path)
+    pages = [
+        PageState(
+            page_number=1,
+            text="# باب بىر",
+            is_toc=False,
+            confidence=0.92,
+            status="ocrd",
+            detected_page_number=3,
+            skipped=False,
+        )
+    ]
+
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.json.return_value = {"bookId": "b1", "replacedPages": 1}
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch("kitabim_client.api.httpx.post", return_value=mock_res) as mock_post,
+    ):
+        result = client.replace_book_ocr("b1", pages, ocr_version="surya-2.5-v2")
+
+    assert result == {"bookId": "b1", "replacedPages": 1}
+    call = mock_post.call_args
+    assert call.args[0] == "http://localhost:8000/books/b1/replace-ocr"
+    assert call.kwargs["headers"]["Content-Encoding"] == "gzip"
+    assert call.kwargs["headers"]["Content-Type"] == "application/json"
+    decompressed = json.loads(gzip.decompress(call.kwargs["content"]).decode("utf-8"))
+    assert decompressed["ocrVersion"] == "surya-2.5-v2"
+    assert decompressed["pages"][0]["detectedPageNumber"] == 3
+    assert decompressed["pages"][0]["skipped"] is False

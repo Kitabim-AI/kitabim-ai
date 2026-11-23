@@ -62,6 +62,24 @@ global.IntersectionObserver = class {
 // Mock scrollIntoView
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
 
+// Polyfill HTMLDialogElement methods missing in jsdom
+if (typeof HTMLDialogElement !== 'undefined') {
+  if (!HTMLDialogElement.prototype.showModal) {
+    HTMLDialogElement.prototype.showModal = function () {
+      this.setAttribute('open', '');
+    };
+  }
+  if (!HTMLDialogElement.prototype.close) {
+    HTMLDialogElement.prototype.close = function (returnValue?: string) {
+      if (returnValue !== undefined) {
+        this.returnValue = returnValue;
+      }
+      this.removeAttribute('open');
+      this.dispatchEvent(new Event('close'));
+    };
+  }
+}
+
 // Mock localStorage
 const localStorageMock = (function() {
   let store: Record<string, string> = {};

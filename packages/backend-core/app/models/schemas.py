@@ -36,6 +36,12 @@ class ExtractionResult(BaseModel):
     content_page_number: Optional[str] = (
         None  # DB: content_page_number, API: contentPageNumber
     )
+    content_page_number_manual: bool = (
+        False  # DB: content_page_number_manual, API: contentPageNumberManual
+    )
+    detected_page_number: Optional[int] = (
+        None  # DB: detected_page_number, API: detectedPageNumber
+    )
     display_page_number: Optional[str] = (
         None  # Property: display_page_number, API: displayPageNumber
     )
@@ -46,12 +52,6 @@ class ExtractionResult(BaseModel):
     pipeline_step: Optional[str] = None  # DB: pipeline_step, API: pipelineStep
     milestone: Optional[str] = None  # DB: milestone, API: milestone
     is_toc: bool = False  # API: isToc
-    llm_spell_check_status: str = (
-        "idle"  # DB: llm_spell_check_status, API: llmSpellCheckStatus
-    )
-    llm_spell_check_at: Optional[datetime] = (
-        None  # DB: llm_spell_check_at, API: llmSpellCheckAt
-    )
 
 
 class PageTocUpdate(BaseModel):
@@ -70,11 +70,118 @@ class OcrPageInput(BaseModel):
     page_number: int  # API: pageNumber
     text: str
     is_toc: bool = False  # API: isToc
+    detected_page_number: Optional[int] = None  # API: detectedPageNumber
+    skipped: bool = False
 
     @field_validator("text", mode="after")
     @classmethod
     def strip_null_bytes(cls, v: str) -> str:
         return v.replace("\x00", "") if v else ""
+
+
+class SetStartPageRequest(BaseModel):
+    """Request body for marking a page as content Page 1."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    start_content_page: Optional[int] = 1
+
+
+class SetStartPageResponse(BaseModel):
+    """Response after marking a page as content Page 1."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    status: str = "ok"
+    content_page_offset: int
+    content_page_map: Dict[str, int] = Field(default_factory=dict)
+
+
+class RefreshTokenRequest(BaseModel):
+    """Optional JSON body for POST /api/auth/refresh used by CLI clients."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    refresh_token: Optional[str] = None
+
+
+class ReplaceOcrPageItem(BaseModel):
+    """One page entry in a bulk OCR replacement payload."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    page_number: int
+    text: str = ""
+    is_toc: Optional[bool] = None
+    detected_page_number: Optional[int] = None
+    skipped: bool = False
+
+    @field_validator("text", mode="after")
+    @classmethod
+    def strip_null_bytes(cls, v: str) -> str:
+        return v.replace("\x00", "") if v else ""
+
+
+class ReplaceOcrRequest(BaseModel):
+    """Request body for POST /api/books/{book_id}/replace-ocr."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    ocr_version: str = "surya-2.5-v2"
+    pages: List[ReplaceOcrPageItem]
+    force_overwrite_manual: bool = False
+
+
+ReplaceBookOcrRequest = ReplaceOcrRequest
+
+
+class ReplaceOcrResponse(BaseModel):
+    """Response body for POST /api/books/{book_id}/replace-ocr."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    status: str = "ok"
+    book_id: str
+    ocr_version: str
+    pages_updated: int
+    pages_unchanged: int
+    pages_skipped: int = 0
+    backup_uri: Optional[str] = None
+
+
+ReplaceBookOcrResponse = ReplaceOcrResponse
+
+
+class BackfillCandidateOut(BaseModel):
+    """Single candidate book entry for local Surya v2 backfill."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: str
+    title: str
+    author: str
+    volume: Optional[int] = None
+    total_pages: int
+    status: str
+    ocr_version: Optional[str] = None
+    upload_date: Optional[str] = None
+
+
+class BackfillCandidatesResponse(BaseModel):
+    """Response for GET /api/books/backfill-candidates."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    pending_index_books: int
+    candidates: List[BackfillCandidateOut]
 
 
 class Book(BaseModel):
@@ -115,9 +222,15 @@ class Book(BaseModel):
     )  # DB: pipeline_stats, API: pipelineStats
     has_summary: bool = False  # API: hasSummary
     has_graph: bool = False  # API: hasGraph
-    has_history: bool = False  # API: hasHistory
+    ocr_version: Optional[str] = None  # DB: ocr_version, API: ocrVersion
+    content_page_map: Dict[str, int] = Field(
+        default_factory=dict
+    )  # API: contentPageMap
     # Book-level milestones (denormalized from pages for performance)
     ocr_milestone: str = "idle"  # DB: ocr_milestone, API: ocrMilestone
+    structure_milestone: str = (
+        "idle"  # DB: structure_milestone, API: structureMilestone
+    )
     chunking_milestone: str = "idle"  # DB: chunking_milestone, API: chunkingMilestone
     embedding_milestone: str = (
         "idle"  # DB: embedding_milestone, API: embeddingMilestone
@@ -158,6 +271,12 @@ class ChatRequest(BaseModel):
     exact_phrase: bool = (
         False  # API: exactPhrase — explicit UI "Exact phrase" search mode
     )
+    from_sample_question: bool = (
+        False  # API: fromSampleQuestion — clicked homepage sample question
+    )
+    sample_eval_id: Optional[int] = (
+        None  # API: sampleEvalId — RAGEvaluation.id of clicked sample question
+    )
 
     @field_validator("question")
     @classmethod
@@ -181,6 +300,10 @@ class ChatResponse(BaseModel):
 
 
 class ChatUsageStatus(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
     usage: int
     limit: Optional[int]
     has_reached_limit: bool
@@ -224,6 +347,15 @@ class ContactSubmissionAdmin(BaseModel):
     reviewed_by: Optional[str] = None  # DB: reviewed_by, API: reviewedBy
     reviewed_at: Optional[datetime] = None  # DB: reviewed_at, API: reviewedAt
     created_at: datetime  # DB: created_at, API: createdAt
+
+
+class ContactSubmissionUpdate(BaseModel):
+    """Schema for updating status and/or admin notes of a contact submission"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    status: Optional[Literal["new", "reviewed", "contacted", "archived"]] = None
+    admin_notes: Optional[str] = Field(None, max_length=5000)
 
 
 class RagQuestionAdmin(BaseModel):
@@ -281,6 +413,42 @@ class RagQuestionToggleResponse(BaseModel):
     show_on_homepage: bool
 
 
+class FeaturedQuestionItem(BaseModel):
+    """Public featured sample question item shown on the homepage rotator."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: int
+    question: str
+
+
+class ChatCostInfo(BaseModel):
+    """Token usage and estimated USD cost for an answer."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+
+class FeaturedQuestionAnswerResponse(BaseModel):
+    """Cached answer lookup response for a homepage featured sample question."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    cached: bool
+    eval_id: Optional[int] = None
+    question: str
+    answer: Optional[str] = None
+    used_book_ids: List[str] = []
+    cost: Optional[ChatCostInfo] = None
+
+
 class ContentSearchHit(BaseModel):
     """Single page content hit for Home 'Content' search tab."""
 
@@ -303,58 +471,6 @@ class PaginatedContentHits(BaseModel):
     """Paginated response for Home 'Content' search hits."""
 
     hits: List[ContentSearchHit]
-    total: int
-    page: int
-    page_size: int
-
-
-class FactCitation(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    book_id: str
-    book_title: str
-    volume: Optional[int] = None
-    pages: List[int] = Field(default_factory=list)
-
-
-class HistoryFact(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    id: int
-    text: str
-    citations: List[FactCitation] = Field(default_factory=list)
-    status: str = "active"
-    conflict_group: Optional[int] = None
-
-
-class HistoryStagingItem(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=to_camel, populate_by_name=True, from_attributes=True
-    )
-
-    id: int
-    existing_dictionary_id: Optional[int] = None
-    book_id: str
-    term: str
-    transliteration: Optional[str] = None
-    definition: Optional[str] = None
-    original_definition: Optional[str] = None
-    category: str = "general"
-    significance_score: int = 5
-    significance_reason: Optional[str] = None
-    is_ai_generated: bool = True
-    entry_type: str = "new"
-    letter_group: str
-    facts: List[HistoryFact] = Field(default_factory=list)
-    status: str = "pending"
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-
-
-class PaginatedHistoryStagingItems(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    items: List[HistoryStagingItem]
     total: int
     page: int
     page_size: int

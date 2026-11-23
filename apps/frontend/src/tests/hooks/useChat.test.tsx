@@ -1,8 +1,16 @@
 import { useChat } from '@/src/hooks/useChat';
+import * as AuthModule from '@/src/hooks/useAuth';
 import { chatWithBookStream, getChatUsage } from '@/src/services/geminiService';
+import { PersistenceService } from '@/src/services/persistenceService';
 import { Book } from '@shared/types';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
+
+vi.mock('@/src/services/persistenceService', () => ({
+  PersistenceService: {
+    getFeaturedQuestionAnswer: vi.fn(),
+  },
+}));
 
 vi.mock('@/src/services/geminiService', () => ({
   chatWithBook: vi.fn(),
@@ -50,6 +58,7 @@ const mockBook: Book = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(AuthModule.useAuth).mockReturnValue({ isAuthenticated: true } as any);
   vi.mocked(getChatUsage).mockResolvedValue({ usage: 0, limit: 10, hasReachedLimit: false });
 });
 
@@ -245,4 +254,139 @@ test('useChat loads conversation messages preserving cost and feedback', async (
   expect(modelMsg.feedback).toBe('positive');
   expect(modelMsg.evalId).toBe(42);
 });
+
+test('useChat renders page_hits agent event and restores contextBookIds from loaded conversation', async () => {
+  const { getConversationMessages } = await import('@/src/services/geminiService');
+  vi.mocked(getConversationMessages).mockResolvedValue([
+    {
+      id: 'm1',
+      conversationId: 'conv-global-1',
+      role: 'user',
+      content: 'سۇئال',
+      createdAt: '2026-09-13T00:00:00Z',
+    },
+    {
+      id: 'm2',
+      conversationId: 'conv-global-1',
+      role: 'model',
+      content: 'جاۋاب',
+      usedBookIds: ['book-a', 'book-b'],
+      createdAt: '2026-09-13T00:00:01Z',
+    },
+  ]);
+
+  vi.mocked(chatWithBookStream).mockImplementation(async (_params, callbacks) => {
+    callbacks.onAgentEvent?.({ type: 'answer_start' });
+    callbacks.onAgentEvent?.({
+      type: 'page_hits',
+      hits: [
+        {
+          bookId: 'book-a',
+          title: 'ئانا يۇرت',
+          page: 15,
+          snippet: 'تېپىلغان ئۈزۈندە',
+        },
+      ],
+    });
+    callbacks.onComplete();
+  });
+
+  const { result } = renderHook(() => useChat('global-chat', null, null));
+
+  await act(async () => {
+    await result.current.selectConversation('conv-global-1');
+  });
+
+  act(() => {
+    result.current.setChatInput('«ئانا يۇرت» قايسى بەتتە بار؟');
+  });
+
+  await act(async () => {
+    await result.current.handleSendMessage();
+  });
+
+  await waitFor(() => {
+    expect(result.current.chatMessages).toHaveLength(4);
+  });
+
+  const [streamParams] = vi.mocked(chatWithBookStream).mock.calls[0];
+  expect(streamParams.contextBookIds).toEqual(['book-a', 'book-b']);
+
+  const latestReply = result.current.chatMessages.at(-1)?.text ?? '';
+  expect(latestReply).toContain('ref:book-a:15');
+  expect(latestReply).toContain('تېپىلغان ئۈزۈندە');
+});
+
+test('useChat forwards fromSampleQuestion and sampleEvalId once when prepared from homepage', async () => {
+  vi.mocked(chatWithBookStream).mockImplementation(async (_params, callbacks) => {
+    callbacks.onChunk('ساقلانغان جاۋاب');
+    callbacks.onComplete();
+  });
+
+  const { result } = renderHook(() => useChat('global-chat', null, null));
+
+  act(() => {
+    result.current.prepareSampleQuestion('مەھمۇد قەشقەرى كىم؟', 91);
+  });
+
+  await act(async () => {
+    await result.current.handleSendMessage();
+  });
+
+  await waitFor(() => {
+    expect(result.current.chatMessages).toHaveLength(2);
+  });
+
+  const [firstParams] = vi.mocked(chatWithBookStream).mock.calls[0];
+  expect(firstParams.fromSampleQuestion).toBe(true);
+  expect(firstParams.sampleEvalId).toBe(91);
+
+  // Follow-up question should NOT carry sample question flags
+  act(() => {
+    result.current.setChatInput('يەنە قانداق ئەسەرلىرى بار؟');
+  });
+  await act(async () => {
+    await result.current.handleSendMessage();
+  });
+
+  const [secondParams] = vi.mocked(chatWithBookStream).mock.calls[1];
+  expect(secondParams.fromSampleQuestion).toBeUndefined();
+  expect(secondParams.sampleEvalId).toBeUndefined();
+});
+
+test('useChat serves cached >=80% sample question answer directly for guest users without calling LLM stream', async () => {
+  vi.mocked(AuthModule.useAuth).mockReturnValue({ isAuthenticated: false } as any);
+  vi.mocked(PersistenceService.getFeaturedQuestionAnswer).mockResolvedValue({
+    cached: true,
+    evalId: 91,
+    question: 'مەھمۇد قەشقەرى كىم؟',
+    answer: 'ساقلانغان جاۋاب [10-بەت](ref:book-1:10)',
+    usedBookIds: ['book-1'],
+    cost: { inputTokens: 1600, outputTokens: 320, costUsd: 0.00055 },
+  });
+
+  const { result } = renderHook(() => useChat('global-chat', null, null));
+
+  act(() => {
+    result.current.prepareSampleQuestion('مەھمۇد قەشقەرى كىم؟', 91);
+  });
+
+  await act(async () => {
+    await result.current.handleSendMessage();
+  });
+
+  await waitFor(() => {
+    expect(result.current.chatMessages).toHaveLength(2);
+  });
+
+  expect(PersistenceService.getFeaturedQuestionAnswer).toHaveBeenCalledWith('مەھمۇد قەشقەرى كىم؟', 91);
+  expect(chatWithBookStream).not.toHaveBeenCalled();
+  expect(result.current.chatMessages[1].text).toBe('ساقلانغان جاۋاب [10-بەت](ref:book-1:10)');
+  expect(result.current.chatMessages[1].cost).toEqual({
+    inputTokens: 1600,
+    outputTokens: 320,
+    costUsd: 0.00055,
+  });
+});
+
 

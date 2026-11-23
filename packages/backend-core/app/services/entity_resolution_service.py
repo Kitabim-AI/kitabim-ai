@@ -44,7 +44,23 @@ STRONG_MERGE_SCORE = 0.75
 STRONG_LEAVE_SCORE = 0.25
 GRAY_ZONE_CONFIDENCE_THRESHOLD = 0.75
 
-TITLES_HONORIFICS = {"شاخ", "خان", "سۇلتان", "بەگ", "ھاجى", "میرزا", "مىرزا", "شاھ"}
+_ALIAS_CACHE_TTL_SECONDS = 86400 * 30
+
+
+def normalize_alias(alias: str) -> str:
+    s = unicodedata.normalize("NFC", alias).strip().lower()
+    return (
+        s.replace("\u06d0", "\u06cc")
+        .replace("\u06d1", "\u06cc")
+        .replace("\u0649", "\u06cc")
+        .replace("\u064a", "\u06cc")
+    )
+
+
+TITLES_HONORIFICS = {
+    normalize_alias(t)
+    for t in ("شاخ", "خان", "سۇلتان", "بەگ", "ھاجى", "میرزا", "مىرزا", "شاھ")
+}
 
 
 def _expand_name_components(raw_aliases: List[str]) -> List[str]:
@@ -68,10 +84,6 @@ class EntityResolutionVerdict(BaseModel):
     verdict: Literal["same", "different", "unsure"]
     confidence: float
     reasoning: str
-
-
-def normalize_alias(alias: str) -> str:
-    return unicodedata.normalize("NFC", alias).strip().lower()
 
 
 def _name_similarity(a: Optional[str], b: Optional[str]) -> float:
@@ -398,7 +410,7 @@ async def update_alias_cache(graph_repo: GraphRepository, entity_id: str) -> Non
         key = cache_config.KEY_GRAPH_ALIAS_LOOKUP.format(alias=normalize_alias(alias))
         existing = await cache_service.get(key) or []
         ids = list(dict.fromkeys([*existing, entity_id]))
-        await cache_service.set(key, ids, ttl=settings.cache_ttl_rag_query)
+        await cache_service.set(key, ids, ttl=_ALIAS_CACHE_TTL_SECONDS)
 
 
 async def execute_merge(
@@ -440,9 +452,7 @@ async def execute_merge(
         if remove_id in existing:
             remaining = [eid for eid in existing if eid != remove_id]
             if remaining:
-                await cache_service.set(
-                    key, remaining, ttl=settings.cache_ttl_rag_query
-                )
+                await cache_service.set(key, remaining, ttl=_ALIAS_CACHE_TTL_SECONDS)
             else:
                 await cache_service.delete(key)
 

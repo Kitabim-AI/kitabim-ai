@@ -526,8 +526,12 @@ export const HomeView: React.FC = () => {
           <QuestionRotator
             className="mt-8 sm:mt-10"
             isActive={view === 'home'}
-            onQuestionClick={(q) => {
-              chat.setChatInput(q);
+            onQuestionClick={(q, evalId) => {
+              if (chat.prepareSampleQuestion) {
+                chat.prepareSampleQuestion(q, evalId);
+              } else {
+                chat.setChatInput(q);
+              }
               setView('global-chat');
             }}
           />

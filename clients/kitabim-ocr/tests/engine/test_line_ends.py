@@ -72,3 +72,52 @@ def test_read_line_end_words_maps_arabic_heh_to_uyghur_ae():
     assert read_line_end_words(Image.new("RGB", (1000, 100)), detector, recognizer) == {
         "خە"
     }
+
+
+def test_join_cross_page_hyphenated_words_joins_uyghur_and_skips_toc_and_headings():
+    from engine.line_ends import (
+        apply_cross_page_dehyphenation,
+        join_cross_page_hyphenated_words,
+        text_ends_with_hyphen,
+    )
+    from engine.workdir import PageState
+
+    assert text_ends_with_hyphen("بۇ كىتاب مەزمۇ-") is True
+    assert text_ends_with_hyphen("بۇ كىتاب مەزمۇنى.") is False
+
+    p1, p2 = join_cross_page_hyphenated_words(
+        "ئۇيغۇر تارىخى تەتقى-",
+        "قاتى يېڭى باسقۇچقا كىردى.",
+    )
+    assert p1 == "ئۇيغۇر تارىخى تەتقىقاتى"
+    assert p2 == "يېڭى باسقۇچقا كىردى."
+
+    # Never join across markdown headings or pipe-table rows
+    h1, h2 = join_cross_page_hyphenated_words(
+        "ئۇيغۇر تارىخى تەتقى-",
+        "# ئىككىنچى باب",
+    )
+    assert h1 == "ئۇيغۇر تارىخى تەتقى-"
+    assert h2 == "# ئىككىنچى باب"
+
+    pages = [
+        PageState(
+            page_number=1,
+            text="بۇ مەزمۇ-",
+            is_toc=False,
+            confidence=0.9,
+            status="ocrd",
+            ended_with_hyphen=True,
+        ),
+        PageState(
+            page_number=2,
+            text="نلار مۇھىم.",
+            is_toc=False,
+            confidence=0.9,
+            status="ocrd",
+        ),
+    ]
+    count = apply_cross_page_dehyphenation(pages)
+    assert count == 1
+    assert pages[0].text == "بۇ مەزمۇنلار"
+    assert pages[1].text == "مۇھىم."

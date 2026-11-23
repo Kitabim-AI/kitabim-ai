@@ -6,10 +6,14 @@ Defines shared Pydantic v2 data transfer objects (DTOs), API request/response sc
 ## Interface
 - `[schemas.py:to_camel]` — `to_camel(string: str) -> str`: Converts `snake_case` field names into `camelCase` aliases.
 - `[schemas.py:ErrorEvent]` — `class ErrorEvent(BaseModel)`: Error metadata (`ts`, `kind`, `message`, `context`).
-- `[schemas.py:ExtractionResult]` — `class ExtractionResult(BaseModel)`: Per-page OCR extraction and pipeline status schema (`page_number`, `content_page_number`, `display_page_number`, `text`, `status`, `error`, `last_updated`, `pipeline_step`, `milestone`, `is_toc`, `llm_spell_check_status`, `llm_spell_check_at`).
+- `[schemas.py:ExtractionResult]` — `class ExtractionResult(BaseModel)`: Per-page OCR extraction and pipeline status schema (`page_number`, `content_page_number`, `content_page_number_manual`, `detected_page_number`, `display_page_number`, `text`, `status`, `error`, `last_updated`, `pipeline_step`, `milestone`, `is_toc`).
 - `[schemas.py:PageTocUpdate]` — `class PageTocUpdate(BaseModel)`: Payload for toggling `is_toc` on a page.
-- `[schemas.py:OcrPageInput]` — `class OcrPageInput(BaseModel)`: External OCR page ingestion payload (`page_number`, `text`, `is_toc`).
-- `[schemas.py:Book]` — `class Book(BaseModel)`: Book domain and API representation including metadata, pipeline milestones (`ocr_milestone`, `chunking_milestone`, `embedding_milestone`, `spell_check_milestone`), flags (`has_summary`, `has_graph`, `has_history`), and optional pages.
+- `[schemas.py:OcrPageInput]` — `class OcrPageInput(BaseModel)`: External OCR page ingestion payload (`page_number`, `text`, `is_toc`, `detected_page_number`, `skipped`).
+- `[schemas.py:SetStartPageRequest]` / `[schemas.py:SetStartPageResponse]` — Request/response DTOs for marking a page as content Page 1 and returning `content_page_map`.
+- `[schemas.py:RefreshTokenRequest]` — Optional JSON body (`refresh_token`) for CLI token refresh via `POST /api/auth/refresh`.
+- `[schemas.py:ReplaceOcrPageItem]` / `[schemas.py:ReplaceOcrRequest]` / `[schemas.py:ReplaceOcrResponse]` — Bulk OCR replacement request and response schemas for `POST /api/books/{book_id}/replace-ocr`.
+- `[schemas.py:BackfillCandidateOut]` / `[schemas.py:BackfillCandidatesResponse]` — Candidate discovery schemas for `GET /api/books/backfill-candidates`.
+- `[schemas.py:Book]` — `class Book(BaseModel)`: Book domain and API representation including metadata, `ocr_version`, `content_page_map`, pipeline milestones (`ocr_milestone`, `structure_milestone`, `chunking_milestone`, `embedding_milestone`, `spell_check_milestone`), flags (`has_summary`, `has_graph`), and optional pages.
 - `[schemas.py:PaginatedBooks]` — `class PaginatedBooks(BaseModel)`: Paginated book list response (`books`, `total`, `total_ready`, `page`, `page_size`).
 - `[schemas.py:ChatRequest]` — `class ChatRequest(BaseModel)`: Chat query payload (`book_id`, `question`, `is_global`, `conversation_id`, `history`, `current_page`, `character_id`, `context_book_ids`, `exact_phrase`).
 - `[schemas.py:ChatResponse]` — `class ChatResponse(BaseModel)`: Chat answer and usage response (`answer`, `usage`).
@@ -17,16 +21,16 @@ Defines shared Pydantic v2 data transfer objects (DTOs), API request/response sc
 - `[schemas.py:ContactSubmissionCreate]` — `class ContactSubmissionCreate(BaseModel)`: Public contact form request (`name`, `email`, `interest`, `message`).
 - `[schemas.py:ContactSubmissionPublic]` — `class ContactSubmissionPublic(BaseModel)`: Public acknowledgment response (`id`, `status`, `created_at`).
 - `[schemas.py:ContactSubmissionAdmin]` — `class ContactSubmissionAdmin(BaseModel)`: Admin view of a contact submission (`id`, `name`, `email`, `interest`, `message`, `status`, `admin_notes`, `reviewed_by`, `reviewed_at`, `created_at`).
+- `[schemas.py:ContactSubmissionUpdate]` — `class ContactSubmissionUpdate(BaseModel)`: Admin update payload for a contact submission (`status`, `admin_notes`).
 - `[schemas.py:RagQuestionAdmin]` — `class RagQuestionAdmin(BaseModel)`: Admin RAG evaluation and cost record (`id`, `question`, `is_global`, `book_id`, `book_title`, `user_id`, `user_display_name`, `is_first_turn`, `show_on_homepage`, `user_feedback`, `ts`, `eval_status`, `faithfulness_score`, `answer_relevance_score`, `context_precision_score`, `input_tokens`, `output_tokens`, `cost_usd`, `answer`, `retrieved_context`).
 - `[schemas.py:RagQuestionsPage]` — `class RagQuestionsPage(BaseModel)`: Offset/limit paginated RAG evaluation records (`items`, `total`, `offset`, `limit`).
 - `[schemas.py:RagQuestionToggle]` — `class RagQuestionToggle(BaseModel)`: Request payload to toggle `show_on_homepage`.
 - `[schemas.py:RagQuestionToggleResponse]` — `class RagQuestionToggleResponse(BaseModel)`: Response payload for `show_on_homepage` toggle (`id`, `show_on_homepage`).
+- `[schemas.py:FeaturedQuestionItem]` — `class FeaturedQuestionItem(BaseModel)`: Public homepage rotator question item (`id`, `question`).
+- `[schemas.py:ChatCostInfo]` — `class ChatCostInfo(BaseModel)`: Token usage and USD cost metadata (`input_tokens`, `output_tokens`, `cost_usd`).
+- `[schemas.py:FeaturedQuestionAnswerResponse]` — `class FeaturedQuestionAnswerResponse(BaseModel)`: Cached answer lookup response for homepage sample questions (`cached`, `eval_id`, `question`, `answer`, `used_book_ids`, `cost`).
 - `[schemas.py:ContentSearchHit]` — `class ContentSearchHit(BaseModel)`: Full-text page search hit (`id`, `book_id`, `book_title`, `book_author`, `book_volume`, `book_cover_url`, `page_number`, `snippet`, `rank`).
 - `[schemas.py:PaginatedContentHits]` — `class PaginatedContentHits(BaseModel)`: Paginated full-text content search response (`hits`, `total`, `page`, `page_size`).
-- `[schemas.py:FactCitation]` — `class FactCitation(BaseModel)`: Book and page citation for an extracted historical fact (`book_id`, `book_title`, `volume`, `pages`).
-- `[schemas.py:HistoryFact]` — `class HistoryFact(BaseModel)`: Historical fact item (`id`, `text`, `citations`, `status`, `conflict_group`).
-- `[schemas.py:HistoryStagingItem]` — `class HistoryStagingItem(BaseModel)`: Staged historical dictionary entry with associated `HistoryFact` list.
-- `[schemas.py:PaginatedHistoryStagingItems]` — `class PaginatedHistoryStagingItems(BaseModel)`: Paginated list of staged history dictionary items (`items`, `total`, `page`, `page_size`).
 - `[user.py:UserRole]` — `class UserRole(str, Enum)`: User access role enum (`ADMIN = "admin"`, `EDITOR = "editor"`, `READER = "reader"`).
 - `[user.py:UserBase]` — `class UserBase(BaseModel)`: Shared user fields (`email`, `display_name`, `avatar_url`).
 - `[user.py:UserCreate]` — `class UserCreate(UserBase)`: OAuth user creation payload (`provider`, `provider_id`, `role = UserRole.READER`).

@@ -47,8 +47,15 @@ async def embed_query(query: str, ctx: "QueryContext") -> List[float]:
     if query_stripped in local_cache:
         return local_cache[query_stripped]
 
-    # 2. Redis/External API check
-    q_hash = hashlib.md5(query_stripped.encode(), usedforsecurity=False).hexdigest()
+    # 2. Redis/External API check (v2 hash namespace includes asymmetric QA query prefix + model)
+    embeddings_obj = getattr(ctx, "embeddings", None)
+    emb_model_name = getattr(embeddings_obj, "model_name", None)
+    hash_input = (
+        f"v2:{emb_model_name}:{query_stripped}"
+        if isinstance(emb_model_name, str) and emb_model_name
+        else f"v2:{query_stripped}"
+    )
+    q_hash = hashlib.md5(hash_input.encode(), usedforsecurity=False).hexdigest()
     emb_cache_key = cache_config.KEY_RAG_EMBEDDING.format(hash=q_hash)
     try:
         vector = await cache_service.get(emb_cache_key)
@@ -211,6 +218,7 @@ async def vector_search(
     ctx: "QueryContext",
     book_ids: Optional[List[str]],
     query_vector: Optional[List[float]] = None,
+    section_ids: Optional[List[int]] = None,
 ) -> List[dict]:
     """Cached pgvector similarity search — vector-only.
 
@@ -218,7 +226,9 @@ async def vector_search(
     The keyword leg never blends with vector results (see
     exact_phrase_chunk_search / keyword-search-rework-plan.md Phase 1) — it
     runs standalone, only for exact-phrase-search intent.
-    Returns a list of dicts with keys: text, score, page, title, volume, author, book_id.
+    Returns a list of dicts with keys: text, score, page, title, volume, author, book_id,
+    plus optional end_page_number, section_id, section_title, content_page_number,
+    end_content_page_number when present on the retrieved chunk.
     """
     effective_vector = query_vector if query_vector is not None else ctx.query_vector
     if not effective_vector:
@@ -234,26 +244,11 @@ async def vector_search(
 
     from app.core.providers import get_vector_store
     from app.db.repositories.system_configs_repository import SystemConfigsRepository
-    from app.db.session import async_session_factory
+    from app.services.rag.context import resolve_rag_is_staff
 
     chunks_repo = get_vector_store(ctx.session)
-
-    async def _search_book_isolated(
-        bid: str, limit: int, threshold: float
-    ) -> List[dict]:
-        # Own session per book: asyncio.gather over similarity_search calls
-        # that all shared ctx.session's single connection was serializing
-        # what looked like concurrent per-book searches into N sequential
-        # ones — the dominant cost in a since-fixed production slowdown
-        # (multi-book questions taking minutes instead of seconds).
-        async with async_session_factory() as book_session:
-            return await get_vector_store(book_session).similarity_search(
-                query_embedding=effective_vector,
-                book_ids=[bid],
-                categories=ctx.character_categories or None,
-                limit=limit,
-                threshold=threshold,
-            )
+    section_kwargs = {"section_ids": section_ids} if section_ids is not None else {}
+    effective_is_staff = resolve_rag_is_staff(getattr(ctx, "is_staff", None))
 
     configs_repo = SystemConfigsRepository(ctx.session)
     rag_top_k_str = await configs_repo.get_value(
@@ -265,7 +260,8 @@ async def vector_search(
         rag_top_k = settings.rag_top_k
 
     emb_hash = hashlib.md5(
-        str(effective_vector).encode(), usedforsecurity=False
+        f"{effective_vector}:k={rag_top_k}:th={settings.rag_score_threshold}".encode(),
+        usedforsecurity=False,
     ).hexdigest()
     sorted_book_ids = sorted(book_ids) if book_ids else []
     book_ids_hash = (
@@ -276,6 +272,9 @@ async def vector_search(
         else "all"
     )
 
+    if effective_is_staff:
+        book_ids_hash += "_staff"
+
     if ctx.character_categories:
         cat_hash = hashlib.md5(
             ",".join(sorted(ctx.character_categories)).encode(),
@@ -283,7 +282,20 @@ async def vector_search(
         ).hexdigest()
         book_ids_hash += f"_cat_{cat_hash}"
 
-    if not ctx.is_global and len(sorted_book_ids) == 1 and not ctx.character_categories:
+    if section_ids:
+        sec_hash = hashlib.md5(
+            ",".join(str(s) for s in sorted(section_ids)).encode(),
+            usedforsecurity=False,
+        ).hexdigest()
+        book_ids_hash += f"_sec_{sec_hash}"
+
+    if (
+        not ctx.is_global
+        and len(sorted_book_ids) == 1
+        and not ctx.character_categories
+        and not section_ids
+        and not effective_is_staff
+    ):
         search_cache_key = cache_config.KEY_RAG_SEARCH_SINGLE.format(
             book_id=sorted_book_ids[0], hash=emb_hash
         )
@@ -292,29 +304,34 @@ async def vector_search(
             book_ids_hash=book_ids_hash, hash=emb_hash
         )
 
+    async def _search_multi_books_balanced(threshold: float) -> List[dict]:
+        # Single-session partitioned top-K-per-book query (replaces spawning N
+        # concurrent DB sessions via asyncio.gather, preventing pool exhaustion).
+        raw_rows = await chunks_repo.similarity_search(
+            query_embedding=effective_vector,
+            book_ids=sorted_book_ids,
+            categories=ctx.character_categories or None,
+            limit=rag_top_k * len(sorted_book_ids),
+            threshold=threshold,
+            per_book_limit=rag_top_k,
+            **section_kwargs,
+        )
+        by_book: dict[str, List[dict]] = {bid: [] for bid in sorted_book_ids}
+        for row in raw_rows:
+            bid = str(row.get("book_id") or "")
+            if bid in by_book:
+                by_book[bid].append(row)
+        return select_balanced_chunks(
+            [by_book[bid] for bid in sorted_book_ids], rag_top_k
+        )
+
     try:
         top_results = await cache_service.get(search_cache_key)
         if top_results is None:
             if len(sorted_book_ids) > 1:
-                # Multi-book searches (e.g. "compare book A, B and C", or an
-                # author's books) would otherwise compete for one global top-K
-                # ranked across every book's chunks combined — whichever book
-                # scores highest can crowd out the others entirely. Each book
-                # gets a guaranteed floor, the rest goes by score, and the
-                # total stays at rag_top_k (select_balanced_chunks). Fetching
-                # rag_top_k per book costs nothing extra: a scoped search
-                # scans the whole book either way.
-                per_book_results = await asyncio.gather(
-                    *[
-                        _search_book_isolated(
-                            bid,
-                            limit=rag_top_k,
-                            threshold=settings.rag_score_threshold,
-                        )
-                        for bid in sorted_book_ids
-                    ]
+                similar_chunks = await _search_multi_books_balanced(
+                    threshold=settings.rag_score_threshold
                 )
-                similar_chunks = select_balanced_chunks(per_book_results, rag_top_k)
             else:
                 similar_chunks = await chunks_repo.similarity_search(
                     query_embedding=effective_vector,
@@ -322,6 +339,7 @@ async def vector_search(
                     categories=ctx.character_categories or None,
                     limit=rag_top_k,
                     threshold=settings.rag_score_threshold,
+                    **section_kwargs,
                 )
 
             if not similar_chunks:
@@ -331,17 +349,7 @@ async def vector_search(
                 # matching chunks are retrieved instead of an empty turn. Applies to both
                 # book-scoped and global (book_ids=None) searches.
                 if len(sorted_book_ids) > 1:
-                    per_book_results = await asyncio.gather(
-                        *[
-                            _search_book_isolated(
-                                bid,
-                                limit=rag_top_k,
-                                threshold=0.0,
-                            )
-                            for bid in sorted_book_ids
-                        ]
-                    )
-                    similar_chunks = select_balanced_chunks(per_book_results, rag_top_k)
+                    similar_chunks = await _search_multi_books_balanced(threshold=0.0)
                 else:
                     similar_chunks = await chunks_repo.similarity_search(
                         query_embedding=effective_vector,
@@ -349,6 +357,7 @@ async def vector_search(
                         categories=ctx.character_categories or None,
                         limit=rag_top_k,
                         threshold=0.0,
+                        **section_kwargs,
                     )
             top_results = [
                 {
@@ -364,6 +373,36 @@ async def vector_search(
                     "volume": chunk.get("volume"),
                     "author": chunk.get("author") or None,
                     "book_id": chunk.get("book_id"),
+                    **(
+                        {"chunk_index": chunk["chunk_index"]}
+                        if "chunk_index" in chunk
+                        else {}
+                    ),
+                    **(
+                        {"end_page_number": chunk["end_page_number"]}
+                        if "end_page_number" in chunk
+                        else {}
+                    ),
+                    **(
+                        {"section_id": chunk["section_id"]}
+                        if "section_id" in chunk
+                        else {}
+                    ),
+                    **(
+                        {"section_title": chunk["section_title"]}
+                        if "section_title" in chunk
+                        else {}
+                    ),
+                    **(
+                        {"content_page_number": chunk["content_page_number"]}
+                        if "content_page_number" in chunk
+                        else {}
+                    ),
+                    **(
+                        {"end_content_page_number": chunk["end_content_page_number"]}
+                        if "end_content_page_number" in chunk
+                        else {}
+                    ),
                 }
                 for chunk in similar_chunks
             ]
@@ -377,6 +416,7 @@ async def vector_search(
             if not top_results and book_ids and settings.environment != "production":
                 from sqlalchemy import select, and_, or_
                 from app.db.models import Chunk, Book, Page
+                from app.db.repositories.books_repository import BooksRepository
                 from app.services.rag.utils import (
                     normalize_uyghur,
                     fuzzy_token_similar,
@@ -384,6 +424,9 @@ async def vector_search(
                 )
 
                 try:
+                    access_clauses = BooksRepository._rag_book_access_clauses(
+                        effective_is_staff
+                    )
                     stmt = (
                         select(
                             Chunk.book_id,
@@ -404,6 +447,7 @@ async def vector_search(
                         )
                         .where(
                             Chunk.book_id.in_(book_ids),
+                            *access_clauses,
                             or_(Page.is_toc.is_not(True), Page.id.is_(None)),
                         )
                         .order_by(Chunk.page_number.asc(), Chunk.chunk_index.asc())
@@ -503,7 +547,7 @@ async def vector_search(
                     if similarity >= settings.rag_score_threshold:
                         quran_results.append(
                             {
-                                "text": f"Arabic: {row.text_ar}\nUyghur Translation: {row.text_ug}\nEnglish Translation: {row.text_en}",
+                                "text": f"Arabic: {row.text_ar}\nUyghur Translation: {row.text_ug}",
                                 "score": similarity,
                                 "page": row.ayah,
                                 "title": row.surah_name_ug,
@@ -551,36 +595,42 @@ async def vector_search(
 
 
 async def graph_entity_lookup(
-    question: str, top_k: int = 10, session=None
+    question: str,
+    top_k: int = 10,
+    session=None,
+    book_ids: Optional[List[str]] = None,
+    categories: Optional[List[str]] = None,
+    is_staff: Optional[bool] = None,
 ) -> List[dict]:
     """Query-time knowledge-graph lookup — Redis cache read with prefix enumeration (B1),
     partial-name token-intersection & IDF specificity scoring (B2), and miss-only
     Neo4j full-text fuzzy fallback (B3). No LLM call is made here.
 
-    Returns [] on no match — callers fall back to the existing hybrid text search
+    Returns [] on no match — callers fall back to the existing vector text search
     unchanged. On a match, returns chunk-shaped dicts (`text`/`score`/`page`/`title`/
-    `book_id`) so the rest of the RAG pipeline (grading, Document conversion,
-    citations) handles them exactly like any other retrieved chunk.
-
-    *top_k* caps the number of facts returned (highest-scoring first) — the
-    matching stages above (B1/B2/B3) are otherwise uncapped, and a broad
-    question can surface many entities. The cache holds the full uncapped
-    result set so a later call with a different top_k isn't stuck with a
-    stale, differently-truncated cached list.
+    `book_id`/`is_graph`) scoped to *book_ids*, *categories*, and book visibility.
     """
     import math
+    import unicodedata
     from app.core import cache_config
     from app.services.cache_service import cache_service
-    from app.services.rag.utils import normalize_uyghur, PUNCTUATION_STRIP_CHARS
+    from app.services.rag.context import resolve_rag_is_staff
+    from app.services.rag.utils import PUNCTUATION_STRIP_CHARS
     from app.services.entity_resolution_service import (
         normalize_alias,
         TITLES_HONORIFICS,
     )
     from app.db.repositories.graph_repository import GraphRepository
 
-    import hashlib
-
-    q_hash = hashlib.md5(question.encode("utf-8"), usedforsecurity=False).hexdigest()
+    effective_is_staff = resolve_rag_is_staff(is_staff)
+    scope_sig = (
+        f"books={','.join(sorted(str(b) for b in book_ids)) if book_ids is not None else 'all'}"
+        f"|cats={','.join(sorted(categories)) if categories else 'all'}"
+        f"|staff={int(effective_is_staff)}"
+    )
+    q_hash = hashlib.md5(
+        f"{scope_sig}:{question}".encode("utf-8"), usedforsecurity=False
+    ).hexdigest()
     cache_key = f"rag_graph_lookup:{q_hash}"
     try:
         cached_results = await cache_service.get(cache_key)
@@ -591,17 +641,21 @@ async def graph_entity_lookup(
     except Exception:
         pass
 
-    raw_words = [
-        w.strip(PUNCTUATION_STRIP_CHARS) for w in normalize_uyghur(question).split()
+    # Preserve original NFC Uyghur script characters for Neo4j full-text fallback
+    # (Lucene indexes standard Uyghur U+0649/U+06D0/U+064A), while normalize_alias
+    # unifies y/e variants to U+06CC for Redis alias lookup keys.
+    orig_raw_words = [
+        unicodedata.normalize("NFC", w).strip(PUNCTUATION_STRIP_CHARS)
+        for w in question.split()
     ]
-    words = [w for w in raw_words if len(w) >= 3]
-    if not words:
+    orig_words = [w for w in orig_raw_words if len(w) >= 3]
+    if not orig_words:
         return []
+    words = [normalize_alias(w) for w in orig_words]
 
     # 1. Generate prefix candidates per word (B1)
     word_prefix_candidates: dict[int, list[str]] = {}
-    for idx, w in enumerate(words):
-        norm_w = normalize_alias(w)
+    for idx, norm_w in enumerate(words):
         prefixes = []
         min_prefix_len = min(len(norm_w), 4)
         for length in range(len(norm_w), min_prefix_len - 1, -1):
@@ -623,11 +677,19 @@ async def graph_entity_lookup(
 
     alias_to_ids: dict[str, list[str]] = {}
     try:
-        for candidate in candidate_keys_to_lookup:
-            key = cache_config.KEY_GRAPH_ALIAS_LOOKUP.format(alias=candidate)
-            ids = await cache_service.get(key)
-            if ids:
-                alias_to_ids[candidate] = ids
+        ordered_candidates = list(candidate_keys_to_lookup)
+        if ordered_candidates:
+            fetched_lists = await asyncio.gather(
+                *(
+                    cache_service.get(
+                        cache_config.KEY_GRAPH_ALIAS_LOOKUP.format(alias=c)
+                    )
+                    for c in ordered_candidates
+                )
+            )
+            for candidate, ids in zip(ordered_candidates, fetched_lists):
+                if ids:
+                    alias_to_ids[candidate] = ids
     except Exception as exc:
         log_json(
             logger, logging.WARNING, "graph alias cache lookup failed", error=str(exc)
@@ -690,9 +752,13 @@ async def graph_entity_lookup(
 
     graph_repo = GraphRepository()
 
-    # 3. Miss-Only Neo4j Full-Text Fuzzy Fallback (B3)
+    # 3. Miss-Only Neo4j Full-Text Fuzzy Fallback (B3) — pass original NFC Uyghur words
     if not matched_ids:
-        query_terms = [w for w in words if len(w) >= 4 and w not in TITLES_HONORIFICS]
+        query_terms = [
+            orig_w
+            for orig_w, norm_w in zip(orig_words, words)
+            if len(orig_w) >= 4 and norm_w not in TITLES_HONORIFICS
+        ]
         if query_terms:
             try:
                 fuzzy_hits = await graph_repo.search_entities_fulltext(
@@ -713,6 +779,10 @@ async def graph_entity_lookup(
     if not matched_ids:
         return []
 
+    if book_ids is not None and len(book_ids) == 0:
+        return []
+    allowed_book_scope = {str(b) for b in book_ids} if book_ids is not None else None
+
     results: List[dict] = []
     try:
         facts_map = await graph_repo.get_entities_facts_for_citation_bulk(
@@ -723,36 +793,62 @@ async def graph_entity_lookup(
     except Exception:
         facts_map = {}
 
+    per_entity_facts: dict[str, list[dict]] = {}
+    for entity_id in matched_ids:
+        facts = facts_map.get(entity_id)
+        if facts is None:
+            try:
+                facts = await graph_repo.get_entity_facts_for_citation(entity_id)
+            except Exception:
+                facts = []
+        if isinstance(facts, list):
+            per_entity_facts[entity_id] = facts
+
     book_titles: dict[str, str] = {}
+    accessible_book_ids: Optional[set[str]] = None
     collected_book_ids = list(
         {
-            f.get("book_id")
-            for entity_id in matched_ids
-            for f in (facts_map.get(entity_id) or [])
+            str(f.get("book_id"))
+            for facts in per_entity_facts.values()
+            for f in facts
             if f and f.get("book_id") and f.get("book_id") != "knowledge_graph"
         }
     )
 
     if collected_book_ids:
         try:
-            from sqlalchemy import select
+            from sqlalchemy import select, text as sa_text
             from app.db.models import Book
+            from app.db.repositories.books_repository import BooksRepository
+
+            access_clauses = BooksRepository._rag_book_access_clauses(
+                effective_is_staff
+            )
+            stmt = select(Book.id, Book.title).where(
+                Book.id.in_(collected_book_ids),
+                *access_clauses,
+            )
+            if categories:
+                stmt = stmt.where(
+                    sa_text("categories && CAST(:cats AS text[])").bindparams(
+                        cats=categories
+                    )
+                )
 
             if session is not None:
-                stmt = select(Book.id, Book.title).where(
-                    Book.id.in_(collected_book_ids)
-                )
                 res = await session.execute(stmt)
-                book_titles = {row[0]: row[1] for row in res.fetchall() if row[1]}
+                rows = res.fetchall()
+                accessible_book_ids = {str(row[0]) for row in rows}
+                book_titles = {str(row[0]): row[1] for row in rows if row[1]}
             else:
                 from app.db.session import AsyncSessionLocal
 
-                async with AsyncSessionLocal() as db_sess:
-                    stmt = select(Book.id, Book.title).where(
-                        Book.id.in_(collected_book_ids)
-                    )
-                    res = await db_sess.execute(stmt)
-                    book_titles = {row[0]: row[1] for row in res.fetchall() if row[1]}
+                if AsyncSessionLocal is not None:
+                    async with AsyncSessionLocal() as db_sess:
+                        res = await db_sess.execute(stmt)
+                        rows = res.fetchall()
+                        accessible_book_ids = {str(row[0]) for row in rows}
+                        book_titles = {str(row[0]): row[1] for row in rows if row[1]}
         except Exception as exc:
             log_json(
                 logger,
@@ -763,23 +859,33 @@ async def graph_entity_lookup(
 
     kg_label = t("rag.knowledge_graph_title", default="بىلىم گىرافى")
 
-    for entity_id in matched_ids:
-        facts = facts_map.get(entity_id)
-        if facts is None:
-            try:
-                facts = await graph_repo.get_entity_facts_for_citation(entity_id)
-            except Exception:
-                facts = []
-        if not isinstance(facts, list):
-            continue
+    for entity_id, facts in per_entity_facts.items():
         for fact in facts:
+            b_id = fact.get("book_id")
+            b_id_str = str(b_id) if b_id else None
+            if allowed_book_scope is not None:
+                if (
+                    not b_id_str
+                    or b_id_str == "knowledge_graph"
+                    or b_id_str not in allowed_book_scope
+                ):
+                    continue
+            if (
+                accessible_book_ids is not None
+                and b_id_str
+                and b_id_str != "knowledge_graph"
+                and b_id_str not in accessible_book_ids
+            ):
+                continue
+            if categories and (not b_id_str or b_id_str == "knowledge_graph"):
+                continue
+
             page_val = (
                 fact.get("page")
                 if fact.get("page") is not None
                 else fact.get("page_number")
             )
-            b_id = fact.get("book_id")
-            b_title = book_titles.get(b_id) if b_id else None
+            b_title = book_titles.get(b_id_str) if b_id_str else None
             if b_title:
                 display_title = f"«{b_title}» ({kg_label})"
             else:
@@ -794,7 +900,8 @@ async def graph_entity_lookup(
                     "title": display_title,
                     "volume": None,
                     "author": None,
-                    "book_id": b_id or "knowledge_graph",
+                    "book_id": b_id_str or "knowledge_graph",
+                    "is_graph": True,
                 }
             )
 
@@ -812,7 +919,10 @@ async def graph_entity_lookup(
 
 
 async def find_books_by_title_in_question(
-    question: str, session, categories: Optional[List[str]] = None
+    question: str,
+    session,
+    categories: Optional[List[str]] = None,
+    is_staff: Optional[bool] = None,
 ) -> Optional[List[dict]]:
     """Return metadata (id, title, author, volume) for all volumes of a title mentioned in *question*, or None.
 
@@ -820,13 +930,17 @@ async def find_books_by_title_in_question(
     `«...»` has no special effect here — it now signals phrase-search intent
     elsewhere in the RAG pipeline, not a quoted title (keyword-search-rework-plan.md 1.7).
     """
+    from app.db.repositories.books_repository import BooksRepository
+    from app.services.rag.context import resolve_rag_is_staff
     from app.services.rag.utils import entity_matches_question, normalize_uyghur
 
     q = question.strip()
+    effective_is_staff = resolve_rag_is_staff(is_staff)
+    access_clauses = BooksRepository._rag_book_access_clauses(effective_is_staff)
 
     stmt = (
         select(Book.id, Book.title, Book.author, Book.volume)
-        .where(Book.status != "error")
+        .where(*access_clauses)
         .order_by(Book.volume.asc().nulls_first())
     )
     if categories:
@@ -846,7 +960,7 @@ async def find_books_by_title_in_question(
             if categories
             else "all"
         )
-        cache_key = f"find_books_by_title_rows_{cat_hash}"
+        cache_key = f"find_books_by_title_rows_{cat_hash}_s{int(effective_is_staff)}"
 
     if cache_key and cache_key in session.info:
         rows = session.info[cache_key]

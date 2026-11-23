@@ -1,3 +1,4 @@
+import { FeaturedQuestionItem } from '@shared/types';
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 import { PersistenceService } from '../../services/persistenceService';
@@ -6,7 +7,7 @@ interface QuestionRotatorProps {
   className?: string;
   intervalMs?: number;
   isActive?: boolean;
-  onQuestionClick?: (question: string) => void;
+  onQuestionClick?: (question: string, evalId?: number) => void;
 }
 
 export const QuestionRotator: React.FC<QuestionRotatorProps> = ({
@@ -16,13 +17,21 @@ export const QuestionRotator: React.FC<QuestionRotatorProps> = ({
   onQuestionClick,
 }) => {
   const { t } = useI18n();
-  const [questions, setQuestions] = useState<string[]>([]);
+  const [questions, setQuestions] = useState<FeaturedQuestionItem[]>([]);
   const [current, setCurrent] = useState(0);
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
     PersistenceService.getFeaturedQuestions(20).then((featured) => {
-      setQuestions(featured);
+      if (!Array.isArray(featured)) return;
+      const normalized: FeaturedQuestionItem[] = featured
+        .map((entry: string | FeaturedQuestionItem): FeaturedQuestionItem | null => {
+          if (typeof entry === 'string') return { question: entry };
+          if (entry && typeof entry.question === 'string') return entry;
+          return null;
+        })
+        .filter((entry): entry is FeaturedQuestionItem => entry !== null);
+      setQuestions(normalized);
     });
   }, []);
 
@@ -39,8 +48,8 @@ export const QuestionRotator: React.FC<QuestionRotatorProps> = ({
     return () => clearInterval(timer);
   }, [questions, intervalMs, isActive]);
 
-  const question = questions[current];
-  if (!question) return null;
+  const item = questions[current];
+  if (!item?.question) return null;
 
   return (
     <div className={`flex flex-col items-center gap-2 ${className}`}>
@@ -51,9 +60,9 @@ export const QuestionRotator: React.FC<QuestionRotatorProps> = ({
         className="uyghur-text text-sm sm:text-base font-normal text-[#94a3b8] dark:text-slate-400 text-center transition-opacity duration-300 cursor-pointer hover:text-[#0369a1] dark:hover:text-[#38bdf8] px-4"
         style={{ opacity: visible ? 1 : 0 }}
         dir="rtl"
-        onClick={() => onQuestionClick?.(question)}
+        onClick={() => onQuestionClick?.(item.question, item.id)}
       >
-        {question}
+        {item.question}
       </p>
     </div>
   );

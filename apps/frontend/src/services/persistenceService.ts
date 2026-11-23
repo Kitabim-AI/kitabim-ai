@@ -1,5 +1,5 @@
 
-import { Book, PaginatedBooks, Bookmark, ReadingProgressEntry } from '@shared/types';
+import { Book, PaginatedBooks, Bookmark, ReadingProgressEntry, ChunkInspectorResponse, ChunkInspectorFilterType, ChunkInspectorSearchMode, FeaturedQuestionItem, FeaturedQuestionAnswerResponse } from '@shared/types';
 import { authFetch } from './authService';
 
 const API_BASE = '/api';
@@ -245,6 +245,37 @@ export const PersistenceService = {
     }
   },
 
+  async reprocessStructure(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/structure`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      throw new Error("Failed to start structure re-extraction");
+    }
+  },
+
+  async setStartPage(bookId: string, pageNum: number, startContentPage: number = 1): Promise<{
+    status: string;
+    contentPageOffset: number;
+    contentPageMap?: Record<string, number>;
+  }> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/set-start-page`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ startContentPage }),
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Editor access required");
+      }
+      throw new Error("Failed to set start page");
+    }
+    return response.json();
+  },
+
   async reprocessChunking(bookId: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/chunking`, {
       method: 'POST',
@@ -282,33 +313,6 @@ export const PersistenceService = {
     }
   },
 
-  async reprocessLlmSpellCheck(bookId: string): Promise<void> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/llm-spell-check`, {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Admin access required");
-      }
-      throw new Error("Failed to start LLM spell check");
-    }
-  },
-
-  async previewLlmSpellCheck(bookId: string, pageNum: number, text: string, signal?: AbortSignal): Promise<string> {
-    const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/llm-spell-check/preview`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-      signal,
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to run LLM spell check");
-    }
-    const data = await response.json();
-    return data.corrected_text;
-  },
-
   async reprocessGraph(bookId: string, scope: 'fiction' | 'nonfiction'): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/graph`, {
       method: 'POST',
@@ -320,20 +324,6 @@ export const PersistenceService = {
         throw new Error("Permission denied: Editor access required");
       }
       throw new Error("Failed to start reprocessing graph");
-    }
-  },
-
-  async reprocessHistory(bookId: string, minSignificance = 5): Promise<void> {
-    const response = await authFetch(`${API_BASE}/admin/books/${bookId}/extract-history`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ min_significance: minSignificance }),
-    });
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error("Permission denied: Admin access required");
-      }
-      throw new Error("Failed to start history extraction");
     }
   },
 
@@ -375,11 +365,11 @@ export const PersistenceService = {
     return response.json();
   },
 
-  async updatePage(bookId: string, pageNum: number, text: string, llmSpellChecked: boolean = false): Promise<void> {
+  async updatePage(bookId: string, pageNum: number, text: string): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/pages/${pageNum}/update`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, llm_spell_checked: llmSpellChecked })
+      body: JSON.stringify({ text })
     });
     if (!response.ok) {
       throw new Error("Failed to update page text");
@@ -572,14 +562,91 @@ export const PersistenceService = {
     }
   },
 
-  async getFeaturedQuestions(limit: number = 20): Promise<string[]> {
+  async getFeaturedQuestions(limit: number = 20): Promise<FeaturedQuestionItem[]> {
     try {
       const response = await authFetch(`${API_BASE}/questions/featured?limit=${limit}`);
       if (!response.ok) throw new Error("Failed to fetch featured questions");
-      return await response.json();
+      const data = await response.json();
+      if (!Array.isArray(data)) return [];
+      return data
+        .map((item: unknown): FeaturedQuestionItem | null => {
+          if (typeof item === 'string') {
+            return { question: item };
+          }
+          if (item && typeof item === 'object' && typeof (item as any).question === 'string') {
+            return {
+              id: typeof (item as any).id === 'number' ? (item as any).id : undefined,
+              question: (item as any).question,
+            };
+          }
+          return null;
+        })
+        .filter((item): item is FeaturedQuestionItem => item !== null);
     } catch (error) {
       console.error("Failed to fetch featured questions", error);
       return [];
     }
+  },
+
+  async getFeaturedQuestionAnswer(question: string, evalId?: number): Promise<FeaturedQuestionAnswerResponse | null> {
+    try {
+      const params = new URLSearchParams({ question });
+      if (typeof evalId === 'number') {
+        params.set('eval_id', String(evalId));
+      }
+      const response = await authFetch(`${API_BASE}/questions/featured/answer?${params.toString()}`);
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.error("Failed to fetch featured question answer", error);
+      return null;
+    }
+  },
+
+  async getBookChunksInspector(
+    bookId: string,
+    params: {
+      page?: number | null;
+      sectionId?: number | null;
+      filterType?: ChunkInspectorFilterType;
+      mode?: ChunkInspectorSearchMode;
+      q?: string;
+      rerank?: boolean;
+      skip?: number;
+      limit?: number;
+    } = {}
+  ): Promise<ChunkInspectorResponse> {
+    const query = new URLSearchParams();
+    if (params.page !== undefined && params.page !== null && params.page >= 1) {
+      query.set('page', String(params.page));
+    }
+    if (params.sectionId !== undefined && params.sectionId !== null) {
+      query.set('sectionId', String(params.sectionId));
+    }
+    if (params.filterType) {
+      query.set('filterType', params.filterType);
+    }
+    if (params.mode) {
+      query.set('mode', params.mode);
+    }
+    if (params.q && params.q.trim()) {
+      query.set('q', params.q.trim());
+    }
+    if (params.rerank) {
+      query.set('rerank', 'true');
+    }
+    if (params.skip !== undefined) {
+      query.set('skip', String(params.skip));
+    }
+    if (params.limit !== undefined) {
+      query.set('limit', String(params.limit));
+    }
+    const qs = query.toString();
+    const response = await authFetch(`${API_BASE}/books/${bookId}/chunks${qs ? `?${qs}` : ''}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || `Failed to load chunks (${response.status})`);
+    }
+    return await response.json();
   }
 };

@@ -10,6 +10,7 @@ import {
   getUserConversations,
   submitChatFeedback,
 } from '../services/geminiService';
+import { PersistenceService } from '../services/persistenceService';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from './useAuth';
 
@@ -47,7 +48,13 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const contextBookIdsRef = useRef<string[]>([]);
   const pendingEvalIdRef = useRef<number | null>(null);
   const pendingCostRef = useRef<Message['cost']>(undefined);
+  const pendingSampleQuestionRef = useRef<{ question: string; evalId?: number } | null>(null);
   const streamUpdateTimerRef = useRef<number | null>(null);
+
+  const prepareSampleQuestion = useCallback((question: string, evalId?: number) => {
+    pendingSampleQuestionRef.current = { question, evalId };
+    setChatInput(question);
+  }, []);
 
   const scheduleStreamingUpdate = useCallback(() => {
     if (streamUpdateTimerRef.current !== null) return;
@@ -81,6 +88,36 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     if (type === 'error' && event.code === 'tool_failure') {
       hasToolFailureRef.current = true;
       setStreamingPartialResult(true);
+      return;
+    }
+
+    if (type === 'page_hits') {
+      let displayText = typeof event.text === 'string' ? event.text : '';
+      if (Array.isArray(event.hits) && event.hits.length > 0) {
+        const headerLine = displayText ? displayText.split('\n')[0] : '';
+        const hitLines = event.hits.map((h: Record<string, any>) => {
+          const title = h.title || 'Unknown';
+          const authorPart = h.author ? ` (${h.author})` : '';
+          const volPart = h.volume != null ? `، ${h.volume}-توم` : '';
+          const secTitle = h.sectionTitle ?? h.section_title;
+          const secPart = secTitle ? ` — ${secTitle}` : '';
+          const bookId = h.bookId ?? h.book_id;
+          const physPage = h.page ?? h.page_number;
+          const dispPage = h.contentPageNumber ?? h.content_page_number ?? physPage;
+          const rawSnippet = typeof h.snippet === 'string' ? h.snippet.replace(/\s+/g, ' ').trim() : '';
+          const snippetPart = rawSnippet ? ` — «${rawSnippet}»` : '';
+          if (bookId && physPage != null) {
+            return `- [«${title}»${authorPart}${volPart}${secPart}، ${dispPage}-بەت](ref:${bookId}:${physPage})${snippetPart}`;
+          }
+          return `- «${title}»${authorPart}${volPart}${secPart}${snippetPart}`;
+        });
+        displayText = [headerLine, ...hitLines].filter(Boolean).join('\n');
+      }
+      streamingMessageRef.current = displayText;
+      setStreamingMessage(displayText);
+      setAgentSteps(prev =>
+        prev.map(s => (s.status === 'active' ? { ...s, status: 'done' as const } : s))
+      );
       return;
     }
 
@@ -195,6 +232,12 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
               cost: m.cost ?? undefined,
               feedback: m.feedback ?? undefined,
             }));
+            const lastWithBooks = [...msgs]
+              .reverse()
+              .find(m => m.role === 'model' && Array.isArray(m.usedBookIds) && m.usedBookIds.length > 0);
+            contextBookIdsRef.current = Array.isArray(lastWithBooks?.usedBookIds)
+              ? lastWithBooks.usedBookIds
+              : [];
             setChatMessages(formatted);
           } else {
             clearChat();
@@ -235,6 +278,12 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
         cost: m.cost ?? undefined,
         feedback: m.feedback ?? undefined,
       }));
+      const lastWithBooks = [...msgs]
+        .reverse()
+        .find(m => m.role === 'model' && Array.isArray(m.usedBookIds) && m.usedBookIds.length > 0);
+      contextBookIdsRef.current = Array.isArray(lastWithBooks?.usedBookIds)
+        ? lastWithBooks.usedBookIds
+        : [];
       setChatMessages(formatted);
     } finally {
       setIsLoadingMessages(false);
@@ -242,6 +291,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   };
 
   const startNewChat = () => {
+    pendingSampleQuestionRef.current = null;
     abortOngoingChat();
     setConversationId(undefined);
     clearChat();
@@ -267,9 +317,17 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
     if (view !== 'global-chat' && !selectedBook) return;
-    if (usageStatus?.hasReachedLimit) return;
 
     const trimmedInput = chatInput.trim();
+    const pendingSample = pendingSampleQuestionRef.current;
+    const isSampleQuestion = Boolean(
+      pendingSample && pendingSample.question.trim() === trimmedInput
+    );
+    const sampleEvalId = isSampleQuestion ? pendingSample?.evalId : undefined;
+    pendingSampleQuestionRef.current = null;
+
+    if (usageStatus?.hasReachedLimit && !isSampleQuestion) return;
+
     if (trimmedInput.length > 500) {
       setChatMessages(prev => [
         ...prev,
@@ -309,6 +367,31 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     setAgentSteps([{ id: 'initial-think', type: 'thinking', status: 'active' }]);
 
     try {
+      if (isSampleQuestion && !isAuthenticated) {
+        const cachedSample = await PersistenceService.getFeaturedQuestionAnswer(
+          trimmedInput,
+          sampleEvalId,
+        );
+        if (controller.signal.aborted) return;
+        if (cachedSample?.cached && cachedSample.answer) {
+          if (view === 'global-chat' && Array.isArray(cachedSample.usedBookIds)) {
+            contextBookIdsRef.current = cachedSample.usedBookIds;
+          }
+          setChatMessages(prev => [
+            ...prev,
+            {
+              role: 'model',
+              text: cachedSample.answer!,
+              characterId: selectedCharacterId,
+              cost: cachedSample.cost ?? undefined,
+            },
+          ]);
+          setIsChatting(false);
+          setAgentSteps([]);
+          return;
+        }
+      }
+
       const bookId = (view === 'global-chat') ? 'global' : selectedBook!.id;
       const historyToSend = [...chatMessages, userMsg];
 
@@ -321,6 +404,8 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
           characterId: selectedCharacterId,
           contextBookIds: view === 'global-chat' ? contextBookIdsRef.current : [],
           conversationId,
+          fromSampleQuestion: isSampleQuestion ? true : undefined,
+          sampleEvalId,
           signal: controller.signal,
         },
         {
@@ -412,6 +497,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     setChatMessages,
     chatInput,
     setChatInput,
+    prepareSampleQuestion,
     isChatting,
     streamingMessage,
     streamingPartialResult,

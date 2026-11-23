@@ -33,7 +33,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
           {children}
         </div>
 
-        {view !== 'reader' && view !== 'admin' && view !== 'join-us' && view !== 'graph' && view !== 'dictionary' && view !== 'quran' && (
+        {view !== 'reader' && view !== 'chunk-inspector' && view !== 'admin' && view !== 'join-us' && view !== 'graph' && view !== 'dictionary' && view !== 'quran' && (
           <footer className={`border-t border-[#0369a1]/10 dark:border-[#38bdf8]/10 pt-4 ${['global-chat', 'spell-check'].includes(view) ? 'hidden sm:flex' : 'flex'} flex-col sm:flex-row sm:flex-wrap lg:grid lg:grid-cols-3 items-center justify-center sm:justify-around lg:justify-items-stretch gap-4 w-full px-4 sm:px-2 ${view === 'global-chat' ? 'mb-2 mt-4 lg:max-w-7xl lg:mx-auto' : view === 'spell-check' ? 'mb-2 mt-4 lg:max-w-5xl lg:mx-auto' : 'mb-6 mt-8'}`} dir="rtl">
             {/* Right Column (Copyright) */}
             <div className="w-full sm:w-auto text-center lg:text-right whitespace-nowrap">
@@ -56,9 +56,9 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
                   className="flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
                 >
                   <img
-                    src="https://dallasuyghurcommunity.org/wp-content/uploads/2025/01/DUC_Logo_3ai_Artboard-2-photoaidcom-cropped-1.png"
+                    src="/duc-logo.png"
                     alt="Dallas Uyghur Community"
-                    className="h-10 sm:h-12 w-auto object-contain"
+                    className="h-10 sm:h-12 w-auto object-contain rounded-full"
                   />
                 </a>
                 <a

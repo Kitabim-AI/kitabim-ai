@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, UTC
 from app.db.repositories.rag_evaluations_repository import (
     RAGEvaluationsRepository,
     get_rag_evaluations_repository,
+    is_qualifying_sample_answer,
 )
 from app.db.models import RAGEvaluation
 
@@ -90,3 +91,100 @@ def test_get_rag_evaluations_repository():
     session = MagicMock()
     repo = get_rag_evaluations_repository(session)
     assert isinstance(repo, RAGEvaluationsRepository)
+
+
+def test_is_qualifying_sample_answer_checks_80_percent_threshold():
+    passing = RAGEvaluation(
+        id=10,
+        question="مەھمۇد قەشقەرى كىم؟",
+        answer="مەھمۇد قەشقەرى مەشھۇر ئالىم.",
+        eval_status="completed",
+        faithfulness_score=0.8,
+        answer_relevance_score=0.85,
+        context_precision_score=0.9,
+        context_recall_score=None,
+    )
+    assert is_qualifying_sample_answer(passing) is True
+
+    low_precision = RAGEvaluation(
+        id=11,
+        question="مەھمۇد قەشقەرى كىم؟",
+        answer="مەھمۇد قەشقەرى مەشھۇر ئالىم.",
+        eval_status="completed",
+        faithfulness_score=0.95,
+        answer_relevance_score=0.9,
+        context_precision_score=0.79,
+    )
+    assert is_qualifying_sample_answer(low_precision) is False
+
+    queued_row = RAGEvaluation(
+        id=12,
+        question="مەھمۇد قەشقەرى كىم؟",
+        answer="مەھمۇد قەشقەرى مەشھۇر ئالىم.",
+        eval_status="queued",
+        faithfulness_score=0.9,
+        answer_relevance_score=0.9,
+        context_precision_score=0.9,
+    )
+    assert is_qualifying_sample_answer(queued_row) is False
+
+    empty_answer = RAGEvaluation(
+        id=13,
+        question="مەھمۇد قەشقەرى كىم؟",
+        answer="   ",
+        eval_status="completed",
+        faithfulness_score=0.9,
+        answer_relevance_score=0.9,
+        context_precision_score=0.9,
+    )
+    assert is_qualifying_sample_answer(empty_answer) is False
+
+
+@pytest.mark.asyncio
+async def test_get_qualifying_sample_evaluation_and_used_books():
+    session = AsyncMock()
+    repo = RAGEvaluationsRepository(session)
+
+    qualifying_row = RAGEvaluation(
+        id=42,
+        question="مەھمۇد قەشقەرى كىم؟",
+        answer="جاۋاب [12-بەت](ref:book-123:12) ۋە [قۇرئان](ref:quran:1:1)",
+        show_on_homepage=True,
+        eval_status="completed",
+        faithfulness_score=0.82,
+        answer_relevance_score=0.88,
+        context_precision_score=0.80,
+    )
+    hit_res = MagicMock()
+    hit_res.scalar_one_or_none.return_value = qualifying_row
+    session.execute.return_value = hit_res
+
+    found = await repo.get_qualifying_sample_evaluation(
+        question="مەھمۇد قەشقەرى كىم؟", eval_id=42
+    )
+    assert found is qualifying_row
+
+    msg_res = MagicMock()
+    msg_res.scalar_one_or_none.return_value = ["book-000"]
+    session.execute.return_value = msg_res
+    book_ids = await repo.resolve_sample_used_book_ids(qualifying_row)
+    assert book_ids == ["book-000", "book-123"]
+
+    below_threshold_row = RAGEvaluation(
+        id=43,
+        question="مەھمۇد قەشقەرى كىم؟",
+        answer="جاۋاب",
+        show_on_homepage=True,
+        eval_status="completed",
+        faithfulness_score=0.9,
+        answer_relevance_score=0.75,
+        context_precision_score=0.9,
+    )
+    miss_res = MagicMock()
+    miss_res.scalar_one_or_none.return_value = below_threshold_row
+    session.execute.return_value = miss_res
+
+    not_found = await repo.get_qualifying_sample_evaluation(
+        question="مەھمۇد قەشقەرى كىم؟", eval_id=43
+    )
+    assert not_found is None

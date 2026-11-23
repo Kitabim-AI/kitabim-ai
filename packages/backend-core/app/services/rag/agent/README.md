@@ -22,7 +22,7 @@ Implements the multi-tool agentic retrieval engine, configuring tool definitions
 ## Invariants
 - `[config.py:AGENT_MAX_STEPS]` — Prevents unbounded agent reasoning cycles by hard-capping maximum tool calls.
 - `[tools.py:_clamp_reader_scope]` — Enforces book scope boundaries when querying within single-book reader mode.
-- `[reranker.py:rerank_context]` — Deduplicates overlapping chunks across the same book and page offsets.
+- `[reranker.py:rerank_context]` — Deduplicates overlapping chunks across `(book_id, page, section_id)` and preserves `end_page_number`, `section_id`, `section_title`, `content_page_number`, and `end_content_page_number`.
 
 ## Side Effects
 - Reads chunks, books, pages, dictionaries, and Quran records from PostgreSQL.

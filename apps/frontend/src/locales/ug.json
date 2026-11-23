@@ -220,6 +220,7 @@
     "category": "تۈر",
     "pipeline": {
       "ocr": "OCR",
+      "structure": "قۇرۇلما ئانالىزلاۋاتىدۇ",
       "chunking": "پارچىلاۋاتىدۇ",
       "embedding": "ۋېكتورلاۋاتىدۇ",
       "spell_check": "ئىملا تەكشۈرۋاتىدۇ",
@@ -324,6 +325,8 @@
     "fontSize": "خەت چوڭلۇقى",
     "spellCheck": "ئىملا تەكشۈرۈش",
     "editBook": "كىتاب تەھرىرلەش",
+    "inspectChunks": "بۆلەكلەر",
+    "inspectChunksTitle": "بۆلەكلەرنى تەكشۈرۈش",
     "editPage": "بەت تەھرىرلەش",
     "reprocessPage": "بەتنى قايتا تونۇتۇش",
     "loadFullDocument": "ھەممە بەتنى كۆرۈش",
@@ -351,9 +354,6 @@
     "unmarkAsToc": "مۇندەرىجىدىن چىقىرىش",
     "markAsTocTitle": "بۇ بەتنى مۇندەرىجە بېتى قىلىپ بەلگىلەش",
     "unmarkAsTocTitle": "بۇ بەتتىن مۇندەرىجە بەلگىسىنى ئېلىپ تاشلاش",
-    "llmSpellCheck": "LLM دە كوررېكتورلاش",
-    "llmSpellCheckTitle": "بۇ بەتتە LLM ئارقىلىق كوررېكتورلۇق ئېلىپ بېرىش",
-    "llmSpellCheckRunning": "LLM دە ئىملا تەكشۈرۈلىۋاتىدۇ...",
     "reprocess": {
       "title": "قايتا تونۇتۇش",
       "message": "بۇ بەتتە سىزنىڭ تەھرىرىڭىز بار. قايتا تونۇتسىڭىز تەھرىرىڭىز يوقىلىدۇ. جەزملەشتۈرەمسىز؟",
@@ -373,44 +373,6 @@
     "questionsLabel": "سوئاللار",
     "rulesLabel": "ئاپتوماتىك تۈزىتىش",
     "dictionaryLabel": "لۇغەت",
-    "historyStagingLabel": "تارىخىي ئاتالغۇلارنى بايقاش",
-    "historyStagingQueue": "كاندىدات ئاتالغۇلار",
-    "historyStagingDesc": "سۈنئىي ئىدراك بايقىغان ئاتالغۇلارنى تەكشۈرۈپ تەستىقلاش",
-    "historyStagingLoadError": "تىزىملىكنى يۈكلىيەلمىدى",
-    "historyStagingActionError": "مەشغۇلات مەغلۇپ بولدى",
-    "historyExtractionStarted": "تارىخىي ئاتالغۇلارنى بايقاش ۋەزىپىسى باشلاندى.",
-    "historyFactsActive": "پاكىتلار",
-    "historyFactsRejected": "رەت قىلىنغان پاكىتلار",
-    "historyFactsShowRejected": "رەت قىلىنغانلارنى كۆرسەت",
-    "historyFactsHideRejected": "رەت قىلىنغانلارنى يوشۇر",
-    "historyFactConflict": "زىددىيەتلىك پاكىتلار",
-    "historyFactKeepThis": "بۇنى ساقلا",
-    "historyFactKeepOther": "ئۇنى ساقلا",
-    "historyFactKeepBoth": "ئىككىلىسىنى ساقلا",
-    "historyFactReject": "رەت قىل",
-    "historyPreview": "سىناق نۇسخا",
-    "historyPreviewing": " سىناق نۇسخا قۇرۇلۋاتىدۇ...",
-    "historyNoPreviewYet": "تېخى سىناق نۇسخا يوق — نۆۋەتتىكى پاكىتلاردىن ئېنىقلىما قۇرۇش ئۈچۈن «سىناق نۇسخا»نى بېسىڭ.",
-    "historyApproveBlockedConflicts": "ئالدى بىلەن {count} زىددىيەتلىك پاكىتنى بىر تەرەپ قىلىڭ",
-    "historySynthesisFailed": "سىناق نۇسخىنى قۇرالمىدى. قايتا سىناپ بېقىڭ.",
-    "bulkApprove": "توپ تەستىقلاش",
-    "minSignificanceFilter": "مۇھىملىق دەرىجىسى شۈزگۈچ",
-    "minScoreAll": "بارلىق رېكورد",
-    "minScoreModerate": "ئادەتتىكى",
-    "minScoreImportant": "ئوتتۇراھال",
-    "minScoreHigh": "مۇھىم",
-    "minScoreVeryImportant": "ئىنتايىن مۇھىم",
-    "statusPending": "تەستىقلانمىغان",
-    "statusApproved": "تەستىقلانغان",
-    "statusRejected": "رەت قىلىنغان",
-    "noStagingItems": "تەستىقلايدىغان تارىخىي ئاتالغۇ يوق.",
-    "typeEnrichment": "تولۇقلانغان",
-    "typeNew": "يېڭى ئاتالغۇ",
-    "approve": "تەستىقلاش",
-    "reject": "رەت قىلىش",
-    "originalDefinition": "ئەسلى نۇسخا",
-    "enrichedDefinition": "تولۇقلانغان نۇسخا",
-    "sources": "مەنبە",
     "searchPlaceholder": "كىتاب نامى، ئاپتورى ياكى تۈرى بويىچە ئىزدەش...",
     "stats": {
       "title": "كىتابىم ستاتىستىكىسى",
@@ -460,7 +422,23 @@
       "interestOther": "باشقا",
       "loading": "يۈكلىنىۋاتىدۇ...",
       "noSubmissions": "تېخى ئالاقە يوق",
-      "error": "يۈكلەشتە خاتالىق كۆرۈلدى"
+      "noSearchResults": "ئىزدىگىنىڭىز تېپىلمىدى.",
+      "error": "يۈكلەشتە خاتالىق كۆرۈلدى",
+      "actions": "مەشغۇلات",
+      "viewMessage": "ئۇچۇرنى كۆرۈش",
+      "detailTitle": "ئالاقە ئۇچۇرى",
+      "copyEmail": "ئېلخەتنى كۆچۈرۈش",
+      "emailCopied": "كۆچۈرۈلدى",
+      "replyEmail": "ئېلخەت يېزىش",
+      "adminNotes": "باشقۇرغۇچى ئىزاھاتى",
+      "adminNotesPlaceholder": "ئىچكى ئىزاھات يېزىڭ...",
+      "saveNotes": "ئىزاھاتنى ساقلاش",
+      "notesSaved": "ئىزاھات ساقلاندى.",
+      "statusUpdated": "ھالىتى يېڭىلاندى.",
+      "updateError": "ئۇچۇرنى يېڭىلاشتا خاتالىق كۆرۈلدى.",
+      "confirmDelete": "«{{name}}» ئەۋەتكەن ئۇچۇرنى راستىنلا ئۆچۈرەمسىز؟",
+      "deleteSuccess": "ئۇچۇر مۇۋەپپەقىيەتلىك ئۆچۈرۈلدى.",
+      "deleteError": "ئۇچۇرنى ئۆچۈرەلمىدى."
     },
     "questions": {
       "title": "سوئاللار",
@@ -496,13 +474,12 @@
     },
     "pipeline": {
       "ocr": "OCR",
+      "structure": "قۇرۇلما",
       "chunking": "پارچىلاش",
       "embedding": "ۋېكتورلاش",
       "summary": "قىسقىچە مەزمۇن",
       "spellCheck": "ئىملا تەكشۈرۈش",
-      "llmSpellCheck": "LLM ئىملا تەكشۈرۈش",
-      "graph": "بىلىم گىرافى",
-      "history": "تارىخىي ئاتالغۇلار"
+      "graph": "بىلىم گىرافى"
     },
     "table": {
       "loading": "ئ‍ېچىلۋاتىدۇ",
@@ -513,6 +490,8 @@
       "status": "ھالىتى",
       "actions": "مەشغۇلات",
       "view": "كۆرۈش",
+      "inspectChunks": "بۆلەكلەرنى تەكشۈرۈش",
+      "copyBookId": "كىتاب ID نى كۆچۈرۈش",
       "edit": "تەھرىرلەش",
       "delete": "ئۆچۈرۈش",
       "reindex": "قايتا ۋېكتورلاش",
@@ -520,13 +499,12 @@
       "replaceCover": "مۇقاۋىنى ئالماشتۇرۇش",
       "resetFailed": "مەغلۇپ بەتلەرنى دەسلەپلەش",
       "retryFailed": "مەغلۇپ بەتلەرنى قايتا سىناش",
-      "extractHistory": "تارىخىي ئاتالغۇلارنى بايقاش",
       "reprocess": {
         "ocr": "قايتا OCR",
+        "structure": "قۇرۇلمىنى قايتا ئانالىزلاش",
         "chunking": "قايتا پارچىلاش",
         "embedding": "قايتا ۋېكتورلاش",
         "spell_check": "قايتا ئىملا تەكشۈرۈش",
-        "llm_spell_check": "LLM ئارقىلىق كوررېكتورلاش",
         "graph": "قايتا گىرافىك قۇرۇش",
         "summary": "قايتا قىسقىچە مەزمۇن ھاسىللاش"
       },
@@ -733,6 +711,92 @@
       "confirmDelete": "«{{word}}» دېگەن ماقال-تەمسىلنى راستىنلا ئۆچۈرەمسىز؟",
       "deleteSuccess": "ماقال-تەمسىل مۇۋەپپەقىيەتلىك ئۆچۈرۈلدى.",
       "deleteError": "ماقال-تەمسىلنى ئۆچۈرەلمىدى."
+    },
+    "chunkInspector": {
+      "backToReader": "ئوقۇغۇچقا قايتىش",
+      "backToReaderPage": "ئوقۇغۇچقا قايتىش ({{page}}-بەت)",
+      "backToAdmin": "باشقۇرۇش سۇپىسىغا قايتىش",
+      "copyBookIdTitle": "كىتاب ID نى كۆچۈرۈش",
+      "reprocessChunking": "قايتا بۆلەكلەش",
+      "loadError": "بۆلەكلەرنى يۈكلەشتە خاتالىق كۆرۈلدى.",
+      "modeSemantic": "سوئال بويىچە ئىزدەش",
+      "modeText": "تېكىست سۈزۈش",
+      "placeholderSemantic": "بۇ كىتابتىن سوئال سوراپ قايسى بۆلەكلەرنىڭ يۇقىرى نومۇر ئالىدىغانلىقىنى تەكشۈرۈڭ...",
+      "placeholderText": "بۆلەك ئىچىدىن ئېنىق سۆز ياكى جۈملە سۈزۈش...",
+      "searchButton": "ئىزدەش",
+      "rerankButton": "RAG قايتا رەتلەش",
+      "rerankButtonTitle": "Gemini Reranker ئارقىلىق ئەڭ مۇناسىپ بۆلەكلەرنى تاللاش ۋە رەتلەش",
+      "clear": "تازىلاش",
+      "pageLabel": "بەت #:",
+      "allPagesPlaceholder": "ھەممىسى",
+      "filters": {
+        "all": "ھەممە بۆلەك",
+        "crossPage": "بەت ھالقىغان",
+        "unembedded": "ۋېكتور يوق",
+        "short": "قىسقا (<350)",
+        "oversized": "ئۇزۇن (>2500)"
+      },
+      "toggles": {
+        "overlap": "تەكرار قىسىمنى يورۇتۇش",
+        "prefix": "ۋېكتور ماۋزۇسى",
+        "sourcePane": "ئەسلى بەت تېكىستى"
+      },
+      "stats": {
+        "totalChunks": "جەمئىي بۆلەك",
+        "embedded": "ۋېكتورلانغان",
+        "crossPage": "بەت ھالقىغان",
+        "sections": "باپ / ماۋزۇ",
+        "pageOffset": "بەت پەرقى"
+      },
+      "sectionSource": {
+        "frontMatter": "باش قىسىم",
+        "tocMatched": "مۇندەرىجە",
+        "tocInterpolated": "تەخمىنىي",
+        "headerDetected": "ماۋزۇ",
+        "auto": "ئاپتوماتىك"
+      },
+      "structure": {
+        "title": "كىتاب قۇرۇلمىسى",
+        "all": "ھەممىسى",
+        "empty": "بۆلۈم قۇرۇلمىسى تېخى ھاسىل قىلىنمىغان.",
+        "meta": "{{start}}–{{end}}-بەت · {{count}} بۆلەك"
+      },
+      "stream": {
+        "count": "{{shown}} / {{total}} بۆلەك",
+        "countPage": "{{shown}} / {{total}} بۆلەك · بەت {{page}}",
+        "loading": "يۈكلىنىۋاتىدۇ...",
+        "ragParams": "RAG چەك نومۇرى: {{threshold}} · نىشان=1500 · تەكرار=200",
+        "empty": "ماس كېلىدىغان بۆلەك تېپىلمىدى.",
+        "pdfPageSingle": "PDF بەت {{page}}",
+        "pdfPageRange": "PDF بەت {{start}} ← {{end}}",
+        "printedPageSingle": "باسما بەت {{page}}",
+        "printedPageRange": "باسما بەت {{start}}–{{end}}",
+        "crossPageBadge": "بەت ھالقىپ ئۇلانغان",
+        "ragPass": "✓ RAG تاللايدۇ",
+        "ragBelowThreshold": "✕ چەكتىن تۆۋەن",
+        "rerankedSummary": "· Rerank تاللىغىنى: {{count}}",
+        "rerankRankBadge": "★ Rerank #{{rank}}",
+        "rerankDroppedBadge": "✕ Rerank شاللىدى",
+        "charCount": "{{count}} ھەرپ",
+        "hasEmbedding": "ۋېكتور بار",
+        "missingEmbedding": "ۋېكتور يوق",
+        "embeddingPrefixHint": "ۋېكتور ماۋزۇسى (Chunk.text قا قوشۇلمايدۇ):",
+        "overlapTooltip": "ئالدىنقى بۆلەكتىن تەكرارلانغان جۈملە",
+        "copy": "كۆچۈرۈش",
+        "openInReader": "ئوقۇغۇچتا ئېچىش ({{page}}-بەت)",
+        "loadMore": "تېخىمۇ كۆپ يۈكلەش ({{shown}} / {{total}})"
+      },
+      "source": {
+        "title": "ئەسلى بەت تېكىستى",
+        "pageSingle": "{{page}}-بەت",
+        "pageRange": "{{start}}–{{end}}-بەت",
+        "loading": "بەت تېكىستى يۈكلىنىۋاتىدۇ...",
+        "selectPrompt": "سېلىشتۇرۇش ئۈچۈن بىر بۆلەكنى تاللاڭ.",
+        "stitchBoundary": "── بەت ئۇلىنىش چېگراسى ({{prev}} ← {{next}}) ──",
+        "frontMatter": "باش قىسىم",
+        "emptyPage": "(بوش بەت)",
+        "cleanedNoiseTag": "[تازىلاندى]"
+      }
     }
   },
   "spellCheck": {
@@ -896,6 +960,9 @@
     "reprocessOcr": {
       "title": "OCR نى قايتىلاش "
     },
+    "reprocessStructure": {
+      "title": "قۇرۇلمىنى قايتا ئانالىزلاش"
+    },
     "reprocessChunking": {
       "title": "پارچىلاشنى قايتىلاش"
     },
@@ -920,6 +987,9 @@
     "reprocess": {
       "ocr": {
         "message": "بۇ كىتابنىڭ بارلىق بەتلىرىنى OCR باسقۇچىدىن باشلاپ قايتا بىر تەرەپ قىلامسىز؟ بارلىق تېكىستلەر ئۆچۈرۈلىدۇ."
+      },
+      "structure": {
+        "message": "بۇ كىتابنىڭ قۇرۇلمىسىنى (مۇندەرىجە ۋە بەت نومۇرى) قايتا ئانالىزلامسىز؟ پارچىلاش ۋە ۋېكتورلاشتۇرۇشمۇ قايتا بىر تەرەپ قىلىنىدۇ."
       },
       "chunking": {
         "message": "بارلىق بەتلەرنى پارچىلاش (Chunking) باسقۇچىدىن باشلاپ قايتا بىر تەرەپ قىلامسىز؟ مەۋجۇت بۆلەكلەر ئۆچۈرۈلىدۇ."

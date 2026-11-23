@@ -2,6 +2,10 @@
 
 from app.db.repositories.base_repository import BaseRepository
 from app.db.repositories.books_repository import BooksRepository, get_books_repository
+from app.db.repositories.book_sections_repository import (
+    BookSectionsRepository,
+    get_book_sections_repository,
+)
 from app.db.repositories.pages_repository import PagesRepository, get_pages_repository
 from app.db.repositories.chunks_repository import (
     ChunksRepository,
@@ -14,6 +18,8 @@ __all__ = [
     "BaseRepository",
     "BooksRepository",
     "get_books_repository",
+    "BookSectionsRepository",
+    "get_book_sections_repository",
     "PagesRepository",
     "get_pages_repository",
     "ChunksRepository",

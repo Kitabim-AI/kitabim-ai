@@ -1,267 +1,101 @@
-# Chunking — Design
+# Structure & Section-Stream Chunking — Design
 
-See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) for the cross-stage diagram this stage's Data Flow is scoped from. Previous stage: [OCR_DESIGN.md](OCR_DESIGN.md). Next stage: [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md).
+See also: [WORKER_DESIGN.md](WORKER_DESIGN.md) for the full pipeline overview and [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) for the cross-stage diagram. Previous stage: [OCR_DESIGN.md](OCR_DESIGN.md). Next stage: [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md).
 
 ## Overview
 
-Chunking is the second mandatory pipeline step. It begins once a page has `ocr_milestone='succeeded'` and ends when the page's OCR text has been split into `chunks` rows (or, for empty/table-of-contents pages, zero rows) and `chunking_milestone='succeeded'`. Handoff to Embedding happens per-page, via the transactional outbox, the moment a page succeeds.
+Once a book finishes OCR (`Book.ocr_milestone = 'complete'` and, when `spell_check_enabled == 'true'`, `Book.spell_check_milestone` is terminal), text segmentation runs as a **two-stage book-scoped pipeline**:
 
-Key characteristics:
+1. **Stage 1 — Deterministic Book Structure (`structure_scanner` → `structure_job` → `BookStructureService`):**
+   - Solves `Page.content_page_number` across the book via piecewise-monotonic dynamic programming over detected header/footer page numbers (with ToC-heading anchor fallback when `< 15%` of body pages carry numbers, while preserving manual overrides `content_page_number_manual = true`).
+   - Extracts a deterministic two-tier section tree (`book_sections`, `level IN (1, 2)`) reconciling Table-of-Contents entries (`toc_matched` / `toc_interpolated`) or in-page headings (`header_detected`) while filtering repeated running headers, repeated book-title headers, title-page metadata stacks, colon-ending labels, and recurring subsection rubrics (`تەرجىمىسى`, `تەپسىرى`, `مۇھىم نۇقتىلىرى`).
+   - Nests `باب`/`پەسىل` chapters (`level = 2`) under `قىسىم`/`بۆلۈم` parts (`level = 1`) when both tiers exist, and labels unheaded leading front matter `"باش قىسىم"` (`section_type = 'front_matter'`).
 
-- **`ChunkingScanner` claims pages across all books, not book-by-book.** Unlike `OcrScanner` (which groups by book because a PDF download is shared across a book's pages), chunking only needs the `text` already stored on each `Page` row, so `ChunkingScanner` claims up to `scanner_page_limit` idle chunking pages from any book in a single pass.
-- **Splitting is structure-aware, not a plain character splitter.** `ChunkingService.split_text()` (`chunking_service.py`) first parses the page into typed `Block`s (`heading`/`body`/`footnote`/`table`/`toc`) via `OcrMarkdownParser`, then packs them into chunks with `_pack_adaptive`: paragraphs are atomic (never split mid-paragraph), a chunk closes once it passes the `CHUNK_SIZE` soft target at a paragraph boundary and has reached `CHUNK_MIN_SIZE`, and a heading always starts a new chunk. Footnotes are merged into the paragraph that references them; embedded table-of-contents sections (detected inline, independent of the page-level `is_toc` flag) are dropped; trailing paragraphs up to `CHUNK_OVERLAP` characters (never crossing a heading) carry into the next chunk for continuity; and any below-`CHUNK_MIN_SIZE` trailing chunk is folded into the previous one. A plain-text `RecursiveCharacterTextSplitter` (separators `["\n\n", "\n", ". ", " ", ""]`) is only a fallback — used when a page has no detectable structure at all, and as a last-resort safety split for any single atomic unit that exceeds the hard, non-configurable embedding-safety ceiling (`2600` characters). Env-configured defaults: `CHUNK_SIZE=1000`, `CHUNK_OVERLAP=150`, `CHUNK_MIN_SIZE=300`.
-- **Table-of-contents pages are skipped entirely.** `is_toc`, set during OCR (see [OCR_DESIGN.md](OCR_DESIGN.md)), makes `ChunkingJob` produce zero chunks for that page without ever calling `chunking_service`. Independently, `chunking_service` also detects and drops TOC *sections* inline within an otherwise-real page (e.g. a `مۇندەرىجە` heading followed by dot-leader/numbered entries) — see Component Responsibilities — so a page that isn't flagged `is_toc` but embeds a TOC block still has that block excluded from its chunks.
-- **Chunks are upserted on `(book_id, page_number, chunk_index)`, and a text change resets `embedding` to `NULL`.** `ChunkingJob` always deletes any existing chunk rows whose `chunk_index` is beyond the new split's chunk count first (so a page that produces fewer chunks after a re-run doesn't leave stale trailing rows), then `INSERT ... ON CONFLICT DO UPDATE`s the rest, explicitly setting `embedding=NULL` on every updated row. This is what forces `EmbeddingScanner` to re-embed a chunk whose text actually changed, since embedding eligibility is driven by `chunking_milestone`/`embedding_milestone`, not by a text diff.
-- **`ready` books remain eligible for re-chunking.** Both `ChunkingScanner` and the reactive `EventDispatcher` explicitly exclude only `book.status == 'error'` — they do not exclude `status='ready'`. This is required because `apply_auto_corrections_to_page` (`auto_correct_service.py`), which `AutoCorrectJob` runs after spell-check corrections are approved, rewrites `page.text` and resets `chunking_milestone`/`embedding_milestone` back to `idle` on the corrected page regardless of the book's current status — so a `ready` book's corrected page must still be pickable up by `ChunkingScanner` or it would get stuck at `idle` forever.
-- **Chunking can also be gated on spell check.** When `spell_check_enabled` (`system_configs`) is `"true"`, both `ChunkingScanner`'s poll-based claim and the reactive `EventDispatcher` additionally require `spell_check_milestone IN ('succeeded', 'failed')` before a page is eligible — spell check can rewrite `page.text` via auto-correct, and chunking text that's about to be corrected would build chunks from stale content with no re-chunk trigger to fix it after the fact.
+2. **Stage 2 — Section-Stream Chunking (`chunking_scanner` → `chunking_job` → `ChunkingService.chunk_book_sections`):**
+   - Packs each leaf `BookSection` (and any parent chapter/part preamble that contains substantive body blocks) independently so chunks **never cross section boundaries** and empty Part divider pages produce zero stub chunks.
+   - Binds page-local footnotes (`①–⑳`, `¹–⁹`, `[1]:`) to the referencing paragraph on the same page before cross-page stitching.
+   - Stitches cross-page `'prose'` continuations (trailing hyphen or missing terminal punctuation) while tracking **exact character-to-page intervals** (`PageCharSpan`), splitting internal single-`\n` paragraph/dialogue boundaries on the top block of a page only when cross-page stitching actually triggers, so every emitted `SectionChunk` receives the tight `(page_number, end_page_number)` of its own characters without shifting mid-page chunk boundaries.
+   - Carries sentence-level overlap (`1–2` trailing sentences up to `CHUNK_OVERLAP = 200` chars when the trailing paragraph exceeds `200` chars), splits oversized blocks on Uyghur and ASCII sentence punctuation (`؟`, `!`, `۔`, `.`, `؛`, `;`), and folds undersized trailing chunks (`< CHUNK_MIN_SIZE = 350`) backward within the section.
+   - Stores **unprefixed** `Chunk.text` + contextual v2 SHA-256 `Chunk.text_hash` (computed over `"emb:v2\0" + format_chunk_embedding_text(text, book_title=..., section_title=...)`), carrying over existing `vector(3072)` embeddings inside PostgreSQL (`ChunksRepository.replace_for_book`) only when `(text, book.title, parent › child section_title)` is unchanged, and resetting `Book.graph_milestone = 'idle'` whenever chunks are replaced. Contextual headers (`"{book.title} — {section_title}"`) are prepended only at embedding request time (`format_chunk_embedding_text`).
 
 ## Schema
 
-### `pages` table (columns this stage reads/writes)
+### `books` table (structure & chunking columns)
 
 | Column | Type | Description |
 |---|---|---|
-| `text` | `text`, nullable | Read-only input to this stage — the OCR'd (and Uyghur-normalized) transcription. Not modified by chunking. |
-| `is_toc` | `boolean`, default `false` | Read-only input — when `true`, `ChunkingJob` skips splitting and produces zero chunks for the page. |
-| `chunking_milestone` | `varchar(20)`, default `"idle"` | `idle \| in_progress \| succeeded \| failed`. |
-| `retry_count` | `integer`, default `0` | Shared failure counter across OCR/chunking/embedding/spell-check; incremented on every `chunking_milestone='failed'` transition. |
-| `worker_id` / `claimed_at` | `varchar(255)` / `timestamptz`, nullable | Set by `ChunkingScanner` (or the reactive `EventDispatcher`) when it claims a page (`chunking_milestone → in_progress`), then overwritten by `ChunkingJob` itself with the executing worker's ID once the job starts running. |
-| `pipeline_step` | `varchar(20)`, nullable | Set to `"chunking"` on the owning `Book` (not the page) by `ChunkingJob` when it starts processing; not read by `ChunkingScanner`/`ChunkingJob` to gate work. |
-| `error` | `text`, nullable | Last chunking error message (truncated to 500 chars). |
+| `structure_milestone` | `varchar(20)`, default `'idle'` | `idle \| in_progress \| complete \| partial_failure \| failed`. |
+| `structure_retry_count` / `structure_claimed_at` | `integer` / `timestamptz` | Book-level retry counter and active claim timestamp for `structure_job`. |
+| `chunking_milestone` | `varchar(20)`, default `'idle'` | Book-scoped chunking state (`idle \| in_progress \| complete \| partial_failure \| failed`). |
+| `chunking_retry_count` / `chunking_claimed_at` | `integer` / `timestamptz` | Book-level retry counter and active claim timestamp for `chunking_job`. |
+| `content_page_offset` | `integer`, default `0` | Modal physical-to-printed page offset (`page_number - content_page_number`). |
 
-### `books` table (columns this stage reads/writes)
+### `book_sections` table
 
 | Column | Type | Description |
 |---|---|---|
-| `chunking_milestone` | `varchar(20)`, default `"idle"` | Book-level rollup of page `chunking_milestone`s (`idle \| in_progress \| complete \| partial_failure \| failed`), recomputed by `BookMilestoneService.update_book_milestone_for_step(session, book_id, "chunking")` after every claim and after every `ChunkingJob` run. |
-| `pipeline_step` | `varchar(20)`, nullable | Set to `"chunking"` by `ChunkingJob` when it starts processing a batch that includes pages from this book. |
-| `status` | `varchar`, default `"pending"` | Read (not written) by `ChunkingScanner`/`EventDispatcher` as an eligibility filter — only `status == 'error'` excludes a book's pages from being claimed; `status='ready'` books remain eligible (see Overview). |
+| `id` | `bigserial`, PK | Section primary key. |
+| `book_id` | `varchar(64)`, FK → `books.id` (`CASCADE`) | Owning book. |
+| `parent_id` | `bigint`, nullable FK → `book_sections.id` (`CASCADE`) | Enclosing `level = 1` chapter/part section, if `level = 2`. |
+| `section_index` | `integer`, not null | Reading-order index (`UNIQUE (book_id, section_index)`). |
+| `level` | `smallint` (`1` or `2`) | `1` = top-level part/chapter/work; `2` = child chapter/work. |
+| `section_type` | `varchar(32)` | `chapter \| work \| front_matter \| back_matter \| synthetic_body`. |
+| `title` / `normalized_title` | `text`, not null | Display title and normalized lookup key (`toc_lookup`). |
+| `start_page` / `start_block_index` | `integer`, not null | Inclusive physical start page and `PageBlock.block_index`. |
+| `end_page` / `end_block_index` | `integer`, not null | Inclusive physical end page and `PageBlock.block_index`. |
+| `source` / `confidence` | `varchar(32)` / `float8` | `toc_matched \| toc_interpolated \| header_detected \| synthetic_body`. |
 
 ### `chunks` table
 
 | Column | Type | Description |
 |---|---|---|
-| `id` | `integer`, PK, autoincrement | Surrogate key. |
-| `book_id` | `varchar(64)`, FK → `books.id` (`ondelete=CASCADE`), indexed | Owning book. |
-| `page_number` | `integer`, not null | The 1-based page this chunk was split from. |
-| `chunk_index` | `integer`, default `0`, not null | Position of this chunk within the page's split output. |
-| `text` | `text`, not null | The chunk's text content. |
-| `embedding` | `vector(3072)`, nullable | pgvector embedding; `NULL` until `EmbeddingJob` (next stage) fills it in. Reset to `NULL` by `ChunkingJob` whenever an existing chunk's `text` is updated. |
-| `created_at` | `timestamptz` | Row creation timestamp; not updated on conflict-upsert. |
-
-Unique constraint `chunks_book_id_page_number_chunk_index_key` on `(book_id, page_number, chunk_index)` is the conflict target for `ChunkingJob`'s upsert.
-
-## Architecture
-
-| File | Purpose |
-|---|---|
-| `services/worker/scanners/chunking_scanner.py` | `run_chunking_scanner` — claims idle chunking pages across all books (cross-book, not grouped), dispatches one `ChunkingJob`. |
-| `services/worker/jobs/chunking_job.py` | `chunking_job` — splits each claimed page's text into chunks and upserts them into `chunks`, one page at a time in its own session. |
-| `services/worker/scanners/event_dispatcher.py` | `run_event_dispatcher` — reactively claims and dispatches `chunking_job` immediately off `ocr_succeeded` (or, when spell check is enabled, `spell_check_succeeded`/`spell_check_failed`) outbox events, instead of waiting for `ChunkingScanner`'s next 1‑minute poll. |
-| `packages/backend-core/app/services/chunking_service.py` | `chunking_service` (a `ChunkingService` instance) — parses page text into typed blocks (`OcrMarkdownParser`) and adaptively packs them into chunks, configured from `settings.chunk_size` / `settings.chunk_overlap` / `settings.chunk_min_size`; falls back to a plain-text `RecursiveCharacterTextSplitter` for unstructured pages and to force-split oversized atomic units; `split_text()` is the only method `ChunkingJob` calls. |
-| `packages/backend-core/app/db/repositories/chunks_repository.py` | `ChunksRepository` — generic chunk CRUD, pgvector similarity search over `chunks` (used by RAG retrieval). Its `keyword_search()` method sources from `pages.text_search` instead (migration 083 dropped the equivalent `chunks.text_search` column). **Not used by `ChunkingJob`**, which upserts/deletes chunk rows directly via raw SQLAlchemy `insert(...).on_conflict_do_update(...)` / `delete(...)` for per-page transactional control. |
-| `packages/backend-core/app/db/repositories/pages_repository.py` | `PagesRepository` — generic page CRUD/upsert. **Not used by chunking's page-claiming or update logic either** — `chunking_scanner.py` and `chunking_job.py` both issue raw `select`/`update` statements against `Page` directly. |
-| `packages/backend-core/app/services/auto_correct_service.py` | `apply_auto_corrections_to_page` — not a chunking-stage file, but the reason `ready` books stay eligible for chunking: it resets `chunking_milestone`/`embedding_milestone` to `idle` on corrected pages. |
-| `services/backend/api/endpoints/books_router.py` | Hosts `POST /{book_id}/reprocess/chunking`, the admin-facing chunking recovery endpoint. |
+| `id` | `integer`, PK | Surrogate key. |
+| `book_id` | `varchar(64)`, FK → `books.id` (`CASCADE`) | Owning book. |
+| `page_number` | `integer`, not null | 1-based physical start page of the chunk's characters. |
+| `end_page_number` | `integer`, nullable | 1-based physical end page of the chunk's characters (`>= page_number`). |
+| `chunk_index` | `integer`, not null | 0-based ordinal among chunks starting on `page_number` (`UNIQUE (book_id, page_number, chunk_index)`). |
+| `section_id` | `bigint`, nullable FK → `book_sections.id` (`SET NULL`) | Enclosing section row. |
+| `text` | `text`, not null | Unprefixed chunk text. |
+| `text_hash` | `varchar(64)`, nullable | SHA-256 of `"emb:v2\0"` + whitespace-normalized `format_chunk_embedding_text(text, book_title, section_title)` for embedding carry-over and batch deduplication. |
+| `embedding` | `vector(3072)`, nullable | pgvector embedding computed from `format_chunk_embedding_text(text, book_title, section_title)`. |
 
 ## Data Flow
 
 ```mermaid
 flowchart TD
-    OCR_OK(["ocr_milestone = succeeded<br/>(book.status != error)"])
-    SPELL_GATE{"spell_check_enabled?"}
-    SPELL_WAIT["Wait: spell_check_milestone<br/>in (succeeded, failed)"]
-    CHUNK_IDLE(["chunking_milestone = idle"])
-    POLL["ChunkingScanner (every 1 min):<br/>claim up to scanner_page_limit<br/>idle pages, cross-book"]
-    REACT["EventDispatcher (reactive):<br/>claims off ocr_succeeded /<br/>spell_check_succeeded / spell_check_failed events"]
-    LOCK["ChunkingJob:<br/>MultiPageLock(prefix=chunking)<br/>book.pipeline_step = chunking"]
-    TOC{"page.is_toc?"}
-    ZERO["chunks = []"]
-    SPLIT["clean_uyghur_text(page.text)<br/>chunking_service.split_text()<br/>(structure-aware block packing;<br/>CHUNK_SIZE / CHUNK_OVERLAP / CHUNK_MIN_SIZE)"]
-    SHRINK["DELETE chunks WHERE<br/>chunk_index >= len(new chunks)"]
-    UPSERT["INSERT ... ON CONFLICT<br/>(book_id, page_number, chunk_index)<br/>DO UPDATE text, embedding = NULL"]
-    OK["chunking_milestone = succeeded"]
-    EVENT[("pipeline_events:<br/>chunking_succeeded")]
-    FAIL["chunking_milestone = failed<br/>retry_count++"]
-    FEVENT[("pipeline_events:<br/>chunking_failed")]
-    NEXT(["Embedding eligible<br/>(chunking_milestone = succeeded)"])
+    OCR_OK(["Book.ocr_milestone = complete<br/>(+ spell_check terminal if enabled)"])
+    S_CLAIM["StructureScanner / EventDispatcher:<br/>claim Book.structure_milestone = in_progress"]
+    S_JOB["structure_job:<br/>solve Page.content_page_number +<br/>replace book_sections"]
+    C_CLAIM["structure_job / ChunkingScanner:<br/>claim Book.chunking_milestone = in_progress"]
+    C_JOB["chunking_job:<br/>chunk_book_sections(pages, leaf_sections)<br/>ChunksRepository.replace_for_book (carry over by text_hash + section)"]
+    ALL_EMB{"unembedded_count == 0?"}
+    DONE_FAST["Book.chunking_milestone = complete<br/>Book.embedding_milestone = complete<br/>(pipeline_step = ready if status == ready)"]
+    TO_EMB["Book.chunking_milestone = complete<br/>Book.embedding_milestone = idle<br/>(EmbeddingScanner -> online or batch)"]
 
-    OCR_OK --> SPELL_GATE
-    SPELL_GATE -- No --> CHUNK_IDLE
-    SPELL_GATE -- Yes --> SPELL_WAIT --> CHUNK_IDLE
-    CHUNK_IDLE --> POLL --> LOCK
-    OCR_OK -.-> REACT
-    SPELL_WAIT -.-> REACT
-    REACT -.-> LOCK
-    LOCK --> TOC
-    TOC -- Yes --> ZERO --> SHRINK
-    TOC -- No --> SPLIT --> SHRINK
-    SHRINK --> UPSERT --> OK --> EVENT --> NEXT
-    LOCK -->|exception during processing| FAIL --> FEVENT
-
-    classDef idle fill:#e9edc9,stroke:#606c38
-    classDef active fill:#fff3cd,stroke:#856404
-    classDef done fill:#d4f1f4,stroke:#189ab4
-    classDef fail fill:#ffcccb,stroke:#d32f2f
-
-    class OCR_OK,CHUNK_IDLE idle
-    class SPELL_GATE,SPELL_WAIT,POLL,REACT,LOCK,TOC,SPLIT,SHRINK,UPSERT active
-    class ZERO,OK,EVENT,NEXT done
-    class FAIL,FEVENT fail
+    OCR_OK --> S_CLAIM --> S_JOB --> C_CLAIM --> C_JOB --> ALL_EMB
+    ALL_EMB -- Yes --> DONE_FAST
+    ALL_EMB -- No --> TO_EMB
 ```
 
-## Component Responsibilities
+## Key Components
 
-**ChunkingScanner — `run_chunking_scanner(ctx)`:**
-
-```
-1. Fetch scanner_page_limit (system_configs, default 100) and
-   spell_check_enabled (system_configs; code fallback "false" if unset,
-   but seeded "true" on every startup — see Configuration Reference).
-2. SELECT Page.id, Page.book_id JOIN Book WHERE
-     ocr_milestone = 'succeeded'
-     AND chunking_milestone = 'idle'
-     AND book.status != 'error'
-     [AND spell_check_milestone IN ('succeeded', 'failed'), only if spell_check_enabled]
-   FOR UPDATE SKIP LOCKED LIMIT scanner_page_limit.
-   (Cross-book: no grouping/limit per book.)
-3. If no rows, return.
-4. UPDATE those pages: chunking_milestone='in_progress',
-   worker_id=<this worker>, claimed_at=now().
-5. For each distinct book_id among the claimed pages, recompute the
-   book's rolled-up chunking_milestone
-   (BookMilestoneService.update_book_milestone_for_step).
-6. Commit, then enqueue chunking_job(page_ids=<all claimed ids>) via ARQ.
-```
-
-**EventDispatcher's chunking-relevant slice — `run_event_dispatcher(ctx)`:**
-
-```
-1. Poll up to 100 unprocessed pipeline_events, FOR UPDATE SKIP LOCKED.
-2. Determine chunking_trigger_types: ('ocr_succeeded',) normally, or
-   ('spell_check_succeeded', 'spell_check_failed') if spell_check_enabled
-   (mirrors ChunkingScanner's own gating condition).
-3. Collect candidate page IDs from events matching those types.
-4. Atomically re-claim the subset still chunking_milestone='idle' AND
-   book.status != 'error' (same SKIP LOCKED + flip-to-in_progress pattern
-   as the scanner) — this exists so a reactive dispatch and the scanner's
-   own poll never both enqueue a job for the same page.
-5. Mark processed events; commit.
-6. If any pages were claimed, enqueue chunking_job(page_ids=<claimed>).
-```
-
-**ChunkingJob — `chunking_job(ctx, page_ids)`:**
-
-```
-1. Acquire a MultiPageLock (Redis SET NX, prefix="chunking", 1h expiry)
-   for page_ids; pages whose lock couldn't be acquired are dropped from
-   this run (picked up again next scanner tick / event). If zero locks
-   acquired, exit.
-2. Overwrite worker_id/claimed_at on the locked pages with this
-   executing worker's ID.
-3. Load the Page rows for the locked IDs.
-4. Set pipeline_step='chunking' on every distinct Book among these pages.
-5. For each page (sequential, own session per page):
-     a. IF page.is_toc: chunks = [] (skip splitting entirely).
-        ELSE: text = clean_uyghur_text(page.text or "");
-              chunks = chunking_service.split_text(text)
-              (returns [] immediately if text is empty).
-     b. DELETE FROM chunks WHERE book_id=page.book_id
-        AND page_number=page.page_number AND chunk_index >= len(chunks)
-        — removes stale trailing rows if this page now produces fewer
-        chunks than a previous run.
-     c. IF chunks: INSERT INTO chunks (book_id, page_number, chunk_index,
-        text) VALUES <one row per chunk> ON CONFLICT
-        (book_id, page_number, chunk_index) DO UPDATE SET text=excluded.text,
-        embedding=NULL.
-     d. UPDATE the page: chunking_milestone='succeeded'. Emit a
-        'chunking_succeeded' pipeline event (payload: duration_ms). Commit.
-     e. ON EXCEPTION (any step a-d): UPDATE the page:
-        chunking_milestone='failed', retry_count+=1, error=<message,
-        truncated to 500 chars>. Emit a 'chunking_failed' pipeline event
-        (payload: duration_ms, error). Commit.
-6. After all pages processed, recompute the book's rolled-up
-   chunking_milestone for every distinct book_id
-   (BookMilestoneService.update_book_milestone_for_step).
-7. Release the MultiPageLock (finally block).
-```
-
-`chunking_service` is instantiated once at import time as `ChunkingService(chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap, min_chunk_size=settings.chunk_min_size)` — i.e. it always uses the env-configured `CHUNK_SIZE`/`CHUNK_OVERLAP`/`CHUNK_MIN_SIZE`, not the class's own constructor defaults. `ChunkingService.split_text()` (`chunking_service.py`):
-
-1. `OcrMarkdownParser.parse(text)` splits the text on blank lines into blocks, further splits each block so every markdown/Uyghur heading line stands alone (OCR/markdown output often stacks a heading against its body with only a single newline), strips per-line noise — OCR `[Header]`/`[Footer]` markers wherever they appear in a line, HTML page comments, horizontal rules — independently of `clean_uyghur_text`'s own stripping (defense-in-depth), and classifies each block as `heading` / `toc` / `table` / `footnote` / `body`.
-2. If the page has no structural blocks at all (no `heading`/`toc`/`table`/`footnote` block — pure body prose), `split_text()` falls back to joining the cleaned block text and running it through `RecursiveCharacterTextSplitter` — separators `["\n\n", "\n", ". ", " ", ""]` tried in order, recursively re-splitting any piece still longer than the target with the remaining separators, then merging adjacent pieces up to the `CHUNK_SIZE` target with `CHUNK_OVERLAP` characters carried between consecutive merged chunks.
-3. Otherwise, `chunk(blocks)` drops `table` blocks and TOC blocks (plus any immediately-following block that still looks like TOC entries — dot-leaders or a numbered/bulleted line ending in a page number — so a real TOC's entry list is dropped along with it, but un-headinged prose that resumes right after is kept), attaches each `footnote` block to the nearest preceding paragraph containing its inline marker, and packs the remaining `heading`/`body` blocks with `_pack_adaptive`: a chunk accumulates whole paragraphs until it exceeds the `CHUNK_SIZE` target at a paragraph boundary (and is at least `CHUNK_MIN_SIZE`), or a heading forces a new chunk; on close, up to `CHUNK_OVERLAP` characters of trailing paragraphs (stopping at a heading) carry into the next chunk as overlap.
-4. Any resulting chunk over the hard, non-configurable `2600`-character embedding-safety ceiling (`_EMBED_SAFE_CHARS` — sized to stay under the embedding model's 2048-token input limit) is force-split via `RecursiveCharacterTextSplitter`; a below-`CHUNK_MIN_SIZE` trailing chunk that doesn't start with a heading is instead folded into the previous chunk rather than standing alone.
-
-## State Machine
-
-```mermaid
-flowchart TD
-    CHUNK_IDLE["chunking / idle"]
-    CHUNK_IP["chunking / in_progress"]
-    CHUNK_OK["chunking / succeeded<br/>(incl. 0-chunk TOC/empty pages)"]
-    CHUNK_FAIL["chunking / failed"]
-    EXHAUSTED["retry_count >= ocr_max_retry_count<br/>AND still failed<br/>(book.status = error)"]
-
-    CHUNK_IDLE -->|"ChunkingScanner / EventDispatcher: claim"| CHUNK_IP
-    CHUNK_IP -->|"ChunkingJob: split + upsert succeed"| CHUNK_OK
-    CHUNK_IP -->|"ChunkingJob: exception"| CHUNK_FAIL
-    CHUNK_FAIL -->|"retry_count < ocr_max_retry_count<br/>AND book.status NOT IN (ready, error):<br/>PipelineDriver resets"| CHUNK_IDLE
-    CHUNK_FAIL -->|"retry_count >= ocr_max_retry_count"| EXHAUSTED
-    CHUNK_OK -->|"AutoCorrectJob rewrites page.text<br/>(auto_correct_service)"| CHUNK_IDLE
-
-    classDef idle fill:#e9edc9,stroke:#606c38
-    classDef active fill:#fff3cd,stroke:#856404
-    classDef done fill:#d4f1f4,stroke:#189ab4
-    classDef fail fill:#ffcccb,stroke:#d32f2f
-
-    class CHUNK_IDLE idle
-    class CHUNK_IP active
-    class CHUNK_OK done
-    class CHUNK_FAIL,EXHAUSTED fail
-```
-
-`EXHAUSTED` is a mandatory-step failure — `PipelineDriver` marks the whole book `status='error'` once any page has an exhausted OCR/chunking/embedding failure (see `WORKER_DESIGN.md`). The `CHUNK_OK -> CHUNK_IDLE` transition triggered by `AutoCorrectJob` is what keeps `ready` books' corrected pages flowing back through chunking (see Overview) — it is a text-content trigger, not a retry. **The `CHUNK_FAIL -> CHUNK_IDLE` retry transition does not apply to `ready` books:** `PipelineDriver`'s Reset step excludes any book whose `status` is `'ready'` or `'error'`, so if a `ready` book's auto-correct-reopened page then fails chunking, that page stays `CHUNK_FAIL` regardless of `retry_count` — see Error Handling & Retries for the gap this creates.
-
-## Error Handling & Retries
-
-| Scenario | Behavior |
+| File | Responsibility |
 |---|---|
-| `chunking_service.split_text()` or the DB upsert raises any exception, **on a book whose `status` is not `'ready'` or `'error'`** | Page set `chunking_milestone='failed'`, `retry_count+=1`, `error=<message, truncated 500 chars>`. Emits `chunking_failed`. `PipelineDriver`'s Reset step resets it to `idle` on its next run if `retry_count < ocr_max_retry_count`, so `ChunkingScanner` reclaims it — this never blocks the book while retries remain. |
-| Same exception, **on a book whose `status == 'ready'`** (e.g. a page reopened by `AutoCorrectJob` per Overview) | Page set `chunking_milestone='failed'`, `retry_count+=1`, same as above — but `PipelineDriver`'s Reset step (`services/worker/scanners/pipeline_driver.py`) filters every reset query with `~Book.status.in_(_V1_READY_STATUSES)`, where `_V1_READY_STATUSES = ("ready", "error")`; a `ready` book is excluded regardless of `retry_count`. `BookMilestoneService.update_book_milestone_for_step` (`packages/backend-core/app/services/book_milestone_service.py`) never writes `book.status`, so nothing else flips the book off `'ready'` either. **Gap: the page is never auto-retried** — it stays `chunking_milestone='failed'` until an admin reprocesses it (`POST /{book_id}/reprocess/chunking`) or the book's `status` otherwise changes. |
-| `retry_count >= ocr_max_retry_count` (shared pipeline-level retry budget key, `system_configs`, default `10`) after a chunking failure | Page stays `chunking_milestone='failed'` permanently; `PipelineDriver` marks the whole book `status='error'` (chunking is a mandatory step). No soft-skip path exists for chunking — unlike OCR, an exhausted chunking failure always leaves the page genuinely failed. |
-| Page has empty `text` (soft-skipped by OCR) or `is_toc=True` | Not a failure — `chunking_service.split_text("")` and the `is_toc` branch both produce `chunks=[]`; the page succeeds with zero chunk rows and flows to Embedding as a page with nothing to embed. |
-| A page's Redis lock can't be acquired (another `ChunkingJob` already holds it) | That page is silently dropped from this run (not marked failed) — it stays `in_progress` and is picked up again once the lock expires (1h) or `StaleWatchdog` resets it. |
-| A page re-runs (reprocess, or auto-correct reopening a `ready` book's page) and produces fewer chunks than the previous run | The `DELETE ... WHERE chunk_index >= len(chunks)` step removes the now-stale trailing chunk rows before the upsert, so no orphaned old chunks remain. |
-| A page re-runs and a given `chunk_index`'s text actually changed | The upsert's `ON CONFLICT DO UPDATE` overwrites `text` and sets `embedding=NULL`, which is what makes that chunk `embedding_milestone`-eligible again for `EmbeddingJob` (see [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md)). |
+| `packages/backend-core/app/services/book_structure_service.py` | `parse_page_blocks` (canonical block parser with inline ToC & noise stripping), `solve_content_page_numbers`, `extract_book_sections`, `BookStructureService`, and atomic book claim helpers. |
+| `packages/backend-core/app/services/chunking_service.py` | `ChunkingService.chunk_book_sections` (section-stream packer with `PageCharSpan` provenance and sentence-level overlap), `split_text` (single-page fallback built on `parse_page_blocks`), `format_chunk_embedding_text`, and `load_book_embedding_context`. |
+| `packages/backend-core/app/db/repositories/chunks_repository.py` | `replace_for_book` (atomic book chunk swap + contextual v2 `text_hash` vector carry-over), cross-page `delete_by_page`, and section-hierarchy-aware `find_by_section_ids` / `similarity_search` / `keyword_search`. |
+| `services/worker/scanners/structure_scanner.py` & `jobs/structure_job.py` | Book-level structure claim/execution and handoff to `chunking_job` (re-running up to 3x if dirtied mid-flight). |
+| `services/worker/scanners/chunking_scanner.py` & `jobs/chunking_job.py` | Book-level chunking claim/execution, dirty-check loop, and fast-path completion when all vectors carry over. |
+| `services/worker/scanners/stale_watchdog_scanner.py` | Resets stale `structure_claimed_at`, `chunking_claimed_at`, and `embedding_claimed_at` on both `'in_progress'` and orphaned `'idle'` books. |
+| `services/backend/api/endpoints/books_router.py` | `update_page_text` (rebuilds full transitive cross-page chunk span synchronously, embeds with book/section context, and marks structure dirty for background reconciliation), `set_page_toc`, `reprocess_structure`, and `reprocess_chunking`. |
 
 ## Configuration Reference
 
 | Key | Default | Used by |
 |---|---|---|
-| `scanner_page_limit` (`system_configs`) | `100` (code fallback; no seed row exists in `packages/backend-core/app/db/seeds.py`) | `chunking_scanner` — idle pages claimed per run, across all books. Also used by `embedding_scanner`/`spell_check_scanner`. |
-| `spell_check_enabled` (`system_configs`) | `"true"` — seeded by `seed_system_configs()` (`packages/backend-core/app/db/seeds.py`, lines 115–119), which runs on every backend startup (`services/backend/main.py`, lines 135–143) and every worker startup (`packages/backend-core/app/queue.py`, lines 57–61) and inserts the row whenever the key is absent. The code-level fallback passed to `config_repo.get_value("spell_check_enabled", "false")` is `"false"`, but that path is only reached if seeding has never run — in practice the effective default is spell-check gating **enabled**. | `chunking_scanner` / `event_dispatcher` — when `"true"`, adds the `spell_check_milestone IN ('succeeded', 'failed')` eligibility condition described in Overview. |
-| `ocr_max_retry_count` (`system_configs`) | `10` (seeded in `seeds.py`) | `PipelineDriver` — the same shared pipeline-level retry budget used by OCR also governs when a `chunking_milestone='failed'` page is reset to `idle` vs. left exhausted. There is no chunking-specific retry-count key. |
-| `CHUNK_SIZE` (env, `packages/backend-core/app/core/config.py`) | `1000` | `chunking_service` — soft target chunk length in characters; `_pack_adaptive` closes a chunk once it passes this size at a paragraph boundary. Not a hard cap — one large atomic paragraph can exceed it, up to the `2600`-char hard ceiling. |
-| `CHUNK_OVERLAP` (env, `packages/backend-core/app/core/config.py`) | `150` | `chunking_service` — characters of trailing-paragraph context carried into the next chunk on close; also the fallback `RecursiveCharacterTextSplitter`'s merge overlap. |
-| `CHUNK_MIN_SIZE` (env, `packages/backend-core/app/core/config.py`) | `300` | `chunking_service` — minimum chunk size; `_pack_adaptive` won't close a chunk below this at a paragraph boundary, and `_merge_undersized` folds any below-minimum trailing chunk into the previous one. |
-
-## API Endpoints
-
-| Endpoint | Role required | Effect |
-|---|---|---|
-| `POST /{book_id}/reprocess/chunking` | `Depends(require_editor)` (ADMIN or EDITOR) | Resets `chunking_milestone`, `embedding_milestone`, and `spell_check_milestone` to `idle` and `retry_count=0` for every page on the book; sets `is_indexed=False`; sets `book.status='pending'`, `book.pipeline_step='chunking'`. Non-destructive — existing OCR `text` and existing `chunks` rows are left in place until `ChunkingJob` deletes/upserts them per page on its next run. Also invalidates the book's cache entry and RAG search caches. |
-
-## Testing
-
-- `services/worker/tests/jobs/chunking_job_test.py` — currently a placeholder scaffold (`test_chunking_job_basic`, `assert True`); no behavioral coverage of `ChunkingJob` exists in this file as of this writing.
-- `services/worker/tests/scanners/chunking_scanner_test.py` — `ChunkingScanner`: `test_chunking_scanner_dispatches_job_for_idle_pages`, `test_chunking_scanner_no_idle_pages`, `test_chunking_scanner_requires_spell_check_done_when_enabled`, `test_chunking_scanner_omits_spell_check_filter_when_disabled`.
-- `packages/backend-core/tests/app/services/chunking_service_test.py` — `RecursiveCharacterTextSplitter` / `ChunkingService`: `test_recursive_splitter_simple`, `test_chunking_service_basic`, `test_chunking_service_empty`, `test_splitter_recursion`, `test_chunking_service_strips_ocr_markers_independently`, `test_toc_followed_by_real_content_no_heading_is_kept`, `test_toc_followed_by_heading_still_drops_toc`, `test_merge_splits_overlap`.
-- `services/worker/tests/scanners/event_dispatcher_test.py` — covers `EventDispatcher`'s reactive chunking dispatch alongside embedding.
-
-## Related Docs
-
-- [OCR_DESIGN.md](OCR_DESIGN.md) — previous stage; provides the `text`/`is_toc` this stage reads and the `ocr_succeeded` event that (absent spell check) triggers reactive dispatch.
-- [EMBEDDING_DESIGN.md](EMBEDDING_DESIGN.md) — next stage; claims chunks once `chunking_milestone='succeeded'` and fills in `chunks.embedding`.
-- [WORKER_DESIGN.md](WORKER_DESIGN.md) — full pipeline, `PipelineDriver`, `MultiPageLock`, `StaleWatchdog`, and the shared milestone/state-machine conventions.
-- [BOOK_PROCESSING_DIAGRAM.md](BOOK_PROCESSING_DIAGRAM.md) — cross-stage diagram; this doc's Data Flow is the chunking-only slice of its "Full Pipeline" diagram.
+| `CHUNK_SIZE` (env) | `1500` | Soft target chunk length in characters (`ChunkingService`). |
+| `CHUNK_OVERLAP` (env) | `200` | Trailing block/sentence overlap carried across size-triggered chunk splits within a section. |
+| `CHUNK_MIN_SIZE` (env) | `350` | Minimum chunk size before closing or backward-merging non-heading chunks. |
+| `_EMBED_SAFE_CHARS` (const) | `4000` | Hard character ceiling per chunk for `gemini-embedding-2` token safety. |
+| `spell_check_enabled` (`system_configs`) | `"true"` | Gates `structure_scanner` / `event_dispatcher` on terminal `Book.spell_check_milestone`. |
+| `kg_chunk_batch_size` (`system_configs`) | `"4"` | Chunks combined per Knowledge Graph LLM call (paired with a `7,500`-char soft batch cap). |

@@ -9,6 +9,7 @@ from app.utils.observability import log_json
 
 from app.services.cache_service import cache_service
 from app.core import cache_config
+from app.core.config import settings
 
 logger = logging.getLogger("app.chat_limit")
 
@@ -57,16 +58,29 @@ class ChatLimitService:
             return 20
         return 10  # Default for unknown roles
 
-    async def _get_today_cache_key(self, user_id: str) -> str:
-        """Generate a redis key for user's daily usage."""
-        from datetime import datetime
+    @staticmethod
+    def _utc_now_and_ttl() -> tuple:
+        """Return (now_utc, seconds_until_utc_midnight) for consistent daily rollover."""
+        from datetime import datetime, timedelta, time as dt_time, timezone
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        now = datetime.now(timezone.utc)
+        tomorrow = datetime.combine(
+            now.date() + timedelta(days=1), dt_time.min, tzinfo=timezone.utc
+        )
+        seconds_until_midnight = max(1, int((tomorrow - now).total_seconds()))
+        return now, seconds_until_midnight
+
+    async def _get_today_cache_key(self, user_id: str) -> str:
+        """Generate a redis key for user's daily usage (UTC date)."""
+        now, _ = self._utc_now_and_ttl()
+        today_str = now.strftime("%Y-%m-%d")
         return cache_config.KEY_CHAT_USAGE.format(user_id=user_id, date=today_str)
 
     async def get_usage(self, user_id: str, session: AsyncSession) -> int:
         """Get current usage by checking Redis first, then falling back to DB."""
-        cache_key = await self._get_today_cache_key(user_id)
+        now, seconds_until_midnight = self._utc_now_and_ttl()
+        today_str = now.strftime("%Y-%m-%d")
+        cache_key = cache_config.KEY_CHAT_USAGE.format(user_id=user_id, date=today_str)
 
         # 1. Try Redis
         try:
@@ -78,17 +92,10 @@ class ChatLimitService:
 
         # 2. Fallback to DB
         usage_repo = UserChatUsageRepository(session)
-        current_usage = await usage_repo.get_usage(user_id)
+        current_usage = await usage_repo.get_usage(user_id, usage_date=now.date())
 
         # 3. Backfill Redis if missing
         try:
-            # Use current day's remaining TTL (until midnight)
-            from datetime import datetime, timedelta, time as dt_time
-
-            now = datetime.now()
-            tomorrow = datetime.combine(now.date() + timedelta(days=1), dt_time.min)
-            seconds_until_midnight = int((tomorrow - now).total_seconds())
-
             await cache_service.set(
                 cache_key, current_usage, ttl=seconds_until_midnight
             )
@@ -124,25 +131,23 @@ class ChatLimitService:
             )
             return 0
 
+        now, seconds_until_midnight = self._utc_now_and_ttl()
+
         # 1. Update DB (Durability)
         usage_repo = UserChatUsageRepository(session)
-        new_count_db = await usage_repo.increment_usage(user.id)
+        new_count_db = await usage_repo.increment_usage(user.id, usage_date=now.date())
 
-        # 2. Update Redis (Speed)
-        cache_key = await self._get_today_cache_key(user.id)
+        # 2. Update Redis (Speed) — must include settings.redis_cache_key_prefix
+        # so raw Lua EVAL updates the exact same key that cache_service.get/set uses.
+        today_str = now.strftime("%Y-%m-%d")
+        cache_key = cache_config.KEY_CHAT_USAGE.format(user_id=user.id, date=today_str)
+        full_cache_key = f"{settings.redis_cache_key_prefix}{cache_key}"
         try:
-            # TTL until midnight
-            from datetime import datetime, timedelta, time as dt_time
-
-            now = datetime.now()
-            tomorrow = datetime.combine(now.date() + timedelta(days=1), dt_time.min)
-            seconds_until_midnight = int((tomorrow - now).total_seconds())
-
             # Use Lua script for atomic increment and expire
             client = await cache_service.get_client()
             if client:
                 new_count_redis = await client.eval(
-                    INCR_EXPIRE_LUA, 1, cache_key, seconds_until_midnight
+                    INCR_EXPIRE_LUA, 1, full_cache_key, seconds_until_midnight
                 )
                 log_json(
                     logger,

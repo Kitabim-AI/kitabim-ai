@@ -58,7 +58,10 @@ async def _execute_and_record_tool(
 
     try:
         res = await _dispatch_tool_with_retry(tool_name, tool_args, ctx)
-    except Exception as exc:
+    except ValueError as exc:
+        if str(exc).startswith("Unknown tool:"):
+            raise
+        ctx.had_tool_failure = True
         log_json(
             logger,
             logging.WARNING,
@@ -66,17 +69,33 @@ async def _execute_and_record_tool(
             tool=tool_name,
             error=str(exc),
         )
-        if "observations" in tool_context.state:
+        err_res = {"ok": False, "error": str(exc), "found_count": 0}
+        if tool_context.state is not None and "observations" in tool_context.state:
+            tool_context.state["observations"] = list(
+                tool_context.state["observations"]
+            ) + [{"tool": tool_name, "args": tool_args, "result": err_res}]
+        return err_res
+    except Exception as exc:
+        ctx.had_tool_failure = True
+        log_json(
+            logger,
+            logging.WARNING,
+            "Agent tool failed after retries",
+            tool=tool_name,
+            error=str(exc),
+        )
+        err_res = {"ok": False, "error": str(exc), "found_count": 0}
+        if tool_context.state is not None and "observations" in tool_context.state:
             tool_context.state["observations"] = list(
                 tool_context.state["observations"]
             ) + [
                 {
                     "tool": tool_name,
                     "args": tool_args,
-                    "result": {"ok": False, "error": str(exc)},
+                    "result": err_res,
                 }
             ]
-        raise
+        return err_res
 
     # Append to observations list in session state for context building and grading
     if "observations" in tool_context.state:
@@ -464,17 +483,41 @@ TRANSIENT_EXCEPTIONS = (
 )
 
 
-def _log_retry(retry_state):
+async def _before_tool_retry(retry_state) -> None:
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
     log_json(
         logger,
         logging.WARNING,
         "Retrying tool execution due to transient error",
         tool=retry_state.args[0] if retry_state.args else "unknown",
         attempt=retry_state.attempt_number,
-        error=str(retry_state.outcome.exception()),
+        error=str(exc),
     )
+    if len(retry_state.args) >= 3 and isinstance(exc, (DBAPIError, OperationalError)):
+        ctx = retry_state.args[2]
+        session = getattr(ctx, "session", None)
+        if session is not None and hasattr(session, "rollback"):
+            try:
+                await session.rollback()
+            except Exception:
+                pass
 
 
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.2, min=0.2, max=1.0),
+    retry=retry_if_exception_type(TRANSIENT_EXCEPTIONS),
+    before_sleep=_before_tool_retry,
+)
 async def _dispatch_tool_with_retry(
     tool_name: str, tool_args: dict, ctx: QueryContext
 ) -> dict:
@@ -791,8 +834,17 @@ async def _run_search_chunks(args: dict, ctx: QueryContext) -> List[dict]:
         except ValueError:
             rag_graph_top_k = 10
 
+        kg_book_scope = (
+            sorted(await _reader_allowed_book_ids(ctx))
+            if not ctx.is_global and ctx.book_id
+            else book_ids
+        )
         graph_results = await graph_entity_lookup(
-            query, top_k=rag_graph_top_k, session=ctx.session
+            query,
+            top_k=rag_graph_top_k,
+            session=ctx.session,
+            book_ids=kg_book_scope,
+            categories=ctx.character_categories or None,
         )
         if graph_results:
             results = [*results, *graph_results]
@@ -900,12 +952,22 @@ async def _run_get_book_summary(args: dict, ctx: QueryContext) -> dict:
 
     if not summaries:
         # Fallback: if no precomputed summary exists in DB, attempt to fetch first pages/intro excerpt
+        from app.services.rag.context import resolve_rag_is_staff
+
         pages_repo = PagesRepository(ctx.session)
         fallback_lines = []
+        is_staff_user = resolve_rag_is_staff(getattr(ctx, "is_staff", None))
         for bid in expanded_ids:
             book_obj = await books_repo.get(bid)
             if not book_obj:
                 continue
+            if not is_staff_user:
+                b_status = getattr(book_obj, "status", None)
+                b_vis = getattr(book_obj, "visibility", None)
+                if (isinstance(b_status, str) and b_status != "ready") or (
+                    isinstance(b_vis, str) and b_vis not in ("public", "")
+                ):
+                    continue
             first_pages = await pages_repo.find_first_pages_with_text(bid, limit=5)
             page_text = "\n".join([p.text for p in first_pages if p.text])
             if page_text:
@@ -1021,12 +1083,23 @@ async def _run_get_current_page(ctx: QueryContext) -> dict:
 
     book = ctx.book
     author_info = f", Author: {book.author}" if book.author else ""
-    volume_info = f", Volume {book.volume}" if book.volume is not None else ""
+    volume_info = f", Volume: {book.volume}" if book.volume is not None else ""
+    content_page_val = getattr(page_rec, "content_page_number", None)
+    printed_label: Optional[str] = None
+    if isinstance(content_page_val, str) and content_page_val.strip():
+        printed_label = content_page_val.strip()
+    elif isinstance(content_page_val, int) and not isinstance(content_page_val, bool):
+        printed_label = str(content_page_val)
+    printed_info = (
+        f", PrintedPage: {printed_label}, RefPages: {ctx.current_page}"
+        if printed_label is not None
+        else ""
+    )
     page_text = strip_markdown(page_rec.text)
 
     context = (
         f"[BookID: {ctx.book_id}, Book: {book.title or 'Unknown'}"
-        f"{author_info}{volume_info}, Page {ctx.current_page}]\n"
+        f"{author_info}{volume_info}, Page: {ctx.current_page}{printed_info}]\n"
         f"{page_text}"
     )
     log_json(
@@ -1133,6 +1206,7 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
     if not result:
         from sqlalchemy import select
         from app.db.models import Book
+        from app.db.repositories.books_repository import BooksRepository
         from app.services.rag.utils import (
             normalize_uyghur,
             fuzzy_token_similar,
@@ -1140,8 +1214,11 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
         )
 
         try:
+            access_clauses = BooksRepository._rag_book_access_clauses(
+                getattr(ctx, "is_staff", None)
+            )
             stmt = select(Book.id, Book.title, Book.author, Book.volume).where(
-                Book.status != "error"
+                *access_clauses
             )
             if ctx.character_categories:
                 from sqlalchemy import text as sa_text
@@ -1614,7 +1691,24 @@ async def _run_lookup_proverbs(args: dict, ctx: QueryContext) -> dict:
         proverb = await repo.get_random_proverb()
         entries = [proverb] if proverb else []
     else:
-        stmt = select(Proverb).where(Proverb.text.op("~*")(term)).limit(10)
+        from app.db.repositories.dictionary_repository import _sql_normalize_uyghur
+        from app.services.rag.utils import normalize_uyghur_spelling
+
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        norm_term = normalize_uyghur_spelling(term)
+        escaped_norm = (
+            norm_term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        stmt = (
+            select(Proverb)
+            .where(
+                Proverb.text.ilike(f"%{escaped}%", escape="\\")
+                | _sql_normalize_uyghur(Proverb.text).ilike(
+                    f"%{escaped_norm}%", escape="\\"
+                )
+            )
+            .limit(10)
+        )
         res = await ctx.session.execute(stmt)
         entries = list(res.scalars().all())
 
@@ -1734,11 +1828,13 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
     q = args.get("q")
 
     async with db_session.async_session_factory() as session:
-        if surah is not None:
+        if surah is not None and not q:
             stmt = select(Quran).where(Quran.surah == surah)
             if ayah is not None:
                 stmt = stmt.where(Quran.ayah == ayah)
-            stmt = stmt.order_by(Quran.ayah.asc())
+                stmt = stmt.order_by(Quran.ayah.asc())
+            else:
+                stmt = stmt.order_by(Quran.ayah.asc()).limit(settings.rag_top_k)
             res = await session.execute(stmt)
             entries = list(res.scalars().all())
         elif q:
@@ -1766,35 +1862,47 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
                 from sqlalchemy import text
 
                 embedding_str = str(query_vector)
-                stmt = text("""
+                surah_clause = "AND surah = :surah" if surah is not None else ""
+                ayah_clause = "AND ayah = :ayah" if ayah is not None else ""
+                stmt = text(f"""
                     SELECT 
                         id, surah, surah_name_en, surah_name_ar, surah_name_ug,
                         ayah, text_ar, text_en, text_ug, created_at
                     FROM quran
                     WHERE embedding IS NOT NULL
+                      {surah_clause}
+                      {ayah_clause}
                     ORDER BY embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))
                     LIMIT :limit
                 """)
-                res = await session.execute(
-                    stmt, {"embedding": embedding_str, "limit": rag_top_k}
-                )
+                q_params: dict = {"embedding": embedding_str, "limit": rag_top_k}
+                if surah is not None:
+                    q_params["surah"] = int(surah)
+                if ayah is not None:
+                    q_params["ayah"] = int(ayah)
+                res = await session.execute(stmt, q_params)
                 entries = res.fetchall()
             else:
                 # Fallback to standard keyword search
-                search_pattern = f"%{q}%"
-                stmt = (
-                    select(Quran)
-                    .where(
-                        or_(
-                            Quran.text_ug.ilike(search_pattern),
-                            Quran.text_ar.ilike(search_pattern),
-                            Quran.text_en.ilike(search_pattern),
-                            Quran.surah_name_ug.ilike(search_pattern),
-                            Quran.surah_name_en.ilike(search_pattern),
-                        )
+                escaped_q = (
+                    q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                )
+                search_pattern = f"%{escaped_q}%"
+                stmt = select(Quran).where(
+                    or_(
+                        Quran.text_ug.ilike(search_pattern, escape="\\"),
+                        Quran.text_ar.ilike(search_pattern, escape="\\"),
+                        Quran.text_en.ilike(search_pattern, escape="\\"),
+                        Quran.surah_name_ug.ilike(search_pattern, escape="\\"),
+                        Quran.surah_name_en.ilike(search_pattern, escape="\\"),
                     )
-                    .order_by(Quran.surah.asc(), Quran.ayah.asc())
-                    .limit(rag_top_k)
+                )
+                if surah is not None:
+                    stmt = stmt.where(Quran.surah == surah)
+                if ayah is not None:
+                    stmt = stmt.where(Quran.ayah == ayah)
+                stmt = stmt.order_by(Quran.surah.asc(), Quran.ayah.asc()).limit(
+                    rag_top_k
                 )
                 res = await session.execute(stmt)
                 entries = list(res.scalars().all())
@@ -1848,12 +1956,11 @@ async def _run_search_quran(args: dict, ctx: QueryContext) -> dict:
         }
         formatted_entries.append(formatted)
 
-        # Build clean markup citation context for RAG
+        # Build clean markup citation context for RAG (Arabic + Uyghur only to avoid English syntax calques)
         context_parts.append(
             f"[Source: Holy Quran, Surah: {entry.surah} - {entry.surah_name_ug} ({entry.surah_name_en}), Ayah: {entry.ayah}]\n"
             f"Arabic: {entry.text_ar}\n"
-            f"Uyghur Translation: {entry.text_ug}\n"
-            f"English Translation: {entry.text_en}"
+            f"Uyghur Translation: {entry.text_ug}"
         )
 
     # Format and prepend Surah Metadata to RAG context

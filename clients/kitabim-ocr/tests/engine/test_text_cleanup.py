@@ -633,3 +633,36 @@ def test_is_toc_page_detects_short_continuation_pipe_toc_and_rejects_data_tables
         "| سەلىم | 30 |"
     )
     assert is_toc_page(markdown_data_table) is False
+
+
+def test_extract_standalone_page_number_and_strip_with_capture():
+    from engine.text_cleanup import (
+        extract_standalone_page_number,
+        normalize_digits,
+        strip_page_numbers_with_capture,
+    )
+
+    assert normalize_digits("١٢٣ - بەت") == "123 - بەت"
+    assert extract_standalone_page_number("42") == 42
+    assert extract_standalone_page_number("— ٤٢ —") == 42
+    assert extract_standalone_page_number("12 - بەت") == 12
+    assert extract_standalone_page_number("# 3") is None
+    assert extract_standalone_page_number("بۇ نورمال قۇر 5") is None
+
+    cleaned, detected = strip_page_numbers_with_capture("10\n\nبۇ تېكىست.\n\n12")
+    assert cleaned == "بۇ تېكىست."
+    # Prefers footer page number over header when both are present
+    assert detected == 12
+
+
+def test_is_toc_page_rejects_publisher_colophon_pipe_tables():
+    from engine.text_cleanup import is_toc_page
+
+    colophon_pipe_page = (
+        "| مەسئۇل مۇھەررىر : ئەخمەتجان ھوشۇر | 1 |\n"
+        "| پوچتا نومۇرى : 1000 | 13 |\n"
+        "| تېلېفون نومۇرى : 010-6429 | 62 |\n"
+        "| باسما تاۋىقى : 14 | 125 |\n"
+        "| باھاسى : 45.00 يۈەن | 45 |"
+    )
+    assert is_toc_page(colophon_pipe_page) is False

@@ -323,22 +323,26 @@ async def test_vector_search_multi_book_guarantees_per_book_quota(monkeypatch):
     }
 
     async def fake_similarity_search(
-        query_embedding, book_ids, categories, limit, threshold
+        query_embedding,
+        book_ids,
+        categories,
+        limit,
+        threshold,
+        per_book_limit=None,
     ):
-        assert book_ids is not None and len(book_ids) == 1
-        # Each book fetches up to rag_top_k; select_balanced_chunks then
-        # guarantees every book a floor and caps the total.
-        assert limit == 25
-        return book_results[book_ids[0]]
-
-    mock_factory = MagicMock()
-    mock_factory.return_value.__aenter__.return_value = MagicMock()
+        assert book_ids == ["b1", "b2", "b3"]
+        # Windowed per-book search fetches up to per_book_limit per book in a
+        # single SQL query; select_balanced_chunks then guarantees every book
+        # a floor and caps the total.
+        assert per_book_limit == 25
+        assert limit == 25 * 3
+        return [row for bid in book_ids for row in book_results.get(bid, [])]
 
     with patch(
         "app.db.repositories.chunks_repository.ChunksRepository"
     ) as mock_cls, patch(
         "app.db.repositories.system_configs_repository.SystemConfigsRepository"
-    ) as mock_config_cls, patch("app.db.session.async_session_factory", mock_factory):
+    ) as mock_config_cls:
         mock_repo = mock_cls.return_value
         mock_repo.similarity_search = AsyncMock(side_effect=fake_similarity_search)
 
@@ -353,8 +357,8 @@ async def test_vector_search_multi_book_guarantees_per_book_quota(monkeypatch):
 
         results = await vector_search(ctx, book_ids=["b1", "b2", "b3"])
 
-    # One similarity_search call per named book — not one shared global search.
-    assert mock_repo.similarity_search.call_count == 3
+    # Single windowed similarity_search call across all named books (no per-book session explosion).
+    assert mock_repo.similarity_search.call_count == 1
     result_book_ids = {r["book_id"] for r in results}
     assert result_book_ids == {"b1", "b2", "b3"}
     # Merged and sorted by similarity across books, highest first.

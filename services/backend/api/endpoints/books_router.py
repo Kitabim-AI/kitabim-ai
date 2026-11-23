@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
 import secrets
 import uuid
 import os
 import io
 import re
-import time
 import warnings
 from datetime import datetime, timezone
 from typing import Optional, List, Union
@@ -14,10 +14,13 @@ from typing import Optional, List, Union
 from fastapi import (
     APIRouter,
     BackgroundTasks,
+    Body,
     Depends,
     File,
+    Form,
     HTTPException,
     Query,
+    Request,
     Response,
     UploadFile,
 )
@@ -26,14 +29,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import random
 from app.core.config import settings
 from app.core.pipeline import (
+    BOOK_MILESTONE_COMPLETE,
+    BOOK_MILESTONE_IDLE,
+    CURRENT_SURYA_OCR_VERSION,
     FAILED_PAGE_MILESTONES,
     PAGE_MILESTONE_IDLE,
-    PAGE_MILESTONE_IN_PROGRESS,
     PAGE_MILESTONE_SUCCEEDED,
     PIPELINE_STEP_CHUNKING,
     PIPELINE_STEP_EMBEDDING,
     PIPELINE_STEP_OCR,
     PIPELINE_STEP_SPELL_CHECK,
+    PIPELINE_STEP_STRUCTURE,
 )
 from app.db.session import get_session
 from app.db.repositories.books_repository import BooksRepository
@@ -42,12 +48,14 @@ from app.db.repositories.chunks_repository import ChunksRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.db.models import (
     Book as BookDB,
+    BookSection,
     Page,
     Chunk,
     BookSummary,
-    BatchHistoryExtractionJob,
 )
 from app.models.schemas import (
+    BackfillCandidateOut,
+    BackfillCandidatesResponse,
     Book,
     PaginatedBooks,
     ContentSearchHit,
@@ -55,15 +63,24 @@ from app.models.schemas import (
     ExtractionResult,
     OcrPageInput,
     PageTocUpdate,
+    ReplaceOcrRequest,
+    ReplaceOcrResponse,
+    SetStartPageRequest,
+    SetStartPageResponse,
     to_camel,
 )
 from app.models.user import User
 from app.services.storage_service import storage
 from app.utils.categories import normalize_categories
-from app.services.chunking_service import chunking_service
-from app.services.batch_llm_spell_check_service import submit_batch_llm_spell_check
-from app.services.llm_spell_check_service import correct_page_text
-from app.utils.markdown import normalize_markdown, strip_markdown
+from app.services.chunking_service import (
+    chunking_service,
+    compute_chunk_text_hash,
+    extract_chunk_embedding_prefix,
+    extract_leading_overlap,
+    format_chunk_embedding_text,
+    load_book_embedding_context,
+)
+from app.utils.markdown import normalize_markdown
 from app.llm.models import GeminiEmbeddings
 from auth.dependencies import (
     get_current_user_optional,
@@ -77,6 +94,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from app.models.user import UserRole
 import logging
 from app.utils.text import (
+    clean_uyghur_text,
     generate_uyghur_regex,
     normalize_uyghur_chars,
 )
@@ -128,6 +146,26 @@ def _normalize_categories(categories: Optional[List[str]]) -> List[str]:
 
 
 router = APIRouter()
+
+_MAX_REPLACE_OCR_DECOMPRESSED_BYTES = 25 * 1024 * 1024
+
+
+async def _enqueue_structure_job_best_effort(
+    book_id: str,
+    *,
+    require_spell_check_terminal: bool = False,
+) -> None:
+    """Atomically claim `structure_milestone = 'in_progress'` (only if OCR is complete)
+    and enqueue `structure_job` for `book_id` if ARQ Redis is reachable.
+    """
+    from app.services.book_structure_service import (
+        claim_and_enqueue_structure_for_book,
+    )
+
+    await claim_and_enqueue_structure_for_book(
+        book_id,
+        require_spell_check_terminal=require_spell_check_terminal,
+    )
 
 
 async def _increment_read_count(book_id: str) -> None:
@@ -356,7 +394,6 @@ async def get_books(
                 book.pipeline_stats = stats.get("pipeline_stats", {})
                 book.has_summary = stats.get("has_summary", False)
                 book.has_graph = stats.get("has_graph", False)
-                book.has_history = stats.get("has_history", False)
 
         # Return immediately with cached metadata + fresh stats
         return PaginatedBooks.model_validate(
@@ -372,10 +409,13 @@ async def get_books(
     # --- PART 1: Define Filters ---
     # conditions: for the main list (total)
     # ready_conditions: for the 'ready' list (total_ready) - only relevant for admins/editors
+    can_see_all = _can_staff_access_book(current_user)
     conditions = []
-    if current_user is None:
+    if not can_see_all:
         conditions.append(BookDB.status == "ready")
-        conditions.append(or_(BookDB.visibility == "public", BookDB.visibility is None))
+        conditions.append(
+            or_(BookDB.visibility == "public", BookDB.visibility.is_(None))
+        )
 
     if category:
         conditions.append(category == any_(BookDB.categories))
@@ -606,12 +646,13 @@ async def get_books(
             "file_name": b.file_name,
             "file_type": b.file_type,
             "source": b.source,
+            "ocr_version": getattr(b, "ocr_version", None),
             "pipeline_stats": {},
             "has_summary": False,
             "has_graph": False,
-            "has_history": False,
             # Book-level milestones for accurate icon colors
             "ocr_milestone": b.ocr_milestone,
+            "structure_milestone": getattr(b, "structure_milestone", "idle") or "idle",
             "chunking_milestone": b.chunking_milestone,
             "embedding_milestone": b.embedding_milestone,
             "spell_check_milestone": b.spell_check_milestone,
@@ -632,20 +673,11 @@ async def get_books(
         g_res = await session.execute(g_stmt)
         graph_ids = {str(row[0]) for row in g_res.fetchall()}
 
-        h_stmt = select(BatchHistoryExtractionJob.book_id).where(
-            BatchHistoryExtractionJob.book_id.in_(bid_list),
-            BatchHistoryExtractionJob.status == "succeeded",
-        )
-        h_res = await session.execute(h_stmt)
-        history_ids = {str(row[0]) for row in h_res.fetchall()}
-
         for pydantic_book in books_data:
             if str(pydantic_book.id) in summary_ids:
                 pydantic_book.has_summary = True
             if str(pydantic_book.id) in graph_ids:
                 pydantic_book.has_graph = True
-            if str(pydantic_book.id) in history_ids:
-                pydantic_book.has_history = True
 
     # Only fetch expensive pipeline stats if explicitly requested (non-lite)
     if should_include_stats and books_data:
@@ -659,8 +691,6 @@ async def get_books(
                 pydantic_book.has_summary = True
             if stats.get("has_graph"):
                 pydantic_book.has_graph = True
-            if stats.get("has_history"):
-                pydantic_book.has_history = True
 
     result = {
         "books": books_data,
@@ -676,7 +706,7 @@ async def get_books(
         # 2. For admin stats requests, ALSO cache a metadata-only version (no stats)
         #    This allows future requests to reuse book list + counts and only fetch fresh stats
 
-        cache_ttl = 1800 if current_user is None else 600
+        cache_ttl = 1800 if not can_see_all else 600
 
         if includeStats and current_user and current_user.role in ["admin", "editor"]:
             # Create metadata-only version (strip out stats)
@@ -687,7 +717,6 @@ async def get_books(
                         "pipeline_stats": {},
                         "has_summary": False,
                         "has_graph": False,
-                        "has_history": False,
                     }
                     for book in books_data
                 ],
@@ -807,23 +836,25 @@ async def get_random_proverb(
 @router.get("/top-categories")
 async def get_top_categories(
     response: Response,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=200),
     sort: str = "count",  # "count" or "alphabetical"
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
     """Get categories with optional sorting and limit"""
+    is_staff = _can_staff_access_book(current_user)
+
     # Add HTTP cache headers for browser caching (15 minutes = 900 seconds)
     # Set this early so it applies to both cached and fresh responses
-    # public = cacheable by browsers and CDNs (categories change infrequently)
-    # max-age = browser caches for 15 minutes
-    # stale-while-revalidate = browser can use stale cache for 120s while fetching new data in background
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.cache_ttl_categories}, stale-while-revalidate=120"
-    )
+    if is_staff:
+        response.headers["Cache-Control"] = "private, no-cache"
+    else:
+        response.headers["Cache-Control"] = (
+            f"public, max-age={settings.cache_ttl_categories}, stale-while-revalidate=120"
+        )
 
     # Cache Lookup
-    cache_params = {"limit": limit, "sort": sort, "is_guest": current_user is None}
+    cache_params = {"limit": limit, "sort": sort, "is_staff": is_staff}
     version = await cache_service.get_namespace_version("category")
     param_hash = hashlib.md5(
         json.dumps(cache_params, sort_keys=True).encode(),
@@ -840,8 +871,8 @@ async def get_top_categories(
     where_conditions = []
     params = {"limit": limit}
 
-    if current_user is None:
-        # Guests can only see public ready books
+    if not is_staff:
+        # Guests and non-staff readers can only see public ready books
         where_conditions.append("status = 'ready'")
         where_conditions.append("(visibility = 'public' OR visibility IS NULL)")
 
@@ -900,8 +931,8 @@ async def suggest_books(
     # Build base query for guest access
 
     conditions = []
-    if current_user is None:
-        # Guests can only see public ready books
+    if not _can_staff_access_book(current_user):
+        # Guests and non-staff readers can only see public ready books
         conditions.extend(
             [
                 Book.status == "ready",
@@ -976,12 +1007,28 @@ async def get_global_graph(
     """Retrieve global or book-specific knowledge graph data for visualization."""
     from app.db.repositories.graph_repository import GraphRepository
 
+    is_staff = _can_staff_access_book(current_user)
+    allowed_book_ids: Optional[List[str]] = None
+
+    if not is_staff:
+        pub_stmt = select(BookDB.id).where(
+            BookDB.status == "ready",
+            or_(BookDB.visibility == "public", BookDB.visibility.is_(None)),
+        )
+        pub_res = await session.execute(pub_stmt)
+        allowed_book_ids = [str(row[0]) for row in pub_res.fetchall()]
+        if not allowed_book_ids:
+            return {"nodes": [], "links": []}
+        if book_id and book_id.strip() and book_id.strip() not in set(allowed_book_ids):
+            return {"nodes": [], "links": []}
+
     graph_repo = GraphRepository()
 
     query = """
     MATCH (s:Entity)-[r:RELATED_TO]->(t:Entity)
     WHERE ($q IS NULL OR toLower(s.canonical_name) CONTAINS toLower($q) OR toLower(t.canonical_name) CONTAINS toLower($q))
       AND ($book_id IS NULL OR r.book_id = $book_id OR s.book_id = $book_id OR t.book_id = $book_id)
+      AND ($allowed_book_ids IS NULL OR r.book_id IN $allowed_book_ids)
     RETURN s.id AS source_id, s.canonical_name AS source_name, s.type AS source_type,
            s.year_hijri AS source_year_hijri, s.year_gregorian AS source_year_gregorian, s.century_gregorian AS source_century_gregorian,
            s.context_summary AS source_context_summary,
@@ -995,6 +1042,7 @@ async def get_global_graph(
     params = {
         "q": q.strip() if q and q.strip() else None,
         "book_id": book_id.strip() if book_id and book_id.strip() else None,
+        "allowed_book_ids": allowed_book_ids,
     }
 
     try:
@@ -1005,6 +1053,8 @@ async def get_global_graph(
         # Fallback to empty if Neo4j is not configured or not running
         logger.error(f"Error querying Neo4j graph: {exc}")
         return {"nodes": [], "links": []}
+    finally:
+        await graph_repo.close()
 
     nodes_seen = set()
     nodes = []
@@ -1068,6 +1118,7 @@ async def get_graph_chunk_detail(
     ref: str = Query(
         ..., description="Chunk ref string (e.g. book_id:page:chunk_index or chunk_id)"
     ),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
     """Retrieve original text and metadata for a chunk referenced by a graph edge."""
@@ -1084,7 +1135,12 @@ async def get_graph_chunk_detail(
             page_num = int(page_num_str)
             chunk_idx = int(chunk_idx_str)
             stmt = (
-                select(Chunk, Book.title.label("book_title"))
+                select(
+                    Chunk,
+                    Book.title.label("book_title"),
+                    Book.status.label("book_status"),
+                    Book.visibility.label("book_visibility"),
+                )
                 .outerjoin(Book, Chunk.book_id == Book.id)
                 .where(
                     Chunk.book_id == book_id,
@@ -1101,7 +1157,12 @@ async def get_graph_chunk_detail(
         try:
             chunk_id = int(chunk_id_str)
             stmt = (
-                select(Chunk, Book.title.label("book_title"))
+                select(
+                    Chunk,
+                    Book.title.label("book_title"),
+                    Book.status.label("book_status"),
+                    Book.visibility.label("book_visibility"),
+                )
                 .outerjoin(Book, Chunk.book_id == Book.id)
                 .where(Chunk.id == chunk_id)
             )
@@ -1117,6 +1178,17 @@ async def get_graph_chunk_detail(
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     chunk, book_title = row[0], row[1]
+    book_status = row[2] if len(row) > 2 else "ready"
+    book_visibility = row[3] if len(row) > 3 else "public"
+
+    if not _can_staff_access_book(current_user):
+        if book_status != "ready" or book_visibility not in ("public", None):
+            raise HTTPException(status_code=404, detail="Chunk not found")
+        if current_user is None and chunk.page_number > 20:
+            raise HTTPException(
+                status_code=401, detail=t("errors.authentication_required")
+            )
+
     return {
         "id": chunk.id,
         "bookId": chunk.book_id,
@@ -1250,6 +1322,47 @@ async def rename_graph_entity(
     }
 
 
+@router.get("/backfill-candidates", response_model=BackfillCandidatesResponse)
+async def get_backfill_candidates(
+    ocr_version: str = Query(
+        CURRENT_SURYA_OCR_VERSION,
+        description="Target Surya OCR version string",
+    ),
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> BackfillCandidatesResponse:
+    """List PDF books eligible for Surya OCR backfill and unsubmitted worker backlog count."""
+    repo = BooksRepository(session)
+    configs_repo = SystemConfigsRepository(session)
+    sc_val = await configs_repo.get_value("spell_check_enabled", "true")
+    spell_check_enabled = str(sc_val).strip().lower() == "true"
+
+    pending_index_books = await repo.count_pending_index_books(
+        spell_check_enabled=spell_check_enabled
+    )
+    books = await repo.list_backfill_candidates(
+        target_ocr_version=ocr_version, limit=limit
+    )
+    candidates = [
+        BackfillCandidateOut(
+            id=str(b.id),
+            title=b.title or "",
+            author=b.author or "",
+            volume=b.volume,
+            total_pages=int(b.total_pages or 0),
+            status=b.status or "pending",
+            ocr_version=getattr(b, "ocr_version", None),
+            upload_date=b.upload_date.isoformat() if b.upload_date else None,
+        )
+        for b in books
+    ]
+    return BackfillCandidatesResponse(
+        pending_index_books=pending_index_books,
+        candidates=candidates,
+    )
+
+
 @router.get("/{book_id}", response_model=Book)
 async def get_book(
     book_id: str,
@@ -1318,7 +1431,8 @@ async def get_book(
     pipeline_stats = stats.get("pipeline_stats", {})
     has_summary = stats.get("has_summary", False)
     has_graph = stats.get("has_graph", False)
-    has_history = stats.get("has_history", False)
+    pages_repo = PagesRepository(session)
+    content_page_map = await pages_repo.get_content_page_map(book_id)
 
     # Create a dict with only metadata
     book_dict = {
@@ -1329,6 +1443,7 @@ async def get_book(
         "volume": book_model.volume,
         "total_pages": book_model.total_pages or 0,
         "content_page_offset": getattr(book_model, "content_page_offset", 0) or 0,
+        "content_page_map": content_page_map,
         "pages": [],  # Empty list as we don't load pages here anymore
         "status": book_model.status,
         "pipeline_step": book_model.pipeline_step,
@@ -1350,10 +1465,19 @@ async def get_book(
         "file_name": book_model.file_name,
         "file_type": book_model.file_type,
         "source": book_model.source,
+        "ocr_version": getattr(book_model, "ocr_version", None),
         "pipeline_stats": pipeline_stats,
         "has_summary": has_summary,
         "has_graph": has_graph,
-        "has_history": has_history,
+        "ocr_milestone": getattr(book_model, "ocr_milestone", "idle") or "idle",
+        "structure_milestone": getattr(book_model, "structure_milestone", "idle")
+        or "idle",
+        "chunking_milestone": getattr(book_model, "chunking_milestone", "idle")
+        or "idle",
+        "embedding_milestone": getattr(book_model, "embedding_milestone", "idle")
+        or "idle",
+        "spell_check_milestone": getattr(book_model, "spell_check_milestone", "idle")
+        or "idle",
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)
@@ -1399,7 +1523,6 @@ async def get_book_pipeline_stats(
         "pipeline_stats": stats.get("pipeline_stats", {}),
         "has_summary": stats.get("has_summary", False),
         "has_graph": stats.get("has_graph", False),
-        "has_history": stats.get("has_history", False),
         "total_pages": stats["book"].total_pages,
     }
 
@@ -1508,11 +1631,201 @@ async def get_book_page(
     return ExtractionResult.model_validate(page)
 
 
+@router.get("/{book_id}/chunks")
+async def get_book_chunks_inspector(
+    book_id: str,
+    page: Optional[int] = Query(None, ge=1),
+    section_id: Optional[int] = Query(None, alias="sectionId"),
+    filter_type: str = Query("all", alias="filterType"),
+    mode: str = Query("semantic"),
+    q: Optional[str] = Query(None, max_length=500),
+    rerank: bool = Query(False),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Inspect sections, chunk boundaries, contextual embedding prefixes, and semantic/text/reranked search scores for a book."""
+    if filter_type not in ("all", "cross_page", "unembedded", "short", "oversized"):
+        raise HTTPException(status_code=400, detail="Invalid filterType")
+    if mode not in ("semantic", "text"):
+        raise HTTPException(status_code=400, detail="Invalid mode")
+
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    cleaned_q = (q or "").strip() or None
+    query_embedding: Optional[List[float]] = None
+    text_query: Optional[str] = None
+    configs_repo: Optional[SystemConfigsRepository] = None
+
+    if cleaned_q:
+        if mode == "semantic":
+            configs_repo = SystemConfigsRepository(session)
+            gemini_embedding_model = await configs_repo.get_value("embed_gemini_model")
+            if not gemini_embedding_model:
+                raise HTTPException(
+                    status_code=500,
+                    detail="system_config 'embed_gemini_model' is not set",
+                )
+            embedder = GeminiEmbeddings(gemini_embedding_model)
+            query_embedding = await embedder.aembed_query(cleaned_q)
+        else:
+            text_query = cleaned_q
+
+    rag_threshold = settings.rag_score_threshold
+    chunks_repo = ChunksRepository(session)
+    inspected = await chunks_repo.inspect_for_book(
+        book_id,
+        page=page,
+        section_id=section_id,
+        filter_type=filter_type,
+        text_query=text_query,
+        query_embedding=query_embedding,
+        skip=skip,
+        limit=limit,
+    )
+
+    raw_chunks = list(inspected["chunks"])
+    rerank_rank_by_id: dict[int, int] = {}
+    rerank_pool_ids: set[int] = set()
+    did_rerank = False
+
+    is_rerank = rerank is True
+    if is_rerank and cleaned_q and mode == "semantic" and skip == 0 and raw_chunks:
+        from app.services.rag.agent.config import RERANK_MAX_INPUT_CHUNKS
+        from app.services.rag.agent.reranker import rerank_documents
+        from app.services.rag.answer_builder import Document
+
+        if configs_repo is None:
+            configs_repo = SystemConfigsRepository(session)
+        reranker_model = await configs_repo.get_value(
+            "rag_gemini_reranker_model", "gemini-3.1-flash-lite"
+        )
+        pool_chunks = [
+            c
+            for c in raw_chunks
+            if c.get("similarity") is not None
+            and float(c["similarity"]) >= rag_threshold
+        ][:RERANK_MAX_INPUT_CHUNKS]
+
+        if pool_chunks:
+            cand_docs = [
+                Document(
+                    page_content=c["text"],
+                    metadata={
+                        "chunk_id": c["id"],
+                        "title": book.title or "Unknown",
+                        "author": getattr(book, "author", None) or None,
+                        "volume": getattr(book, "volume", None),
+                        "page": c["page_number"],
+                        "page_number": c["page_number"],
+                        "chunk_index": c["chunk_index"],
+                        "end_page_number": c["end_page_number"],
+                        "section_id": c["section_id"],
+                        "section_title": c["section_title"],
+                        "content_page_number": c["content_page_number"],
+                        "end_content_page_number": c["end_content_page_number"],
+                        "book_id": str(book.id),
+                        "score": c["similarity"],
+                    },
+                )
+                for c in pool_chunks
+            ]
+            graded_docs = await rerank_documents(cleaned_q, cand_docs, reranker_model)
+            rerank_pool_ids = {int(c["id"]) for c in pool_chunks}
+            rerank_rank_by_id = {
+                int(d.metadata["chunk_id"]): rank_pos
+                for rank_pos, d in enumerate(graded_docs, start=1)
+            }
+            did_rerank = True
+            raw_chunks.sort(
+                key=lambda c: (
+                    0 if int(c["id"]) in rerank_rank_by_id else 1,
+                    rerank_rank_by_id.get(int(c["id"]), 999999),
+                    -(
+                        float(c["similarity"])
+                        if c.get("similarity") is not None
+                        else -1.0
+                    ),
+                    int(c["page_number"]),
+                    int(c["chunk_index"]),
+                )
+            )
+
+    book_title = (book.title or "").strip() if isinstance(book.title, str) else None
+    stats = inspected["stats"]
+    return {
+        "bookId": str(book.id),
+        "bookTitle": book.title or "",
+        "contentPageOffset": int(getattr(book, "content_page_offset", 0) or 0),
+        "ragThreshold": rag_threshold,
+        "reranked": did_rerank,
+        "rerankSelectedCount": len(rerank_rank_by_id),
+        "stats": {
+            "totalChunks": stats["total_chunks"],
+            "embeddedChunks": stats["embedded_chunks"],
+            "unembeddedChunks": stats["unembedded_chunks"],
+            "crossPageChunks": stats["cross_page_chunks"],
+            "shortChunks": stats["short_chunks"],
+            "oversizedChunks": stats["oversized_chunks"],
+            "sectionsCount": stats["sections_count"],
+        },
+        "sections": [
+            {
+                "id": s["id"],
+                "parentId": s["parent_id"],
+                "sectionIndex": s["section_index"],
+                "level": s["level"],
+                "sectionType": s["section_type"],
+                "source": s["source"],
+                "title": s["title"],
+                "startPage": s["start_page"],
+                "endPage": s["end_page"],
+                "chunkCount": s["chunk_count"],
+            }
+            for s in inspected["sections"]
+        ],
+        "totalMatching": inspected["total_matching"],
+        "chunks": [
+            {
+                "id": c["id"],
+                "chunkIndex": c["chunk_index"],
+                "pageNumber": c["page_number"],
+                "endPageNumber": c["end_page_number"],
+                "contentPageNumber": c["content_page_number"],
+                "endContentPageNumber": c["end_content_page_number"],
+                "sectionId": c["section_id"],
+                "sectionTitle": c["section_title"],
+                "text": c["text"],
+                "charCount": c["char_count"],
+                "textHash": c["text_hash"],
+                "hasEmbedding": c["has_embedding"],
+                "embeddingPrefix": extract_chunk_embedding_prefix(
+                    c["text"],
+                    book_title=book_title,
+                    section_title=c["section_title"],
+                ),
+                "overlapPrefix": extract_leading_overlap(c["prev_text"], c["text"]),
+                "similarity": c["similarity"],
+                "rerankRank": rerank_rank_by_id.get(int(c["id"])),
+                "rerankDropped": (
+                    int(c["id"]) in rerank_pool_ids
+                    and int(c["id"]) not in rerank_rank_by_id
+                ),
+            }
+            for c in raw_chunks
+        ],
+    }
+
+
 @router.get("/{book_id}/pages", response_model=List[ExtractionResult])
 async def get_book_pages(
     book_id: str,
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1699,7 +2012,7 @@ async def upload_pdf(
         total_pages=page_count,
         cover_url=cover_url,
         status="pending" if file_type == "pdf" else "ocr_done",
-        pipeline_step=None if file_type == "pdf" else PIPELINE_STEP_CHUNKING,
+        pipeline_step=None if file_type == "pdf" else PIPELINE_STEP_STRUCTURE,
         upload_date=now,
         last_updated=now,
         created_by=current_user.email,
@@ -1708,6 +2021,7 @@ async def upload_pdf(
         visibility="private",
         source="upload",
         ocr_milestone=PAGE_MILESTONE_IDLE if file_type == "pdf" else "complete",
+        structure_milestone=BOOK_MILESTONE_IDLE,
         chunking_milestone=PAGE_MILESTONE_IDLE,
         embedding_milestone=PAGE_MILESTONE_IDLE,
         spell_check_milestone=PAGE_MILESTONE_IDLE,
@@ -1748,6 +2062,7 @@ async def upload_pdf(
 async def upload_pdf_ocrd(
     file: UploadFile = File(...),
     pages: Union[UploadFile, str] = File(...),
+    ocr_version: Optional[str] = Form(default=None),
     current_user: User = Depends(require_editor),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1853,6 +2168,12 @@ async def upload_pdf_ocrd(
     ext = ".pdf"
     title_raw = file.filename[: file.filename.lower().rfind(ext)]
 
+    resolved_ocr_version = (
+        ocr_version
+        if isinstance(ocr_version, str) and ocr_version.strip()
+        else CURRENT_SURYA_OCR_VERSION
+    )
+
     await books_repo.create(
         id=book_id,
         content_hash=content_hash,
@@ -1864,7 +2185,7 @@ async def upload_pdf_ocrd(
         total_pages=page_count,
         cover_url=cover_url,
         status="ocr_done",
-        pipeline_step=PIPELINE_STEP_CHUNKING,
+        pipeline_step=PIPELINE_STEP_STRUCTURE,
         upload_date=now,
         last_updated=now,
         created_by=current_user.email,
@@ -1872,7 +2193,9 @@ async def upload_pdf_ocrd(
         categories=[],
         visibility="private",
         source="surya_local",
+        ocr_version=resolved_ocr_version,
         ocr_milestone="complete",
+        structure_milestone=BOOK_MILESTONE_IDLE,
         chunking_milestone=PAGE_MILESTONE_IDLE,
         embedding_milestone=PAGE_MILESTONE_IDLE,
         spell_check_milestone=PAGE_MILESTONE_IDLE,
@@ -1881,14 +2204,16 @@ async def upload_pdf_ocrd(
     pages_by_number = {p.page_number: p for p in pages_data}
     pages_to_add = []
     for n in range(1, page_count + 1):
-        cleaned_text = (pages_by_number[n].text or "").replace("\x00", "")
+        p_in = pages_by_number[n]
+        cleaned_text = (p_in.text or "").replace("\x00", "")
         pages_to_add.append(
             Page(
                 book_id=book_id,
                 page_number=n,
                 text=cleaned_text,
-                is_toc=pages_by_number[n].is_toc,
-                pipeline_step=PIPELINE_STEP_CHUNKING,
+                is_toc=p_in.is_toc,
+                detected_page_number=p_in.detected_page_number,
+                pipeline_step=PIPELINE_STEP_STRUCTURE,
                 milestone=PAGE_MILESTONE_IDLE,
                 status="ocr_done",
                 ocr_milestone=PAGE_MILESTONE_SUCCEEDED,
@@ -1901,10 +2226,174 @@ async def upload_pdf_ocrd(
 
     await session.commit()
 
+    configs_repo = SystemConfigsRepository(session)
+    sc_val = await configs_repo.get_value("spell_check_enabled", "false")
+    spell_check_enabled = str(sc_val).strip().lower() == "true"
+
     await cache_service.bump_namespace_version("books:list")
     await cache_service.bump_namespace_version("category")
+    if not spell_check_enabled:
+        await _enqueue_structure_job_best_effort(book_id)
 
     return {"bookId": book_id, "status": "uploaded"}
+
+
+@router.post("/{book_id}/replace-ocr", response_model=ReplaceOcrResponse)
+async def replace_book_ocr(
+    book_id: str,
+    request: Request,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> ReplaceOcrResponse:
+    """Replace OCR page texts for an existing book in one compressed batch."""
+    from pydantic import ValidationError
+
+    raw_body = await request.body()
+    content_encoding = (request.headers.get("content-encoding") or "").lower().strip()
+    if content_encoding == "gzip":
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(raw_body)) as gz:
+                decompressed = gz.read(_MAX_REPLACE_OCR_DECOMPRESSED_BYTES + 1)
+        except Exception:
+            raise HTTPException(
+                status_code=400, detail=t("errors.invalid_gzip_request_body")
+            )
+        if len(decompressed) > _MAX_REPLACE_OCR_DECOMPRESSED_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=t("errors.ocr_payload_too_large"),
+            )
+    else:
+        if len(raw_body) > _MAX_REPLACE_OCR_DECOMPRESSED_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=t("errors.ocr_payload_too_large"),
+            )
+        decompressed = raw_body
+
+    try:
+        parsed_json = json.loads(decompressed.decode("utf-8"))
+        req = ReplaceOcrRequest.model_validate(parsed_json)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError, ValueError):
+        raise HTTPException(status_code=400, detail=t("errors.invalid_pages_payload"))
+
+    books_repo = BooksRepository(session)
+    pages_repo = PagesRepository(session)
+    configs_repo = SystemConfigsRepository(session)
+
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    total_pages = int(book.total_pages or 0)
+    expected_numbers = set(range(1, total_pages + 1))
+    got_numbers = {p.page_number for p in req.pages}
+    if len(req.pages) != total_pages or got_numbers != expected_numbers:
+        raise HTTPException(
+            status_code=400,
+            detail=t(
+                "errors.pages_count_mismatch",
+                total=total_pages,
+                count=len(req.pages),
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    backup_uri = getattr(book, "gcs_ocr_backup_uri", None)
+    existing_pages = await pages_repo.find_by_book(book_id, limit=20000)
+    if not backup_uri or req.force_overwrite_manual:
+        ts_str = now.strftime("%Y%m%dT%H%M%SZ")
+        backup_key = f"backups/ocr_pre_backfill/{book_id}_{ts_str}.jsonl.gz"
+        lines: list[str] = []
+        for ep in existing_pages:
+            lines.append(
+                json.dumps(
+                    {
+                        "page_number": ep.page_number,
+                        "text": ep.text,
+                        "is_toc": bool(ep.is_toc),
+                        "content_page_number": ep.content_page_number,
+                        "content_page_number_manual": bool(
+                            getattr(ep, "content_page_number_manual", False)
+                        ),
+                        "detected_page_number": getattr(
+                            ep, "detected_page_number", None
+                        ),
+                        "updated_by": ep.updated_by,
+                        "status": ep.status,
+                        "ocr_milestone": ep.ocr_milestone,
+                        "spell_check_milestone": ep.spell_check_milestone,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        gz_payload = gzip.compress(("\n".join(lines) + "\n").encode("utf-8"))
+        await storage.upload_bytes(gz_payload, backup_key)
+        backup_uri = backup_key
+
+    sc_val = await configs_repo.get_value("spell_check_enabled", "false")
+    spell_check_enabled = str(sc_val).strip().lower() == "true"
+
+    try:
+        pages_updated, pages_unchanged = await pages_repo.bulk_replace_pages(
+            book_id,
+            [p.model_dump() for p in req.pages],
+            reset_spell_check=spell_check_enabled,
+            force_overwrite_manual=bool(req.force_overwrite_manual),
+            existing_pages=existing_pages,
+            book_title=getattr(book, "title", None),
+        )
+    except TypeError:
+        pages_updated, pages_unchanged = await pages_repo.bulk_replace_pages(
+            book_id,
+            [p.model_dump() for p in req.pages],
+            reset_spell_check=spell_check_enabled,
+            force_overwrite_manual=bool(req.force_overwrite_manual),
+            existing_pages=existing_pages,
+        )
+    pages_skipped = sum(1 for p in req.pages if p.skipped)
+
+    preserved_status = "ready" if book.status == "ready" else "ocr_done"
+    next_spell_milestone = (
+        BOOK_MILESTONE_IDLE
+        if (spell_check_enabled and pages_updated > 0)
+        else (getattr(book, "spell_check_milestone", None) or BOOK_MILESTONE_COMPLETE)
+    )
+
+    from app.services.book_structure_service import structure_dirty_values
+
+    await books_repo.update_one(
+        book_id,
+        **structure_dirty_values(
+            status=preserved_status,
+            ocr_version=req.ocr_version or CURRENT_SURYA_OCR_VERSION,
+            ocr_backfill_at=now,
+            gcs_ocr_backup_uri=backup_uri,
+            ocr_milestone=BOOK_MILESTONE_COMPLETE,
+            spell_check_milestone=next_spell_milestone,
+            last_updated=now,
+            updated_by=current_user.email,
+        ),
+    )
+    await session.commit()
+
+    await cache_service.delete(f"book:{book_id}")
+    await cache_service.delete_pattern(f"book:{book_id}:*")
+    await cache_service.delete_pattern(f"rag:search:{book_id}:*")
+    await cache_service.bump_namespace_version("books:list")
+
+    if not spell_check_enabled or pages_updated == 0:
+        await _enqueue_structure_job_best_effort(book_id)
+
+    return ReplaceOcrResponse(
+        status="ok",
+        book_id=book_id,
+        ocr_version=req.ocr_version or CURRENT_SURYA_OCR_VERSION,
+        pages_updated=pages_updated,
+        pages_unchanged=pages_unchanged,
+        pages_skipped=pages_skipped,
+        backup_uri=backup_uri,
+    )
 
 
 @router.post("/{book_id}/reprocess/ocr")
@@ -1943,27 +2432,85 @@ async def reprocess_ocr(
     )
 
     # Update book-level milestones
+    from app.services.book_structure_service import (
+        preserve_active_chunking_claim,
+        structure_dirty_values,
+    )
+
     await books_repo.update_one(
         book_id,
-        ocr_milestone=PAGE_MILESTONE_IDLE,
-        chunking_milestone=PAGE_MILESTONE_IDLE,
-        embedding_milestone=PAGE_MILESTONE_IDLE,
-        spell_check_milestone=PAGE_MILESTONE_IDLE,
-        status="pending",
-        pipeline_step=PIPELINE_STEP_OCR,
-        last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email,
+        **structure_dirty_values(
+            ocr_milestone=PAGE_MILESTONE_IDLE,
+            chunking_milestone=PAGE_MILESTONE_IDLE,
+            chunking_retry_count=0,
+            chunking_claimed_at=preserve_active_chunking_claim(),
+            embedding_milestone=PAGE_MILESTONE_IDLE,
+            embedding_retry_count=0,
+            embedding_claimed_at=None,
+            spell_check_milestone=PAGE_MILESTONE_IDLE,
+            status="pending",
+            pipeline_step=PIPELINE_STEP_OCR,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        ),
     )
     await session.commit()
 
     # Invalidate cache - fresh data will be cached after reprocessing
     await cache_service.delete(f"book:{book_id}")
+    await cache_service.delete_pattern(f"book:{book_id}:*")
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
     await cache_service.delete_pattern("rag:summary_search:*")
 
     return {
         "status": "ocr_reprocess_started",
         "message": "OCR milestones reset. Scanner will reprocess pages.",
+    }
+
+
+@router.post("/{book_id}/reprocess/structure")
+async def reprocess_structure(
+    book_id: str,
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+):
+    """Reprocess book structure (printed page numbers + section tree) and downstream chunking/embedding."""
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    now = datetime.now(timezone.utc)
+    from app.services.book_structure_service import (
+        preserve_active_chunking_claim,
+        structure_dirty_values,
+    )
+
+    await books_repo.update_one(
+        book_id,
+        **structure_dirty_values(
+            chunking_milestone=BOOK_MILESTONE_IDLE,
+            chunking_retry_count=0,
+            chunking_claimed_at=preserve_active_chunking_claim(),
+            embedding_milestone=BOOK_MILESTONE_IDLE,
+            embedding_retry_count=0,
+            embedding_claimed_at=None,
+            pipeline_step=PIPELINE_STEP_STRUCTURE,
+            last_updated=now,
+            updated_by=current_user.email,
+        ),
+    )
+    await session.commit()
+
+    await cache_service.delete(f"book:{book_id}")
+    await cache_service.delete_pattern(f"book:{book_id}:*")
+    await cache_service.delete_pattern(f"rag:search:{book_id}:*")
+
+    await _enqueue_structure_job_best_effort(book_id)
+
+    return {
+        "status": "structure_reprocess_started",
+        "message": t("messages.structure_reprocess_started"),
     }
 
 
@@ -1986,38 +2533,56 @@ async def reprocess_chunking(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    # Reset milestones - chunking scanner will handle chunk recreation
+    sec_cnt_res = await session.execute(
+        select(func.count(BookSection.id)).where(BookSection.book_id == book_id)
+    )
+    needs_structure_first = int(sec_cnt_res.scalar_one()) == 0
+
+    now = datetime.now(timezone.utc)
+    # Reset page chunking/embedding milestones without invalidating spell check
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
         .values(
             chunking_milestone=PAGE_MILESTONE_IDLE,
             embedding_milestone=PAGE_MILESTONE_IDLE,
-            spell_check_milestone=PAGE_MILESTONE_IDLE,
             retry_count=0,
             is_indexed=False,
-            last_updated=datetime.now(timezone.utc),
+            last_updated=now,
             updated_by=current_user.email,
         )
     )
 
-    # Update book-level milestones
-    await books_repo.update_one(
-        book_id,
-        chunking_milestone=PAGE_MILESTONE_IDLE,
-        embedding_milestone=PAGE_MILESTONE_IDLE,
-        spell_check_milestone=PAGE_MILESTONE_IDLE,
-        status="pending",
-        pipeline_step=PIPELINE_STEP_CHUNKING,
-        last_updated=datetime.now(timezone.utc),
+    next_status = "ready" if book.status == "ready" else "pending"
+    book_updates = dict(
+        chunking_milestone=BOOK_MILESTONE_IDLE,
+        chunking_retry_count=0,
+        chunking_claimed_at=None,
+        embedding_milestone=BOOK_MILESTONE_IDLE,
+        embedding_retry_count=0,
+        embedding_claimed_at=None,
+        status=next_status,
+        pipeline_step=(
+            PIPELINE_STEP_STRUCTURE if needs_structure_first else PIPELINE_STEP_CHUNKING
+        ),
+        last_updated=now,
         updated_by=current_user.email,
     )
+    if needs_structure_first:
+        from app.services.book_structure_service import structure_dirty_values
+
+        book_updates = structure_dirty_values(**book_updates)
+
+    await books_repo.update_one(book_id, **book_updates)
     await session.commit()
 
     # Invalidate cache - fresh data will be cached after reprocessing
     await cache_service.delete(f"book:{book_id}")
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
     await cache_service.delete_pattern("rag:summary_search:*")
+
+    if needs_structure_first:
+        await _enqueue_structure_job_best_effort(book_id)
 
     return {
         "status": "chunking_reprocess_started",
@@ -2044,16 +2609,16 @@ async def reprocess_embedding(
     if not book:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    # Reset page milestones
+    now = datetime.now(timezone.utc)
+    # Reset page embedding milestones without invalidating spell check
     await session.execute(
         update(Page)
         .where(Page.book_id == book_id)
         .values(
             embedding_milestone=PAGE_MILESTONE_IDLE,
-            spell_check_milestone=PAGE_MILESTONE_IDLE,
             retry_count=0,
             is_indexed=False,
-            last_updated=datetime.now(timezone.utc),
+            last_updated=now,
             updated_by=current_user.email,
         )
     )
@@ -2063,14 +2628,15 @@ async def reprocess_embedding(
         update(Chunk).where(Chunk.book_id == book_id).values(embedding=None)
     )
 
-    # Update book-level milestones
+    # Update book-level milestones (status='pending' while all chunk vectors are cleared)
     await books_repo.update_one(
         book_id,
-        embedding_milestone=PAGE_MILESTONE_IDLE,
-        spell_check_milestone=PAGE_MILESTONE_IDLE,
+        embedding_milestone=BOOK_MILESTONE_IDLE,
+        embedding_retry_count=0,
+        embedding_claimed_at=None,
         status="pending",
         pipeline_step=PIPELINE_STEP_EMBEDDING,
-        last_updated=datetime.now(timezone.utc),
+        last_updated=now,
         updated_by=current_user.email,
     )
     await session.commit()
@@ -2116,12 +2682,16 @@ async def reprocess_spell_check(
     )
 
     # Update book-level milestone
+    from app.services.book_structure_service import structure_dirty_values
+
     await books_repo.update_one(
         book_id,
-        spell_check_milestone=PAGE_MILESTONE_IDLE,
-        pipeline_step=PIPELINE_STEP_SPELL_CHECK,
-        last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email,
+        **structure_dirty_values(
+            spell_check_milestone=PAGE_MILESTONE_IDLE,
+            pipeline_step=PIPELINE_STEP_SPELL_CHECK,
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        ),
     )
     await session.commit()
 
@@ -2288,169 +2858,6 @@ async def reprocess_summary(
     }
 
 
-@router.post("/{book_id}/reprocess/llm-spell-check")
-async def reprocess_llm_spell_check(
-    book_id: str,
-    force: bool = False,
-    current_user: User = Depends(require_admin),
-    session: AsyncSession = Depends(get_session),
-):
-    """Manually trigger the on-demand Gemini-based LLM spell-check pass for
-    every eligible page in a book. Runs independently of the dictionary-based
-    spell check pipeline; each trigger costs real Gemini API calls, hence
-    require_admin. Branches on llm_spell_check_batch_enabled to choose the
-    live vs. Gemini Batch API path. Set force=True to reprocess succeeded pages."""
-    books_repo = BooksRepository(session)
-    book = await books_repo.get(book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
-
-    pages_repo = PagesRepository(session)
-    page_ids = await pages_repo.list_eligible_for_llm_spell_check(book_id, force=force)
-    if not page_ids:
-        return {"status": "llm_spell_check_started", "queued": 0}
-
-    configs_repo = SystemConfigsRepository(session)
-    batch_enabled = await configs_repo.get_value(
-        "llm_spell_check_batch_enabled", "false"
-    )
-
-    if batch_enabled == "true":
-        try:
-            await submit_batch_llm_spell_check(book_id, page_ids, session)
-        except Exception as exc:
-            log_json(
-                logger,
-                logging.ERROR,
-                "failed to submit batch_llm_spell_check job",
-                book_id=book_id,
-                error=str(exc),
-            )
-            raise HTTPException(
-                status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
-            )
-        return {"status": "llm_spell_check_batch_submitted", "queued": len(page_ids)}
-
-    await pages_repo.bulk_set_llm_spell_check_status(
-        page_ids, PAGE_MILESTONE_IN_PROGRESS
-    )
-    await session.commit()
-
-    try:
-        import arq
-
-        redis_pool = await arq.create_pool(
-            arq.connections.RedisSettings.from_dsn(settings.redis_url)
-        )
-        try:
-            job = await redis_pool.enqueue_job(
-                "llm_spell_check_job",
-                page_ids=page_ids,
-                _job_id=f"llm_spell_check:book:{book_id}:{int(time.time())}",
-            )
-            if job is None:
-                raise RuntimeError(
-                    "arq dropped enqueue_job (job_id collision or redis issue)"
-                )
-        finally:
-            await redis_pool.aclose()
-        log_json(
-            logger,
-            logging.INFO,
-            "manually enqueued llm_spell_check_job",
-            book_id=book_id,
-            page_count=len(page_ids),
-            user=current_user.email,
-        )
-    except Exception as exc:
-        log_json(
-            logger,
-            logging.ERROR,
-            "failed to enqueue llm_spell_check_job",
-            book_id=book_id,
-            error=str(exc),
-        )
-        await pages_repo.bulk_set_llm_spell_check_status(page_ids, PAGE_MILESTONE_IDLE)
-        await session.commit()
-        raise HTTPException(
-            status_code=500, detail=t("errors.llm_spell_check_enqueue_failed")
-        )
-
-    return {"status": "llm_spell_check_started", "queued": len(page_ids)}
-
-
-class LlmSpellCheckPreviewRequest(BaseModel):
-    text: str
-
-
-@router.post("/{book_id}/pages/{page_num}/llm-spell-check/preview")
-async def preview_llm_spell_check_page(
-    book_id: str,
-    page_num: int,
-    request: LlmSpellCheckPreviewRequest,
-    current_user: User = Depends(require_editor),
-    session: AsyncSession = Depends(get_session),
-):
-    """Run the LLM spell check on the editor's current (possibly unsaved)
-    page text and return the corrected text WITHOUT persisting anything.
-    The editor reviews the highlighted changes in edit mode and decides
-    whether to save via POST .../update."""
-    if not request.text or not request.text.strip():
-        raise HTTPException(
-            status_code=400, detail=t("errors.llm_spell_check_empty_text")
-        )
-
-    pages_repo = PagesRepository(session)
-    page = await pages_repo.find_one(book_id, page_num)
-    if not page:
-        raise HTTPException(status_code=404, detail=t("errors.page_not_found"))
-
-    prev_page = await pages_repo.find_one(book_id, page_num - 1)
-    next_page = await pages_repo.find_one(book_id, page_num + 1)
-
-    try:
-        corrected = await correct_page_text(
-            request.text,
-            prev_page.text if prev_page else None,
-            next_page.text if next_page else None,
-            config_repo=SystemConfigsRepository(session),
-        )
-    except ValueError as exc:
-        log_json(
-            logger,
-            logging.WARNING,
-            "llm spell check preview rejected by guardrail",
-            book_id=book_id,
-            page=page_num,
-            error=str(exc),
-        )
-        raise HTTPException(
-            status_code=422, detail=t("errors.llm_spell_check_invalid_output")
-        )
-    except Exception as exc:
-        log_json(
-            logger,
-            logging.ERROR,
-            "llm spell check preview failed",
-            book_id=book_id,
-            page=page_num,
-            error=str(exc),
-        )
-        raise HTTPException(
-            status_code=502, detail=t("errors.llm_spell_check_enqueue_failed")
-        )
-
-    log_json(
-        logger,
-        logging.INFO,
-        "llm spell check preview generated",
-        book_id=book_id,
-        page=page_num,
-        user=current_user.email,
-    )
-    return {"corrected_text": corrected}
-
-
 @router.post("/{book_id}/retry-failed")
 async def retry_failed_pages(
     book_id: str,
@@ -2574,12 +2981,16 @@ async def reset_page(
 
     # Recompute book-level milestones from page state so the OCR scanner
     # sees this book's ocr_milestone as non-complete and picks it up.
+    from app.services.book_structure_service import structure_dirty_values
+
     await BookMilestoneService.update_book_milestones(session, book_id)
     await books_repo.update_one(
         book_id,
-        status="pending",
-        last_updated=datetime.now(timezone.utc),
-        updated_by=current_user.email,
+        **structure_dirty_values(
+            status="pending",
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        ),
     )
     await session.commit()
     return {"status": "page_reset_started"}
@@ -2615,60 +3026,171 @@ async def update_page_text(
 
     # Check if text actually changed
     text_changed = page.text != new_text
+    now_ts = datetime.now(timezone.utc)
+
+    page.last_updated = now_ts
+    page.updated_by = current_user.email
+
+    if not text_changed:
+        await books_repo.update_one(
+            book_id,
+            last_updated=now_ts,
+            updated_by=current_user.email,
+        )
+        await session.commit()
+        await cache_service.delete(f"book:{book_id}")
+        await cache_service.delete_pattern(f"book:{book_id}:*")
+        return {
+            "status": "page_updated",
+            "requires_rag": False,
+            "synchronous": True,
+        }
 
     page.text = new_text
     page.status = "ocr_done"
-    page.is_indexed = (not text_changed) and page.is_indexed
-    page.last_updated = datetime.now(timezone.utc)
-    page.updated_by = current_user.email
+    page.is_indexed = False
 
-    # Editor reviewed an LLM spell-check preview in edit mode before saving —
-    # mark the page so a non-forced book-level LLM run skips it.
-    if payload.get("llm_spell_checked") is True:
-        page.llm_spell_check_status = PAGE_MILESTONE_SUCCEEDED
-        page.llm_spell_check_at = datetime.now(timezone.utc)
+    # Text changed: invalidate stale spell check issues (offsets are now invalid)
+    from app.db.models import PageSpellIssue
 
-    # If text changed, invalidate stale spell check issues (offsets are now invalid)
-    if text_changed:
-        from app.db.models import PageSpellIssue
-
-        await session.execute(
-            delete(PageSpellIssue).where(PageSpellIssue.page_id == page.id)
-        )
-        page.spell_check_milestone = PAGE_MILESTONE_IDLE
+    await session.execute(
+        delete(PageSpellIssue).where(PageSpellIssue.page_id == page.id)
+    )
+    page.spell_check_milestone = PAGE_MILESTONE_IDLE
 
     await session.flush()
 
-    # 2. Synchronous Re-chunking (Instant Feedback)
-    text_content = strip_markdown(new_text).strip()
-    if text_content:
-        # Delete old chunks
-        await session.execute(
-            delete(Chunk).where(
-                and_(Chunk.book_id == book_id, Chunk.page_number == page_num)
+    # 2. Synchronous Re-chunking (Instant Feedback) — transitively widen and delete
+    #    any overlapping cross-page chunks until the affected page span stabilizes.
+    text_content = new_text.strip()
+    span_start_page = page_num
+    span_end_page = page_num
+    while True:
+        del_res = await session.execute(
+            delete(Chunk)
+            .where(
+                Chunk.book_id == book_id,
+                Chunk.page_number <= span_end_page,
+                func.coalesce(Chunk.end_page_number, Chunk.page_number)
+                >= span_start_page,
+            )
+            .returning(
+                Chunk.page_number,
+                func.coalesce(Chunk.end_page_number, Chunk.page_number),
             )
         )
+        deleted_spans = del_res.fetchall()
+        if not deleted_spans:
+            break
+        new_start = min([span_start_page, *(int(r[0]) for r in deleted_spans)])
+        new_end = max([span_end_page, *(int(r[1]) for r in deleted_spans)])
+        if new_start == span_start_page and new_end == span_end_page:
+            break
+        span_start_page = new_start
+        span_end_page = new_end
 
-        # Split into chunks
+    from app.db.repositories.book_sections_repository import BookSectionsRepository
+    from app.services.book_structure_service import structure_dirty_values
+
+    # Resolve leaf sections and embedding context covering the affected page span
+    leaf_sections = await BookSectionsRepository(session).list_leaf_sections(book_id)
+    book_title, section_titles = await load_book_embedding_context(session, book_id)
+
+    covering_section_id: Optional[int] = None
+    matching_sections = [
+        sec
+        for sec in leaf_sections
+        if sec.start_page is not None
+        and sec.end_page is not None
+        and sec.start_page <= page_num <= sec.end_page
+    ]
+    if matching_sections:
+        matching_sections.sort(
+            key=lambda sec: (
+                -int(getattr(sec, "level", 1) or 1),
+                int(getattr(sec, "section_index", 0) or 0),
+            )
+        )
+        covering_section_id = getattr(matching_sections[0], "id", None)
+
+    chunk_records: list[Chunk] = []
+    if span_start_page < page_num or span_end_page > page_num:
+        span_pages_res = await session.execute(
+            select(Page)
+            .where(
+                Page.book_id == book_id,
+                Page.page_number >= span_start_page,
+                Page.page_number <= span_end_page,
+            )
+            .order_by(Page.page_number.asc())
+        )
+        span_pages = list(span_pages_res.scalars().all()) or [page]
+        rebuilt_section_chunks = chunking_service.chunk_book_sections(
+            span_pages,
+            leaf_sections or None,
+            book_title=book_title,
+            section_titles=section_titles,
+        )
+        for sc in rebuilt_section_chunks:
+            resolved_sec_id = (
+                sc.section_id if sc.section_id is not None else covering_section_id
+            )
+            resolved_hash = (
+                sc.text_hash
+                if sc.section_id is not None or resolved_sec_id is None
+                else compute_chunk_text_hash(
+                    sc.text,
+                    book_title=book_title,
+                    section_title=section_titles.get(resolved_sec_id),
+                )
+            )
+            chunk = Chunk(
+                book_id=book_id,
+                page_number=sc.page_number,
+                end_page_number=sc.end_page_number,
+                section_id=resolved_sec_id,
+                chunk_index=sc.chunk_index,
+                text=sc.text,
+                text_hash=resolved_hash,
+                embedding=None,
+                created_at=now_ts,
+            )
+            session.add(chunk)
+            chunk_records.append(chunk)
+    elif text_content:
+        # Split single page into chunks after running canonical Uyghur text cleaning
+        cleaned_single = clean_uyghur_text(text_content) or text_content
         chunks_text = [
-            c for c in chunking_service.split_text(text_content) if c.strip()
+            c for c in chunking_service.split_text(cleaned_single) if c.strip()
         ]
-        if not chunks_text:
-            chunks_text = [text_content]
+        if not chunks_text and cleaned_single.strip():
+            chunks_text = [cleaned_single.strip()]
 
-        chunk_records = []
+        covering_sec_title = (
+            section_titles.get(covering_section_id)
+            if covering_section_id is not None
+            else None
+        )
         for idx, txt in enumerate(chunks_text):
             chunk = Chunk(
                 book_id=book_id,
                 page_number=page_num,
+                end_page_number=page_num,
+                section_id=covering_section_id,
                 chunk_index=idx,
                 text=txt,
+                text_hash=compute_chunk_text_hash(
+                    txt,
+                    book_title=book_title,
+                    section_title=covering_sec_title,
+                ),
                 embedding=None,
-                created_at=datetime.now(timezone.utc),
+                created_at=now_ts,
             )
             session.add(chunk)
             chunk_records.append(chunk)
 
+    if chunk_records:
         page.status = "chunked"
         page.pipeline_step = PIPELINE_STEP_CHUNKING
         page.chunking_milestone = (
@@ -2678,17 +3200,25 @@ async def update_page_text(
             PAGE_MILESTONE_IDLE  # Reset to trigger re-embedding via worker if needed
         )
 
-        await books_repo.update_one(
-            book_id,
-            last_updated=datetime.now(timezone.utc),
+        update_fields = structure_dirty_values(
+            last_updated=now_ts,
             updated_by=current_user.email,
         )
+        await books_repo.update_one(book_id, **update_fields)
         await session.commit()
 
         # 3. Synchronous Embedding (Instant Feedback) - RELEASED TRANSACTION
         try:
             embedder = GeminiEmbeddings(gemini_embedding_model)
-            vectors = await embedder.aembed_documents([c.text for c in chunk_records])
+            embed_inputs = [
+                format_chunk_embedding_text(
+                    c.text,
+                    book_title=book_title,
+                    section_title=section_titles.get(c.section_id),
+                )
+                for c in chunk_records
+            ]
+            vectors = await embedder.aembed_documents(embed_inputs)
 
             # Start a new transaction for vectors
             for chunk, vector in zip(chunk_records, vectors):
@@ -2713,6 +3243,7 @@ async def update_page_text(
             logger.error(
                 f"Failed to embed page {page_num} for book {book_id} during update: {e}"
             )
+            await session.rollback()
             # Page remains 'chunked'; batch cron will embed it on next cycle
             await session.execute(
                 update(BookDB)
@@ -2730,16 +3261,17 @@ async def update_page_text(
         page.is_indexed = True
         page.pipeline_step = PIPELINE_STEP_EMBEDDING
         page.embedding_milestone = PAGE_MILESTONE_SUCCEEDED
-        await books_repo.update_one(
-            book_id,
-            last_updated=datetime.now(timezone.utc),
+        update_fields = structure_dirty_values(
+            last_updated=now_ts,
             updated_by=current_user.email,
         )
+        await books_repo.update_one(book_id, **update_fields)
         await session.commit()
         final_status = "indexed"
 
     # Invalidate book and RAG cache
     await cache_service.delete(f"book:{book_id}")
+    await cache_service.delete_pattern(f"book:{book_id}:*")
     await cache_service.delete_pattern(f"rag:search:{book_id}:*")
 
     # Update book milestones to reflect manual change
@@ -2747,6 +3279,8 @@ async def update_page_text(
 
     await BookMilestoneService.update_book_milestones(session, book_id)
     await session.commit()
+
+    await _enqueue_structure_job_best_effort(book_id)
 
     return {
         "status": "page_updated",
@@ -2776,10 +3310,85 @@ async def set_page_toc(
     if body.is_toc:
         await chunks_repo.delete_by_page(book_id, page_num)
 
+    from app.services.book_structure_service import mark_structure_dirty
+
     new_offset = await pages_repo.sync_content_page_offset(book_id)
+    await mark_structure_dirty(
+        session,
+        book_id,
+        last_updated=datetime.now(timezone.utc),
+        updated_by=current_user.email,
+    )
 
     await session.commit()
+    try:
+        await cache_service.delete(f"book:{book_id}")
+        await cache_service.delete_pattern(f"book:{book_id}:*")
+    except Exception:
+        pass
+    await _enqueue_structure_job_best_effort(book_id)
     return {"status": "ok", "isToc": body.is_toc, "contentPageOffset": new_offset}
+
+
+@router.post(
+    "/{book_id}/pages/{page_num}/set-start-page",
+    response_model=SetStartPageResponse,
+)
+async def set_start_page(
+    book_id: str,
+    page_num: int,
+    body: Optional[SetStartPageRequest] = Body(default=None),
+    current_user: User = Depends(require_editor),
+    session: AsyncSession = Depends(get_session),
+) -> SetStartPageResponse:
+    """Mark physical `page_num` as content Page 1, backfill `content_page_number`, and re-queue structure analysis."""
+    books_repo = BooksRepository(session)
+    pages_repo = PagesRepository(session)
+
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    total_pages = int(book.total_pages or 0)
+    if page_num < 1 or (total_pages > 0 and page_num > total_pages):
+        raise HTTPException(status_code=400, detail=t("errors.page_not_found"))
+
+    raw_start_cp = getattr(body, "start_content_page", None)
+    start_content_page = (
+        max(1, int(raw_start_cp))
+        if isinstance(raw_start_cp, int) and not isinstance(raw_start_cp, bool)
+        else 1
+    )
+    if start_content_page == 1:
+        content_page_map = await pages_repo.set_manual_content_pages(book_id, page_num)
+    else:
+        content_page_map = await pages_repo.set_manual_content_pages(
+            book_id, page_num, start_content_page=start_content_page
+        )
+    new_offset = max(0, page_num - start_content_page)
+    now = datetime.now(timezone.utc)
+
+    from app.services.book_structure_service import structure_dirty_values
+
+    await books_repo.update_one(
+        book_id,
+        **structure_dirty_values(
+            content_page_offset=new_offset,
+            last_updated=now,
+            updated_by=current_user.email,
+        ),
+    )
+    await session.commit()
+
+    await cache_service.delete(f"book:{book_id}")
+    await cache_service.delete_pattern(f"book:{book_id}:*")
+    await _enqueue_structure_job_best_effort(book_id)
+
+    return SetStartPageResponse(
+        status="ok",
+        content_page_offset=new_offset,
+        content_page_map=content_page_map,
+    )
 
 
 @router.post("/admin/bulk-reset-incomplete-ocr")
@@ -2798,7 +3407,9 @@ async def bulk_reset_incomplete_ocr(
 
     Set include_error=true to also reset books already marked status='error'.
     """
-    status_filter = [BookDB.ocr_milestone != PAGE_MILESTONE_SUCCEEDED]
+    status_filter = [
+        BookDB.ocr_milestone.notin_([BOOK_MILESTONE_COMPLETE, PAGE_MILESTONE_SUCCEEDED])
+    ]
     if not include_error:
         status_filter.append(BookDB.status.notin_(["ready", "error"]))
 
@@ -2827,19 +3438,19 @@ async def bulk_reset_incomplete_ocr(
     )
     pages_reset = len(pages_result.fetchall())
 
-    await session.execute(
-        update(BookDB)
-        .where(BookDB.id.in_(book_ids))
-        .values(
-            ocr_milestone=PAGE_MILESTONE_IDLE,
-            chunking_milestone=PAGE_MILESTONE_IDLE,
-            embedding_milestone=PAGE_MILESTONE_IDLE,
-            spell_check_milestone=PAGE_MILESTONE_IDLE,
-            status="pending",
-            pipeline_step=PIPELINE_STEP_OCR,
-            last_updated=now,
-            updated_by=current_user.email,
-        )
+    from app.services.book_structure_service import mark_structure_dirty
+
+    await mark_structure_dirty(
+        session,
+        book_ids,
+        ocr_milestone=PAGE_MILESTONE_IDLE,
+        chunking_milestone=PAGE_MILESTONE_IDLE,
+        embedding_milestone=PAGE_MILESTONE_IDLE,
+        spell_check_milestone=PAGE_MILESTONE_IDLE,
+        status="pending",
+        pipeline_step=PIPELINE_STEP_OCR,
+        last_updated=now,
+        updated_by=current_user.email,
     )
     await session.commit()
 
@@ -2876,7 +3487,6 @@ async def create_book(
     book_dict.pop("completed_count", None)
     book_dict.pop("has_summary", None)
     book_dict.pop("has_graph", None)
-    book_dict.pop("has_history", None)
     pages_input = book_dict.pop("pages", []) or []
 
     # Ensure only valid column names for the Book model are passed
@@ -2915,17 +3525,23 @@ async def create_book(
         book_dict["last_updated"] = datetime.now(timezone.utc)
         await books_repo.create(**book_dict)
 
-    # Set pages with text to chunking/idle so the v2 chunking scanner picks them up
+    # Set pages with text to structure/idle so the structure/chunking scanner picks them up
     if pages_input:
         await session.execute(
             update(Page)
             .where(and_(Page.book_id == book_id, Page.text.isnot(None)))
             .values(
-                pipeline_step="chunking",
+                pipeline_step="structure",
                 milestone="idle",
                 last_updated=datetime.now(timezone.utc),
                 updated_by=current_user.email,
             )
+        )
+        from app.services.book_structure_service import structure_dirty_values
+
+        await books_repo.update_one(
+            book_id,
+            **structure_dirty_values(),
         )
 
     await session.commit()
@@ -2961,6 +3577,7 @@ async def update_book_details(
     book_update.pop("upload_date", None)
     book_update.pop("content", None)
 
+    pages_updated_in_put = False
     if "pages" in book_update:
         for result in book_update.get("pages") or []:
             if "text" in result:
@@ -2970,6 +3587,8 @@ async def update_book_details(
             if "pageNumber" in result or "page_number" in result:
                 page_number = result.get("pageNumber") or result.get("page_number")
                 new_text = result.get("text")
+                if new_text is not None:
+                    pages_updated_in_put = True
 
                 # Only update v2 state if text actually changed (kick off re-chunking)
                 content_page_number = result.get("contentPageNumber") or result.get(
@@ -2988,7 +3607,7 @@ async def update_book_details(
                             END,
                             pipeline_step = CASE
                                 WHEN :text IS NOT NULL AND text IS DISTINCT FROM :text
-                                THEN 'chunking'
+                                THEN 'structure'
                                 ELSE pipeline_step
                             END,
                             milestone = CASE
@@ -3017,6 +3636,33 @@ async def update_book_details(
                         "updated_by": current_user.email,
                     },
                 )
+    if pages_updated_in_put:
+        from app.services.book_structure_service import structure_dirty_values
+
+        book_update.update(structure_dirty_values())
+    elif (
+        "title" in book_update
+        and isinstance(book_update.get("title"), str)
+        and isinstance(getattr(book, "title", None), str)
+        and book_update["title"].strip() != book.title.strip()
+        and getattr(book, "ocr_milestone", None)
+        in (BOOK_MILESTONE_COMPLETE, PAGE_MILESTONE_SUCCEEDED)
+    ):
+        from app.services.book_structure_service import (
+            preserve_active_chunking_claim,
+            structure_dirty_values,
+        )
+
+        book_update.update(
+            structure_dirty_values(
+                chunking_milestone=BOOK_MILESTONE_IDLE,
+                chunking_retry_count=0,
+                chunking_claimed_at=preserve_active_chunking_claim(),
+                embedding_milestone=BOOK_MILESTONE_IDLE,
+                embedding_retry_count=0,
+                embedding_claimed_at=None,
+            )
+        )
 
     # Remove pages from book_update (already processed above)
     book_update.pop("pages", None)
@@ -3034,7 +3680,6 @@ async def update_book_details(
         "page_stats",
         "has_summary",
         "has_graph",
-        "has_history",
     ]
     for field in read_only_fields:
         book_update.pop(field, None)
@@ -3107,15 +3752,17 @@ async def get_book_summary(
     if not book_obj:
         raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
 
-    # Check access permission for guests (directly access book attributes)
-    if not current_user:
-        # Guest access: only allow if book is public and ready
+    # Check access permission for non-staff users
+    if not _can_staff_access_book(current_user):
+        # Guest and reader access: only allow if book is public and ready
         book_status = getattr(book_obj, "status", None)
         book_visibility = getattr(book_obj, "visibility", "public")
-        if book_status != "ready" or book_visibility != "public":
-            raise HTTPException(
-                status_code=401, detail=t("errors.authentication_required")
-            )
+        if book_status != "ready" or book_visibility not in ("public", None):
+            if not current_user:
+                raise HTTPException(
+                    status_code=401, detail=t("errors.authentication_required")
+                )
+            raise HTTPException(status_code=403, detail=t("errors.unauthorized_access"))
 
     summaries_repo = BookSummariesRepository(session)
     summary = await summaries_repo.get_by_book_id(book_id)

@@ -1,4 +1,4 @@
-import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, MoreVertical, Network, RefreshCw, Save, ScanText, Scissors, ScrollText, Search, Shield, Sparkles, TableOfContents, User, Wand2, X } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, ListTree, MoreVertical, Network, RefreshCw, Save, ScanText, Scissors, Search, Shield, TableOfContents, User, Wand2, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -20,6 +20,7 @@ const getStatusTextColor = (step: string | null) => {
     case PIPELINE_STEP.EMBEDDING: return 'text-orange-600 font-bold';
     case PIPELINE_STEP.SPELL_CHECK: return 'text-purple-600 font-bold';
     case PIPELINE_STEP.CHUNKING: return 'text-indigo-600 font-bold';
+    case PIPELINE_STEP.STRUCTURE: return 'text-cyan-600 font-bold';
     case PIPELINE_STEP.OCR: return 'text-blue-600 font-bold';
     case PIPELINE_STEP.ERROR: return 'text-red-500 font-bold';
     default: return 'text-slate-400';
@@ -49,27 +50,30 @@ const getPipelineIconClass = (
   // For page-level steps, use the aggregate counts to determine if finished
   const isPageLevel = PAGE_LEVEL_MILESTONE_STEPS.includes(stepKey as typeof PAGE_LEVEL_MILESTONE_STEPS[number]);
 
-  // Special case: Summary, Graph, and History are determined by boolean flags
+  // Special case: Summary, Graph, and Structure are book-level milestones
   const isComplete = stepKey === 'summary'
     ? !!book.hasSummary
     : stepKey === 'graph'
       ? !!(book.hasGraph || book.has_graph)
-      : stepKey === 'history'
-        ? !!(book.hasHistory || book.has_history)
+      : stepKey === 'structure'
+        ? book.structureMilestone === 'complete' || book.structure_milestone === 'complete' || book.status === 'ready'
         : isPageLevel
           ? (total > 0 && doneCount + failedCount === total)
           : isCompleteParam;
 
-  const isFailed = isPageLevel
-    ? failedCount > 0
-    : isFailedParam;
+  const isFailed = stepKey === 'structure'
+    ? (book.structureMilestone === 'failed' || book.structure_milestone === 'failed')
+    : isPageLevel
+      ? failedCount > 0
+      : isFailedParam;
 
   // A step is considered "In Progress" (orange/blinking) if:
   // 1. It's not complete AND
   // 2. It has either started (doneCount > 0) or is currently being worked on (activeCount > 0)
   const isInProgress = !isComplete && (
-    doneCount > 0 ||
-    activeCount > 0
+    stepKey === 'structure'
+      ? (book.structureMilestone === 'in_progress' || book.structure_milestone === 'in_progress')
+      : (doneCount > 0 || activeCount > 0)
   );
 
   // Order matters: In Progress (blinking) takes precedence over a partial error
@@ -80,7 +84,7 @@ const getPipelineIconClass = (
   return 'text-slate-300';
 };
 
-const MANDATORY_PIPELINE_STEPS = [PIPELINE_STEP.OCR, PIPELINE_STEP.CHUNKING, PIPELINE_STEP.EMBEDDING] as const;
+const MANDATORY_PIPELINE_STEPS = [PIPELINE_STEP.OCR, PIPELINE_STEP.STRUCTURE, PIPELINE_STEP.CHUNKING, PIPELINE_STEP.EMBEDDING] as const;
 
 const getMilestoneColor = (book: any, stepKey: string) => {
   const milestoneField = MILESTONE_FIELD_BY_STEP[stepKey as keyof typeof MILESTONE_FIELD_BY_STEP];
@@ -91,9 +95,6 @@ const getMilestoneColor = (book: any, stepKey: string) => {
   }
   if (stepKey === PIPELINE_STEP.GRAPH) {
     return (book.hasGraph || book.has_graph) ? 'text-emerald-500' : 'text-slate-300';
-  }
-  if (stepKey === PIPELINE_STEP.HISTORY) {
-    return (book.hasHistory || book.has_history) ? 'text-emerald-500' : 'text-slate-300';
   }
 
   const milestone = book[milestoneField];
@@ -120,18 +121,6 @@ const getMilestoneColor = (book: any, stepKey: string) => {
     default:
       return 'text-slate-300';
   }
-};
-
-const getLlmSpellCheckIconClass = (
-  stats: { llm_spell_check?: number; llm_spell_check_active?: number } | undefined | null,
-  totalPages: number | undefined
-): string => {
-  const done = stats?.llm_spell_check ?? 0;
-  const active = stats?.llm_spell_check_active ?? 0;
-  const tp = totalPages ?? 0;
-  if (tp > 0 && done === tp) return 'text-emerald-500';
-  if (done + active > 0) return 'text-amber-500';
-  return 'text-slate-300';
 };
 
 const isBookReadable = (book: any): boolean => {
@@ -441,6 +430,7 @@ export const AdminView: React.FC = () => {
                               <div className="flex md:hidden items-center gap-1.5 mt-2">
                                 {[
                                   { key: PIPELINE_STEP.OCR, icon: ScanText },
+                                  { key: PIPELINE_STEP.STRUCTURE, icon: ListTree },
                                   { key: PIPELINE_STEP.CHUNKING, icon: Scissors },
                                   { key: PIPELINE_STEP.EMBEDDING, icon: Cuboid },
                                   { key: PIPELINE_STEP.SUMMARY, icon: Wand2 },
@@ -454,10 +444,6 @@ export const AdminView: React.FC = () => {
                                   
                                   return <Icon key={key} size={14} className={`${colorClass} transition-colors duration-300`} />;
                                 })}
-                                <Sparkles
-                                  size={14}
-                                  className={`${getLlmSpellCheckIconClass(book.pipelineStats, book.totalPages)} transition-colors duration-300`}
-                                />
                               </div>
                             </button>
                           )}
@@ -519,12 +505,12 @@ export const AdminView: React.FC = () => {
                             {/* Baseline Pipeline Icons with Lazy Loading Tooltips */}
                              {[
                               { ...ADMIN_PIPELINE_STEPS[0], icon: ScanText },
-                              { ...ADMIN_PIPELINE_STEPS[1], icon: Scissors },
-                              { ...ADMIN_PIPELINE_STEPS[2], icon: Cuboid },
-                              { ...ADMIN_PIPELINE_STEPS[3], icon: Wand2 },
-                              { ...ADMIN_PIPELINE_STEPS[4], icon: BookOpenCheck },
-                              { ...ADMIN_PIPELINE_STEPS[5], icon: Network },
-                              { ...ADMIN_PIPELINE_STEPS[6], icon: ScrollText }
+                              { ...ADMIN_PIPELINE_STEPS[1], icon: ListTree },
+                              { ...ADMIN_PIPELINE_STEPS[2], icon: Scissors },
+                              { ...ADMIN_PIPELINE_STEPS[3], icon: Cuboid },
+                              { ...ADMIN_PIPELINE_STEPS[4], icon: Wand2 },
+                              { ...ADMIN_PIPELINE_STEPS[5], icon: BookOpenCheck },
+                              { ...ADMIN_PIPELINE_STEPS[6], icon: Network }
                             ].map(({ key, icon: Icon, label }) => {
                               const cacheKey = `${book.id}:${key}`;
                               const stats = detailedStats[cacheKey];
@@ -533,7 +519,7 @@ export const AdminView: React.FC = () => {
 
                               const colorClass = isLoaded
                                 ? getPipelineIconClass(
-                                    { ...book, pipelineStats: stats.pipeline_stats, hasSummary: stats.has_summary, hasGraph: stats.has_graph, hasHistory: stats.has_history, totalPages: stats.total_pages },
+                                    { ...book, pipelineStats: stats.pipeline_stats, hasSummary: stats.has_summary, hasGraph: stats.has_graph, totalPages: stats.total_pages },
                                     key,
                                     false, // handled inside getPipelineIconClass for page levels
                                     false  // handled inside getPipelineIconClass for page levels
@@ -560,8 +546,8 @@ export const AdminView: React.FC = () => {
                                             <span>{stats.has_summary ? t('common.done') : t('common.pending')}</span>
                                           ) : key === 'graph' ? (
                                             <span>{(stats.has_graph || stats.hasGraph) ? t('common.done') : t('common.pending')}</span>
-                                          ) : key === 'history' ? (
-                                            <span>{(stats.has_history || stats.hasHistory) ? t('common.done') : t('common.pending')}</span>
+                                          ) : key === 'structure' ? (
+                                            <span>{(book.structureMilestone === 'complete' || book.structure_milestone === 'complete' || book.status === 'ready') ? t('common.done') : t('common.pending')}</span>
                                           ) : (
                                             <span>
                                               {getStat(stats.pipeline_stats, key)}/{stats.total_pages}
@@ -579,48 +565,6 @@ export const AdminView: React.FC = () => {
                                 </div>
                               );
                             })}
-                            {(() => {
-                              const key = 'llm_spell_check';
-                              const cacheKey = `${book.id}:${key}`;
-                              const stats = detailedStats[cacheKey];
-                              const isLoadingStat = loadingStats[cacheKey];
-                              const isLoaded = !!stats;
-                              const source = isLoaded ? stats.pipeline_stats : book.pipelineStats;
-                              const totalPages = isLoaded ? stats.total_pages : book.totalPages;
-                              const done = getStat(source, key);
-                              const active = getStat(source, `${key}_active`);
-                              const failed = getStat(source, `${key}_failed`);
-                              const tp = totalPages ?? 0;
-                              const colorClass = getLlmSpellCheckIconClass(
-                                { llm_spell_check: done, llm_spell_check_active: active },
-                                tp
-                              );
-                              return (
-                                <div
-                                  className="group/status relative flex items-center"
-                                  onMouseEnter={() => fetchBookStats(book.id, key)}
-                                >
-                                  <Sparkles size={18} className={`${colorClass} transition-colors duration-300`} />
-                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-lg opacity-0 group-hover/status:opacity-100 transition-all duration-200 whitespace-nowrap pointer-events-none z-10 border border-slate-700">
-                                    <div className="flex flex-col gap-0.5">
-                                      <span className="font-bold border-b border-slate-700 pb-0.5 mb-0.5">{t('admin.pipeline.llmSpellCheck')}</span>
-                                      {isLoadingStat ? (
-                                        <span className="text-slate-400 animate-pulse">{t('common.loading')}...</span>
-                                      ) : tp > 0 && done === tp ? (
-                                        <span>{t('common.done')}</span>
-                                      ) : done + active > 0 ? (
-                                        <span>{t('common.partial', { done, total: tp })}</span>
-                                      ) : (
-                                        <span>{t('common.pending')}</span>
-                                      )}
-                                      {failed > 0 && (
-                                        <span className="text-red-400 ml-1">({failed} {t('common.error')})</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })()}
                           </div>
                         </div>
                       </td>

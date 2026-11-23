@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 
 from app.core.config import settings
 from app.core.prompts import BOOK_SUMMARY_PROMPT
 from app.db import session as db_session
-from app.db.models import Book, Page
+from app.db.models import Book, BookSummary, Page
 from app.db.repositories.book_summaries_repository import BookSummariesRepository
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.llm import build_text_chain
@@ -99,6 +99,13 @@ async def summary_job(ctx, book_id: str) -> None:
             pages_text = [row[0] for row in result.fetchall() if row[0]]
 
         if not pages_text:
+            async with db_session.async_session_factory() as session:
+                await session.execute(
+                    update(BookSummary)
+                    .where(BookSummary.book_id == book_id)
+                    .values(generated_at=func.now())
+                )
+                await session.commit()
             log_json(
                 logger,
                 logging.WARNING,
@@ -114,7 +121,18 @@ async def summary_job(ctx, book_id: str) -> None:
         is_large_context_model = (
             any(
                 m in gemini_chat_model.lower()
-                for m in ["1.5", "2.0", "flash", "pro", "ultra"]
+                for m in [
+                    "1.5",
+                    "2.0",
+                    "gemini-3",
+                    "gemini-4",
+                    "hydrogen",
+                    "argon",
+                    "carbon",
+                    "flash",
+                    "pro",
+                    "ultra",
+                ]
             )
             and "1.0" not in gemini_chat_model.lower()
         )

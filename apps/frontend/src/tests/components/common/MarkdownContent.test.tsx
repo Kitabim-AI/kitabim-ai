@@ -177,6 +177,41 @@ I. ها ... II. زە ... III. ئو ... - roman - لۇئان — يېقىنقى �
     // Should navigate to page 28 + 10 (offset) = 38, NOT 9 + 10 = 19
     expect(onTocPageClick).toHaveBeenCalledWith(38);
   });
+
+  it('uses contentPageMap directly when provided to resolve ToC printed page numbers', () => {
+    const onTocPageClick = vi.fn();
+    const contentPageMap = {
+      '5': 19,
+      '12': 26,
+    };
+    render(
+      <MarkdownContent
+        content={tocContent}
+        contentPageMap={contentPageMap}
+        contentPageOffset={0}
+        onTocPageClick={onTocPageClick}
+      />
+    );
+
+    const secondTocItem = screen.getByRole('button', { name: /1-باپ/ });
+    fireEvent.click(secondTocItem);
+    expect(onTocPageClick).toHaveBeenCalledWith(26);
+  });
+
+  it('renders <hr class="footnotes-sep" /> and <section class="footnotes"> blocks distinctly', () => {
+    const pageWithFootnotes = `بۇ بەتنىڭ ئاساسىي مەزمۇنى.
+
+<hr class="footnotes-sep" />
+<section class="footnotes">
+1. بىرىنچى ئىزاھات مەزمۇنى.
+</section>`;
+
+    const { container } = render(<MarkdownContent content={pageWithFootnotes} />);
+    expect(container.querySelector('hr.footnotes-sep')).not.toBeNull();
+    const fnSection = container.querySelector('section.footnotes');
+    expect(fnSection).not.toBeNull();
+    expect(fnSection?.textContent).toContain('بىرىنچى ئىزاھات مەزمۇنى');
+  });
 });
 
 describe('MarkdownContent numbered entries and ordered lists', () => {
@@ -337,4 +372,29 @@ describe('MarkdownContent numbered entries and ordered lists', () => {
     }
   });
 });
+
+describe('MarkdownContent allowDashLists prop', () => {
+  it('preserves Uyghur dialogue dashes as paragraphs by default (allowDashLists=false)', () => {
+    const dialogueContent = `- نەگە ماڭدىڭ؟\n- مەكتەپكە ماڭدىم.`;
+    const { container } = render(<MarkdownContent content={dialogueContent} />);
+
+    expect(container.querySelector('ul')).toBeNull();
+    expect(screen.getByText(/نەگە ماڭدىڭ/)).toBeInTheDocument();
+  });
+
+  it('renders dash-prefixed lines as semantic <ul><li> bullets when allowDashLists=true (chat responses)', () => {
+    const chatListContent = `- بىرىنچى نۇقتا\n- ئىككىنچى نۇقتا`;
+    const { container } = render(
+      <MarkdownContent content={chatListContent} isTocPage={false} allowDashLists={true} />
+    );
+
+    const ul = container.querySelector('ul');
+    expect(ul).not.toBeNull();
+    const items = container.querySelectorAll('li');
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toContain('بىرىنچى نۇقتا');
+    expect(items[1].textContent).toContain('ئىككىنچى نۇقتا');
+  });
+});
+
 

@@ -57,3 +57,13 @@ def test_two_quotes_linking_book_and_work_uses_second_as_title():
     )
     assert intent.applies is True
     assert intent.title == "ئۇچراشقاندا"
+    assert intent.is_verbatim_request is True
+
+
+def test_chapter_content_question_applies_as_non_verbatim():
+    intent = detect_short_work_intent(
+        "بۇ كىتابنىڭ «ئالدانغان كېيىك» ناملىق بابىدا قانداق ئاساسى مەزمۇن بار؟"
+    )
+    assert intent.applies is True
+    assert intent.title == "ئالدانغان كېيىك"
+    assert intent.is_verbatim_request is False

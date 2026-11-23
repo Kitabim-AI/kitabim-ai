@@ -1,8 +1,8 @@
 """Endpoints for silent reading progress and user-created bookmarks"""
 
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,7 +64,7 @@ async def get_progress_for_book_endpoint(
 
 @router.get("/progress")
 async def list_progress_endpoint(
-    limit: int = 50,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
     current_user: User = Depends(require_reader),
     session: AsyncSession = Depends(get_session),
 ):

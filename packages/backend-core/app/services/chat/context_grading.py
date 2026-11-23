@@ -49,6 +49,54 @@ async def _build_human_message(ctx: QueryContext, question: str) -> str:
             lines.append(f"Category filter: {', '.join(ctx.character_categories)}")
     if ctx.history:
         lines.append("Chat history: Available (contains prior conversation context)")
+
+    enriched = getattr(ctx, "enriched_question", None)
+    if (
+        isinstance(enriched, str)
+        and enriched.strip()
+        and enriched.strip() != question.strip()
+    ):
+        lines.append(
+            f"Pre-rewritten standalone question (pronouns/ellipsis already resolved — use this directly and skip rewrite_query): {enriched.strip()}"
+        )
+
+    signals = getattr(ctx, "query_signals", None)
+    if isinstance(signals, dict) and signals:
+        pre_books = []
+        seen_bids: set[str] = set()
+        for b in [
+            *(signals.get("matched_books") or []),
+            *(signals.get("matched_author_books") or []),
+        ]:
+            if isinstance(b, dict) and b.get("id") and str(b["id"]) not in seen_bids:
+                seen_bids.add(str(b["id"]))
+                desc = f'"{b.get("title") or "Unknown"}"'
+                if b.get("author"):
+                    desc += f" by {b['author']}"
+                if b.get("volume") is not None:
+                    desc += f", volume {b['volume']}"
+                desc += f" (book_id: {b['id']})"
+                pre_books.append(desc)
+        if pre_books:
+            lines.append(
+                "Pre-resolved books mentioned in question (skip redundant title/author discovery): "
+                + "; ".join(pre_books[:30])
+            )
+
+        if signals.get("is_composite") and isinstance(
+            signals.get("sub_questions"), list
+        ):
+            sub_qs = [
+                sq.get("question", "").strip()
+                for sq in signals["sub_questions"]
+                if isinstance(sq, dict) and sq.get("question")
+            ]
+            if len(sub_qs) > 1:
+                lines.append(
+                    "Composite sub-questions to gather evidence for: "
+                    + " | ".join(f"({i + 1}) {sq}" for i, sq in enumerate(sub_qs))
+                )
+
     if not lines:
         return question
     return "[Context]\n" + "\n".join(lines) + "\n\n[Question]\n" + question
@@ -113,6 +161,12 @@ def _grade_context(
                     "page_number": c.get("page_number")
                     if c.get("page_number") is not None
                     else c.get("page"),
+                    "chunk_index": c.get("chunk_index"),
+                    "end_page_number": c.get("end_page_number"),
+                    "section_id": c.get("section_id"),
+                    "section_title": c.get("section_title"),
+                    "content_page_number": c.get("content_page_number"),
+                    "end_content_page_number": c.get("end_content_page_number"),
                     "book_id": c.get("book_id"),
                     "score": c.get("score", 0.0),
                     "rrf_score": c.get("rrf_score", 0.0),
@@ -120,12 +174,16 @@ def _grade_context(
                     "surah_name_en": c.get("surah_name_en"),
                     "surah": c.get("surah"),
                     "ayah": c.get("ayah"),
+                    "is_graph": bool(c.get("is_graph")),
                 },
             )
             for c in chunks
         ]
 
-        # Grade this specific search call's results
+        # Grade this specific search call's results.
+        # Exclude fixed Knowledge Graph scores (0.80–0.95) when computing the
+        # relative cosine-similarity floor so KG facts never prune genuine
+        # pgvector passages (typical cosine 0.55–0.75).
         search_docs.sort(
             key=lambda d: (
                 d.metadata.get("rrf_score", 0.0),
@@ -133,14 +191,18 @@ def _grade_context(
             ),
             reverse=True,
         )
-        top_score = max((d.metadata["score"] for d in search_docs), default=0.0)
+        vector_scores = [
+            d.metadata["score"] for d in search_docs if not d.metadata.get("is_graph")
+        ]
+        top_score = max(vector_scores, default=0.0)
         score_floor = top_score * GRADE_RELATIVE_THRESHOLD
 
-        # Keep docs meeting relative score floor, OR keyword-only hits with positive rrf_score / keyword rank
+        # Keep docs meeting relative score floor, KG facts, OR keyword hits
         graded_search_docs = [
             d
             for d in search_docs
-            if d.metadata["score"] >= score_floor
+            if d.metadata.get("is_graph")
+            or d.metadata["score"] >= score_floor
             or d.metadata.get("rrf_score", 0.0) > 0.0
             or d.metadata.get("rank") is not None
         ]
@@ -156,7 +218,12 @@ def _grade_context(
                 if doc.metadata.get("page") is not None
                 else doc.metadata.get("page_number")
             )
-            key = (doc.metadata["book_id"], page_val)
+            key = (
+                doc.metadata["book_id"],
+                page_val,
+                doc.metadata.get("section_id"),
+                doc.metadata.get("chunk_index"),
+            )
             if key in seen:
                 existing = all_graded_documents[seen[key]]
                 if is_better_duplicate(doc.metadata, existing.metadata):
@@ -222,8 +289,9 @@ def _extract_used_book_ids(observations: list[dict]) -> list[str]:
                 data = res.get("data") or res
                 if isinstance(data, dict):
                     for chunk in data.get("chunks", []):
-                        if chunk.get("book_id"):
-                            chunk_book_ids.add(str(chunk["book_id"]))
+                        bid = str(chunk.get("book_id") or "")
+                        if bid and bid not in ("knowledge_graph", "quran"):
+                            chunk_book_ids.add(bid)
 
     # Collect book IDs from get_book_summary results
     summary_book_ids = set()

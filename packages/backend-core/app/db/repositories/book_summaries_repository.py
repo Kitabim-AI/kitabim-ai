@@ -23,6 +23,7 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         categories: Optional[List[str]] = None,
         threshold: float = 0.30,
         limit: Optional[int] = None,
+        is_staff: Optional[bool] = None,
     ) -> List[str]:
         """
         Return book_ids whose summaries are most similar to query_embedding.
@@ -31,10 +32,16 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         Pass limit to cap the number of returned books (e.g. for agent tool calls).
         """
         from sqlalchemy import text
+        from app.services.rag.context import resolve_rag_is_staff
 
         embedding_str = str(query_embedding)
         limit_clause = "LIMIT :limit" if limit is not None else ""
-        join_clause = "JOIN books b ON s.book_id = b.id" if categories else ""
+        join_clause = "JOIN books b ON s.book_id = b.id"
+        access_sql = (
+            "b.status != 'error'"
+            if resolve_rag_is_staff(is_staff)
+            else "b.status = 'ready' AND (b.visibility = 'public' OR b.visibility IS NULL)"
+        )
         cat_filter = (
             "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
@@ -49,6 +56,7 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
                 FROM book_summaries s
                 {join_clause}
                 WHERE s.book_id = ANY(:book_ids)
+                  AND {access_sql}
                   {cat_filter}
                   AND 1 - (s.embedding <=> CAST(:embedding AS vector(3072))) > :threshold
                 ORDER BY similarity DESC
@@ -67,6 +75,7 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
                 FROM book_summaries s
                 {join_clause}
                 WHERE 1 - (s.embedding::halfvec(3072) <=> CAST(:embedding AS halfvec(3072))) > :threshold
+                  AND {access_sql}
                   {cat_filter}
                 ORDER BY similarity DESC
                 {limit_clause}
@@ -84,17 +93,20 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
 
     async def upsert(self, book_id: str, summary: str, embedding: List[float]) -> None:
         """Insert or replace the summary for a book."""
+        from sqlalchemy import func
+
         stmt = insert(BookSummary).values(
             book_id=book_id,
             summary=summary,
             embedding=embedding,
+            generated_at=func.now(),
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=["book_id"],
             set_={
                 "summary": stmt.excluded.summary,
                 "embedding": stmt.excluded.embedding,
-                "generated_at": stmt.excluded.generated_at,
+                "generated_at": func.now(),
             },
         )
         await self.session.execute(stmt)
@@ -104,6 +116,7 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         self,
         book_ids: List[str],
         text_filter: Optional[List[str]] = None,
+        is_staff: Optional[bool] = None,
     ) -> List[dict]:
         """Return summary text + book metadata for the given book_ids.
 
@@ -111,7 +124,21 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
         those terms (case-insensitive) are returned.
         """
         from app.db.models import Book
+        from app.services.rag.context import resolve_rag_is_staff
         from sqlalchemy import or_
+
+        access_clauses = (
+            [Book.status != "error"]
+            if resolve_rag_is_staff(is_staff)
+            else [
+                Book.status == "ready",
+                or_(
+                    Book.visibility == "public",
+                    Book.visibility.is_(None),
+                    Book.visibility == "",
+                ),
+            ]
+        )
 
         stmt = (
             select(
@@ -124,6 +151,7 @@ class BookSummariesRepository(BaseRepository[BookSummary]):
             .join(Book, Book.id == BookSummary.book_id)
             .where(BookSummary.book_id.in_(book_ids))
             .where(BookSummary.summary.isnot(None))
+            .where(*access_clauses)
         )
         if text_filter:
             stmt = stmt.where(

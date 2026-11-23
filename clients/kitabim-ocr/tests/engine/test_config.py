@@ -279,3 +279,40 @@ def test_is_dot_enhancement_enabled(monkeypatch):
     monkeypatch.delenv("KITABIM_OCR_DOT_ENHANCEMENT", raising=False)
     monkeypatch.setenv("OCR_DOT_ENHANCEMENT", "false")
     assert is_dot_enhancement_enabled() is False
+
+
+def test_is_wave_batching_enabled_and_inference_defaults(monkeypatch):
+    import os
+    from engine.config import (
+        DEFAULT_LLAMA_CPP_EXTRA_ARGS,
+        DEFAULT_OCR_WAVE_BATCHING,
+        apply_surya_inference_defaults,
+        is_wave_batching_enabled,
+    )
+
+    monkeypatch.delenv("KITABIM_OCR_WAVE_BATCHING", raising=False)
+    monkeypatch.delenv("OCR_WAVE_BATCHING", raising=False)
+    assert DEFAULT_OCR_WAVE_BATCHING is True
+    assert is_wave_batching_enabled() is True
+
+    monkeypatch.setenv("KITABIM_OCR_WAVE_BATCHING", "false")
+    assert is_wave_batching_enabled() is False
+
+    for key in (
+        "SURYA_INFERENCE_LOGPROBS",
+        "SURYA_INFERENCE_PARALLEL",
+        "SURYA_INFERENCE_CTX_PER_SLOT",
+        "LLAMA_CPP_EXTRA_ARGS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    apply_surya_inference_defaults()
+    assert os.environ["SURYA_INFERENCE_LOGPROBS"] == "false"
+    assert os.environ["SURYA_INFERENCE_PARALLEL"] == "8"
+    assert os.environ["SURYA_INFERENCE_CTX_PER_SLOT"] == "6144"
+    assert os.environ["LLAMA_CPP_EXTRA_ARGS"] == DEFAULT_LLAMA_CPP_EXTRA_ARGS
+
+    # Explicit user overrides are preserved
+    monkeypatch.setenv("SURYA_INFERENCE_CTX_PER_SLOT", "12288")
+    apply_surya_inference_defaults()
+    assert os.environ["SURYA_INFERENCE_CTX_PER_SLOT"] == "12288"

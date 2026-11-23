@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import logging
 import socket
 import threading
 import time
@@ -12,13 +14,17 @@ import fitz
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, Response
+from PIL import Image, ImageDraw
 from pydantic import BaseModel
 
 from engine.config import get_configured_engine, resolve_concurrency
+from engine.line_ends import text_ends_with_hyphen
 from engine.recognize import (
     LowConfidenceOcrError,
+    _try_render_page_with_pdfium,
     get_recognition_predictor,
     ocr_page,
+    pop_last_page_ocr_meta,
 )
 from engine.text_cleanup import is_toc_page
 from engine.workdir import OcrWorkDir
@@ -721,14 +727,46 @@ def list_pages_response(workdir: OcrWorkDir) -> list[dict]:
 
 
 RENDER_ZOOM = 1.5
+_server_logger = logging.getLogger(__name__)
+
+
+def _build_unrenderable_page_png(page_number: int, exc: BaseException) -> bytes:
+    """Build a placeholder PNG when a PDF page image stream is corrupted/undecodable."""
+    img = Image.new("RGB", (600, 800), color=(254, 242, 242))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([(16, 16), (584, 784)], outline=(248, 113, 113), width=2)
+    err_line = str(exc).strip()[:90]
+    draw.text(
+        (36, 360),
+        f"PDF Page {page_number} cannot be rendered\n{err_line}",
+        fill=(153, 27, 27),
+    )
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def render_page_png(
     doc: "fitz.Document", page_number: int, zoom: float = RENDER_ZOOM
 ) -> bytes:
-    page = doc.load_page(page_number - 1)
-    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-    return pix.tobytes("png")
+    try:
+        page = doc.load_page(page_number - 1)
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+        return pix.tobytes("png")
+    except Exception as exc:
+        fallback_img = _try_render_page_with_pdfium(
+            getattr(doc, "name", None), page_number - 1, zoom
+        )
+        if fallback_img is not None:
+            buf = io.BytesIO()
+            fallback_img.save(buf, format="PNG")
+            return buf.getvalue()
+        _server_logger.warning(
+            "Failed to render PDF page=%s to PNG (returning placeholder): %s",
+            page_number,
+            exc,
+        )
+        return _build_unrenderable_page_png(page_number, exc)
 
 
 def get_page_image_bytes(workdir: OcrWorkDir, page_number: int) -> bytes:
@@ -786,10 +824,15 @@ async def redo_pages_response(
 
     async def redo_one(page_number: int):
         async with sem:
-            fitz_page = doc.load_page(page_number - 1)
             try:
+                fitz_page = doc.load_page(page_number - 1)
                 text = await ocr_page(
                     fitz_page, predictor, max_parallel_pages=target_concurrency
+                )
+                meta = pop_last_page_ocr_meta(fitz_page)
+                detected_num = meta.detected_page_number if meta else None
+                ended_hyphen = (
+                    meta.ended_with_hyphen if meta else text_ends_with_hyphen(text)
                 )
                 with workdir.save_lock:
                     try:
@@ -803,9 +846,11 @@ async def redo_pages_response(
                         is_toc=is_toc,
                         confidence=1.0,
                         status="ocrd",
+                        detected_page_number=detected_num,
+                        ended_with_hyphen=ended_hyphen,
                     )
                     workdir.save()
-            except LowConfidenceOcrError as exc:
+            except (LowConfidenceOcrError, Exception) as exc:
                 with workdir.save_lock:
                     try:
                         existing = workdir.get_page(page_number)
@@ -824,8 +869,11 @@ async def redo_pages_response(
                     )
                     workdir.save()
 
-    tasks = [redo_one(p) for p in page_numbers]
-    await asyncio.gather(*tasks)
+    try:
+        tasks = [redo_one(p) for p in page_numbers]
+        await asyncio.gather(*tasks)
+    finally:
+        doc.close()
     return [
         {
             "pageNumber": p.page_number,
@@ -872,6 +920,7 @@ def push_response(workdir: OcrWorkDir, client) -> dict:
             if isinstance(res, dict) and res.get("bookId"):
                 workdir.book_id = str(res["bookId"])
             workdir.save_metadata()
+            workdir.clear_images()
         return res
 
     try:
@@ -894,6 +943,7 @@ def push_response(workdir: OcrWorkDir, client) -> dict:
             workdir.uploaded = True
             workdir.uploaded_at = time.time()
             workdir.save_metadata()
+            workdir.clear_images()
         return {"status": "corrections_pushed", "count": len(results)}
     except KitabimAPIError as exc:
         if "404 from Kitabim API" in str(exc) and workdir.book_id is not None:

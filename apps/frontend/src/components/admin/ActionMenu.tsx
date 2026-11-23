@@ -1,12 +1,24 @@
 import { Book } from '@shared/types';
-import { BookOpen, BookOpenCheck, Cuboid, FileText, Image, Loader2, Network, RotateCcw, ScanText, Scissors, ScrollText, Sparkles, Trash2 } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Copy, Cuboid, FileText, Image, Layers, ListTree, Loader2, Network, RotateCcw, ScanText, Scissors, Trash2 } from 'lucide-react';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { REPROCESS_STEP } from '../../constants/milestones';
 import { useAppContext } from '../../context/AppContext';
-import { authFetch } from '../../services/authService';
 import { useIsAdmin } from '../../hooks/useAuth';
 import { useI18n } from '../../i18n/I18nContext';
+
+function legacyCopy(text: string): boolean {
+  const field = Object.assign(document.createElement('textarea'), { value: text });
+  field.setAttribute('readonly', '');
+  field.style.cssText = 'position:fixed;inset-block-start:0;opacity:0';
+  document.body.append(field);
+  field.select();
+  try {
+    return document.execCommand('copy');
+  } finally {
+    field.remove();
+  }
+}
 
 interface ActionMenuProps {
   book: Book;
@@ -17,10 +29,19 @@ interface ActionMenuProps {
 }
 
 export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect, menuRef, spellCheckEnabled = true }) => {
-  const { bookActions } = useAppContext();
+  const { bookActions, openChunkInspector } = useAppContext();
   const { t } = useI18n();
   const isAdmin = useIsAdmin();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleCopyBookId = async () => {
+    try {
+      await navigator.clipboard.writeText(book.id);
+    } catch {
+      legacyCopy(book.id);
+    }
+    close();
+  };
 
   const reprocessingStep = bookActions.reprocessingBooks.get(book.id);
 
@@ -61,13 +82,39 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
 
       <div className="px-2 space-y-0.5">
         <button
+          type="button"
           onClick={() => { bookActions.openReader(book, () => { }, () => { }, () => { }); close(); }}
           disabled={book.pipelineStep === null && book.status === 'pending'}
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[#1a1a1a] dark:text-slate-100 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
         >
-          <BookOpen size={16} className="text-slate-500" />
+          <BookOpen size={16} className="text-slate-500" aria-hidden="true" />
           <span className="flex-1 text-right">{t('admin.table.view')}</span>
         </button>
+
+        {typeof openChunkInspector === 'function' && (
+          <button
+            type="button"
+            onClick={() => { openChunkInspector(book, { page: null, from: 'admin' }); close(); }}
+            disabled={book.pipelineStep === null && book.status === 'pending'}
+            className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 disabled:opacity-30 rounded-xl transition-all active:scale-[0.98]"
+          >
+            <Layers size={16} className="shrink-0" aria-hidden="true" />
+            <span className="flex-1 text-right">{t('admin.table.inspectChunks')}</span>
+          </button>
+        )}
+
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={handleCopyBookId}
+            className="w-full min-h-6 min-w-6 flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#0369a1]/5 dark:hover:bg-[#38bdf8]/10 rounded-xl transition-all active:scale-[0.98]"
+          >
+            <Copy size={16} className="text-slate-500 shrink-0" aria-hidden="true" />
+            <span className="flex-1 text-right">
+              {t('admin.table.copyBookId') || 'كىتاب ID نى كۆچۈرۈش'}
+            </span>
+          </button>
+        )}
 
         <div className="h-px bg-slate-100/60 dark:bg-slate-800 my-1.5 mx-2" />
 
@@ -104,6 +151,15 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
         )}
 
         <button
+          onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.STRUCTURE); close(); }}
+          disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.STRUCTURE}
+          className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/20 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
+        >
+          {reprocessingStep === REPROCESS_STEP.STRUCTURE ? <Loader2 size={16} className="animate-spin" /> : <ListTree size={16} />}
+          <span className="flex-1 text-right">{t('admin.table.reprocess.structure') || 'قۇرۇلمىنى قايتا ئانالىزلاش'}</span>
+        </button>
+
+        <button
           onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.CHUNKING); close(); }}
           disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.CHUNKING}
           className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/20 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
@@ -133,17 +189,6 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
 
         {isAdmin && (
           <button
-            onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.LLM_SPELL_CHECK); close(); }}
-            disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.LLM_SPELL_CHECK}
-            className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-950/20 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
-          >
-            {reprocessingStep === REPROCESS_STEP.LLM_SPELL_CHECK ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-            <span className="flex-1 text-right">{t('admin.table.reprocess.llm_spell_check') || 'LLM ئارقىلىق كوررېكتورلاش'}</span>
-          </button>
-        )}
-
-        {isAdmin && (
-          <button
             onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.GRAPH); close(); }}
             disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.GRAPH}
             className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/20 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
@@ -161,17 +206,6 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
           >
             {reprocessingStep === REPROCESS_STEP.SUMMARY ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
             <span className="flex-1 text-right">{t('admin.table.reprocess.summary') || 'قىسقىچە مەزمۇنىنى قايتا ھاسىللاش'}</span>
-          </button>
-        )}
-
-        {isAdmin && (
-          <button
-            onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.HISTORY); close(); }}
-            disabled={reprocessingStep === REPROCESS_STEP.HISTORY}
-            className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
-          >
-            {reprocessingStep === REPROCESS_STEP.HISTORY ? <Loader2 size={16} className="animate-spin" /> : <ScrollText size={16} />}
-            <span className="flex-1 text-right">{t('admin.table.extractHistory') || 'تارىخىي ئاتالغۇلارنى بايقاش'}</span>
           </button>
         )}
 

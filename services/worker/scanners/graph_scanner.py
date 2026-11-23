@@ -16,6 +16,7 @@ import logging
 
 from sqlalchemy import select, or_, update
 
+from app.core.pipeline import BOOK_MILESTONE_COMPLETE
 from app.db import session as db_session
 from app.db.models import Book
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
@@ -46,6 +47,7 @@ async def run_graph_scanner(ctx) -> None:
             select(Book.id)
             .where(
                 Book.status == "ready",
+                Book.chunking_milestone == BOOK_MILESTONE_COMPLETE,
                 or_(
                     Book.graph_milestone == "idle",
                     Book.graph_milestone == "failed",

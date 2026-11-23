@@ -64,11 +64,17 @@ async def run_exact_phrase_retrieval(
             "page": h.get("page")
             if h.get("page") is not None
             else h.get("page_number"),
+            "end_page_number": h.get("end_page_number"),
+            "section_id": h.get("section_id"),
+            "section_title": h.get("section_title"),
+            "content_page_number": h.get("content_page_number"),
+            "end_content_page_number": h.get("end_content_page_number"),
             "text": h.get("text", ""),
             "title": h.get("title") or "Unknown",
             "volume": h.get("volume"),
             "author": h.get("author"),
             "score": h.get("rank", 0.0),
+            "rank": h.get("rank", 0.0),
         }
         for h in hits
     ]
@@ -92,6 +98,16 @@ def format_page_hits(hits: List[dict]) -> List[dict]:
             "volume": h.get("volume"),
             "author": h.get("author"),
             "page": h.get("page_number"),
+            **(
+                {"contentPageNumber": h["content_page_number"]}
+                if "content_page_number" in h and h["content_page_number"] is not None
+                else {}
+            ),
+            **(
+                {"sectionTitle": h["section_title"]}
+                if "section_title" in h and h["section_title"]
+                else {}
+            ),
             "snippet": (h.get("text") or "")[:280],
         }
         for h in hits

@@ -4,8 +4,9 @@
 Web application and preview server providing a local browser-based GUI for managing OCR sessions, reviewing recognized pages, redacting or editing text, re-running OCR on low-confidence pages, and pushing completed documents to Kitabim.
 
 ## Interface
-- `[app_server.py:AppState]`: Dataclass holding global session, client, and queue state for the landing web application.
-- `[app_server.py:create_landing_app]`: Constructs the unified FastAPI landing and review web application.
+- `[app_server.py:AppState]`: Dataclass holding global session, client, queue, and backfill manager state for the landing web application.
+- `[app_server.py:BackfillManager]`: Controller managing sequential automatic and on-demand production book backfilling (oldest upload first), pause-after-current-book handling, live page state tracking, and on-demand PDF page image rendering.
+- `[app_server.py:create_landing_app]`: Constructs the unified FastAPI landing, review, and backfill monitor web application.
 - `[app_server.py:serve_app]`: Starts the Uvicorn web server and opens the browser to the application landing page.
 - `[app_server.py:list_local_sessions]`: Discovers and enumerates existing OCR session directories and metadata.
 - `[app_server.py:get_app_html]`: Returns HTML template populated with localized translation bundles.
@@ -14,14 +15,14 @@ Web application and preview server providing a local browser-based GUI for manag
 - `[server.py:RedoRequest]`: Request payload schema for re-processing selected pages.
 - `[server.py:UpdatePageRequest]`: Request payload schema for updating page text and TOC flags.
 - `[server.py:list_pages_response]`: Serializes page list and review metadata.
-- `[server.py:render_page_png]`: Renders PDF page to PNG and caches to disk.
+- `[server.py:render_page_png]`: Renders PDF page to PNG with `pypdfium2` recovery and placeholder PNG fallback when a page's PDF image stream is corrupted.
 - `[server.py:get_page_image_bytes]`: Returns page image PNG bytes from cache or on-demand rendering.
 - `[server.py:update_page_response]`: Applies user edits to a page and persists changes.
 - `[server.py:redo_pages_response]`: Executes async re-OCR on requested page numbers.
 - `[server.py:push_response]`: Triggers API upload of the current session to Kitabim.
 
 ## Invariants
-- `[app_server.py:create_landing_app]`: Background OCR tasks run sequentially through `[../engine/queue.py:BookQueueManager]` to avoid overloading hardware.
+- `[app_server.py:create_landing_app]`: Background OCR tasks run sequentially through `[../engine/queue.py:BookQueueManager]` and coordinate GPU access via `[../backfill.py:acquire_surya_gpu_lock]` (`$KITABIM_WORK_DIR/.surya_gpu.lock`) to avoid overloading hardware.
 - `[server.py:create_app]`: All page updates and redo operations lock against `[../engine/workdir.py:OcrWorkDir.save_lock]`.
 
 ## Side Effects

@@ -180,6 +180,7 @@ def test_cmd_push_resubmits_as_new_book_when_book_deleted_on_cloud(tmp_path: Pat
         original_filename="book.pdf",
     )
     (workdir_path / "book.pdf").write_bytes(b"%PDF-1.4")
+    wd.image_path(1).write_bytes(b"\x89PNG\r\nfake")
     wd.set_page(1, text="text", is_toc=False, confidence=1.0, status="ocrd")
     wd.save()
 
@@ -195,6 +196,92 @@ def test_cmd_push_resubmits_as_new_book_when_book_deleted_on_cloud(tmp_path: Pat
 
     mock_exists.assert_called_once_with("deleted_cloud_book")
     mock_push_new.assert_called_once()
+    assert not wd.image_path(1).exists()
     reloaded = main.OcrWorkDir.load(workdir_path)
     assert reloaded.book_id == "new_cloud_id"
     assert reloaded.uploaded is True
+
+
+def test_cmd_push_existing_book_clears_cached_page_images(tmp_path: Path):
+    workdir_path = tmp_path / "work_existing"
+    wd = main.OcrWorkDir.create(
+        workdir_path,
+        source_pdf=workdir_path / "book.pdf",
+        total_pages=1,
+        book_id="existing_cloud_book",
+        original_filename="book.pdf",
+    )
+    (workdir_path / "book.pdf").write_bytes(b"%PDF-1.4")
+    wd.image_path(1).write_bytes(b"\x89PNG\r\nfake")
+    wd.set_page(1, text="updated", is_toc=False, confidence=1.0, status="reviewed")
+    wd.save()
+
+    with (
+        patch.object(main.KitabimClient, "book_exists", return_value=True),
+        patch.object(
+            main.KitabimClient, "push_page_correction", return_value={"status": "ok"}
+        ) as mock_corr,
+    ):
+        main.cmd_push(workdir_path, "http://localhost:8000")
+
+    mock_corr.assert_called_once()
+    assert not wd.image_path(1).exists()
+    assert main.OcrWorkDir.load(workdir_path).uploaded is True
+
+
+def test_build_parser_login_and_backfill_commands():
+    parser = main.build_parser()
+    login_args = parser.parse_args(["login", "--base-url", "http://localhost:8000"])
+    assert login_args.command == "login"
+    assert login_args.base_url == "http://localhost:8000"
+
+    bf_args = parser.parse_args(
+        [
+            "backfill",
+            "--book-id",
+            "b1",
+            "--limit",
+            "5",
+            "--max-server-backlog",
+            "3",
+            "--dry-run",
+        ]
+    )
+    assert bf_args.command == "backfill"
+    assert bf_args.book_id == "b1"
+    assert bf_args.limit == 5
+    assert bf_args.max_server_backlog == 3
+    assert bf_args.dry_run is True
+
+
+def test_cli_skip_unskip_and_backfill_skip_flags(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(main, "DOTENV_PATH", tmp_path / ".env")
+    monkeypatch.setenv("KITABIM_WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.delenv("KITABIM_BASE_URL", raising=False)
+
+    # Standalone `skip` / `unskip` / `backfill --list-skipped` work offline without KITABIM_BASE_URL
+    skip_entries = main.cmd_skip(["book-a", "book-b"], reason="handwritten scan")
+    assert [e["book_id"] for e in skip_entries] == ["book-a", "book-b"]
+
+    listed = main.cmd_backfill(list_skipped=True)
+    assert {e["book_id"] for e in listed} == {"book-a", "book-b"}
+
+    removed = main.cmd_unskip(["book-a"])
+    assert removed == ["book-a"]
+    listed_after = main.cmd_backfill(list_skipped=True)
+    assert [e["book_id"] for e in listed_after] == ["book-b"]
+
+    parser = main.build_parser()
+    args = parser.parse_args(
+        [
+            "backfill",
+            "--skip-book",
+            "book-c",
+            "--unskip-book",
+            "book-b",
+            "--list-skipped",
+        ]
+    )
+    assert args.skip_book == ["book-c"]
+    assert args.unskip_book == ["book-b"]
+    assert args.list_skipped is True

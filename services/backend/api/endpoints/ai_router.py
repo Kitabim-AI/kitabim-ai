@@ -4,7 +4,7 @@ import base64
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -23,7 +23,7 @@ logger = logging.getLogger("app.ai")
 
 
 class OcrRequest(BaseModel):
-    imageBase64: str
+    imageBase64: str = Field(..., max_length=15_000_000)
 
 
 class OcrResponse(BaseModel):

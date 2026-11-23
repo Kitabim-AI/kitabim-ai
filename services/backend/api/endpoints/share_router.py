@@ -268,6 +268,8 @@ async def share_page(
 
     if quote:
         description = html.escape(" ".join(quote.split()))
+    elif page_number > 20:
+        description = og_title
     else:
         cleaned = _clean_share_text(page.text or "")
         snippet = _truncate_snippet(cleaned)

@@ -47,12 +47,13 @@ def is_better_duplicate(new_meta: dict, old_meta: dict) -> bool:
 
 def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
     """Pool chunks from every search_chunks/search_keyword_phrase observation,
-    deduped by (book_id, page), keeping the better hit per page
-    (is_better_duplicate). No relevance filtering here — that's the reranker's
-    job, not this pooling step (data hygiene only, same dedup _grade_context does)."""
+    deduping identical chunks by `(book_id, page, section_id, chunk_index)` and
+    dropping single-page vector chunks when a full-page keyword hit already
+    covers `(book_id, page)`."""
     docs: list[Document] = []
     total_raw_chunks = 0
     seen: dict[tuple, int] = {}
+    keyword_pages: dict[tuple, int] = {}
 
     for obs in observations:
         if obs.get("tool") not in CHUNK_RESULT_TOOLS:
@@ -72,7 +73,7 @@ def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
             page_val = (
                 c.get("page") if c.get("page") is not None else c.get("page_number")
             )
-            key = (c.get("book_id"), page_val)
+            is_kw_page = c.get("rank") is not None and c.get("chunk_index") is None
             doc = Document(
                 page_content=c.get("text", ""),
                 metadata={
@@ -81,6 +82,12 @@ def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
                     "volume": c.get("volume"),
                     "page": page_val,
                     "page_number": page_val,
+                    "chunk_index": c.get("chunk_index"),
+                    "end_page_number": c.get("end_page_number"),
+                    "section_id": c.get("section_id"),
+                    "section_title": c.get("section_title"),
+                    "content_page_number": c.get("content_page_number"),
+                    "end_content_page_number": c.get("end_content_page_number"),
                     "book_id": c.get("book_id"),
                     "score": c.get("score", 0.0),
                     "rrf_score": c.get("rrf_score", 0.0),
@@ -90,12 +97,43 @@ def _pool_and_dedup(observations: list[dict]) -> tuple[list[Document], int]:
                     "ayah": c.get("ayah"),
                 },
             )
+            if is_kw_page:
+                kw_key = (c.get("book_id"), page_val)
+                if kw_key in keyword_pages:
+                    existing_idx = keyword_pages[kw_key]
+                    if is_better_duplicate(doc.metadata, docs[existing_idx].metadata):
+                        docs[existing_idx] = doc
+                    continue
+                idx_pos = len(docs)
+                keyword_pages[kw_key] = idx_pos
+                docs.append(doc)
+                continue
+
+            key = (
+                c.get("book_id"),
+                page_val,
+                c.get("section_id"),
+                c.get("chunk_index"),
+            )
             if key in seen:
                 if is_better_duplicate(doc.metadata, docs[seen[key]].metadata):
                     docs[seen[key]] = doc
                 continue
             seen[key] = len(docs)
             docs.append(doc)
+
+    if keyword_pages:
+        docs = [
+            d
+            for d in docs
+            if d.metadata.get("rank") is not None
+            or (d.metadata.get("book_id"), d.metadata.get("page")) not in keyword_pages
+            or (
+                d.metadata.get("end_page_number") is not None
+                and d.metadata.get("page") is not None
+                and int(d.metadata["end_page_number"]) > int(d.metadata["page"])
+            )
+        ]
     return docs, total_raw_chunks
 
 
@@ -116,45 +154,24 @@ def _join_context(metadata_parts: list[str], chunk_parts: list[str]) -> str:
     return "\n\n---\n\n".join(all_parts) if all_parts else _NO_DOCS_MESSAGE
 
 
-async def rerank_context(
+async def rerank_documents(
     question: str,
-    observations: list[dict],
+    candidates: list[Document],
     model: str,
     max_chunks: int | None = None,
-) -> tuple[str, int, int]:
-    """Drop-in replacement for _grade_context(observations) — same
-    (graded_context, before_count, after_count) return shape. Raises on any
-    judge failure (call error, timeout, malformed/out-of-range response);
-    callers must catch and fall back to _grade_context."""
-    docs, total_raw_chunks = _pool_and_dedup(observations)
-    metadata_parts = _metadata_parts(observations)
+) -> list[Document]:
+    """Run the LLM reranker over `candidates` (`<= RERANK_MAX_INPUT_CHUNKS`) and return
+    the selected `Document` subset in reranked relevance order."""
+    if not candidates:
+        return []
 
-    if not docs:
-        return _join_context(metadata_parts, []), total_raw_chunks, 0
-
-    candidates = docs
-    if len(candidates) > RERANK_MAX_INPUT_CHUNKS:
-        # Keyword hits carry `rank`, not a cosine `score`, so a score sort would
-        # always push them below every vector hit and cut them. Reserve their
-        # slots first, fill the rest with the best-scoring vector hits, and keep
-        # the original pool order for the reranker prompt.
-        keyword_docs = [d for d in candidates if d.metadata.get("rank") is not None]
-        keyword_docs = keyword_docs[:RERANK_MAX_INPUT_CHUNKS]
-        other_docs = sorted(
-            (d for d in candidates if d.metadata.get("rank") is None),
-            key=lambda d: (
-                d.metadata.get("rrf_score", 0.0),
-                d.metadata.get("score", 0.0),
-            ),
-            reverse=True,
-        )[: RERANK_MAX_INPUT_CHUNKS - len(keyword_docs)]
-        keep = {id(d) for d in keyword_docs} | {id(d) for d in other_docs}
-        candidates = [d for d in candidates if id(d) in keep]
-
+    capped = candidates[:RERANK_MAX_INPUT_CHUNKS]
     numbered = "\n\n".join(
-        f"[{i}] {format_document(d)}" for i, d in enumerate(candidates, start=1)
+        f"[{i}] {format_document(d)}" for i, d in enumerate(capped, start=1)
     )
-    prompt = RAG_RERANK_PROMPT.format(question=question, candidates=numbered)
+    safe_q = (question or "").replace("</question>", "&lt;/question&gt;")
+    safe_cands = numbered.replace("</candidates>", "&lt;/candidates&gt;")
+    prompt = RAG_RERANK_PROMPT.format(question=safe_q, candidates=safe_cands)
 
     llm = build_text_llm(model)
     res_text = await llm.ainvoke(
@@ -191,14 +208,14 @@ async def rerank_context(
         # despite that — coerce unambiguous numeric strings before validating range.
         if isinstance(idx, str) and idx.strip().lstrip("-").isdigit():
             idx = int(idx)
-        if not isinstance(idx, int) or not (1 <= idx <= len(candidates)):
+        if not isinstance(idx, int) or not (1 <= idx <= len(capped)):
             raise ValueError(f"Reranker returned an out-of-range index: {idx!r}")
         if idx in seen_idx:
             continue
         seen_idx.add(idx)
-        ordered_docs.append(candidates[idx - 1])
+        ordered_docs.append(capped[idx - 1])
 
-    if not ordered_docs and candidates:
+    if not ordered_docs and capped:
         # Mirrors _grade_context's existing floor (llm_routed_handler.py), but
         # only triggers on a total rejection (0 of N judged relevant) — a
         # partial, reasoned selection (e.g. 2 of 3) is exactly the filtering
@@ -208,7 +225,7 @@ async def rerank_context(
         # everything the answer-generation LLM could still use — fill up to
         # the floor with the next-best original-score candidates instead.
         for d in sorted(
-            candidates,
+            capped,
             key=lambda d: (
                 d.metadata.get("rrf_score", 0.0),
                 d.metadata.get("score", 0.0),
@@ -218,7 +235,55 @@ async def rerank_context(
             ordered_docs.append(d)
 
     limit = max_chunks if max_chunks is not None else AGENT_MAX_CONTEXT_CHUNKS
-    graded = ordered_docs[:limit]
+    return ordered_docs[:limit]
+
+
+async def rerank_context(
+    question: str,
+    observations: list[dict],
+    model: str,
+    max_chunks: int | None = None,
+) -> tuple[str, int, int]:
+    """Drop-in replacement for _grade_context(observations) — same
+    (graded_context, before_count, after_count) return shape. Raises on any
+    judge failure (call error, timeout, malformed/out-of-range response);
+    callers must catch and fall back to _grade_context."""
+    docs, total_raw_chunks = _pool_and_dedup(observations)
+    metadata_parts = _metadata_parts(observations)
+
+    if not docs:
+        return _join_context(metadata_parts, []), total_raw_chunks, 0
+
+    if len(docs) == 1:
+        # With a single candidate and MIN_CHUNKS_AFTER_GRADING >= 1, every valid
+        # LLM response ([1] or []) yields that same candidate — skip the extra
+        # Gemini round-trip.
+        return (
+            _join_context(metadata_parts, [format_document(docs[0])]),
+            total_raw_chunks,
+            1,
+        )
+
+    candidates = docs
+    if len(candidates) > RERANK_MAX_INPUT_CHUNKS:
+        # Keyword hits carry `rank`, not a cosine `score`, so a score sort would
+        # always push them below every vector hit and cut them. Reserve their
+        # slots first, fill the rest with the best-scoring vector hits, and keep
+        # the original pool order for the reranker prompt.
+        keyword_docs = [d for d in candidates if d.metadata.get("rank") is not None]
+        keyword_docs = keyword_docs[:RERANK_MAX_INPUT_CHUNKS]
+        other_docs = sorted(
+            (d for d in candidates if d.metadata.get("rank") is None),
+            key=lambda d: (
+                d.metadata.get("rrf_score", 0.0),
+                d.metadata.get("score", 0.0),
+            ),
+            reverse=True,
+        )[: RERANK_MAX_INPUT_CHUNKS - len(keyword_docs)]
+        keep = {id(d) for d in keyword_docs} | {id(d) for d in other_docs}
+        candidates = [d for d in candidates if id(d) in keep]
+
+    graded = await rerank_documents(question, candidates, model, max_chunks=max_chunks)
 
     log_json(
         logger,
