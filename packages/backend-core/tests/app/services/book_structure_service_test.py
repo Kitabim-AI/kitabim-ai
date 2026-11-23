@@ -172,7 +172,7 @@ def test_extract_book_sections_header_only_fallback_with_running_header_filter()
     sections = extract_book_sections(pages)
     titles = [s["title"] for s in sections]
     assert "كىتاب نامى" not in titles
-    assert titles == ["مۇقەددىمە", "بىرىنچى باب", "ئىككىنچى باب"]
+    assert titles == ["باش قىسىم", "بىرىنچى باب", "ئىككىنچى باب"]
     assert sections[1]["start_page"] == 2
     assert sections[1]["end_page"] == 6
     assert sections[2]["start_page"] == 7
@@ -382,3 +382,183 @@ def test_parse_page_blocks_handles_numbered_h2_and_filters_publisher_and_trailin
         (2, "## 1. ئومۇمىي ئەھۋال"),
     ]
     assert blocks[-1].kind == "prose"
+
+
+def test_extract_book_sections_filters_title_stacks_colon_labels_and_recurring_rubrics():
+    pages = [
+        _mk_page(
+            1,
+            "# تەپسىر جەۋھەرلىرى\n\n# مۇھەممەد يۈسۈپ\n\n# 2-توم\n\n## تەپسىرنى كۆرۈپ چىققۇچىلار:",
+            is_toc=False,
+        ),
+        _mk_page(
+            2,
+            "## 1-مەزمۇن ماۋزۇسى\n\n### تەرجىمىسى\n\nئايەت تەرجىمىسى تېكىستى.\n\n### تەپسىرى\n\nتەپسىر تېكىستى.\n\n### مۇھىم نۇقتىلىرى\n\nنۇقتا تېكىستى.",
+            is_toc=False,
+            content_page_number="1",
+        ),
+        _mk_page(
+            3,
+            "## 2-مەزمۇن ماۋزۇسى\n\n### تەرجىمىسى\n\nئىككىنچى تەرجىمە.\n\n### تەپسىرى\n\nئىككىنچى تەپسىر.\n\n### مۇھىم نۇقتىلىرى\n\nئىككىنچى نۇقتا.",
+            is_toc=False,
+            content_page_number="2",
+        ),
+        _mk_page(
+            4,
+            "## 3-مەزمۇن ماۋزۇسى\n\n### تەرجىمىسى\n\nئۈچىنچى تەرجىمە.\n\n### تەپسىرى\n\nئۈچىنچى تەپسىر.\n\n### مۇھىم نۇقتىلىرى\n\nئۈچىنچى نۇقتا.",
+            is_toc=False,
+            content_page_number="3",
+        ),
+    ]
+    sections = extract_book_sections(pages, book_title="تەپسىر جەۋھەرلىرى")
+    titles = [s["title"] for s in sections]
+    assert "تەرجىمىسى" not in titles
+    assert "تەپسىرى" not in titles
+    assert "مۇھىم نۇقتىلىرى" not in titles
+    assert "تەپسىرنى كۆرۈپ چىققۇچىلار:" not in titles
+    assert "مۇھەممەد يۈسۈپ" not in titles
+    assert titles == [
+        "باش قىسىم",
+        "1-مەزمۇن ماۋزۇسى",
+        "2-مەزمۇن ماۋزۇسى",
+        "3-مەزمۇن ماۋزۇسى",
+    ]
+
+
+def test_extract_book_sections_nests_chapters_under_parts_and_closes_on_khatime():
+    toc = [
+        ("بىرىنچى قىسىم ھايات", 1),
+        ("بىرىنچى باب دىدار", 2),
+        ("ئىككىنچى باب سوۋغا", 5),
+        ("ئىككىنچى قىسىم يىراقتا", 8),
+        ("بىرىنچى باب سەپەر", 9),
+        ("خاتىمە", 12),
+    ]
+    pages = [
+        _mk_page(1, "بىرىنچى قىسىم\n\n# ھايات", content_page_number="1"),
+        _mk_page(2, "# بىرىنچى باب دىدار\n\nمەزمۇن 1.", content_page_number="2"),
+        _mk_page(5, "# ئىككىنچى باب سوۋغا\n\nمەزمۇن 2.", content_page_number="5"),
+        _mk_page(8, "ئىككىنچى قىسىم\n\n# يىراقتا", content_page_number="8"),
+        _mk_page(9, "# بىرىنچى باب سەپەر\n\nمەزمۇن 3.", content_page_number="9"),
+        _mk_page(12, "# خاتىمە\n\nئاخىرقى خۇلاسە.", content_page_number="12"),
+    ]
+    sections = extract_book_sections(pages, toc)
+    by_idx = {s["section_index"]: s for s in sections}
+    part1 = next(s for s in sections if "بىرىنچى قىسىم" in s["title"])
+    part2 = next(s for s in sections if "ئىككىنچى قىسىم" in s["title"])
+    ch_saper = next(s for s in sections if "سەپەر" in s["title"])
+    khatime = next(s for s in sections if s["title"] == "خاتىمە")
+
+    assert part1["level"] == 1
+    assert part1["end_page"] == 7
+    assert part2["level"] == 1
+    assert part2["end_page"] == 11
+    assert ch_saper["level"] == 2
+    assert by_idx[ch_saper["parent_section_index"]]["title"] == part2["title"]
+    assert khatime["level"] == 1
+    assert khatime["parent_section_index"] is None
+
+
+def test_running_headers_detected_after_page_numbers_and_book_title_filtered():
+    pages = [
+        _mk_page(1, "# ياقۇببەگ ھاكىمىيىتى توغرىسىدا", content_page_number=None),
+        _mk_page(
+            2,
+            "1\n\n[Header] ياقۇببەگ ھاكىمىيىتى توغرىسىدا\n\n## 1. ئومۇمىي ئەھۋال\n\nمەزمۇن 1.",
+            content_page_number="1",
+        ),
+        _mk_page(
+            3,
+            "2\n\n# ياقۇببەگ ھاكىمىيىتى توغرىسىدا\n\n## 2. خۇلاسە\n\nمەزمۇن 2.",
+            content_page_number="2",
+        ),
+        _mk_page(
+            4,
+            "3\n\nمەزمۇن 3.\n\n# ياقۇببەگ ھاكىمىيىتى توغرىسىدا",
+            content_page_number="3",
+        ),
+    ]
+    sections = extract_book_sections(pages, book_title="ياقۇببەگ ھاكىمىيىتى توغرىسىدا")
+    titles = [s["title"] for s in sections]
+    assert "ياقۇببەگ ھاكىمىيىتى توغرىسىدا" not in titles
+    assert "1. ئومۇمىي ئەھۋال" in titles
+    assert "2. خۇلاسە" in titles
+
+
+def test_chapter_running_headers_do_not_wipe_out_real_chapter_section():
+    pages = [
+        _mk_page(
+            1,
+            "# بىرىنچى باب\n\nبىرىنچى بابنىڭ باشلىنىش تېكىستى.",
+            content_page_number="1",
+        ),
+        *[
+            _mk_page(
+                i,
+                f"[Header] بىرىنچى باب\n\nبۇ {i}-بەتنىڭ مەزمۇنى.",
+                content_page_number=str(i),
+            )
+            for i in range(2, 8)
+        ],
+        _mk_page(
+            8,
+            "# تارىخىي شەرت-شارائىت\n\nئىككىنچى بۆلەكنىڭ باشلىنىش تېكىستى.",
+            content_page_number="8",
+        ),
+        *[
+            _mk_page(
+                i,
+                f"[Header] تارىخىي شەرت-شارائىت\n\nبۇ {i}-بەتنىڭ مەزمۇنى.",
+                content_page_number=str(i),
+            )
+            for i in range(9, 15)
+        ],
+    ]
+    sections = extract_book_sections(pages)
+    titles = [s["title"] for s in sections]
+    assert "بىرىنچى باب" in titles
+    assert "تارىخىي شەرت-شارائىت" in titles
+
+
+@pytest.mark.asyncio
+async def test_colophon_pipe_page_not_parsed_as_toc_and_healed_on_reprocess():
+    from unittest.mock import AsyncMock, MagicMock
+    from app.services.book_structure_service import BookStructureService
+    from app.utils.text import is_colophon_page, is_toc_page, parse_toc_entries
+
+    colophon_text = (
+        "| مەسئۇل مۇھەررىر : ئەخمەتجان ھوشۇر | 1 |\n"
+        "| ئادرېسى : بېيجىڭ شەھىرى خېپىڭلى شىمالىي كوچا | 14 |\n"
+        "| پوچتا نومۇرى : 1000 | 13 |\n"
+        "| تېلېفون نومۇرى : 010-6429 | 62 |\n"
+        "| نەشرى : 2010-يىل 8-ئايدا 1-قېتىم نەشر قىلىندى | 2010 |\n"
+        "| بېسىلىشى : 2014-يىل 3-ئايدا بېسىلدى | 2014 |\n"
+        "| ئۆلچىمى : 880x1230 م م . 32 كەسلەم | 32 |\n"
+        "| باسما تاۋىقى : 14 | 125 |\n"
+        "| باھاسى : 45.00 يۈەن | 45 |"
+    )
+    assert is_colophon_page(colophon_text) is True
+    assert is_toc_page(colophon_text) is False
+    assert parse_toc_entries(colophon_text) == []
+
+    # Verify BookStructureService heals a stale auto-detected is_toc=True on a colophon page
+    body_p = _mk_page(1, "تارىخىي رومان تېكىستى داۋاملىشىدۇ.")
+    stale_colophon_p = _mk_page(2, colophon_text, is_toc=True)
+    stale_colophon_p.updated_by = "surya_local"
+
+    mock_session = AsyncMock()
+    mock_book = MagicMock(id="b1", title="باھادىرنامە", content_page_offset=0)
+    mock_session.get = AsyncMock(return_value=mock_book)
+
+    svc = BookStructureService(mock_session)
+    svc.pages_repo = MagicMock(
+        find_by_book=AsyncMock(return_value=[body_p, stale_colophon_p])
+    )
+    svc.sections_repo = MagicMock(
+        replace_for_book=AsyncMock(return_value=[MagicMock()])
+    )
+
+    await svc._run_analyze_and_persist("b1")
+    assert stale_colophon_p.is_toc is False
+    persisted_sections = svc.sections_repo.replace_for_book.call_args.args[1]
+    assert all("پوچتا نومۇرى" not in s["title"] for s in persisted_sections)

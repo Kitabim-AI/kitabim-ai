@@ -193,6 +193,28 @@ class OcrWorkDir:
     def image_path(self, page_number: int) -> Path:
         return self.path / "pages" / f"{page_number:04d}.png"
 
+    def clear_images(self) -> int:
+        """Delete cached rendered page image files under pages/, keeping
+        book.json, pages.json, and source_pdf intact."""
+        pages_dir = self.path / "pages"
+        if not pages_dir.is_dir():
+            return 0
+        removed = 0
+        with self._ensure_lock():
+            for entry in pages_dir.iterdir():
+                if entry.is_file() and entry.suffix.lower() in (
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".webp",
+                ):
+                    try:
+                        entry.unlink()
+                        removed += 1
+                    except OSError:
+                        pass
+        return removed
+
     def get_page(self, page_number: int) -> PageState:
         return self._pages[page_number]
 

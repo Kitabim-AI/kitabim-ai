@@ -212,3 +212,39 @@ async def test_stale_watchdog_reset_stale_books():
 
         assert mock_session.execute.call_count == 4
         mock_session.commit.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_stale_watchdog_sql_recovers_idle_claimed_chunking_and_embedding_books():
+    from sqlalchemy.dialects import postgresql
+
+    mock_redis = AsyncMock()
+    mock_redis.scan.return_value = (0, [])
+    ctx = {"redis": mock_redis}
+
+    with patch("app.db.session.async_session_factory") as mock_session_factory:
+        mock_session = AsyncMock()
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+        mock_session.execute.side_effect = [
+            _mock_empty(),
+            _mock_empty(),
+            _mock_empty(),
+            _mock_empty(),
+        ]
+
+        await run_stale_watchdog(ctx)
+
+        book_update_stmt = mock_session.execute.call_args_list[3].args[0]
+        compiled_sql = str(
+            book_update_stmt.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        )
+        assert (
+            "books.chunking_milestone = 'idle' AND books.chunking_claimed_at IS NOT NULL"
+            in compiled_sql
+        )
+        assert (
+            "books.embedding_milestone = 'idle' AND books.embedding_claimed_at IS NOT NULL"
+            in compiled_sql
+        )

@@ -90,6 +90,7 @@ async def test_chat_stream_endpoint_uses_chat_orchestrator():
     async def mock_stream_response(*args, **kwargs):
         yield {"type": "chunk", "text": "بىرىنچى"}
         yield {"type": "chunk", "text": "ئىككىنچى"}
+        yield {"type": "correction", "text": "بىرىنچى ئىككىنچى [1-بەت](ref:book-abc:1)"}
         yield {
             "type": "done",
             "eval_id": 42,
@@ -121,6 +122,21 @@ async def test_chat_stream_endpoint_uses_chat_orchestrator():
     assert len(chunks) > 0
     assert f"data: {json.dumps({'chunk': 'بىرىنچى'})}\n\n" in chunks
     assert f"data: {json.dumps({'chunk': 'ئىككىنچى'})}\n\n" in chunks
+    assert (
+        f"data: {json.dumps({'correction': 'بىرىنچى ئىككىنچى [1-بەت](ref:book-abc:1)'})}\n\n"
+        in chunks
+    )
+    done_payloads = [
+        json.loads(c.removeprefix("data: ").strip())
+        for c in chunks
+        if c.startswith("data: ") and '"done"' in c
+    ]
+    assert len(done_payloads) == 1
+    assert done_payloads[0]["usage"] == {
+        "usage": 1,
+        "limit": 10,
+        "hasReachedLimit": False,
+    }
 
 
 @pytest.mark.asyncio
@@ -218,3 +234,138 @@ async def test_list_conversation_messages_endpoint_returns_cost_and_feedback():
     }
     assert res["messages"][1]["feedback"] == "positive"
     assert res["messages"][1]["evalId"] == 10
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_cached_sample_question_skips_usage_increment_and_allows_limit_bypass():
+    setup_paths()
+    from api.endpoints.chat_router import chat_with_book_stream
+    from app.models.schemas import ChatRequest
+    from app.models.user import User
+    import json
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock(spec=User)
+    mock_user.id = "user-123"
+    mock_user.role = "reader"
+
+    req = ChatRequest(
+        book_id="global",
+        question="يۈسۈپ خاس ھاجىپ كىم؟",
+        from_sample_question=True,
+        sample_eval_id=55,
+        history=[],
+    )
+
+    mock_usage = {"usage": 20, "limit": 20, "has_reached_limit": True}
+    mock_limit_service = AsyncMock()
+    mock_limit_service.get_user_usage_status.return_value = mock_usage
+    mock_limit_service.increment_usage = AsyncMock()
+
+    async def mock_stream_response(dto, _session):
+        assert dto.from_sample_question is True
+        assert dto.sample_eval_id == 55
+        yield {"type": "chunk", "text": "ساقلانغان جاۋاب"}
+        yield {
+            "type": "done",
+            "eval_id": None,
+            "conversation_id": "conv-cached-1",
+            "used_book_ids": ["book-1"],
+            "cost": {"input_tokens": 1800, "output_tokens": 420, "cost_usd": 0.00068},
+            "cached": True,
+        }
+
+    mock_orchestrator = MagicMock()
+    mock_orchestrator.stream_response = mock_stream_response
+
+    chunks = []
+    with (
+        patch("api.endpoints.chat_router.chat_limit_service", mock_limit_service),
+        patch(
+            "api.endpoints.chat_router.RAGEvaluationsRepository.get_qualifying_sample_evaluation",
+            AsyncMock(return_value=MagicMock(id=55)),
+        ),
+        patch(
+            "api.endpoints.chat_router.ChatOrchestrator",
+            return_value=mock_orchestrator,
+        ),
+    ):
+        response = await chat_with_book_stream(
+            req=req,
+            request=MagicMock(),
+            current_user=mock_user,
+            session=mock_session,
+        )
+        async for item in response.body_iterator:
+            chunks.append(item)
+
+    mock_limit_service.increment_usage.assert_not_awaited()
+    done_payloads = [
+        json.loads(c.removeprefix("data: ").strip())
+        for c in chunks
+        if c.startswith("data: ") and '"done"' in c
+    ]
+    assert len(done_payloads) == 1
+    assert done_payloads[0]["cached"] is True
+    assert done_payloads[0]["cost"] == {
+        "inputTokens": 1800,
+        "outputTokens": 420,
+        "costUsd": 0.00068,
+    }
+    assert done_payloads[0]["conversationId"] == "conv-cached-1"
+
+
+@pytest.mark.asyncio
+async def test_list_conversation_messages_endpoint_returns_cached_sample_cost_from_agent_steps():
+    setup_paths()
+    from api.endpoints.chat_router import list_conversation_messages_endpoint
+    from app.models.user import User
+    from datetime import datetime, timezone
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock(spec=User)
+    mock_user.id = "user-123"
+
+    mock_conv = MagicMock()
+    mock_conv.id = "conv-cached"
+    mock_conv.user_id = "user-123"
+
+    mock_msg = MagicMock()
+    mock_msg.id = "msg-cached-model"
+    mock_msg.conversation_id = "conv-cached"
+    mock_msg.role = "model"
+    mock_msg.content = "ساقلانغان جاۋاب"
+    mock_msg.agent_steps = {
+        "cached_sample_eval_id": 55,
+        "llm_calls": 0,
+        "tools": [],
+        "cost": {"input_tokens": 1800, "output_tokens": 420, "cost_usd": 0.00068},
+    }
+    mock_msg.used_book_ids = ["book-1"]
+    mock_msg.current_page = None
+    mock_msg.eval_id = None
+    mock_msg.evaluation = None
+    mock_msg.created_at = datetime(2026, 9, 13, 12, 0, 1, tzinfo=timezone.utc)
+
+    with (
+        patch(
+            "app.db.repositories.conversation_repository.ConversationRepository.get_conversation",
+            AsyncMock(return_value=mock_conv),
+        ),
+        patch(
+            "app.db.repositories.conversation_repository.ConversationRepository.get_conversation_messages",
+            AsyncMock(return_value=[mock_msg]),
+        ),
+    ):
+        res = await list_conversation_messages_endpoint(
+            conversation_id="conv-cached",
+            limit=100,
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert res["messages"][0]["cost"] == {
+        "inputTokens": 1800,
+        "outputTokens": 420,
+        "costUsd": 0.00068,
+    }

@@ -1,6 +1,8 @@
 """Service for maintaining book-level milestone status based on page milestones."""
 
-from sqlalchemy import select, func, case
+from typing import Any, Optional
+
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.pipeline import (
     BOOK_MILESTONE_ATTR_BY_STEP,
@@ -11,10 +13,50 @@ from app.core.pipeline import (
     BOOK_MILESTONE_PARTIAL_FAILURE,
     FAILED_PAGE_MILESTONES,
     PAGE_MILESTONE_ATTR_BY_STEP,
+    PAGE_MILESTONE_COMPLETE,
     PAGE_MILESTONE_IN_PROGRESS,
     STEP_DONE_MILESTONE_BY_STEP,
 )
 from app.db.models import Book, Page
+
+
+def ready_or_current_pipeline_step():
+    """SQL expression preserving `'ready'` `pipeline_step` when `Book.status == 'ready'`."""
+    return case(
+        (Book.status == "ready", "ready"),
+        else_=Book.pipeline_step,
+    )
+
+
+async def complete_book_embedding_milestone(
+    session: AsyncSession,
+    book_id: str,
+    *,
+    extra_book_values: Optional[dict[str, Any]] = None,
+) -> None:
+    """Mark all OCR-complete pages indexed and transition `Book.embedding_milestone` to `'complete'`."""
+    await session.execute(
+        update(Page)
+        .where(
+            Page.book_id == book_id,
+            Page.ocr_milestone == PAGE_MILESTONE_COMPLETE,
+        )
+        .values(
+            embedding_milestone="succeeded",
+            is_indexed=True,
+            last_updated=func.now(),
+        )
+    )
+    book_values: dict[str, Any] = {
+        "embedding_milestone": BOOK_MILESTONE_COMPLETE,
+        "embedding_retry_count": 0,
+        "embedding_claimed_at": None,
+        "pipeline_step": ready_or_current_pipeline_step(),
+        "last_updated": func.now(),
+    }
+    if extra_book_values:
+        book_values.update(extra_book_values)
+    await session.execute(update(Book).where(Book.id == book_id).values(**book_values))
 
 
 class BookMilestoneService:

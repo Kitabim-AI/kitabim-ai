@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QuestionRotator } from '../../../components/common/QuestionRotator';
 import { PersistenceService } from '../../../services/persistenceService';
@@ -37,5 +37,19 @@ describe('QuestionRotator', () => {
       expect(screen.getByText('ئەڭ يېڭى جاۋاب بېرىلگەن سوئاللار')).toBeInTheDocument();
       expect(screen.getByText('ئەڭ يېڭى سوئال 1')).toBeInTheDocument();
     });
+  });
+
+  it('passes question text and original eval id when clicking a featured question item', async () => {
+    const onQuestionClick = vi.fn();
+    (PersistenceService.getFeaturedQuestions as any).mockResolvedValue([
+      { id: 88, question: 'مەھمۇد قەشقەرى كىم؟' },
+    ]);
+
+    render(<QuestionRotator onQuestionClick={onQuestionClick} />);
+
+    const questionEl = await screen.findByText('مەھمۇد قەشقەرى كىم؟');
+    fireEvent.click(questionEl);
+
+    expect(onQuestionClick).toHaveBeenCalledWith('مەھمۇد قەشقەرى كىم؟', 88);
   });
 });

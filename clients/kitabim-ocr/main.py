@@ -10,7 +10,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from backfill import run_backfill
+from backfill import (
+    list_skipped_books,
+    run_backfill,
+    skip_book_locally,
+    unskip_book_locally,
+)
 from engine.workdir import OcrWorkDir
 from kitabim_client.api import KitabimClient
 from kitabim_client.auth import login_and_save
@@ -38,6 +43,43 @@ def cmd_login(base_url: str | None = None, provider: str = "google") -> None:
     )
 
 
+def _resolve_work_root() -> Path:
+    work_dir = os.environ.get("KITABIM_WORK_DIR")
+    if not work_dir:
+        raise SystemExit("KITABIM_WORK_DIR environment variable is required")
+    return Path(work_dir).expanduser()
+
+
+def cmd_skip(book_ids: list[str], reason: str | None = None) -> list[dict]:
+    load_dotenv(DOTENV_PATH)
+    work_root = _resolve_work_root()
+    entries: list[dict] = []
+    for raw_id in book_ids:
+        bid = str(raw_id).strip()
+        if not bid:
+            continue
+        entry = skip_book_locally(work_root, bid, reason=reason)
+        entries.append(entry)
+        print(f"Skipped book locally: {bid}")
+    return entries
+
+
+def cmd_unskip(book_ids: list[str]) -> list[str]:
+    load_dotenv(DOTENV_PATH)
+    work_root = _resolve_work_root()
+    removed: list[str] = []
+    for raw_id in book_ids:
+        bid = str(raw_id).strip()
+        if not bid:
+            continue
+        if unskip_book_locally(work_root, bid):
+            removed.append(bid)
+            print(f"Restored skipped book: {bid}")
+        else:
+            print(f"Book was not in local skip list: {bid}")
+    return removed
+
+
 def cmd_backfill(
     *,
     book_id: str | None = None,
@@ -48,19 +90,36 @@ def cmd_backfill(
     engine: str | None = None,
     concurrency: int | None = None,
     base_url: str | None = None,
+    skip_books: list[str] | None = None,
+    unskip_books: list[str] | None = None,
+    list_skipped: bool = False,
 ) -> list[dict]:
     load_dotenv(DOTENV_PATH)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    work_root = _resolve_work_root()
+    for bid in unskip_books or []:
+        if str(bid).strip():
+            unskip_book_locally(work_root, str(bid).strip())
+    for bid in skip_books or []:
+        if str(bid).strip():
+            skip_book_locally(work_root, str(bid).strip())
+
+    if list_skipped:
+        entries = list_skipped_books(work_root)
+        if not entries:
+            print("No locally skipped books.")
+        else:
+            for idx, item in enumerate(entries, start=1):
+                title = item.get("title") or "—"
+                print(f"{idx}. {item['book_id']} ({title})")
+        return entries
+
     effective_base_url = base_url or os.environ.get("KITABIM_BASE_URL")
     if not effective_base_url:
         raise SystemExit("KITABIM_BASE_URL environment variable is required")
-    work_dir = os.environ.get("KITABIM_WORK_DIR")
-    if not work_dir:
-        raise SystemExit("KITABIM_WORK_DIR environment variable is required")
-    work_root = Path(work_dir).expanduser()
     client = KitabimClient(
         base_url=effective_base_url,
         config_path=DEFAULT_CONFIG_PATH,
@@ -78,6 +137,7 @@ def cmd_backfill(
             engine=engine,
             concurrency=concurrency,
             audit_log_path=audit_path,
+            skip_book_ids=skip_books,
         )
     )
 
@@ -134,12 +194,14 @@ def cmd_push(workdir_path: Path, base_url: str) -> None:
             workdir.uploaded = True
             workdir.uploaded_at = time.time()
             workdir.save_metadata()
+            workdir.clear_images()
     else:
         for page in workdir.all_pages():
             client.push_page_correction(workdir.book_id, page)
         workdir.uploaded = True
         workdir.uploaded_at = time.time()
         workdir.save_metadata()
+        workdir.clear_images()
         result = {"status": "corrections_pushed", "count": len(workdir.all_pages())}
     print(result)
 
@@ -156,7 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--concurrency",
         type=int,
         default=None,
-        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya)",
+        help="Number of pages to process concurrently (default: configured in .env or 4; max 8 for Surya)",
     )
     sub = parser.add_subparsers(dest="command", required=False)
 
@@ -178,7 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--concurrency",
         type=int,
         default=argparse.SUPPRESS,
-        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya)",
+        help="Number of pages to process concurrently (default: configured in .env or 4; max 8 for Surya)",
     )
 
     preview_parser = sub.add_parser(
@@ -216,6 +278,23 @@ def build_parser() -> argparse.ArgumentParser:
     backfill_parser.add_argument("--audit-log", default=None)
     backfill_parser.add_argument("--base-url", default=None)
     backfill_parser.add_argument(
+        "--skip-book",
+        action="append",
+        default=None,
+        help="Persistently skip book ID(s) locally in $KITABIM_WORK_DIR/skipped_books.json (zero server changes)",
+    )
+    backfill_parser.add_argument(
+        "--unskip-book",
+        action="append",
+        default=None,
+        help="Remove book ID(s) from the local skipped_books.json list",
+    )
+    backfill_parser.add_argument(
+        "--list-skipped",
+        action="store_true",
+        help="List locally skipped books from $KITABIM_WORK_DIR/skipped_books.json and exit",
+    )
+    backfill_parser.add_argument(
         "--engine",
         choices=["surya"],
         default=argparse.SUPPRESS,
@@ -225,8 +304,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--concurrency",
         type=int,
         default=argparse.SUPPRESS,
-        help="Number of pages to process concurrently (default: configured in .env or 4; max 4 for Surya)",
+        help="Number of pages to process concurrently (default: configured in .env or 4; max 8 for Surya)",
     )
+
+    skip_parser = sub.add_parser(
+        "skip",
+        help="Locally skip one or more book IDs from OCR backfill without modifying server data",
+    )
+    skip_parser.add_argument("book_ids", nargs="+", help="Book ID(s) to skip locally")
+    skip_parser.add_argument(
+        "--reason", default=None, help="Optional local note/reason"
+    )
+
+    unskip_parser = sub.add_parser(
+        "unskip",
+        help="Remove one or more book IDs from the local OCR skip list",
+    )
+    unskip_parser.add_argument("book_ids", nargs="+", help="Book ID(s) to unskip")
 
     return parser
 
@@ -247,6 +341,10 @@ def main() -> None:
         cmd_push(Path(args.workdir), args.base_url)
     elif command == "login":
         cmd_login(base_url=args.base_url, provider=args.provider)
+    elif command == "skip":
+        cmd_skip(args.book_ids, reason=args.reason)
+    elif command == "unskip":
+        cmd_unskip(args.book_ids)
     elif command == "backfill":
         cmd_backfill(
             book_id=args.book_id,
@@ -257,6 +355,9 @@ def main() -> None:
             engine=engine,
             concurrency=concurrency,
             base_url=args.base_url,
+            skip_books=args.skip_book,
+            unskip_books=args.unskip_book,
+            list_skipped=args.list_skipped,
         )
 
 

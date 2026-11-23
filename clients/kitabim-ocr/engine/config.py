@@ -7,13 +7,20 @@ DEFAULT_OCR_ENGINE = "surya"
 SUPPORTED_OCR_ENGINES = ("surya",)
 OcrEngineName = Literal["surya"]
 DEFAULT_OCR_CONCURRENCY = 4
-MAX_SURYA_CONCURRENCY = 4
+MAX_SURYA_CONCURRENCY = 8
 DEFAULT_OCR_PAGE_TIMEOUT: float = 120.0
 DEFAULT_OCR_MAX_RETRIES: int = 2
 DEFAULT_SURYA_MAX_TOKENS_FULL_PAGE: int = 2500
 DEFAULT_OCR_PAGE_ZOOM_FACTOR: float = 3.0
 DEFAULT_OCR_BLEED_THROUGH_SUPPRESSION: bool = True
 DEFAULT_OCR_DOT_ENHANCEMENT: bool = True
+DEFAULT_OCR_WAVE_BATCHING: bool = True
+DEFAULT_SURYA_INFERENCE_LOGPROBS: str = "false"
+DEFAULT_SURYA_INFERENCE_PARALLEL: str = "8"
+DEFAULT_SURYA_INFERENCE_CTX_PER_SLOT: str = "6144"
+DEFAULT_LLAMA_CPP_EXTRA_ARGS: str = (
+    "-fa on -b 4096 -ub 2048 --cache-ram 0 --no-cache-prompt -lv 1"
+)
 
 
 def get_configured_engine(default: str = DEFAULT_OCR_ENGINE) -> str:
@@ -182,3 +189,26 @@ def is_dot_enhancement_enabled(
         return default
     val = str(raw).strip().lower()
     return val not in ("false", "0", "no", "off", "disable", "disabled")
+
+
+def is_wave_batching_enabled(
+    default: bool = DEFAULT_OCR_WAVE_BATCHING,
+) -> bool:
+    """Read whether synchronized wave batching + CPU double-buffering is enabled."""
+    raw = os.environ.get("KITABIM_OCR_WAVE_BATCHING") or os.environ.get(
+        "OCR_WAVE_BATCHING"
+    )
+    if raw is None or not str(raw).strip():
+        return default
+    val = str(raw).strip().lower()
+    return val not in ("false", "0", "no", "off", "disable", "disabled")
+
+
+def apply_surya_inference_defaults() -> None:
+    """Apply lossless Surya 2.5 / llama-server runtime throughput defaults if unset."""
+    os.environ.setdefault("SURYA_INFERENCE_LOGPROBS", DEFAULT_SURYA_INFERENCE_LOGPROBS)
+    os.environ.setdefault("SURYA_INFERENCE_PARALLEL", DEFAULT_SURYA_INFERENCE_PARALLEL)
+    os.environ.setdefault(
+        "SURYA_INFERENCE_CTX_PER_SLOT", DEFAULT_SURYA_INFERENCE_CTX_PER_SLOT
+    )
+    os.environ.setdefault("LLAMA_CPP_EXTRA_ARGS", DEFAULT_LLAMA_CPP_EXTRA_ARGS)

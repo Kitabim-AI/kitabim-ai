@@ -204,6 +204,14 @@
     "subtab_completed": "Already Backfilled Books",
     "history_title": "Already Backfilled Production Books",
     "empty_history": "No backfilled books found yet",
-    "badge_skipped": "Skipped"
+    "badge_skipped": "Skipped",
+    "btn_skip_book": "Skip",
+    "btn_unskip_book": "Unskip",
+    "stat_skipped_books": "Skipped: {count}",
+    "skipped_title": "Locally Skipped Books",
+    "skipped_subtitle": "These books are untouched on the server and excluded only from local OCR on this computer.",
+    "empty_skipped": "No locally skipped books",
+    "btn_back_to_all": "Back to All Books",
+    "skip_tooltip": "Skip locally without modifying server data"
   }
 }

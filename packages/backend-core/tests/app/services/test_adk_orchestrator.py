@@ -1889,7 +1889,8 @@ async def test_stream_response_non_page_finding_exact_phrase_still_synthesizes_a
         "app.services.chat.orchestrator._grade_context",
         return_value=("king Babur ruled here", 1, 1),
     ) as mock_grade, patch(
-        "app.services.chat.orchestrator.analyze_query_signals"
+        "app.services.chat.orchestrator.analyze_query_signals",
+        AsyncMock(return_value={"intent": "passage"}),
     ) as mock_analyze:
         orchestrator = ChatOrchestrator(session_service=None)
         dto = ChatRequestDTO(
@@ -1903,7 +1904,7 @@ async def test_stream_response_non_page_finding_exact_phrase_still_synthesizes_a
             event async for event in orchestrator.stream_response(dto, db_session)
         ]
 
-    mock_analyze.assert_not_called()
+    mock_analyze.assert_awaited_once()
     mock_grade.assert_called_once()
     graded_observations = mock_grade.call_args.args[0]
     assert graded_observations == [observation]
@@ -2188,7 +2189,10 @@ async def test_stream_response_short_work_lookup_miss_falls_through_to_exact_phr
     ), patch(
         "app.services.chat.orchestrator._grade_context",
         return_value=("", 0, 0),
-    ), patch("app.services.chat.orchestrator.analyze_query_signals") as mock_analyze:
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        AsyncMock(return_value={"intent": "passage"}),
+    ) as mock_analyze:
         orchestrator = ChatOrchestrator(session_service=None)
         dto = ChatRequestDTO(
             question="«ئۇچراشقاندا» ناملىق شېئىرنى تېپىپ بەر",
@@ -2200,8 +2204,8 @@ async def test_stream_response_short_work_lookup_miss_falls_through_to_exact_phr
         [event async for event in orchestrator.stream_response(dto, db_session)]
 
     mock_resolve.assert_awaited_once()
+    mock_analyze.assert_awaited_once()
     mock_run_exact_phrase.assert_awaited_once()
-    mock_analyze.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -2495,6 +2499,7 @@ async def test_answer_falls_back_to_page_hits_text_when_no_chunks(monkeypatch):
 
 def test_resolve_catalog_shortcut_author_of_single_match():
     signals = {
+        "intent": "catalog",
         "catalog_subtype": "author_of",
         "has_title": True,
         "matched_books": [
@@ -2518,6 +2523,7 @@ def test_resolve_catalog_shortcut_author_of_multi_volume_same_title_still_matche
     is still an unambiguous single match as long as every row shares the
     same title."""
     signals = {
+        "intent": "catalog",
         "catalog_subtype": "author_of",
         "has_title": True,
         "matched_books": [
@@ -2580,6 +2586,7 @@ def test_resolve_catalog_shortcut_author_of_missing_author_returns_none():
 
 def test_resolve_catalog_shortcut_books_by_match():
     signals = {
+        "intent": "catalog",
         "catalog_subtype": "books_by",
         "has_author": True,
         "matched_author_books": [
@@ -2601,6 +2608,50 @@ def test_resolve_catalog_shortcut_books_by_match():
     }
     match = _resolve_catalog_shortcut(signals)
     assert match == {"subtype": "books_by", "books": signals["matched_author_books"]}
+
+
+def test_resolve_catalog_shortcut_rejects_non_catalog_intent():
+    """Production bug regression: Stage 1.5 calls get_books_by_author on author-scoped
+    passage questions ('What views did Erkin Sidick express about President Trump?').
+    Even if catalog_subtype='books_by' leaks onto intent='passage', _resolve_catalog_shortcut
+    must NEVER dump the author's book list."""
+    signals = {
+        "intent": "passage",
+        "catalog_subtype": "books_by",
+        "has_author": True,
+        "matched_author_books": [
+            {
+                "id": "book-1",
+                "title": "دوكتور ئەركىن سىدىق بىلەن سۆھبەت",
+                "author": "ئەركىن سىدىق",
+            }
+        ],
+    }
+    assert _resolve_catalog_shortcut(signals) is None
+
+
+def test_resolve_catalog_shortcut_rejects_author_opinion_question_even_if_misclassified_as_catalog():
+    """Even if Stage 1.5 misclassifies intent='catalog' on an author opinion/topic question,
+    the topic/opinion guard must veto the books_by shortcut."""
+    signals = {
+        "intent": "catalog",
+        "catalog_subtype": "books_by",
+        "has_author": True,
+        "matched_author_books": [
+            {
+                "id": "book-1",
+                "title": "دوكتور ئەركىن سىدىق بىلەن سۆھبەت",
+                "author": "ئەركىن سىدىق",
+            }
+        ],
+    }
+    assert (
+        _resolve_catalog_shortcut(
+            signals,
+            question="ئەركىن سىدىق پرېزىدېنت ترامپ ھەققىدە قانداق قاراشلارنى ئوتتۇرىغا قويغان؟",
+        )
+        is None
+    )
 
 
 def test_resolve_catalog_shortcut_books_by_no_match_returns_none():
@@ -3179,3 +3230,369 @@ def test_heuristic_regex_does_not_flag_uyghur_loanwords():
     ]
     for q in uyghur_queries:
         assert _HEURISTIC_PROBE_REGEX.search(q) is None
+
+
+@pytest.mark.asyncio
+async def test_stream_response_quoted_dictionary_routes_to_retrieval_agent():
+    """Quoted dictionary/Quran/catalog/identity queries must NOT be hijacked by
+    standalone exact_phrase_search — analyze_query_signals routes them to
+    KitabimRetrievalAgent so dictionary/Quran/KG tools can execute."""
+    db_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = []
+    db_session.execute.return_value = mock_result
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-qdict", user_id="user-1", book_id=None, is_global=True
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=201)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(return_value=_empty_async_gen())
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({"rag_reranker_enabled": "false"})
+    )
+
+    with _exact_phrase_orchestrator_patches(
+        conv_repo, eval_repo, mock_configs_repo, retrieval_runner, answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.InMemorySessionService",
+        return_value=AsyncMock(
+            create_session=AsyncMock(return_value=MagicMock(state={}))
+        ),
+    ), patch(
+        "app.services.chat.orchestrator.resolve_section_chunks",
+        AsyncMock(return_value=None),
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        AsyncMock(return_value={"intent": "dictionary"}),
+    ) as mock_analyze, patch(
+        "app.services.chat.orchestrator.run_exact_phrase_retrieval",
+        AsyncMock(),
+    ) as mock_exact, patch(
+        "app.services.chat.orchestrator.build_retrieval_agent",
+        return_value=MagicMock(),
+    ) as mock_build_retrieval, patch(
+        "app.services.chat.orchestrator.build_answer_agent",
+        return_value=MagicMock(),
+    ):
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="«مۇھەببەت» دېگەن سۆزنىڭ مەنىسى نېمە؟",
+            user_id="user-1",
+            book_id=None,
+            is_global=True,
+        )
+
+        events = [
+            event async for event in orchestrator.stream_response(dto, db_session)
+        ]
+
+    mock_analyze.assert_awaited_once()
+    mock_exact.assert_not_awaited()
+    mock_build_retrieval.assert_called_once()
+    planning_events = [e for e in events if e.get("type") == "planning"]
+    assert planning_events[0]["intent"] == "dictionary"
+
+
+@pytest.mark.asyncio
+async def test_stream_response_quoted_refusal_short_circuits():
+    """Quoted out-of-domain queries must still hit analyze_query_signals
+    guardrails and short-circuit instead of running exact_phrase_search."""
+    db_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = []
+    db_session.execute.return_value = mock_result
+
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-qref", user_id="user-1", book_id=None, is_global=True
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=202)
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({})
+    )
+
+    with patch(
+        "app.services.chat.orchestrator.ConversationRepository",
+        return_value=conv_repo,
+    ), patch(
+        "app.services.chat.orchestrator.SystemConfigsRepository",
+        return_value=mock_configs_repo,
+    ), patch(
+        "app.services.chat.orchestrator.RAGEvaluationsRepository",
+        return_value=eval_repo,
+    ), patch(
+        "app.services.chat.orchestrator.resolve_section_chunks",
+        AsyncMock(return_value=None),
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        AsyncMock(
+            return_value={
+                "intent": "refusal",
+                "guardrail": {"is_refusal": True, "reason": "out_of_domain"},
+            }
+        ),
+    ), patch(
+        "app.services.chat.orchestrator.run_exact_phrase_retrieval",
+        AsyncMock(),
+    ) as mock_exact:
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="«quicksort» كودىنى يېزىپ بەر",
+            user_id="user-1",
+            book_id=None,
+            is_global=True,
+        )
+
+        events = [
+            event async for event in orchestrator.stream_response(dto, db_session)
+        ]
+
+    mock_exact.assert_not_awaited()
+    event_types = [e.get("type") for e in events if isinstance(e, dict)]
+    assert event_types == ["planning", "answer_start", "chunk", "answer_end", "done"]
+
+
+def test_format_short_work_answer_with_dataclass_other_matches():
+    """other_matches on ShortWorkMatch is a tuple of ShortWorkMatch dataclasses
+    (not dicts); _format_short_work_answer must format them without AttributeError."""
+    from app.services.chat.orchestrator import _format_short_work_answer
+    from app.services.rag.toc_lookup_service import ShortWorkMatch
+
+    alt = ShortWorkMatch(
+        book_id="book-2",
+        title="ئىز",
+        text="alt poem text",
+        start_page=30,
+        end_page=31,
+        truncated=False,
+        book_title="شېئىرلار توپلىمى",
+        book_author="ئابدۇرېھىم ئۆتكۈر",
+        content_start_page="18",
+        content_end_page="19",
+    )
+    primary = ShortWorkMatch(
+        book_id="book-1",
+        title="ئىز",
+        text="primary poem text",
+        start_page=12,
+        end_page=12,
+        truncated=False,
+        book_title="ئۆمۈر مەنزىللىرى",
+        book_author="ئابدۇرېھىم ئۆتكۈر",
+        content_start_page="5",
+        content_end_page="5",
+        other_matches=(alt,),
+    )
+
+    formatted = _format_short_work_answer(primary)
+    assert "primary poem text" in formatted
+    assert "ref:book-1:12" in formatted
+    assert "ref:book-2:30,31" in formatted
+    assert "18–19-بەت" in formatted
+
+
+@pytest.mark.asyncio
+async def test_stream_response_emits_correction_event_when_citation_fixer_rewrites_answer():
+    """When fix_malformed_citations cleans up streamed citations, stream_response
+    must emit a correction event so the live UI matches the persisted DB answer."""
+    db_session = AsyncMock()
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-corr", user_id="user-1", book_id="book-1", is_global=False
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=203)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    async def _answer_gen(*args, **kwargs):
+        ev = MagicMock()
+        part = MagicMock()
+        part.text = "جاۋاب تېكىستى ref:book-1:10"
+        ev.content.parts = [part]
+        yield ev
+
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(side_effect=_answer_gen)
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({"rag_reranker_enabled": "false"})
+    )
+
+    with patch(
+        "app.services.chat.orchestrator.ConversationRepository",
+        return_value=conv_repo,
+    ), patch(
+        "app.services.chat.orchestrator.SystemConfigsRepository",
+        return_value=mock_configs_repo,
+    ), patch(
+        "app.services.chat.orchestrator.RAGEvaluationsRepository",
+        return_value=eval_repo,
+    ), patch(
+        "app.services.chat.orchestrator.BooksRepository",
+        return_value=AsyncMock(find_by_id=AsyncMock(return_value=None)),
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        AsyncMock(return_value={"intent": "open"}),
+    ), patch(
+        "app.services.chat.orchestrator.InMemorySessionService",
+        return_value=AsyncMock(
+            create_session=AsyncMock(return_value=MagicMock(state={}))
+        ),
+    ), patch(
+        "app.services.chat.orchestrator.Runner", return_value=retrieval_runner
+    ), patch(
+        "app.services.chat.orchestrator.InMemoryRunner", return_value=answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.build_retrieval_agent", return_value=MagicMock()
+    ), patch(
+        "app.services.chat.orchestrator.build_answer_agent", return_value=MagicMock()
+    ), patch(
+        "app.services.chat.orchestrator.fix_malformed_citations",
+        return_value="جاۋاب تېكىستى [10-بەت](ref:book-1:10)",
+    ):
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="بۇ كىتاب ھەققىدە مەلۇمات بېرىڭ",
+            user_id="user-1",
+            book_id="book-1",
+            is_global=False,
+        )
+
+        events = [
+            event async for event in orchestrator.stream_response(dto, db_session)
+        ]
+
+    correction_events = [e for e in events if e.get("type") == "correction"]
+    assert len(correction_events) == 1
+    assert correction_events[0]["text"] == "جاۋاب تېكىستى [10-بەت](ref:book-1:10)"
+
+
+@pytest.mark.asyncio
+async def test_stream_response_author_opinion_question_routes_to_retrieval_agent_not_books_by_shortcut():
+    """End-to-end regression test for:
+    'ئەركىن سىدىق پرېزىدېنت ترامپ ھەققىدە قانداق قاراشلارنى ئوتتۇرىغا قويغان؟'
+    Even if analyze_query_signals resolves matched_author_books and leaks
+    intent='catalog' / catalog_subtype='books_by', stream_response must normalize
+    intent to 'passage', skip the books_by catalog shortcut, and invoke
+    KitabimRetrievalAgent + KitabimAnswerAgent."""
+    db_session = AsyncMock()
+    conv_repo = AsyncMock()
+    conv_repo.get_conversation.return_value = None
+    conv_repo.create_conversation.return_value = Conversation(
+        id="conv-erkin", user_id="user-1", book_id=None, is_global=True
+    )
+    conv_repo.get_recent_messages.return_value = []
+    conv_repo.save_turn.return_value = (MagicMock(), MagicMock())
+
+    eval_repo = AsyncMock()
+    eval_repo.create_evaluation.return_value = MagicMock(id=301)
+
+    retrieval_runner = MagicMock()
+    retrieval_runner.run_async = MagicMock(return_value=_empty_async_gen())
+
+    async def _answer_gen(*args, **kwargs):
+        ev = MagicMock()
+        part = MagicMock()
+        part.text = "ئەركىن سىدىقنىڭ ترامپ ھەققىدىكى قاراشلىرى..."
+        ev.content.parts = [part]
+        yield ev
+
+    answer_runner = MagicMock()
+    answer_runner.run_async = MagicMock(side_effect=_answer_gen)
+
+    mock_configs_repo = AsyncMock()
+    mock_configs_repo.get_value = AsyncMock(
+        side_effect=_configs_get_value_side_effect({"rag_reranker_enabled": "false"})
+    )
+
+    mock_analyze = AsyncMock(
+        return_value={
+            "intent": "catalog",
+            "catalog_subtype": "books_by",
+            "has_author": True,
+            "matched_author_books": [
+                {
+                    "id": "book-erkin-1",
+                    "title": "دوكتور ئەركىن سىدىق بىلەن سۆھبەت",
+                    "author": "ئەركىن سىدىق",
+                    "total_pages": 357,
+                }
+            ],
+        }
+    )
+
+    with patch(
+        "app.services.chat.orchestrator.ConversationRepository",
+        return_value=conv_repo,
+    ), patch(
+        "app.services.chat.orchestrator.SystemConfigsRepository",
+        return_value=mock_configs_repo,
+    ), patch(
+        "app.services.chat.orchestrator.RAGEvaluationsRepository",
+        return_value=eval_repo,
+    ), patch(
+        "app.services.chat.orchestrator.analyze_query_signals",
+        mock_analyze,
+    ), patch(
+        "app.services.chat.orchestrator.InMemorySessionService",
+        return_value=AsyncMock(
+            create_session=AsyncMock(return_value=MagicMock(state={}))
+        ),
+    ), patch(
+        "app.services.chat.orchestrator.Runner", return_value=retrieval_runner
+    ), patch(
+        "app.services.chat.orchestrator.InMemoryRunner", return_value=answer_runner
+    ), patch(
+        "app.services.chat.orchestrator.build_retrieval_agent",
+        return_value=MagicMock(),
+    ) as mock_build_retrieval, patch(
+        "app.services.chat.orchestrator.build_answer_agent",
+        return_value=MagicMock(),
+    ) as mock_build_answer, patch(
+        "app.services.chat.orchestrator.fix_malformed_citations",
+        side_effect=lambda text: text,
+    ):
+        orchestrator = ChatOrchestrator(session_service=None)
+        dto = ChatRequestDTO(
+            question="ئەركىن سىدىق پرېزىدېنت ترامپ ھەققىدە قانداق قاراشلارنى ئوتتۇرىغا قويغان؟",
+            user_id="user-1",
+            book_id=None,
+            is_global=True,
+        )
+
+        _ = [event async for event in orchestrator.stream_response(dto, db_session)]
+
+    mock_build_retrieval.assert_called_once()
+    passed_signals = mock_build_retrieval.call_args.kwargs["intent_signals"]
+    assert passed_signals["intent"] == "passage"
+    assert passed_signals["catalog_subtype"] is None
+    mock_build_answer.assert_called_once()
+    saved_answer = conv_repo.save_turn.await_args.kwargs["answer"]
+    assert "كۈتۈپخانىمىزدىكى" not in saved_answer
+    assert "ترامپ ھەققىدىكى قاراشلىرى" in saved_answer

@@ -21,10 +21,14 @@ Defines shared Pydantic v2 data transfer objects (DTOs), API request/response sc
 - `[schemas.py:ContactSubmissionCreate]` — `class ContactSubmissionCreate(BaseModel)`: Public contact form request (`name`, `email`, `interest`, `message`).
 - `[schemas.py:ContactSubmissionPublic]` — `class ContactSubmissionPublic(BaseModel)`: Public acknowledgment response (`id`, `status`, `created_at`).
 - `[schemas.py:ContactSubmissionAdmin]` — `class ContactSubmissionAdmin(BaseModel)`: Admin view of a contact submission (`id`, `name`, `email`, `interest`, `message`, `status`, `admin_notes`, `reviewed_by`, `reviewed_at`, `created_at`).
+- `[schemas.py:ContactSubmissionUpdate]` — `class ContactSubmissionUpdate(BaseModel)`: Admin update payload for a contact submission (`status`, `admin_notes`).
 - `[schemas.py:RagQuestionAdmin]` — `class RagQuestionAdmin(BaseModel)`: Admin RAG evaluation and cost record (`id`, `question`, `is_global`, `book_id`, `book_title`, `user_id`, `user_display_name`, `is_first_turn`, `show_on_homepage`, `user_feedback`, `ts`, `eval_status`, `faithfulness_score`, `answer_relevance_score`, `context_precision_score`, `input_tokens`, `output_tokens`, `cost_usd`, `answer`, `retrieved_context`).
 - `[schemas.py:RagQuestionsPage]` — `class RagQuestionsPage(BaseModel)`: Offset/limit paginated RAG evaluation records (`items`, `total`, `offset`, `limit`).
 - `[schemas.py:RagQuestionToggle]` — `class RagQuestionToggle(BaseModel)`: Request payload to toggle `show_on_homepage`.
 - `[schemas.py:RagQuestionToggleResponse]` — `class RagQuestionToggleResponse(BaseModel)`: Response payload for `show_on_homepage` toggle (`id`, `show_on_homepage`).
+- `[schemas.py:FeaturedQuestionItem]` — `class FeaturedQuestionItem(BaseModel)`: Public homepage rotator question item (`id`, `question`).
+- `[schemas.py:ChatCostInfo]` — `class ChatCostInfo(BaseModel)`: Token usage and USD cost metadata (`input_tokens`, `output_tokens`, `cost_usd`).
+- `[schemas.py:FeaturedQuestionAnswerResponse]` — `class FeaturedQuestionAnswerResponse(BaseModel)`: Cached answer lookup response for homepage sample questions (`cached`, `eval_id`, `question`, `answer`, `used_book_ids`, `cost`).
 - `[schemas.py:ContentSearchHit]` — `class ContentSearchHit(BaseModel)`: Full-text page search hit (`id`, `book_id`, `book_title`, `book_author`, `book_volume`, `book_cover_url`, `page_number`, `snippet`, `rank`).
 - `[schemas.py:PaginatedContentHits]` — `class PaginatedContentHits(BaseModel)`: Paginated full-text content search response (`hits`, `total`, `page`, `page_size`).
 - `[user.py:UserRole]` — `class UserRole(str, Enum)`: User access role enum (`ADMIN = "admin"`, `EDITOR = "editor"`, `READER = "reader"`).

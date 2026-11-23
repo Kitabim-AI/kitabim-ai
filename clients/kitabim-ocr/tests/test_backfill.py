@@ -19,6 +19,26 @@ def _create_sample_pdf(path: Path, num_pages: int = 4) -> None:
     doc.close()
 
 
+def _make_wave_ocr_mock(per_page_fn):
+    """Wrap a per-page async OCR fake into ``ocr_prepared_wave_with_meta`` shape
+    so backfill tests exercise the default wave-batching production code path."""
+
+    async def _fake_wave(doc, prepared_items, predictor, *, doc_lock, **kwargs):
+        out = {}
+        for item in prepared_items:
+            with doc_lock:
+                fitz_page = doc.load_page(item.page_number - 1)
+            try:
+                out[item.page_number] = await per_page_fn(
+                    fitz_page, predictor, **kwargs
+                )
+            except Exception as exc:
+                out[item.page_number] = exc
+        return out
+
+    return _fake_wave
+
+
 def test_has_formatted_pipe_toc():
     assert (
         backfill.has_formatted_pipe_toc(
@@ -81,7 +101,10 @@ async def test_backfill_single_book_skips_cover_and_formatted_toc_and_dehyphenat
     audit_log = tmp_path / "backfill_audit.jsonl"
     with (
         patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
-        patch("backfill.ocr_page_with_meta", side_effect=_fake_ocr_with_meta),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_fake_ocr_with_meta),
+        ),
     ):
         entry = await backfill.backfill_single_book(
             "book-1",
@@ -143,7 +166,10 @@ async def test_backfill_single_book_reocrs_unformatted_toc_and_marks_failed_page
 
     with (
         patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
-        patch("backfill.ocr_page_with_meta", side_effect=_fake_ocr),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_fake_ocr),
+        ),
     ):
         entry = await backfill.backfill_single_book("book-2", client, tmp_path)
 
@@ -248,7 +274,10 @@ async def test_backfill_single_book_skips_secondary_calligraphy_title_pages(
 
     with (
         patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
-        patch("backfill.ocr_page_with_meta", side_effect=_fake_ocr),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_fake_ocr),
+        ),
     ):
         entry = await backfill.backfill_single_book("b-cover", client, tmp_path)
 
@@ -304,7 +333,10 @@ async def test_backfill_single_book_resumes_from_local_checkpoint_with_overlap(
 
     with (
         patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
-        patch("backfill.ocr_page_with_meta", side_effect=_crash_on_page_6),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_crash_on_page_6),
+        ),
     ):
         with pytest.raises(_SimulatedPowerLoss):
             await backfill.backfill_single_book(
@@ -341,7 +373,10 @@ async def test_backfill_single_book_resumes_from_local_checkpoint_with_overlap(
 
     with (
         patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
-        patch("backfill.ocr_page_with_meta", side_effect=_succeed_on_resume),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_succeed_on_resume),
+        ),
     ):
         entry = await backfill.backfill_single_book(
             "b-ckpt", client, tmp_path, concurrency=1, checkpoint_overlap=2
@@ -360,3 +395,278 @@ async def test_backfill_single_book_resumes_from_local_checkpoint_with_overlap(
     assert sent_pages[3].text == "داۋامى."
     # Workdir cleaned up after successful completion
     assert not ckpt_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_backfill_wave_batching_double_buffers_and_prefetches_next_book(
+    tmp_path: Path,
+):
+    from types import SimpleNamespace
+
+    client = MagicMock()
+
+    def _fake_download(book_id: str, dest: Path):
+        doc = fitz.open()
+        for i in range(5):
+            p = doc.new_page(width=300, height=400)
+            p.draw_rect(fitz.Rect(30, 40, 260, 180), fill=(0, 0, 0))
+        doc.save(dest)
+        doc.close()
+        return dest
+
+    client.download_book_pdf.side_effect = _fake_download
+    client.get_book_pages.side_effect = lambda bid: [
+        {"pageNumber": p, "text": f"Old {bid} p{p}", "isToc": False}
+        for p in range(1, 6)
+    ]
+    client.replace_book_ocr.return_value = {"pagesUpdated": 4, "pagesUnchanged": 1}
+    client.get_backfill_candidates.side_effect = [
+        {
+            "candidates": [
+                {"id": "wave-b1", "title": "Wave Book 1", "totalPages": 5},
+                {"id": "wave-b2", "title": "Wave Book 2", "totalPages": 5},
+            ],
+            "pending_index_books": 0,
+        },
+        {
+            "candidates": [
+                {"id": "wave-b2", "title": "Wave Book 2", "totalPages": 5},
+            ],
+            "pending_index_books": 0,
+        },
+        {"candidates": [], "pending_index_books": 0},
+    ]
+
+    wave_sizes: list[int] = []
+
+    def _fake_predictor(images, full_page=True):
+        wave_sizes.append(len(images))
+        out = []
+        for idx in range(len(images)):
+            blk = MagicMock()
+            blk.label = "Text"
+            blk.html = f"<p>Wave OCR text {idx + 1}</p>"
+            blk.reading_order = 0
+            blk.skipped = False
+            blk.error = False
+            blk.confidence = 0.98
+            blk.polygon = [[30.0, 40.0], [260.0, 40.0], [260.0, 180.0], [30.0, 180.0]]
+            out.append(SimpleNamespace(blocks=[blk]))
+        return out
+
+    with (
+        patch(
+            "backfill.get_recognition_predictor",
+            new=AsyncMock(return_value=_fake_predictor),
+        ),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+    ):
+        results = await backfill.run_backfill(
+            client, tmp_path, concurrency=2, max_server_backlog=3
+        )
+
+    assert len(results) == 2
+    # Each 5-page book skips p1 cover -> 4 pages OCR'd in two synchronized waves of 2
+    assert wave_sizes == [2, 2, 2, 2]
+    # Both books downloaded once each (wave-b2 reused prefetched PDF + existing_pages.json)
+    assert client.download_book_pdf.call_count == 2
+    assert client.get_book_pages.call_count == 2
+    assert not list(tmp_path.glob("backfill-*"))
+
+
+@pytest.mark.asyncio
+async def test_backfill_single_book_non_wave_path_when_wave_batching_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("KITABIM_OCR_WAVE_BATCHING", "0")
+    client = MagicMock()
+    client.download_book_pdf.side_effect = lambda b, dest: _create_sample_pdf(
+        dest, num_pages=2
+    )
+    client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "Cover", "isToc": False},
+        {"pageNumber": 2, "text": "Old p2", "isToc": False},
+    ]
+    client.replace_book_ocr.return_value = {"pagesUpdated": 1, "pagesUnchanged": 1}
+
+    async def _fake_single_page_ocr(fitz_page, predictor, **kwargs):
+        return PageOcrResult(
+            text="Non-wave page 2",
+            detected_page_number=1,
+            ended_with_hyphen=False,
+        )
+
+    with (
+        patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
+        patch(
+            "backfill.ocr_page_with_meta", side_effect=_fake_single_page_ocr
+        ) as mock_p,
+    ):
+        entry = await backfill.backfill_single_book("book-nowave", client, tmp_path)
+
+    assert entry["ocrd_pages"] == 1
+    assert mock_p.call_count == 1
+
+
+def test_local_skipped_books_persistence_and_manual_list_format(tmp_path: Path):
+    # Supports hand-edited plain JSON list of book IDs
+    (tmp_path / "skipped_books.json").write_text(
+        '["legacy-skip-1", "legacy-skip-2"]', encoding="utf-8"
+    )
+    loaded = backfill.load_skipped_books(tmp_path)
+    assert set(loaded.keys()) == {"legacy-skip-1", "legacy-skip-2"}
+
+    # Skipping a book also cleans up any unstarted prefetched directory
+    prefetch_dir = tmp_path / "backfill-skip-me"
+    prefetch_dir.mkdir(parents=True)
+    (prefetch_dir / "book.pdf").write_bytes(b"%PDF-1.4")
+
+    entry = backfill.skip_book_locally(
+        tmp_path,
+        "skip-me",
+        title="چوڭ لۇغەت",
+        author="ئاپتور",
+        total_pages=850,
+        reason="Scanned dictionary",
+    )
+    assert entry["book_id"] == "skip-me"
+    assert entry["title"] == "چوڭ لۇغەت"
+    assert entry["total_pages"] == 850
+    assert not prefetch_dir.exists()
+
+    ordered = backfill.list_skipped_books(tmp_path)
+    assert ordered[0]["book_id"] == "skip-me"
+    assert len(ordered) == 3
+
+    assert backfill.unskip_book_locally(tmp_path, "legacy-skip-1") is True
+    assert backfill.unskip_book_locally(tmp_path, "non-existent") is False
+    assert set(backfill.load_skipped_books(tmp_path).keys()) == {
+        "skip-me",
+        "legacy-skip-2",
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_backfill_excludes_locally_skipped_books_with_limit(tmp_path: Path):
+    backfill.skip_book_locally(tmp_path, "b-skip-1", title="Skip 1")
+
+    client = MagicMock()
+    client.get_backfill_candidates.return_value = {
+        "candidates": [
+            {"id": "b-skip-1", "title": "Skip 1", "totalPages": 100},
+            {"id": "b-skip-2", "title": "Skip 2", "totalPages": 200},
+            {"id": "b-process", "title": "Process Me", "totalPages": 30},
+        ],
+        "pending_index_books": 0,
+    }
+
+    with patch(
+        "backfill.backfill_single_book",
+        new=AsyncMock(return_value={"book_id": "b-process", "ocrd_pages": 29}),
+    ) as mock_single:
+        results = await backfill.run_backfill(
+            client,
+            tmp_path,
+            limit=1,
+            skip_book_ids=["b-skip-2"],
+        )
+
+    assert len(results) == 1
+    assert results[0]["book_id"] == "b-process"
+    mock_single.assert_awaited_once()
+    assert mock_single.await_args.args[0] == "b-process"
+    # Requested batch_limit accounted for the 2 skipped IDs so limit=1 did not starve
+    assert client.get_backfill_candidates.call_args.kwargs["limit"] == 3
+
+
+@pytest.mark.asyncio
+async def test_backfill_single_book_isolates_jbig2_render_error_and_completes_book(
+    tmp_path: Path,
+):
+    from types import SimpleNamespace
+
+    client = MagicMock()
+
+    def _fake_download(book_id: str, dest: Path):
+        doc = fitz.open()
+        for i in range(4):
+            p = doc.new_page(width=300, height=400)
+            p.draw_rect(fitz.Rect(30, 40 + i * 15, 260, 180 + i * 15), fill=(0, 0, 0))
+        doc.save(dest)
+        doc.close()
+        return dest
+
+    client.download_book_pdf.side_effect = _fake_download
+    client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "Cover", "isToc": False},
+        {"pageNumber": 2, "text": "Old page 2", "isToc": False},
+        {
+            "pageNumber": 3,
+            "text": "[OCR Error: code=3: cannot decode jbig2 globals]",
+            "isToc": False,
+        },
+        {"pageNumber": 4, "text": "Old page 4", "isToc": False},
+    ]
+    client.replace_book_ocr.return_value = {"pagesUpdated": 2, "pagesUnchanged": 2}
+
+    orig_open = fitz.open
+
+    def _open_with_corrupt_p3(*args, **kwargs):
+        real_doc = orig_open(*args, **kwargs)
+        orig_load = real_doc.load_page
+
+        def _load_page(idx: int):
+            p = orig_load(idx)
+            if idx == 2:  # 1-indexed page 3
+                bad = MagicMock(wraps=p)
+                bad.rect = p.rect
+                bad.get_pixmap.side_effect = RuntimeError(
+                    "code=3: cannot decode jbig2 globals"
+                )
+                return bad
+            return p
+
+        real_doc.load_page = _load_page  # type: ignore[method-assign]
+        return real_doc
+
+    def _fake_predictor(images, full_page=True):
+        out = []
+        for idx, _ in enumerate(images, start=1):
+            blk = SimpleNamespace(
+                label="Text",
+                html=f"<p>يېڭى تېكىست {idx}.</p>",
+                reading_order=0,
+                confidence=0.98,
+                skipped=False,
+                error=False,
+                polygon=[[30, 40], [260, 40], [260, 180], [30, 180]],
+            )
+            out.append(SimpleNamespace(blocks=[blk]))
+        return out
+
+    with (
+        patch("backfill.fitz.open", side_effect=_open_with_corrupt_p3),
+        patch("engine.recognize._try_render_page_with_pdfium", return_value=None),
+        patch("engine.recognize._is_phantom_bleed_through_block", return_value=False),
+        patch(
+            "backfill.get_recognition_predictor",
+            new=AsyncMock(return_value=_fake_predictor),
+        ),
+    ):
+        entry = await backfill.backfill_single_book(
+            "201472c91cbe", client, tmp_path, concurrency=2
+        )
+
+    assert entry["total_pages"] == 4
+    assert entry["ocrd_pages"] == 2
+    assert entry["skipped_pages"] == 1
+    assert entry["failed_pages"] == 1
+
+    sent_pages = client.replace_book_ocr.call_args.args[1]
+    assert sent_pages[0].skipped is True  # cover
+    assert sent_pages[1].skipped is False and "يېڭى تېكىست" in sent_pages[1].text
+    assert sent_pages[2].status == "failed"
+    assert sent_pages[2].skipped is True
+    assert "cannot decode jbig2 globals" in (sent_pages[2].error or "")
+    assert sent_pages[2].text == "[OCR Error: code=3: cannot decode jbig2 globals]"
+    assert sent_pages[3].skipped is False and "يېڭى تېكىست" in sent_pages[3].text

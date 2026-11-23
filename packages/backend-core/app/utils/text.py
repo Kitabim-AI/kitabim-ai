@@ -425,6 +425,61 @@ def clean_known_poem_text(text: str) -> str:
     return strip_page_numbers(text)
 
 
+_COLOPHON_PAGE_MARKERS = (
+    "مەسئۇل مۇھەررىر",
+    "مەسئۇل كوررېكتور",
+    "مۇقاۋا لايىھەلىگۈچى",
+    "تەخنىك مۇھەررىر",
+    "پوچتا نومۇرى",
+    "تېلېفون نومۇرى",
+    "باسما تاۋىقى",
+    "باسما تاۋاقى",
+    "كەسلەم",
+    "نەشر قىلغۇچى",
+    "باسقۇچى",
+    "ساتقۇچى",
+    "باسما زاۋۇتى",
+    "تىراژى",
+    "كىتاب نومۇرى",
+    "isbn",
+    "图书在版编目",
+    "cip 数据",
+    "责任编辑",
+    "印张",
+    "定价",
+)
+
+_COLOPHON_ENTRY_TITLE_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:"
+    r"(?:مەسئۇل\s+(?:مۇھەررىر|كوررېكتور)|مۇقاۋا\s+لايىھەلىگۈچى|تەخنىك\s+مۇھەررىر)"
+    r"|(?:نەشر\s+قىلغۇچى|ئادرېسى|ساتقۇچى|باسقۇچى|تارقاتقۇچى|نەشرى|بېسىلىشى|ئۆلچىمى|باھاسى|تىراژى|سۆز\s+سانى|كىتاب\s+نومۇرى)\s*[:：]"
+    r"|(?:پوچتا\s+نومۇرى|تېلېفون\s+نومۇرى|باسما\s+تاۋ[ىا]قى)\b"
+    r"|.*?\b(?:ISBN\b|图书在版编目|责任编辑|书号|定价|印张|字数)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def is_colophon_entry_title(title: str) -> bool:
+    """Return True if `title` is a publishing colophon / copyright field rather than a chapter/work title."""
+    if not title:
+        return False
+    norm = normalize_uyghur_chars(title).strip()
+    return bool(_COLOPHON_ENTRY_TITLE_RE.search(norm))
+
+
+def is_colophon_page(text: str) -> bool:
+    """Return True if a page is a publishing colophon / copyright / CIP page rather than a ToC."""
+    if not text:
+        return False
+    norm = normalize_uyghur_chars(text)
+    if "مۇندەرىجە" in norm:
+        return False
+    lowered = norm.lower()
+    hits = sum(1 for marker in _COLOPHON_PAGE_MARKERS if marker in lowered)
+    return hits >= 2
+
+
 def is_toc_page(text: str) -> bool:
     """
     Detect if a page is likely a Table of Contents.
@@ -444,6 +499,9 @@ def is_toc_page(text: str) -> bool:
     # This is a very strong signal.
     if "مۇندەرىجە" in text:
         return True
+
+    if is_colophon_page(text):
+        return False
 
     lines = [line.strip() for line in text.split("\n") if line.strip()]
     if not lines:
@@ -664,7 +722,12 @@ def parse_toc_entries(text: str) -> list[tuple[str, int]]:
                                 )
                                 title = bullet_match.group(2).strip()
 
-        if title and not re.fullmatch(r"[-:|.\s]+", title) and page_str.isdigit():
+        if (
+            title
+            and not re.fullmatch(r"[-:|.\s]+", title)
+            and not is_colophon_entry_title(title)
+            and page_str.isdigit()
+        ):
             entries.append((title, int(page_str)))
 
     return entries

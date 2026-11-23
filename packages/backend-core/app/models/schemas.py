@@ -271,6 +271,12 @@ class ChatRequest(BaseModel):
     exact_phrase: bool = (
         False  # API: exactPhrase — explicit UI "Exact phrase" search mode
     )
+    from_sample_question: bool = (
+        False  # API: fromSampleQuestion — clicked homepage sample question
+    )
+    sample_eval_id: Optional[int] = (
+        None  # API: sampleEvalId — RAGEvaluation.id of clicked sample question
+    )
 
     @field_validator("question")
     @classmethod
@@ -294,6 +300,10 @@ class ChatResponse(BaseModel):
 
 
 class ChatUsageStatus(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
     usage: int
     limit: Optional[int]
     has_reached_limit: bool
@@ -337,6 +347,15 @@ class ContactSubmissionAdmin(BaseModel):
     reviewed_by: Optional[str] = None  # DB: reviewed_by, API: reviewedBy
     reviewed_at: Optional[datetime] = None  # DB: reviewed_at, API: reviewedAt
     created_at: datetime  # DB: created_at, API: createdAt
+
+
+class ContactSubmissionUpdate(BaseModel):
+    """Schema for updating status and/or admin notes of a contact submission"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    status: Optional[Literal["new", "reviewed", "contacted", "archived"]] = None
+    admin_notes: Optional[str] = Field(None, max_length=5000)
 
 
 class RagQuestionAdmin(BaseModel):
@@ -392,6 +411,42 @@ class RagQuestionToggleResponse(BaseModel):
 
     id: int
     show_on_homepage: bool
+
+
+class FeaturedQuestionItem(BaseModel):
+    """Public featured sample question item shown on the homepage rotator."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: int
+    question: str
+
+
+class ChatCostInfo(BaseModel):
+    """Token usage and estimated USD cost for an answer."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+
+class FeaturedQuestionAnswerResponse(BaseModel):
+    """Cached answer lookup response for a homepage featured sample question."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    cached: bool
+    eval_id: Optional[int] = None
+    question: str
+    answer: Optional[str] = None
+    used_book_ids: List[str] = []
+    cost: Optional[ChatCostInfo] = None
 
 
 class ContentSearchHit(BaseModel):

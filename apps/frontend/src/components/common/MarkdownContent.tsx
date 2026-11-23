@@ -9,6 +9,7 @@ type MarkdownContentProps = {
   contentPageMap?: Record<string, number> | null;
   onTocPageClick?: (targetPhysicalPage: number) => void;
   isTocPage?: boolean;
+  allowDashLists?: boolean;
 };
 
 export const isTocPageContent = (text: string): boolean => {
@@ -255,10 +256,11 @@ const isOrderedListAt = (lines: string[], idx: number, isToc: boolean = false): 
 };
 
 const isArabicScriptChar = (value: string) => /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/.test(value);
-const isUnorderedList = (line: string) => {
+const isUnorderedList = (line: string, allowDashLists: boolean = false) => {
   if (/^\s*•\s+/.test(line)) return true;
   if (/^\s*[*+]\s+/.test(line)) return true;
   if (/^\s*-\s+/.test(line)) {
+    if (allowDashLists) return true;
     const afterDash = line.replace(/^\s*-\s+/, '');
     const firstChar = afterDash.trimStart().charAt(0);
     if (firstChar && isArabicScriptChar(firstChar)) return false;
@@ -345,8 +347,8 @@ const isTableSeparator = (line: string) => /^\s*\|[\s|:=-]+\|?\s*$/.test(line);
 const isFootnoteSeparator = (line: string) => /^<hr\s+class="footnotes-sep"\s*\/?>$/i.test(line.trim());
 const isFootnoteSectionStart = (line: string) => /^<section\s+class="footnotes"\s*>/i.test(line.trim());
 const isFootnoteSectionEnd = (line: string) => /<\/section>\s*$/i.test(line.trim());
-const isBlockStart = (line: string, isToc: boolean = false) =>
-  isHr(line) || isFootnoteSeparator(line) || isFootnoteSectionStart(line) || isHeading(line) || isQuote(line) || (isToc && isTocLine(line)) || isUnorderedList(line) || isTableRow(line);
+const isBlockStart = (line: string, isToc: boolean = false, allowDashLists: boolean = false) =>
+  isHr(line) || isFootnoteSeparator(line) || isFootnoteSectionStart(line) || isHeading(line) || isQuote(line) || (isToc && isTocLine(line)) || isUnorderedList(line, allowDashLists) || isTableRow(line);
 
 const resolveTargetPhysicalPage = (
   contentPageNum: number | null,
@@ -363,7 +365,7 @@ const resolveTargetPhysicalPage = (
   return null;
 };
 
-export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ content, className, style, onReferenceClick, contentPageOffset, contentPageMap, onTocPageClick, isTocPage }) => {
+export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ content, className, style, onReferenceClick, contentPageOffset, contentPageMap, onTocPageClick, isTocPage, allowDashLists = false }) => {
   const effectiveIsTocPage = isTocPage !== undefined ? isTocPage : isTocPageContent(content);
   const normalized = (content || '').replace(/\\n/g, '\n').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = normalized
@@ -372,7 +374,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
     .filter(line => {
       if (!line) return true;
       // Allow lines that contain text OR start with markdown block markers (including table rows/separators)
-      return /[A-Za-z\u0600-\u06FF]/.test(line) || isBlockStart(line, effectiveIsTocPage) || isTableSeparator(line) || isNumberedEntry(line);
+      return /[A-Za-z\u0600-\u06FF]/.test(line) || isBlockStart(line, effectiveIsTocPage, allowDashLists) || isTableSeparator(line) || isNumberedEntry(line);
     });
   const blocks: React.ReactNode[] = [];
   let i = 0;
@@ -537,9 +539,9 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
       continue;
     }
 
-    if (isUnorderedList(line) && !(effectiveIsTocPage && isTocLine(line))) {
+    if (isUnorderedList(line, allowDashLists) && !(effectiveIsTocPage && isTocLine(line))) {
       const items: string[] = [];
-      while (i < lines.length && isUnorderedList(lines[i]) && !(effectiveIsTocPage && isTocLine(lines[i]))) {
+      while (i < lines.length && isUnorderedList(lines[i], allowDashLists) && !(effectiveIsTocPage && isTocLine(lines[i]))) {
         items.push(lines[i].replace(/^\s*[-*+•]\s+/, ''));
         i += 1;
       }
@@ -668,7 +670,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = React.memo(({ con
       i < lines.length &&
       lines[i].trim() &&
       (paragraphLines.length === 0 ||
-        (!isBlockStart(lines[i], effectiveIsTocPage) &&
+        (!isBlockStart(lines[i], effectiveIsTocPage, allowDashLists) &&
           !isOrderedListAt(lines, i, effectiveIsTocPage) &&
           !isNumberedEntry(lines[i])))
     ) {

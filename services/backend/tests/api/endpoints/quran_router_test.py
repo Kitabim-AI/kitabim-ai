@@ -55,3 +55,31 @@ async def test_get_quran_stats():
     result = await get_quran_stats(surah=None, session=mock_session)
 
     assert result["total_entries"] == 6236
+
+
+@pytest.mark.asyncio
+async def test_get_quran_route_accepts_full_surah_limit_350():
+    import httpx
+    from fastapi import FastAPI
+    from app.db.session import get_session
+
+    setup_paths()
+    from api.endpoints.quran_router import router
+
+    mock_session = AsyncMock()
+    mock_res = MagicMock()
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = []
+    mock_res.scalars.return_value = mock_scalars
+    mock_session.execute.return_value = mock_res
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api")
+    app.dependency_overrides[get_session] = lambda: mock_session
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.get("/api/quran?surah=1&limit=350")
+        assert resp.status_code == 200
+        assert resp.json() == []

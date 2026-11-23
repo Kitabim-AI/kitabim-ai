@@ -24,6 +24,9 @@ Provides API client services communicating with backend REST endpoints, handling
 - `[contactService.ts:ContactSubmission]`: Interface describing user contact form data.
 - `[contactService.ts:ContactSubmissionResponse]`: Interface describing contact submission receipt.
 - `[contactService.ts:submitContactForm]`: Submits contact messages to `/api/contact/submit`.
+- `[contactService.ts:getAdminContactSubmissions]`: Retrieves contact submissions from `/api/contact/admin/submissions`.
+- `[contactService.ts:updateAdminContactSubmission]`: Updates submission status or admin notes via `PATCH /api/contact/admin/submissions/{id}`.
+- `[contactService.ts:deleteAdminContactSubmission]`: Deletes a contact submission via `DELETE /api/contact/admin/submissions/{id}`.
 - `[geminiService.ts:extractUyghurText]`: Dispatches image data to `/api/ai/ocr/` with exponential retry on 429/503.
 - `[geminiService.ts:chatWithBook]`: Submits conversational query against a book to `/api/chat/`.
 - `[geminiService.ts:chatWithBookStream]`: Submits conversational streaming query with chunk and agent-step callbacks.

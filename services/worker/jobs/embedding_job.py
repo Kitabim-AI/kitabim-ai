@@ -18,17 +18,20 @@ from typing import Dict, List, Optional
 from sqlalchemy import func, select, update
 
 from app.core.pipeline import (
-    BOOK_MILESTONE_COMPLETE,
     BOOK_MILESTONE_FAILED,
     BOOK_MILESTONE_IDLE,
     BOOK_MILESTONE_IN_PROGRESS,
-    PAGE_MILESTONE_COMPLETE,
 )
 from app.db import session as db_session
 from app.db.models import Book, Chunk, Page
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
 from app.llm.models import GeminiEmbeddings
+from app.services.book_milestone_service import complete_book_embedding_milestone
 from app.services.cache_service import cache_service
+from app.services.chunking_service import (
+    format_chunk_embedding_text,
+    load_book_embedding_context,
+)
 from app.utils.observability import log_json
 
 logger = logging.getLogger("app.worker.embedding_job")
@@ -69,6 +72,11 @@ async def _embed_single_book(book_id: str) -> None:
         initial_chunk_ids = [c.id for c in chunks if getattr(c, "id", None) is not None]
 
         if chunks:
+            async with db_session.async_session_factory() as session:
+                book_title, section_titles = await load_book_embedding_context(
+                    session, book_id
+                )
+
             embeddings_model = GeminiEmbeddings(gemini_embedding_model)
             rep_chunks: List[Chunk] = []
             hash_to_chunk_ids: Dict[str, List[int]] = {}
@@ -76,19 +84,28 @@ async def _embed_single_book(book_id: str) -> None:
             for ch in chunks:
                 t_hash = getattr(ch, "text_hash", None)
                 if t_hash:
-                    if t_hash not in hash_to_chunk_ids:
-                        hash_to_chunk_ids[t_hash] = []
+                    h_key = str(t_hash)
+                    if h_key not in hash_to_chunk_ids:
+                        hash_to_chunk_ids[h_key] = []
                         rep_chunks.append(ch)
-                    hash_to_chunk_ids[t_hash].append(ch.id)
+                    hash_to_chunk_ids[h_key].append(ch.id)
                 else:
                     rep_chunks.append(ch)
 
             sub_batch_size = 64
             for idx in range(0, len(rep_chunks), sub_batch_size):
                 batch_reps = rep_chunks[idx : idx + sub_batch_size]
-                vectors = await embeddings_model.aembed_documents(
-                    [c.text for c in batch_reps]
-                )
+                embed_inputs = [
+                    format_chunk_embedding_text(
+                        c.text,
+                        book_title=book_title,
+                        section_title=section_titles.get(
+                            getattr(c, "section_id", None)
+                        ),
+                    )
+                    for c in batch_reps
+                ]
+                vectors = await embeddings_model.aembed_documents(embed_inputs)
                 if len(vectors) != len(batch_reps) or any(v is None for v in vectors):
                     raise RuntimeError(
                         f"Incomplete embedding response for book {book_id}: "
@@ -97,10 +114,11 @@ async def _embed_single_book(book_id: str) -> None:
                 async with db_session.async_session_factory() as session:
                     for rep_chunk, vector in zip(batch_reps, vectors):
                         t_hash = getattr(rep_chunk, "text_hash", None)
-                        if t_hash and t_hash in hash_to_chunk_ids:
+                        h_key = str(t_hash) if t_hash else None
+                        if h_key is not None and h_key in hash_to_chunk_ids:
                             await session.execute(
                                 update(Chunk)
-                                .where(Chunk.id.in_(hash_to_chunk_ids[t_hash]))
+                                .where(Chunk.id.in_(hash_to_chunk_ids[h_key]))
                                 .values(embedding=vector)
                             )
                         else:
@@ -128,17 +146,7 @@ async def _embed_single_book(book_id: str) -> None:
                         Chunk.embedding.is_(None),
                     )
                 )
-                raw_initial_rem = (
-                    initial_unembedded_res.scalar()
-                    if hasattr(initial_unembedded_res, "scalar")
-                    else 0
-                )
-                initial_remaining = (
-                    int(raw_initial_rem)
-                    if isinstance(raw_initial_rem, (int, float))
-                    and not isinstance(raw_initial_rem, bool)
-                    else 0
-                )
+                initial_remaining = int(initial_unembedded_res.scalar() or 0)
                 if initial_remaining > 0:
                     raise RuntimeError(
                         f"{initial_remaining} chunk(s) in batch remained unembedded for book {book_id}"
@@ -154,15 +162,7 @@ async def _embed_single_book(book_id: str) -> None:
             unembedded_res = await session.execute(
                 select(func.count(Chunk.id)).where(*new_unembedded_cond)
             )
-            raw_remaining = (
-                unembedded_res.scalar() if hasattr(unembedded_res, "scalar") else 0
-            )
-            remaining_unembedded = (
-                int(raw_remaining)
-                if isinstance(raw_remaining, (int, float))
-                and not isinstance(raw_remaining, bool)
-                else 0
-            )
+            remaining_unembedded = int(unembedded_res.scalar() or 0)
             if remaining_unembedded > 0:
                 await session.execute(
                     update(Book)
@@ -183,28 +183,7 @@ async def _embed_single_book(book_id: str) -> None:
                 )
                 return
 
-            await session.execute(
-                update(Page)
-                .where(
-                    Page.book_id == book_id,
-                    Page.ocr_milestone == PAGE_MILESTONE_COMPLETE,
-                )
-                .values(
-                    embedding_milestone="succeeded",
-                    is_indexed=True,
-                    last_updated=func.now(),
-                )
-            )
-            await session.execute(
-                update(Book)
-                .where(Book.id == book_id)
-                .values(
-                    embedding_milestone=BOOK_MILESTONE_COMPLETE,
-                    embedding_retry_count=0,
-                    embedding_claimed_at=None,
-                    last_updated=func.now(),
-                )
-            )
+            await complete_book_embedding_milestone(session, book_id)
             await session.commit()
 
         try:

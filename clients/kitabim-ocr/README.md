@@ -30,7 +30,8 @@ This starts a local server on `http://127.0.0.1:8765` and launches the default b
 ### CLI Commands
 - `python main.py app [--concurrency N]`: Open the interactive book-picker and OCR queue landing page.
 - `python main.py login [--base-url <url>]`: Run interactive loopback OAuth once to persist `{access_token, refresh_token}` in `~/.config/kitabim-ocr-client/token.json` (`0600`) before starting headless `backfill`.
-- `python main.py backfill [--dry-run] [--book-id <id>] [--limit N] [--max-server-backlog N] [--audit-log <path>]`: Run sequential headless Surya 2.5 OCR backfill across legacy PDFs with `$KITABIM_WORK_DIR/.surya_gpu.lock` coordination and server backlog throttling.
+- `python main.py backfill [--dry-run] [--book-id <id>] [--limit N] [--max-server-backlog N] [--skip-book <id>] [--unskip-book <id>] [--list-skipped] [--audit-log <path>]`: Run sequential headless Surya 2.5 OCR backfill across legacy PDFs with `$KITABIM_WORK_DIR/.surya_gpu.lock` coordination, local `$KITABIM_WORK_DIR/skipped_books.json` filtering, and server backlog throttling.
+- `python main.py skip <book_id> [...] [--reason <note>]` / `python main.py unskip <book_id> [...]`: Persistently skip or restore book IDs locally in `$KITABIM_WORK_DIR/skipped_books.json` without modifying server-side data.
 - `python main.py preview <workdir>`: Reopen the review UI for an existing session directory.
 - `python main.py push <workdir> --base-url <url>`: Push OCR results from a work directory to Kitabim headlessly.
 

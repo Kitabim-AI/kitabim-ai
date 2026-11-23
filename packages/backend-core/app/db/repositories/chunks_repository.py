@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from sqlalchemy import select, delete, text
+from sqlalchemy import select, delete, func, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Chunk
@@ -33,6 +33,21 @@ def _opt_int(val: object) -> Optional[int]:
 
 def _opt_str(val: object) -> Optional[str]:
     return val if isinstance(val, str) else None
+
+
+def _section_title_case_sql(
+    bs_alias: str = "bs", parent_alias: str = "parent_bs"
+) -> str:
+    """Shared SQL `CASE` expression formatting `Parent › Child` section titles."""
+    return f"""CASE
+        WHEN {bs_alias}.section_type IN ('front_matter', 'synthetic_body') THEN NULL
+        WHEN {parent_alias}.title IS NOT NULL
+             AND {parent_alias}.section_type NOT IN ('front_matter', 'synthetic_body')
+             AND {bs_alias}.title IS NOT NULL
+             AND {parent_alias}.title <> {bs_alias}.title
+            THEN {parent_alias}.title || ' › ' || {bs_alias}.title
+        ELSE {bs_alias}.title
+    END"""
 
 
 class ChunksRepository(BaseRepository[Chunk]):
@@ -101,23 +116,25 @@ class ChunksRepository(BaseRepository[Chunk]):
             await self.session.execute(
                 text(
                     """
-                    CREATE TEMP TABLE IF NOT EXISTS _tmp_book_chunk_embeddings (
+                    CREATE TEMP TABLE IF NOT EXISTS _tmp_book_chunk_embeddings_v2 (
                         text_hash VARCHAR(64) PRIMARY KEY,
                         embedding vector(3072)
                     ) ON COMMIT DROP
                     """
                 )
             )
-            await self.session.execute(text("TRUNCATE _tmp_book_chunk_embeddings"))
+            await self.session.execute(text("TRUNCATE _tmp_book_chunk_embeddings_v2"))
             await self.session.execute(
                 text(
                     """
-                    INSERT INTO _tmp_book_chunk_embeddings (text_hash, embedding)
-                    SELECT DISTINCT ON (text_hash) text_hash, embedding
-                    FROM chunks
-                    WHERE book_id = :book_id
-                      AND text_hash IS NOT NULL
-                      AND embedding IS NOT NULL
+                    INSERT INTO _tmp_book_chunk_embeddings_v2 (text_hash, embedding)
+                    SELECT DISTINCT ON (c.text_hash)
+                        c.text_hash,
+                        c.embedding
+                    FROM chunks c
+                    WHERE c.book_id = :book_id
+                      AND c.text_hash IS NOT NULL
+                      AND c.embedding IS NOT NULL
                     ON CONFLICT (text_hash) DO NOTHING
                     """
                 ),
@@ -150,7 +167,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                     """
                     UPDATE chunks AS c
                     SET embedding = old.embedding
-                    FROM _tmp_book_chunk_embeddings AS old
+                    FROM _tmp_book_chunk_embeddings_v2 AS old
                     WHERE c.book_id = :book_id
                       AND c.embedding IS NULL
                       AND c.text_hash IS NOT NULL
@@ -184,9 +201,11 @@ class ChunksRepository(BaseRepository[Chunk]):
         return result.rowcount
 
     async def delete_by_page(self, book_id: str, page_number: int) -> int:
-        """Delete chunks for a specific page"""
+        """Delete chunks overlapping a specific page (including cross-page spans)."""
         stmt = delete(Chunk).where(
-            Chunk.book_id == book_id, Chunk.page_number == page_number
+            Chunk.book_id == book_id,
+            Chunk.page_number <= page_number,
+            func.coalesce(Chunk.end_page_number, Chunk.page_number) >= page_number,
         )
         result = await self.session.execute(stmt)
         await self.session.flush()
@@ -207,6 +226,7 @@ class ChunksRepository(BaseRepository[Chunk]):
         self,
         section_ids: List[int],
         limit: int = 25,
+        is_staff: Optional[bool] = None,
     ) -> List[dict]:
         """Fetch chunks belonging to `section_ids` (or child sections whose
         `parent_id` is in `section_ids`), ordered in reading order by
@@ -215,17 +235,21 @@ class ChunksRepository(BaseRepository[Chunk]):
         if not section_ids:
             return []
 
-        query = text("""
+        from app.services.rag.context import resolve_rag_is_staff
+
+        access_sql = (
+            "b.status != 'error'"
+            if resolve_rag_is_staff(is_staff)
+            else "b.status = 'ready' AND (b.visibility = 'public' OR b.visibility IS NULL)"
+        )
+        sec_title_expr = _section_title_case_sql()
+        query = text(f"""
             SELECT
                 c.book_id,
                 c.page_number,
                 COALESCE(c.end_page_number, c.page_number) AS end_page_number,
                 c.section_id,
-                CASE
-                    WHEN parent_bs.title IS NOT NULL AND bs.title IS NOT NULL AND parent_bs.title <> bs.title
-                        THEN parent_bs.title || ' › ' || bs.title
-                    ELSE bs.title
-                END AS section_title,
+                {sec_title_expr} AS section_title,
                 c.chunk_index,
                 c.text,
                 b.title,
@@ -242,8 +266,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 ON c.book_id = p_end.book_id
                AND COALESCE(c.end_page_number, c.page_number) = p_end.page_number
             WHERE (c.section_id = ANY(:section_ids) OR bs.parent_id = ANY(:section_ids))
-              AND b.status = 'ready'
-              AND (b.visibility = 'public' OR b.visibility IS NULL)
+              AND {access_sql}
               AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
             ORDER BY c.book_id ASC, c.page_number ASC, c.chunk_index ASC
             LIMIT :limit
@@ -291,6 +314,8 @@ class ChunksRepository(BaseRepository[Chunk]):
         limit: int = 12,
         threshold: float = 0.35,
         section_ids: Optional[List[int]] = None,
+        per_book_limit: Optional[int] = None,
+        is_staff: Optional[bool] = None,
     ) -> List[dict]:
         """
         Vector similarity search using pgvector cosine distance.
@@ -298,92 +323,171 @@ class ChunksRepository(BaseRepository[Chunk]):
         Uses <=> operator for cosine distance: 1 - cosine_distance = similarity score
         Returns chunks with similarity > threshold, ordered by similarity DESC.
 
-        NOTE: This uses raw SQL for optimal pgvector performance.
-        SQLAlchemy 2.0 doesn't have native pgvector operators yet.
+        When *per_book_limit* is provided alongside *book_ids*, caps candidate rows
+        per book via `ROW_NUMBER() OVER (PARTITION BY c.book_id ...)` in a single
+        SQL query so multi-book balanced retrieval needs only one DB session.
         """
         if section_ids is not None and not section_ids:
             return []
 
+        from app.services.rag.context import resolve_rag_is_staff
+
+        access_sql = (
+            "b.status != 'error'"
+            if resolve_rag_is_staff(is_staff)
+            else "b.status = 'ready' AND (b.visibility = 'public' OR b.visibility IS NULL)"
+        )
         embedding_str = str(query_embedding)
 
         cat_filter = (
             "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
-        sec_filter = "AND c.section_id = ANY(:section_ids)" if section_ids else ""
+        sec_filter = (
+            """AND (
+                c.section_id = ANY(:section_ids)
+                OR EXISTS (
+                    SELECT 1 FROM book_sections bs_f
+                    WHERE bs_f.id = c.section_id
+                      AND bs_f.parent_id = ANY(:section_ids)
+                )
+            )"""
+            if section_ids
+            else ""
+        )
 
         # Over-fetch to compensate for TOC/threshold/category rows filtered out
         # in the outer query (see _VECTOR_OVERFETCH_FACTOR).
         inner_limit = min(int(limit) * _VECTOR_OVERFETCH_FACTOR, _HNSW_EF_SEARCH_MAX)
+        sec_title_expr = _section_title_case_sql()
 
         if book_ids is not None:
             if not book_ids:
                 return []
-            query = text(f"""
-                WITH filtered_chunks AS (
+            if per_book_limit is not None:
+                query = text(f"""
+                    WITH ranked_matches AS (
+                        SELECT
+                            c.book_id,
+                            c.page_number,
+                            COALESCE(c.end_page_number, c.page_number) AS end_page_number,
+                            c.section_id,
+                            {sec_title_expr} AS section_title,
+                            c.chunk_index,
+                            c.text,
+                            b.title,
+                            b.volume,
+                            b.author,
+                            p.content_page_number,
+                            p_end.content_page_number AS end_content_page_number,
+                            1 - (c.embedding <=> CAST(:embedding AS vector(3072))) AS similarity,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY c.book_id
+                                ORDER BY c.embedding <=> CAST(:embedding AS vector(3072)) ASC
+                            ) AS book_rn
+                        FROM chunks c
+                        JOIN books b ON c.book_id = b.id
+                        LEFT JOIN pages p ON c.book_id = p.book_id AND c.page_number = p.page_number
+                        LEFT JOIN pages p_end
+                            ON c.book_id = p_end.book_id
+                           AND COALESCE(c.end_page_number, c.page_number) = p_end.page_number
+                        LEFT JOIN book_sections bs ON c.section_id = bs.id
+                        LEFT JOIN book_sections parent_bs ON bs.parent_id = parent_bs.id
+                        WHERE c.book_id = ANY(:book_ids)
+                          AND c.embedding IS NOT NULL
+                          AND 1 - (c.embedding <=> CAST(:embedding AS vector(3072))) > :threshold
+                          AND {access_sql}
+                          AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
+                          {cat_filter}
+                          {sec_filter}
+                    )
                     SELECT
-                        c.book_id,
-                        c.page_number,
-                        c.end_page_number,
-                        c.section_id,
-                        c.chunk_index,
-                        c.text,
-                        c.embedding
-                    FROM chunks c
-                    WHERE c.book_id = ANY(:book_ids)
-                      AND c.embedding IS NOT NULL
-                      {sec_filter}
-                ),
-                ranked_matches AS (
+                        rm.book_id,
+                        rm.page_number,
+                        rm.end_page_number,
+                        rm.section_id,
+                        rm.section_title,
+                        rm.chunk_index,
+                        rm.text,
+                        rm.title,
+                        rm.volume,
+                        rm.author,
+                        rm.content_page_number,
+                        rm.end_content_page_number,
+                        rm.similarity
+                    FROM ranked_matches rm
+                    WHERE rm.book_rn <= :per_book_limit
+                    ORDER BY rm.similarity DESC
+                    LIMIT :limit
+                """)
+                params = {
+                    "embedding": embedding_str,
+                    "book_ids": [str(bid) for bid in book_ids],
+                    "threshold": threshold,
+                    "per_book_limit": int(per_book_limit),
+                    "limit": int(limit),
+                }
+            else:
+                query = text(f"""
+                    WITH filtered_chunks AS (
+                        SELECT
+                            c.book_id,
+                            c.page_number,
+                            c.end_page_number,
+                            c.section_id,
+                            c.chunk_index,
+                            c.text,
+                            c.embedding
+                        FROM chunks c
+                        WHERE c.book_id = ANY(:book_ids)
+                          AND c.embedding IS NOT NULL
+                          {sec_filter}
+                    ),
+                    ranked_matches AS (
+                        SELECT
+                            fc.book_id,
+                            fc.page_number,
+                            fc.end_page_number,
+                            fc.section_id,
+                            fc.chunk_index,
+                            fc.text,
+                            1 - (fc.embedding <=> CAST(:embedding AS vector(3072))) AS similarity
+                        FROM filtered_chunks fc
+                    )
                     SELECT
-                        fc.book_id,
-                        fc.page_number,
-                        fc.end_page_number,
-                        fc.section_id,
-                        fc.chunk_index,
-                        fc.text,
-                        1 - (fc.embedding <=> CAST(:embedding AS vector(3072))) AS similarity
-                    FROM filtered_chunks fc
-                )
-                SELECT
-                    rm.book_id,
-                    rm.page_number,
-                    COALESCE(rm.end_page_number, rm.page_number) AS end_page_number,
-                    rm.section_id,
-                    CASE
-                        WHEN parent_bs.title IS NOT NULL AND bs.title IS NOT NULL AND parent_bs.title <> bs.title
-                            THEN parent_bs.title || ' › ' || bs.title
-                        ELSE bs.title
-                    END AS section_title,
-                    rm.chunk_index,
-                    rm.text,
-                    b.title,
-                    b.volume,
-                    b.author,
-                    p.content_page_number,
-                    p_end.content_page_number AS end_content_page_number,
-                    rm.similarity
-                FROM ranked_matches rm
-                JOIN books b ON rm.book_id = b.id
-                LEFT JOIN pages p ON rm.book_id = p.book_id AND rm.page_number = p.page_number
-                LEFT JOIN pages p_end
-                    ON rm.book_id = p_end.book_id
-                   AND COALESCE(rm.end_page_number, rm.page_number) = p_end.page_number
-                LEFT JOIN book_sections bs ON rm.section_id = bs.id
-                LEFT JOIN book_sections parent_bs ON bs.parent_id = parent_bs.id
-                WHERE rm.similarity > :threshold
-                  AND b.status = 'ready'
-                  AND (b.visibility = 'public' OR b.visibility IS NULL)
-                  AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
-                  {cat_filter}
-                ORDER BY rm.similarity DESC
-                LIMIT :limit
-            """)
-            params = {
-                "embedding": embedding_str,
-                "book_ids": [str(bid) for bid in book_ids],
-                "threshold": threshold,
-                "limit": limit,
-            }
+                        rm.book_id,
+                        rm.page_number,
+                        COALESCE(rm.end_page_number, rm.page_number) AS end_page_number,
+                        rm.section_id,
+                        {sec_title_expr} AS section_title,
+                        rm.chunk_index,
+                        rm.text,
+                        b.title,
+                        b.volume,
+                        b.author,
+                        p.content_page_number,
+                        p_end.content_page_number AS end_content_page_number,
+                        rm.similarity
+                    FROM ranked_matches rm
+                    JOIN books b ON rm.book_id = b.id
+                    LEFT JOIN pages p ON rm.book_id = p.book_id AND rm.page_number = p.page_number
+                    LEFT JOIN pages p_end
+                        ON rm.book_id = p_end.book_id
+                       AND COALESCE(rm.end_page_number, rm.page_number) = p_end.page_number
+                    LEFT JOIN book_sections bs ON rm.section_id = bs.id
+                    LEFT JOIN book_sections parent_bs ON bs.parent_id = parent_bs.id
+                    WHERE rm.similarity > :threshold
+                      AND {access_sql}
+                      AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
+                      {cat_filter}
+                    ORDER BY rm.similarity DESC
+                    LIMIT :limit
+                """)
+                params = {
+                    "embedding": embedding_str,
+                    "book_ids": [str(bid) for bid in book_ids],
+                    "threshold": threshold,
+                    "limit": limit,
+                }
             if categories:
                 params["categories"] = categories
             if section_ids:
@@ -410,11 +514,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                     vm.page_number,
                     COALESCE(vm.end_page_number, vm.page_number) AS end_page_number,
                     vm.section_id,
-                    CASE
-                        WHEN parent_bs.title IS NOT NULL AND bs.title IS NOT NULL AND parent_bs.title <> bs.title
-                            THEN parent_bs.title || ' › ' || bs.title
-                        ELSE bs.title
-                    END AS section_title,
+                    {sec_title_expr} AS section_title,
                     vm.chunk_index,
                     vm.text,
                     b.title,
@@ -432,8 +532,7 @@ class ChunksRepository(BaseRepository[Chunk]):
                 LEFT JOIN book_sections bs ON vm.section_id = bs.id
                 LEFT JOIN book_sections parent_bs ON bs.parent_id = parent_bs.id
                 WHERE vm.similarity > :threshold
-                  AND b.status = 'ready'
-                  AND (b.visibility = 'public' OR b.visibility IS NULL)
+                  AND {access_sql}
                   AND (p.is_toc IS NOT TRUE OR p.id IS NULL)
                   {cat_filter}
                 ORDER BY vm.similarity DESC
@@ -493,6 +592,7 @@ class ChunksRepository(BaseRepository[Chunk]):
         limit: int = 10,
         and_phrases: Optional[List[str]] = None,
         section_ids: Optional[List[int]] = None,
+        is_staff: Optional[bool] = None,
     ) -> List[dict]:
         """
         Postgres full-text EXACT PHRASE search over `pages.text_search`
@@ -501,6 +601,13 @@ class ChunksRepository(BaseRepository[Chunk]):
         if section_ids is not None and not section_ids:
             return []
 
+        from app.services.rag.context import resolve_rag_is_staff
+
+        access_sql = (
+            "b.status != 'error'"
+            if resolve_rag_is_staff(is_staff)
+            else "b.status = 'ready' AND (b.visibility = 'public' OR b.visibility IS NULL)"
+        )
         cat_filter = (
             "AND b.categories && CAST(:categories AS text[])" if categories else ""
         )
@@ -508,8 +615,12 @@ class ChunksRepository(BaseRepository[Chunk]):
             """AND EXISTS (
                 SELECT 1
                 FROM chunks c2
+                LEFT JOIN book_sections bs_f ON bs_f.id = c2.section_id
                 WHERE c2.book_id = p.book_id
-                  AND c2.section_id = ANY(:section_ids)
+                  AND (
+                      c2.section_id = ANY(:section_ids)
+                      OR bs_f.parent_id = ANY(:section_ids)
+                  )
                   AND p.page_number BETWEEN c2.page_number AND COALESCE(c2.end_page_number, c2.page_number)
             )"""
             if section_ids
@@ -522,120 +633,60 @@ class ChunksRepository(BaseRepository[Chunk]):
         )
         extra_params = {f"and_phrase_{i}": p for i, p in enumerate(extra)}
 
+        if book_ids is not None and not book_ids:
+            return []
+
+        book_filter = "p.book_id = ANY(:book_ids) AND " if book_ids is not None else ""
+        sec_title_expr = _section_title_case_sql()
+        query = text(f"""
+            WITH keyword_matches AS (
+                SELECT
+                    p.book_id,
+                    p.page_number,
+                    p.content_page_number,
+                    p.text,
+                    ts_rank(p.text_search, ({tsquery_expr})) AS rank
+                FROM pages p
+                WHERE {book_filter}p.text_search @@ ({tsquery_expr})
+                  AND p.is_toc IS NOT TRUE
+                  {sec_exists_filter}
+            )
+            SELECT
+                km.book_id,
+                km.page_number,
+                km.content_page_number,
+                km.text,
+                b.title,
+                b.volume,
+                b.author,
+                sec.section_id,
+                sec.section_title,
+                km.rank
+            FROM keyword_matches km
+            JOIN books b ON km.book_id = b.id
+            LEFT JOIN LATERAL (
+                SELECT
+                    bs.id AS section_id,
+                    {sec_title_expr} AS section_title
+                FROM book_sections bs
+                LEFT JOIN book_sections parent_bs ON parent_bs.id = bs.parent_id
+                WHERE bs.book_id = km.book_id
+                  AND km.page_number BETWEEN bs.start_page AND bs.end_page
+                ORDER BY bs.level DESC, bs.section_index ASC
+                LIMIT 1
+            ) sec ON true
+            WHERE {access_sql}
+              {cat_filter}
+            ORDER BY km.rank DESC
+            LIMIT :limit
+        """)
+        params: dict = {"phrase": phrase, "limit": limit, **extra_params}
         if book_ids is not None:
-            if not book_ids:
-                return []
-            query = text(f"""
-                WITH keyword_matches AS (
-                    SELECT
-                        p.book_id,
-                        p.page_number,
-                        p.content_page_number,
-                        p.text,
-                        ts_rank(p.text_search, ({tsquery_expr})) AS rank
-                    FROM pages p
-                    WHERE p.book_id = ANY(:book_ids)
-                      AND p.text_search @@ ({tsquery_expr})
-                      AND p.is_toc IS NOT TRUE
-                      {sec_exists_filter}
-                )
-                SELECT
-                    km.book_id,
-                    km.page_number,
-                    km.content_page_number,
-                    km.text,
-                    b.title,
-                    b.volume,
-                    b.author,
-                    sec.section_id,
-                    sec.section_title,
-                    km.rank
-                FROM keyword_matches km
-                JOIN books b ON km.book_id = b.id
-                LEFT JOIN LATERAL (
-                    SELECT
-                        bs.id AS section_id,
-                        CASE
-                            WHEN parent_bs.title IS NOT NULL AND bs.title IS NOT NULL AND parent_bs.title <> bs.title
-                                THEN parent_bs.title || ' › ' || bs.title
-                            ELSE bs.title
-                        END AS section_title
-                    FROM book_sections bs
-                    LEFT JOIN book_sections parent_bs ON parent_bs.id = bs.parent_id
-                    WHERE bs.book_id = km.book_id
-                      AND km.page_number BETWEEN bs.start_page AND bs.end_page
-                    ORDER BY bs.level DESC, bs.section_index ASC
-                    LIMIT 1
-                ) sec ON true
-                WHERE b.status = 'ready'
-                  AND (b.visibility = 'public' OR b.visibility IS NULL)
-                  {cat_filter}
-                ORDER BY km.rank DESC
-                LIMIT :limit
-            """)
-            params = {
-                "phrase": phrase,
-                "book_ids": [str(bid) for bid in book_ids],
-                "limit": limit,
-                **extra_params,
-            }
-            if categories:
-                params["categories"] = categories
-            if section_ids:
-                params["section_ids"] = [int(sid) for sid in section_ids]
-        else:
-            query = text(f"""
-                WITH keyword_matches AS (
-                    SELECT
-                        p.book_id,
-                        p.page_number,
-                        p.content_page_number,
-                        p.text,
-                        ts_rank(p.text_search, ({tsquery_expr})) AS rank
-                    FROM pages p
-                    WHERE p.text_search @@ ({tsquery_expr})
-                      AND p.is_toc IS NOT TRUE
-                      {sec_exists_filter}
-                )
-                SELECT
-                    km.book_id,
-                    km.page_number,
-                    km.content_page_number,
-                    km.text,
-                    b.title,
-                    b.volume,
-                    b.author,
-                    sec.section_id,
-                    sec.section_title,
-                    km.rank
-                FROM keyword_matches km
-                JOIN books b ON km.book_id = b.id
-                LEFT JOIN LATERAL (
-                    SELECT
-                        bs.id AS section_id,
-                        CASE
-                            WHEN parent_bs.title IS NOT NULL AND bs.title IS NOT NULL AND parent_bs.title <> bs.title
-                                THEN parent_bs.title || ' › ' || bs.title
-                            ELSE bs.title
-                        END AS section_title
-                    FROM book_sections bs
-                    LEFT JOIN book_sections parent_bs ON parent_bs.id = bs.parent_id
-                    WHERE bs.book_id = km.book_id
-                      AND km.page_number BETWEEN bs.start_page AND bs.end_page
-                    ORDER BY bs.level DESC, bs.section_index ASC
-                    LIMIT 1
-                ) sec ON true
-                WHERE b.status = 'ready'
-                  AND (b.visibility = 'public' OR b.visibility IS NULL)
-                  {cat_filter}
-                ORDER BY km.rank DESC
-                LIMIT :limit
-            """)
-            params = {"phrase": phrase, "limit": limit, **extra_params}
-            if categories:
-                params["categories"] = categories
-            if section_ids:
-                params["section_ids"] = [int(sid) for sid in section_ids]
+            params["book_ids"] = [str(bid) for bid in book_ids]
+        if categories:
+            params["categories"] = categories
+        if section_ids:
+            params["section_ids"] = [int(sid) for sid in section_ids]
 
         await self.session.execute(
             text(f"SET LOCAL work_mem = '{_KEYWORD_SEARCH_WORK_MEM}'")
@@ -670,6 +721,231 @@ class ChunksRepository(BaseRepository[Chunk]):
             }
             for row in rows
         ]
+
+    async def inspect_for_book(
+        self,
+        book_id: str,
+        *,
+        page: Optional[int] = None,
+        section_id: Optional[int] = None,
+        filter_type: str = "all",
+        text_query: Optional[str] = None,
+        query_embedding: Optional[List[float]] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> dict:
+        """Fetch book-level chunk diagnostics, section tree counts, and filtered chunks
+        for the Admin Chunk Inspector without serializing raw vector arrays."""
+        stats_res = await self.session.execute(
+            text("""
+                SELECT
+                    COUNT(*) AS total_chunks,
+                    COUNT(*) FILTER (WHERE embedding IS NOT NULL) AS embedded_chunks,
+                    COUNT(*) FILTER (WHERE embedding IS NULL) AS unembedded_chunks,
+                    COUNT(*) FILTER (WHERE COALESCE(end_page_number, page_number) > page_number) AS cross_page_chunks,
+                    COUNT(*) FILTER (WHERE char_length(text) < 350) AS short_chunks,
+                    COUNT(*) FILTER (WHERE char_length(text) > 2500) AS oversized_chunks
+                FROM chunks
+                WHERE book_id = :book_id
+            """),
+            {"book_id": book_id},
+        )
+        stats_row = stats_res.first()
+
+        sections_res = await self.session.execute(
+            text("""
+                SELECT
+                    bs.id,
+                    bs.parent_id,
+                    bs.section_index,
+                    bs.level,
+                    bs.section_type,
+                    bs.source,
+                    bs.title,
+                    bs.start_page,
+                    bs.end_page,
+                    COUNT(c.id) AS chunk_count
+                FROM book_sections bs
+                LEFT JOIN chunks c ON c.section_id = bs.id AND c.book_id = bs.book_id
+                WHERE bs.book_id = :book_id
+                GROUP BY bs.id
+                ORDER BY bs.section_index ASC
+            """),
+            {"book_id": book_id},
+        )
+        sections = [
+            {
+                "id": int(r.id),
+                "parent_id": _opt_int(r.parent_id),
+                "section_index": int(r.section_index),
+                "level": int(r.level),
+                "section_type": str(r.section_type),
+                "source": _opt_str(r.source),
+                "title": str(r.title),
+                "start_page": int(r.start_page),
+                "end_page": int(r.end_page),
+                "chunk_count": int(r.chunk_count or 0),
+            }
+            for r in sections_res.fetchall()
+        ]
+        sec_by_id = {s["id"]: s for s in sections}
+        for s in sections:
+            pid = s.get("parent_id")
+            if pid is not None and pid in sec_by_id:
+                sec_by_id[pid]["chunk_count"] += s["chunk_count"]
+
+        where_clauses: List[str] = ["TRUE"]
+        params: dict = {
+            "book_id": book_id,
+            "skip": int(skip),
+            "limit": int(limit),
+        }
+
+        if section_id is not None:
+            where_clauses.append(
+                "(bc.section_id = :section_id OR bs.parent_id = :section_id)"
+            )
+            params["section_id"] = int(section_id)
+
+        if page is not None:
+            where_clauses.append(
+                "((bc.page_number <= :page AND bc.end_page_number >= :page)"
+                " OR p.content_page_number = :page_str"
+                " OR p_end.content_page_number = :page_str)"
+            )
+            params["page"] = int(page)
+            params["page_str"] = str(page)
+
+        if filter_type == "cross_page":
+            where_clauses.append("bc.end_page_number > bc.page_number")
+        elif filter_type == "unembedded":
+            where_clauses.append("NOT bc.has_embedding")
+        elif filter_type == "short":
+            where_clauses.append("bc.char_count < 350")
+        elif filter_type == "oversized":
+            where_clauses.append("bc.char_count > 2500")
+
+        if text_query:
+            escaped_q = (
+                text_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            where_clauses.append("bc.text ILIKE :ilike_q ESCAPE '\\'")
+            params["ilike_q"] = f"%{escaped_q}%"
+
+        if query_embedding is not None:
+            params["embedding"] = str(query_embedding)
+            sim_select_sql = """
+                CASE
+                    WHEN c.embedding IS NOT NULL
+                        THEN 1 - (c.embedding <=> CAST(:embedding AS vector))
+                    ELSE NULL
+                END AS similarity
+            """
+            order_sql = (
+                "bc.similarity DESC NULLS LAST, bc.page_number ASC, bc.chunk_index ASC"
+            )
+        else:
+            sim_select_sql = "NULL::float8 AS similarity"
+            order_sql = "bc.page_number ASC, bc.chunk_index ASC"
+
+        sec_title_expr = _section_title_case_sql()
+        where_sql = " AND ".join(where_clauses)
+
+        chunks_res = await self.session.execute(
+            text(f"""
+                WITH book_chunks AS (
+                    SELECT
+                        c.id,
+                        c.chunk_index,
+                        c.page_number,
+                        COALESCE(c.end_page_number, c.page_number) AS end_page_number,
+                        c.section_id,
+                        c.text,
+                        char_length(c.text) AS char_count,
+                        c.text_hash,
+                        (c.embedding IS NOT NULL) AS has_embedding,
+                        LAG(c.text) OVER (
+                            PARTITION BY c.section_id
+                            ORDER BY c.page_number ASC, c.chunk_index ASC
+                        ) AS prev_text,
+                        {sim_select_sql}
+                    FROM chunks c
+                    WHERE c.book_id = :book_id
+                )
+                SELECT
+                    bc.id,
+                    bc.chunk_index,
+                    bc.page_number,
+                    bc.end_page_number,
+                    bc.section_id,
+                    {sec_title_expr} AS section_title,
+                    bc.text,
+                    bc.char_count,
+                    bc.text_hash,
+                    bc.has_embedding,
+                    bc.prev_text,
+                    bc.similarity,
+                    p.content_page_number,
+                    p_end.content_page_number AS end_content_page_number,
+                    COUNT(*) OVER() AS total_matching
+                FROM book_chunks bc
+                LEFT JOIN pages p
+                    ON p.book_id = :book_id AND p.page_number = bc.page_number
+                LEFT JOIN pages p_end
+                    ON p_end.book_id = :book_id AND p_end.page_number = bc.end_page_number
+                LEFT JOIN book_sections bs ON bs.id = bc.section_id
+                LEFT JOIN book_sections parent_bs ON parent_bs.id = bs.parent_id
+                WHERE {where_sql}
+                ORDER BY {order_sql}
+                OFFSET :skip
+                LIMIT :limit
+            """),
+            params,
+        )
+        rows = chunks_res.fetchall()
+        total_matching = int(rows[0].total_matching) if rows else 0
+
+        return {
+            "stats": {
+                "total_chunks": int(getattr(stats_row, "total_chunks", 0) or 0),
+                "embedded_chunks": int(getattr(stats_row, "embedded_chunks", 0) or 0),
+                "unembedded_chunks": int(
+                    getattr(stats_row, "unembedded_chunks", 0) or 0
+                ),
+                "cross_page_chunks": int(
+                    getattr(stats_row, "cross_page_chunks", 0) or 0
+                ),
+                "short_chunks": int(getattr(stats_row, "short_chunks", 0) or 0),
+                "oversized_chunks": int(getattr(stats_row, "oversized_chunks", 0) or 0),
+                "sections_count": len(sections),
+            },
+            "sections": sections,
+            "total_matching": total_matching,
+            "chunks": [
+                {
+                    "id": int(r.id),
+                    "chunk_index": int(r.chunk_index),
+                    "page_number": int(r.page_number),
+                    "end_page_number": int(r.end_page_number),
+                    "content_page_number": _opt_str(r.content_page_number),
+                    "end_content_page_number": _opt_str(r.end_content_page_number)
+                    or _opt_str(r.content_page_number),
+                    "section_id": _opt_int(r.section_id),
+                    "section_title": _opt_str(r.section_title),
+                    "text": str(r.text),
+                    "char_count": int(r.char_count),
+                    "text_hash": _opt_str(r.text_hash),
+                    "has_embedding": bool(r.has_embedding),
+                    "prev_text": _opt_str(r.prev_text),
+                    "similarity": (
+                        round(float(r.similarity), 4)
+                        if r.similarity is not None
+                        else None
+                    ),
+                }
+                for r in rows
+            ],
+        }
 
 
 def get_chunks_repository(session: AsyncSession) -> ChunksRepository:

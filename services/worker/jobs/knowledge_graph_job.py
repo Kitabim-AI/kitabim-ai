@@ -20,7 +20,7 @@ they trigger `POST /{book_id}/reprocess/graph` — see design v2 §3 for why no 
 classification is needed.
 
 Batch size and concurrency are both configurable via system_configs:
-  kg_chunk_batch_size     — chunks per LLM call (default 10, ~5 000 chars per call)
+  kg_chunk_batch_size     — chunks per LLM call (default 4, ~5 500 chars per call)
   kg_max_parallel_chunks  — concurrent batch calls in-flight at once (default 5)
 """
 
@@ -140,8 +140,9 @@ async def knowledge_graph_job(ctx, book_id: str, scope: str) -> None:
             max_parallel = int(
                 await config_repo.get_value("kg_max_parallel_chunks", "5")
             )
-            chunk_batch_size = int(
-                await config_repo.get_value("kg_chunk_batch_size", "5")
+            chunk_batch_size = max(
+                1,
+                int(await config_repo.get_value("kg_chunk_batch_size", "4")),
             )
 
             result = await session.execute(select(Book).where(Book.id == book_id))
@@ -200,14 +201,25 @@ async def knowledge_graph_job(ctx, book_id: str, scope: str) -> None:
             client = genai.Client(api_key=api_key)
 
             # 5. Group consecutive chunks into batches and process concurrently.
-            #    Sending N chunks per call instead of 1:
-            #      - cuts LLM calls by chunk_batch_size×
-            #      - lets the model resolve coreferences across chunk boundaries (within
-            #        this one call only — see module docstring)
-            batches = [
-                chunks[i : i + chunk_batch_size]
-                for i in range(0, len(chunks), chunk_batch_size)
-            ]
+            #    Cap each batch by both `chunk_batch_size` and a soft character ceiling
+            #    (`_MAX_KG_BATCH_CHARS`) so multi-paragraph v2 chunks never bloat one prompt.
+            _max_kg_batch_chars = 7500
+            batches: list[list[Chunk]] = []
+            cur_batch: list[Chunk] = []
+            cur_chars = 0
+            for ch in chunks:
+                ch_len = len(ch.text or "")
+                if cur_batch and (
+                    len(cur_batch) >= chunk_batch_size
+                    or cur_chars + ch_len > _max_kg_batch_chars
+                ):
+                    batches.append(cur_batch)
+                    cur_batch = []
+                    cur_chars = 0
+                cur_batch.append(ch)
+                cur_chars += ch_len
+            if cur_batch:
+                batches.append(cur_batch)
             semaphore = asyncio.Semaphore(max_parallel)
 
             async def extract_batch(

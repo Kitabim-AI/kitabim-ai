@@ -967,28 +967,28 @@ def test_create_landing_app_concurrency_from_env(tmp_path: Path, monkeypatch):
     assert res.json()["concurrency"] == 2
 
 
-def test_create_landing_app_clamps_surya_concurrency_to_four(tmp_path: Path):
+def test_create_landing_app_clamps_surya_concurrency_to_eight(tmp_path: Path):
     app = create_landing_app(
-        MagicMock(), tmp_path / "work", engine="surya", concurrency=8
+        MagicMock(), tmp_path / "work", engine="surya", concurrency=16
     )
     client = TestClient(app)
     res = client.get("/api/state")
     assert res.status_code == 200
-    assert res.json()["concurrency"] == 4
+    assert res.json()["concurrency"] == 8
 
 
 def test_api_set_concurrency(tmp_path: Path):
     app = create_landing_app(MagicMock(), tmp_path / "work")
     client = TestClient(app)
 
-    res = client.post("/api/concurrency", json={"concurrency": 3})
+    res = client.post("/api/concurrency", json={"concurrency": 6})
     assert res.status_code == 200
-    assert res.json()["concurrency"] == 3
+    assert res.json()["concurrency"] == 6
 
-    # Clamped to 4 for Surya
-    res = client.post("/api/concurrency", json={"concurrency": 8})
+    # Clamped to 8 for Surya
+    res = client.post("/api/concurrency", json={"concurrency": 16})
     assert res.status_code == 200
-    assert res.json()["concurrency"] == 4
+    assert res.json()["concurrency"] == 8
 
     # Invalid returns 400
     res = client.post("/api/concurrency", json={"concurrency": "bad"})
@@ -1428,6 +1428,23 @@ def test_backfill_candidates_orders_oldest_upload_first(tmp_path: Path):
     assert [c["id"] for c in body["candidates"]] == ["oldest-book", "newer-book"]
 
 
+def _make_wave_ocr_mock(per_page_fn):
+    async def _fake_wave(doc, prepared_items, predictor, *, doc_lock, **kwargs):
+        out = {}
+        for item in prepared_items:
+            with doc_lock:
+                fitz_page = doc.load_page(item.page_number - 1)
+            try:
+                out[item.page_number] = await per_page_fn(
+                    fitz_page, predictor, **kwargs
+                )
+            except Exception as exc:
+                out[item.page_number] = exc
+        return out
+
+    return _fake_wave
+
+
 @pytest.mark.asyncio
 async def test_backfill_on_demand_processes_book_with_live_sbs_and_cleans_up(
     tmp_path: Path,
@@ -1465,7 +1482,10 @@ async def test_backfill_on_demand_processes_book_with_live_sbs_and_cleans_up(
 
     with (
         patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
-        patch("backfill.ocr_page_with_meta", side_effect=_controlled_ocr),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_controlled_ocr),
+        ),
     ):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -1565,7 +1585,10 @@ async def test_backfill_auto_pause_finishes_current_book_and_stops_before_next(
 
     with (
         patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
-        patch("backfill.ocr_page_with_meta", side_effect=_controlled_ocr),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_controlled_ocr),
+        ),
     ):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -1709,7 +1732,10 @@ async def test_backfill_page_edits_reject_pending_and_survive_into_replace_ocr(
 
     with (
         patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
-        patch("backfill.ocr_page_with_meta", side_effect=_controlled_ocr),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_controlled_ocr),
+        ),
     ):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -1824,7 +1850,10 @@ async def test_backfill_auto_continues_after_single_book_failure(tmp_path: Path)
 
     with (
         patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
-        patch("backfill.ocr_page_with_meta", side_effect=_fast_ocr),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_fast_ocr),
+        ),
     ):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -1840,3 +1869,113 @@ async def test_backfill_auto_continues_after_single_book_failure(tmp_path: Path)
             assert st["sessionProcessedCount"] == 1
             assert st["lastCompletedBook"]["book_id"] == "good-book"
             assert (await ac.get("/api/state")).json()["stage"] == "landing"
+
+
+@pytest.mark.asyncio
+async def test_backfill_local_skip_and_unskip_routes_without_server_writes(
+    tmp_path: Path,
+):
+    from engine.recognize import PageOcrResult
+
+    work_root = tmp_path / "work"
+    mock_client = MagicMock()
+    mock_client.get_backfill_candidates.return_value = {
+        "pending_index_books": 0,
+        "candidates": [
+            {
+                "id": "skip-b1",
+                "title": "Skip Candidate",
+                "author": "Author 1",
+                "total_pages": 120,
+                "upload_date": "2024-01-01T00:00:00",
+            },
+            {
+                "id": "keep-b2",
+                "title": "Keep Candidate",
+                "author": "Author 2",
+                "total_pages": 2,
+                "upload_date": "2024-01-02T00:00:00",
+            },
+        ],
+    }
+    mock_client.list_books.return_value = {"books": []}
+    mock_client.download_book_pdf.side_effect = lambda bid, dest: (
+        dest.write_bytes(_minimal_pdf_bytes(2)) or dest
+    )
+    mock_client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "Cover", "isToc": False},
+        {"pageNumber": 2, "text": "Body", "isToc": False},
+    ]
+    mock_client.replace_book_ocr.return_value = {"pagesUpdated": 1, "pagesUnchanged": 1}
+
+    app = create_landing_app(mock_client, work_root)
+    state = app.state.app_state
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        # 1. Skip `skip-b1` locally
+        skip_res = await ac.post(
+            "/api/backfill/skip/skip-b1",
+            json={
+                "title": "Skip Candidate",
+                "author": "Author 1",
+                "totalPages": 120,
+                "uploadDate": "2024-01-01T00:00:00",
+            },
+        )
+        assert skip_res.status_code == 200
+        skip_body = skip_res.json()
+        assert skip_body["skippedBookIds"] == ["skip-b1"]
+        assert skip_body["skippedCount"] == 1
+        assert (work_root / "skipped_books.json").exists()
+
+        # Zero server write calls were triggered
+        mock_client.replace_book_ocr.assert_not_called()
+
+        # 2. `/api/backfill/candidates` excludes `skip-b1`
+        cand_res = await ac.get("/api/backfill/candidates")
+        assert cand_res.status_code == 200
+        cand_body = cand_res.json()
+        assert [c["id"] for c in cand_body["candidates"]] == ["keep-b2"]
+        assert cand_body["skippedBookIds"] == ["skip-b1"]
+
+        # 3. Cannot skip the actively processing book (409)
+        state.backfill_manager.active_book_id = "keep-b2"
+        conflict_res = await ac.post("/api/backfill/skip/keep-b2")
+        assert conflict_res.status_code == 409
+        state.backfill_manager.active_book_id = None
+
+        # 4. Auto backfill skips `skip-b1` and only processes `keep-b2`
+        async def _fast_ocr(fitz_page, predictor, **kwargs):
+            return PageOcrResult(
+                text="Recognized",
+                detected_page_number=1,
+                ended_with_hyphen=False,
+            )
+
+        with (
+            patch(
+                "backfill.get_recognition_predictor",
+                new=AsyncMock(return_value="pred"),
+            ),
+            patch(
+                "backfill.ocr_prepared_wave_with_meta",
+                side_effect=_make_wave_ocr_mock(_fast_ocr),
+            ),
+        ):
+            start_res = await ac.post("/api/backfill/start")
+            assert start_res.status_code == 200
+            if state.backfill_manager._task:
+                await state.backfill_manager._task
+
+        assert mock_client.replace_book_ocr.call_count == 1
+        assert mock_client.replace_book_ocr.call_args.args[0] == "keep-b2"
+
+        # 5. Unskip `skip-b1` restores it to candidates
+        unskip_res = await ac.post("/api/backfill/unskip/skip-b1")
+        assert unskip_res.status_code == 200
+        assert unskip_res.json()["skippedBookIds"] == []
+
+        cand_after = (await ac.get("/api/backfill/candidates")).json()
+        assert [c["id"] for c in cand_after["candidates"]] == ["skip-b1"]

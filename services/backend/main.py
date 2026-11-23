@@ -212,6 +212,25 @@ async def lifespan(app: FastAPI):
         )
         app.state.adk_session_service = None
 
+    # Initialize shared ARQ Redis pool for background job dispatch (e.g. rag_eval_job)
+    shared_arq_pool = None
+    try:
+        import arq
+        from app.services.chat.orchestrator import set_shared_arq_pool
+
+        shared_arq_pool = await arq.create_pool(
+            arq.connections.RedisSettings.from_dsn(settings.redis_url)
+        )
+        set_shared_arq_pool(shared_arq_pool)
+        log_json(logger, logging.INFO, "Shared ARQ Redis pool initialized")
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.WARNING,
+            "Shared ARQ Redis pool initialization skipped",
+            error=str(exc),
+        )
+
     # Start Redis Pub/Sub background listener task
     import asyncio
 
@@ -225,6 +244,15 @@ async def lifespan(app: FastAPI):
         await listener_task
     except asyncio.CancelledError:
         pass
+
+    if shared_arq_pool is not None:
+        try:
+            from app.services.chat.orchestrator import set_shared_arq_pool
+
+            set_shared_arq_pool(None)
+            await shared_arq_pool.aclose()
+        except Exception:
+            pass
 
     # Cleanup SQLAlchemy engine
     await close_db()

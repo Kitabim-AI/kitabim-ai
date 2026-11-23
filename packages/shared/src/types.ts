@@ -109,6 +109,24 @@ export interface ConversationMessage {
   createdAt: string;
 }
 
+export interface FeaturedQuestionItem {
+  id?: number;
+  question: string;
+}
+
+export interface FeaturedQuestionAnswerResponse {
+  cached: boolean;
+  evalId?: number | null;
+  question: string;
+  answer?: string | null;
+  usedBookIds?: string[];
+  cost?: {
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+  } | null;
+}
+
 export interface ChatRequest {
   question: string;
   bookId?: string;
@@ -117,6 +135,8 @@ export interface ChatRequest {
   currentPage?: number;
   characterId?: string;
   conversationId?: string;
+  fromSampleQuestion?: boolean;
+  sampleEvalId?: number;
 }
 
 export interface Bookmark {
@@ -135,5 +155,64 @@ export interface ReadingProgressEntry {
   bookCoverUrl: string | null;
   pageNumber: number;
   updatedAt: string;
+}
+
+export type ChunkInspectorFilterType = 'all' | 'cross_page' | 'unembedded' | 'short' | 'oversized';
+export type ChunkInspectorSearchMode = 'semantic' | 'text';
+
+export interface ChunkInspectorSection {
+  id: number;
+  parentId: number | null;
+  sectionIndex: number;
+  level: number;
+  sectionType: string;
+  source: string | null;
+  title: string;
+  startPage: number;
+  endPage: number;
+  chunkCount: number;
+}
+
+export interface ChunkInspectorItem {
+  id: number;
+  chunkIndex: number;
+  pageNumber: number;
+  endPageNumber: number;
+  contentPageNumber: string | null;
+  endContentPageNumber: string | null;
+  sectionId: number | null;
+  sectionTitle: string | null;
+  text: string;
+  charCount: number;
+  textHash: string | null;
+  hasEmbedding: boolean;
+  embeddingPrefix: string | null;
+  overlapPrefix: string | null;
+  similarity: number | null;
+  rerankRank?: number | null;
+  rerankDropped?: boolean;
+}
+
+export interface ChunkInspectorStats {
+  totalChunks: number;
+  embeddedChunks: number;
+  unembeddedChunks: number;
+  crossPageChunks: number;
+  shortChunks: number;
+  oversizedChunks: number;
+  sectionsCount: number;
+}
+
+export interface ChunkInspectorResponse {
+  bookId: string;
+  bookTitle: string;
+  contentPageOffset: number;
+  ragThreshold: number;
+  reranked?: boolean;
+  rerankSelectedCount?: number;
+  stats: ChunkInspectorStats;
+  sections: ChunkInspectorSection[];
+  totalMatching: number;
+  chunks: ChunkInspectorItem[];
 }
 

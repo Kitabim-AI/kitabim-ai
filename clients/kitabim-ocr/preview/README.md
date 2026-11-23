@@ -15,7 +15,7 @@ Web application and preview server providing a local browser-based GUI for manag
 - `[server.py:RedoRequest]`: Request payload schema for re-processing selected pages.
 - `[server.py:UpdatePageRequest]`: Request payload schema for updating page text and TOC flags.
 - `[server.py:list_pages_response]`: Serializes page list and review metadata.
-- `[server.py:render_page_png]`: Renders PDF page to PNG and caches to disk.
+- `[server.py:render_page_png]`: Renders PDF page to PNG with `pypdfium2` recovery and placeholder PNG fallback when a page's PDF image stream is corrupted.
 - `[server.py:get_page_image_bytes]`: Returns page image PNG bytes from cache or on-demand rendering.
 - `[server.py:update_page_response]`: Applies user edits to a page and persists changes.
 - `[server.py:redo_pages_response]`: Executes async re-OCR on requested page numbers.

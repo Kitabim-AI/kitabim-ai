@@ -19,14 +19,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.pipeline import (
-    BOOK_MILESTONE_COMPLETE,
     BOOK_MILESTONE_FAILED,
-    PAGE_MILESTONE_COMPLETE,
 )
 from app.db.models import BatchEmbeddingJob, Book, Chunk, Page, PipelineEvent
 from app.db.repositories.system_configs_repository import SystemConfigsRepository
-from app.services.book_milestone_service import BookMilestoneService
+from app.services.book_milestone_service import (
+    BookMilestoneService,
+    complete_book_embedding_milestone,
+)
 from app.services.cache_service import cache_service
+from app.services.chunking_service import (
+    format_chunk_embedding_text,
+    load_book_embedding_context,
+)
 from app.services.storage_service import storage
 from app.utils.observability import log_json, make_pipeline_event_payload
 
@@ -132,27 +137,7 @@ async def submit_batch_embedding_job_for_book(
     unembedded_chunks = list(result.scalars().all())
 
     if not unembedded_chunks:
-        await session.execute(
-            update(Page)
-            .where(
-                Page.book_id == book_id,
-                Page.ocr_milestone == PAGE_MILESTONE_COMPLETE,
-            )
-            .values(
-                embedding_milestone="succeeded",
-                is_indexed=True,
-                last_updated=func.now(),
-            )
-        )
-        await session.execute(
-            update(Book)
-            .where(Book.id == book_id)
-            .values(
-                embedding_milestone=BOOK_MILESTONE_COMPLETE,
-                embedding_retry_count=0,
-                embedding_claimed_at=None,
-            )
-        )
+        await complete_book_embedding_milestone(session, book_id)
         await session.commit()
         try:
             await cache_service.delete_pattern(f"rag:search:{book_id}:*")
@@ -171,15 +156,17 @@ async def submit_batch_embedding_job_for_book(
         if not unembedded_chunks:
             return []
 
-    # Deduplicate requests by text_hash while tracking all unembedded chunk IDs
+    book_title, section_titles = await load_book_embedding_context(session, book_id)
+
+    # Deduplicate requests by contextual text_hash while tracking all unembedded chunk IDs
     representative_chunks: List[Chunk] = []
     seen_hashes: set[str] = set()
     for ch in unembedded_chunks:
         t_hash = getattr(ch, "text_hash", None)
         if t_hash:
-            if t_hash in seen_hashes:
+            if str(t_hash) in seen_hashes:
                 continue
-            seen_hashes.add(t_hash)
+            seen_hashes.add(str(t_hash))
         representative_chunks.append(ch)
 
     sub_batches: List[List[Chunk]] = [
@@ -195,11 +182,16 @@ async def submit_batch_embedding_job_for_book(
         job_id = str(uuid.uuid4())
         jsonl_lines: List[str] = []
         for chunk in batch_chunks:
+            embed_text = format_chunk_embedding_text(
+                chunk.text,
+                book_title=book_title,
+                section_title=section_titles.get(getattr(chunk, "section_id", None)),
+            )
             request_entry = {
                 "custom_id": f"chunk_{chunk.id}",
                 "request": {
                     "content": {
-                        "parts": [{"text": chunk.text}],
+                        "parts": [{"text": embed_text}],
                     },
                     "output_dimensionality": output_dim,
                 },
@@ -254,7 +246,7 @@ async def submit_batch_embedding_job_for_book(
             any_failed = True
 
         batch_hashes = {
-            getattr(c, "text_hash", None)
+            str(getattr(c, "text_hash", None))
             for c in batch_chunks
             if getattr(c, "text_hash", None)
         }
@@ -265,7 +257,7 @@ async def submit_batch_embedding_job_for_book(
             if c.id in batch_rep_ids
             or (
                 getattr(c, "text_hash", None)
-                and getattr(c, "text_hash", None) in batch_hashes
+                and str(getattr(c, "text_hash", None)) in batch_hashes
             )
         ]
 
@@ -727,15 +719,22 @@ async def poll_and_process_batch_embedding_jobs(session: AsyncSession) -> int:
                 )
 
             if not job.page_ids:
-                # Book-scoped job completion path: propagate vectors across duplicate text_hash rows
+                # Book-scoped job completion path: propagate vectors across duplicate contextual text_hash rows
                 if succeeded_vectors:
                     hash_rows = await session.execute(
-                        select(Chunk.id, Chunk.book_id, Chunk.text_hash).where(
+                        select(
+                            Chunk.id,
+                            Chunk.book_id,
+                            Chunk.text_hash,
+                        ).where(
                             Chunk.id.in_(list(succeeded_vectors.keys())),
                             Chunk.text_hash.isnot(None),
                         )
                     )
-                    for rep_id, rep_book_id, rep_hash in hash_rows.fetchall():
+                    for row in hash_rows.fetchall():
+                        rep_id = row[0]
+                        rep_book_id = row[1]
+                        rep_hash = row[2]
                         vec = succeeded_vectors.get(rep_id)
                         if vec and rep_hash:
                             await session.execute(
@@ -771,27 +770,7 @@ async def poll_and_process_batch_embedding_jobs(session: AsyncSession) -> int:
                     )
                     rem_unembedded = int(rem_res.scalar() or 0)
                     if rem_unembedded == 0 and not failed_chunk_ids:
-                        await session.execute(
-                            update(Page)
-                            .where(
-                                Page.book_id == book_id,
-                                Page.ocr_milestone == PAGE_MILESTONE_COMPLETE,
-                            )
-                            .values(
-                                embedding_milestone="succeeded",
-                                is_indexed=True,
-                                last_updated=func.now(),
-                            )
-                        )
-                        await session.execute(
-                            update(Book)
-                            .where(Book.id == book_id)
-                            .values(
-                                embedding_milestone=BOOK_MILESTONE_COMPLETE,
-                                embedding_retry_count=0,
-                                embedding_claimed_at=None,
-                            )
-                        )
+                        await complete_book_embedding_milestone(session, book_id)
                         try:
                             await cache_service.delete_pattern(
                                 f"rag:search:{book_id}:*"

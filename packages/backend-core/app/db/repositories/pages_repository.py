@@ -244,6 +244,7 @@ class PagesRepository(BaseRepository[Page]):
         phrase: str,
         book_ids: Optional[List[str]] = None,
         limit: int = 10,
+        is_staff: Optional[bool] = None,
     ) -> List[dict]:
         """Full-text search over `pages.text_search` restricted to
         table-of-contents pages (`is_toc IS TRUE`) -- the inverse filter of
@@ -255,13 +256,22 @@ class PagesRepository(BaseRepository[Page]):
         if book_ids is not None and not book_ids:
             return []
 
+        from app.services.rag.context import resolve_rag_is_staff
+
+        access_sql = (
+            "b.status != 'error'"
+            if resolve_rag_is_staff(is_staff)
+            else "b.status = 'ready' AND (b.visibility = 'public' OR b.visibility IS NULL)"
+        )
         book_filter = "AND p.book_id = ANY(:book_ids)" if book_ids else ""
         query = text(f"""
             SELECT p.book_id, p.page_number, p.text,
                    ts_rank(p.text_search, phraseto_tsquery('simple', :phrase)) AS rank
             FROM pages p
+            JOIN books b ON b.id = p.book_id
             WHERE p.text_search @@ phraseto_tsquery('simple', :phrase)
               AND p.is_toc IS TRUE
+              AND {access_sql}
               {book_filter}
             ORDER BY rank DESC
             LIMIT :limit

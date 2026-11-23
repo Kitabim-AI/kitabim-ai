@@ -397,7 +397,12 @@ def disabled_thinking_config(model_name: str) -> dict:
     """
     if "3.7" in model_name:
         return {"thinking_level": "MEDIUM"}
-    if "3.1" in model_name or "3.6" in model_name:
+    if (
+        "3.1" in model_name
+        or "3.6" in model_name
+        or "3.8" in model_name
+        or "gemini-4" in model_name
+    ):
         return {"thinking_level": "LOW"}
     return {"thinking_budget": 0}
 
@@ -612,6 +617,25 @@ def build_text_llm(model_name: str) -> ProtectedLLM:
     return ProtectedLLM(model_name, _TEXT_BREAKER)
 
 
+_embed_http_sessions: dict[int, tuple[Any, Any]] = {}
+
+
+def _get_embed_http_session():
+    """Return a reusable aiohttp.ClientSession bound to the current event loop."""
+    import aiohttp
+
+    loop = asyncio.get_running_loop()
+    loop_id = id(loop)
+    entry = _embed_http_sessions.get(loop_id)
+    if entry is not None:
+        cached_loop, session = entry
+        if cached_loop is loop and not getattr(session, "closed", False):
+            return session
+    session = aiohttp.ClientSession()
+    _embed_http_sessions[loop_id] = (loop, session)
+    return session
+
+
 class GeminiEmbeddings:
     def __init__(self, model_name: str | None = None) -> None:
         if not model_name:
@@ -639,7 +663,8 @@ class GeminiEmbeddings:
             batch_texts = texts[idx : idx + sub_batch_size]
 
             async def _call(slice_texts: List[str] = batch_texts):
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:batchEmbedContents?key={settings.gemini_api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:batchEmbedContents"
+                headers = {"x-goog-api-key": settings.gemini_api_key or ""}
                 requests = []
                 for t in slice_texts:
                     req = {
@@ -650,15 +675,18 @@ class GeminiEmbeddings:
                         req["outputDimensionality"] = dimensions
                     requests.append(req)
 
-                async with aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout(total=timeout)
-                ) as session:
-                    async with session.post(url, json={"requests": requests}) as resp:
-                        resp.raise_for_status()
-                        data = await resp.json()
-                        if "embeddings" not in data:
-                            raise ValueError(f"No embeddings returned from API: {data}")
-                        return [e["values"] for e in data["embeddings"]]
+                session = _get_embed_http_session()
+                async with session.post(
+                    url,
+                    json={"requests": requests},
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    if "embeddings" not in data:
+                        raise ValueError(f"No embeddings returned from API: {data}")
+                    return [e["values"] for e in data["embeddings"]]
 
             vectors = await _call_with_breaker(_EMBED_BREAKER, _call, timeout=timeout)
             all_vectors.extend(vectors)
@@ -673,27 +701,40 @@ class GeminiEmbeddings:
         from app.core.config import settings
 
         model_name = self.model_name
-        dimensions = 3072 if "gemini-embedding-2" in model_name else 768
+        is_embed_v2 = "gemini-embedding-2" in model_name
+        dimensions = 3072 if is_embed_v2 else 768
         timeout = await get_system_config_timeout("embed_gemini_timeout", 15.0)
 
+        stripped_text = text.strip()
+        if is_embed_v2 and not stripped_text.lower().startswith("task:"):
+            formatted_query = f"task: question answering | query: {stripped_text}"
+        else:
+            formatted_query = text
+
         async def _call():
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:embedContent?key={settings.gemini_api_key}"
-            req = {
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:embedContent"
+            headers = {"x-goog-api-key": settings.gemini_api_key or ""}
+            req: dict[str, Any] = {
                 "model": f"models/{model_name}",
-                "content": {"parts": [{"text": text}]},
+                "content": {"parts": [{"text": formatted_query}]},
             }
             if dimensions:
                 req["outputDimensionality"] = dimensions
+            if not is_embed_v2:
+                req["taskType"] = "RETRIEVAL_QUERY"
 
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=timeout)
-            ) as session:
-                async with session.post(url, json=req) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-                    if "embedding" not in data:
-                        raise ValueError(f"No embedding returned from API: {data}")
-                    return data["embedding"]["values"]
+            session = _get_embed_http_session()
+            async with session.post(
+                url,
+                json=req,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                if "embedding" not in data:
+                    raise ValueError(f"No embedding returned from API: {data}")
+                return data["embedding"]["values"]
 
         values = await _call_with_breaker(_EMBED_BREAKER, _call, timeout=timeout)
         # Gemini's embedContent response carries no usage_metadata — estimate

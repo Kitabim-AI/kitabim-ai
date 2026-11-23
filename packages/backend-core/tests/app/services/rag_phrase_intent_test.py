@@ -52,6 +52,9 @@ def test_explicit_flag_is_ignored_when_text_is_empty():
         'which pages mention "king Babur"',
         'show me where "king Babur" appears',
         'Find Pages With "king Babur"',
+        "«بابۇر» قايسى بەتتە بار؟",
+        "«ئانا يۇرت» دېگەن سۆز قايسى بەتلەردە ئۇچرايدۇ؟",
+        "«سەمەرقەند» نەچچىنچى بەتتە تىلغا ئېلىنغان؟",
     ],
 )
 def test_page_finding_phrasing_is_classified(question):

@@ -190,6 +190,10 @@ def test_push_new_book_calls_client_push_new_book(tmp_path: Path):
 
     assert response.status_code == 200
     assert response.json() == {"bookId": "new1", "status": "uploaded"}
+    assert not wd.image_path(1).exists()
+    assert not wd.image_path(2).exists()
+    assert (wd.root / "book.json").exists()
+    assert (wd.root / "pages.json").exists()
 
 
 def test_push_corrections_calls_client_push_page_correction_per_page(tmp_path: Path):
@@ -207,6 +211,26 @@ def test_push_corrections_calls_client_push_page_correction_per_page(tmp_path: P
 
     assert response.status_code == 200
     assert calls == [("existingbook", 1), ("existingbook", 2)]
+    assert not wd.image_path(1).exists()
+    assert not wd.image_path(2).exists()
+
+
+def test_push_failure_preserves_cached_page_images(tmp_path: Path):
+    wd = _workdir(tmp_path)
+    (tmp_path / "book.pdf").write_bytes(b"%PDF-fake")
+    mock_client = MagicMock()
+    mock_client.push_new_book = MagicMock(
+        side_effect=KitabimAPIError("500 from Kitabim API")
+    )
+
+    app = create_app(wd, client=mock_client)
+    test_client = TestClient(app)
+
+    response = test_client.post("/api/push")
+
+    assert response.status_code == 400
+    assert wd.image_path(1).exists()
+    assert wd.image_path(2).exists()
 
 
 def test_push_recovers_and_pushes_as_new_book_when_book_deleted_on_cloud(
@@ -366,3 +390,18 @@ def test_redo_pages_auto_detects_toc_when_reocrd_text_is_toc(tmp_path: Path):
 
     assert response.status_code == 200
     assert wd.get_page(1).is_toc is True
+
+
+def test_render_page_png_returns_placeholder_on_jbig2_decode_error():
+    from preview.server import render_page_png
+
+    mock_doc = MagicMock()
+    mock_doc.name = ""
+    mock_page = MagicMock()
+    mock_page.get_pixmap.side_effect = RuntimeError(
+        "code=3: cannot decode jbig2 globals"
+    )
+    mock_doc.load_page.return_value = mock_page
+
+    png_bytes = render_page_png(mock_doc, 374)
+    assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")

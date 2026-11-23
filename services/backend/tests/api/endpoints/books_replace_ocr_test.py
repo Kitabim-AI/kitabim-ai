@@ -444,9 +444,13 @@ async def test_reprocess_chunking_and_embedding_reset_retry_counters():
     from app.db.models import Book
 
     mock_session = AsyncMock()
+    sec_cnt_res = MagicMock()
+    sec_cnt_res.scalar_one.return_value = 3
+    mock_session.execute.return_value = sec_cnt_res
+
     mock_user = MagicMock()
     mock_user.email = "editor@example.com"
-    mock_book = Book(id="b1", total_pages=10, status="error")
+    mock_book = Book(id="b1", total_pages=10, status="ready")
 
     mock_books_repo = MagicMock()
     mock_books_repo.get = AsyncMock(return_value=mock_book)
@@ -467,12 +471,15 @@ async def test_reprocess_chunking_and_embedding_reset_retry_counters():
         assert chunk_kwargs["chunking_claimed_at"] is None
         assert chunk_kwargs["embedding_retry_count"] == 0
         assert chunk_kwargs["embedding_claimed_at"] is None
+        assert chunk_kwargs["status"] == "ready"
 
         mock_books_repo.update_one.reset_mock()
         await reprocess_embedding("b1", current_user=mock_user, session=mock_session)
         embed_kwargs = mock_books_repo.update_one.call_args.kwargs
         assert embed_kwargs["embedding_retry_count"] == 0
         assert embed_kwargs["embedding_claimed_at"] is None
+        # reprocess_embedding clears all vectors immediately, so status becomes 'pending'
+        assert embed_kwargs["status"] == "pending"
 
 
 @pytest.mark.asyncio
@@ -579,15 +586,33 @@ async def test_update_page_text_rebuilds_full_multi_page_span_when_overlapping_c
     )
 
     spell_del_res = MagicMock()
-    span_res = MagicMock()
-    span_res.first.return_value = (4, 6)
+    del_res_1 = MagicMock()
+    del_res_1.fetchall.return_value = [(4, 6)]
+    del_res_2 = MagicMock()
+    del_res_2.fetchall.return_value = []
 
-    del_res = MagicMock()
+    book_title_res = MagicMock()
+    book_title_res.scalar_one_or_none.return_value = "ئۇيغۇر كىلاسسىك ئەسەرلىرى"
+
+    sections_ctx_res = MagicMock()
+    sections_ctx_res.fetchall.return_value = [
+        (100, "باب 1", "chapter", None, None),
+        (101, "باب 2", "chapter", None, None),
+    ]
 
     span_pages_res = MagicMock()
     span_pages_res.scalars.return_value.all.return_value = [page4, page5, page6]
 
-    initial_results = iter([spell_del_res, span_res, del_res, span_pages_res])
+    initial_results = iter(
+        [
+            spell_del_res,
+            del_res_1,
+            del_res_2,
+            book_title_res,
+            sections_ctx_res,
+            span_pages_res,
+        ]
+    )
 
     async def _fake_execute(stmt, *args, **kwargs):
         return next(initial_results, MagicMock())
@@ -713,3 +738,413 @@ async def test_count_pending_index_books_requires_ocr_complete_across_all_condit
         # not buried only inside the spell_check branch
         assert "books.ocr_milestone = 'complete'" in compiled_sql
         assert "books.ocr_milestone = 'complete' AND (" in compiled_sql
+
+
+@pytest.mark.asyncio
+async def test_reprocess_chunking_preserves_ready_status_and_triggers_structure_when_sections_missing():
+    setup_paths()
+    from api.endpoints.books_router import reprocess_chunking
+    from app.db.models import Book
+
+    mock_session = AsyncMock()
+    sec_count_res = MagicMock()
+    sec_count_res.scalar_one.return_value = 0
+    mock_session.execute.side_effect = [sec_count_res, MagicMock()]
+
+    mock_user = MagicMock()
+    mock_user.email = "editor@example.com"
+    mock_book = Book(id="b1", total_pages=10, status="ready")
+
+    mock_books_repo = MagicMock()
+    mock_books_repo.get = AsyncMock(return_value=mock_book)
+    mock_books_repo.update_one = AsyncMock()
+
+    with (
+        patch(
+            "api.endpoints.books_router.BooksRepository", return_value=mock_books_repo
+        ),
+        patch("api.endpoints.books_router.cache_service") as mock_cache,
+        patch(
+            "api.endpoints.books_router._enqueue_structure_job_best_effort",
+            new_callable=AsyncMock,
+        ) as mock_enqueue,
+    ):
+        mock_cache.delete = AsyncMock()
+        mock_cache.delete_pattern = AsyncMock()
+
+        await reprocess_chunking("b1", current_user=mock_user, session=mock_session)
+
+    chunk_kwargs = mock_books_repo.update_one.call_args.kwargs
+    assert chunk_kwargs["status"] == "ready"
+    assert "spell_check_milestone" not in chunk_kwargs
+    assert chunk_kwargs["structure_milestone"] == "idle"
+    mock_enqueue.assert_awaited_once_with("b1")
+
+
+@pytest.mark.asyncio
+async def test_update_page_text_widens_transitively_across_three_chained_chunks():
+    setup_paths()
+    from api.endpoints.books_router import update_page_text
+    from app.db.models import Page
+
+    mock_session = AsyncMock()
+    mock_session.add = MagicMock()
+    mock_user = MagicMock(email="editor@example.com")
+
+    pages = [
+        Page(
+            id=10 + p,
+            book_id="b1",
+            page_number=p,
+            text=f"{p}-بەت تېكىستى.",
+            is_toc=False,
+            status="indexed",
+        )
+        for p in range(2, 7)
+    ]
+
+    spell_del = MagicMock()
+    # Hop 1 (page 5) -> deletes [4, 6]; Hop 2 ([4, 6]) -> deletes [3, 4]; Hop 3 ([3, 6]) -> deletes [2, 3]; Hop 4 ([2, 6]) -> []
+    del_hop1 = MagicMock(fetchall=MagicMock(return_value=[(4, 6)]))
+    del_hop2 = MagicMock(fetchall=MagicMock(return_value=[(3, 4)]))
+    del_hop3 = MagicMock(fetchall=MagicMock(return_value=[(2, 3)]))
+    del_hop4 = MagicMock(fetchall=MagicMock(return_value=[]))
+
+    book_title_res = MagicMock(scalar_one_or_none=MagicMock(return_value="كىتاب"))
+    sections_ctx_res = MagicMock(fetchall=MagicMock(return_value=[]))
+    span_pages_res = MagicMock()
+    span_pages_res.scalars.return_value.all.return_value = pages
+
+    seq = iter(
+        [
+            spell_del,
+            del_hop1,
+            del_hop2,
+            del_hop3,
+            del_hop4,
+            book_title_res,
+            sections_ctx_res,
+            span_pages_res,
+        ]
+    )
+    mock_session.execute.side_effect = lambda *a, **kw: next(seq, MagicMock())
+
+    mock_books_repo = MagicMock(update_one=AsyncMock())
+    mock_pages_repo = MagicMock(find_one=AsyncMock(return_value=pages[3]))  # page 5
+    mock_configs_repo = MagicMock(
+        get_value=AsyncMock(return_value="gemini-embedding-001")
+    )
+    mock_sections_repo = MagicMock(list_leaf_sections=AsyncMock(return_value=[]))
+    mock_embed_svc = MagicMock(
+        aembed_documents=AsyncMock(
+            side_effect=lambda texts, **kw: [[0.2] * 4 for _ in texts]
+        )
+    )
+
+    with (
+        patch(
+            "api.endpoints.books_router.BooksRepository", return_value=mock_books_repo
+        ),
+        patch(
+            "api.endpoints.books_router.PagesRepository", return_value=mock_pages_repo
+        ),
+        patch(
+            "api.endpoints.books_router.SystemConfigsRepository",
+            return_value=mock_configs_repo,
+        ),
+        patch(
+            "app.db.repositories.book_sections_repository.BookSectionsRepository",
+            return_value=mock_sections_repo,
+        ),
+        patch(
+            "api.endpoints.books_router.GeminiEmbeddings", return_value=mock_embed_svc
+        ),
+        patch(
+            "app.services.book_milestone_service.BookMilestoneService.update_book_milestones",
+            new_callable=AsyncMock,
+        ),
+        patch("api.endpoints.books_router.cache_service") as mock_cache,
+        patch(
+            "api.endpoints.books_router._enqueue_structure_job_best_effort",
+            new_callable=AsyncMock,
+        ),
+    ):
+        mock_cache.delete = AsyncMock()
+        mock_cache.delete_pattern = AsyncMock()
+
+        res = await update_page_text(
+            book_id="b1",
+            page_num=5,
+            payload={"text": "5-بەت يېڭىلانغان تېكىستى."},
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert res["status"] == "page_updated"
+    added_chunks = [c.args[0] for c in mock_session.add.call_args_list]
+    combined = "\n".join(c.text for c in added_chunks)
+    # Transitive widening reached page 2 all the way from page 5
+    assert "2-بەت تېكىستى." in combined
+    assert "6-بەت تېكىستى." in combined
+
+
+@pytest.mark.asyncio
+async def test_get_book_chunks_inspector_semantic_and_validation():
+    setup_paths()
+    from fastapi import HTTPException
+    from api.endpoints.books_router import get_book_chunks_inspector
+    from app.db.models import Book
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock(email="editor@example.com")
+    mock_book = Book(
+        id="b1",
+        title="قۇتادغۇ بىلىك",
+        total_pages=50,
+        status="ready",
+        content_page_offset=4,
+    )
+
+    # 1. Validation errors for invalid filterType / mode
+    with pytest.raises(HTTPException) as exc_filter:
+        await get_book_chunks_inspector(
+            "b1",
+            page=None,
+            section_id=None,
+            filter_type="bogus",
+            mode="semantic",
+            q=None,
+            skip=0,
+            limit=50,
+            current_user=mock_user,
+            session=mock_session,
+        )
+    assert exc_filter.value.status_code == 400
+
+    with pytest.raises(HTTPException) as exc_mode:
+        await get_book_chunks_inspector(
+            "b1",
+            page=None,
+            section_id=None,
+            filter_type="all",
+            mode="invalid",
+            q=None,
+            skip=0,
+            limit=50,
+            current_user=mock_user,
+            session=mock_session,
+        )
+    assert exc_mode.value.status_code == 400
+
+    # 2. Semantic search mode embeds query and enriches overlapPrefix + embeddingPrefix
+    mock_books_repo = MagicMock(get=AsyncMock(return_value=mock_book))
+    mock_configs_repo = MagicMock(
+        get_value=AsyncMock(return_value="gemini-embedding-001")
+    )
+    mock_embedder = MagicMock(aembed_query=AsyncMock(return_value=[0.25, 0.5, 0.75]))
+    mock_chunks_repo = MagicMock(
+        inspect_for_book=AsyncMock(
+            return_value={
+                "stats": {
+                    "total_chunks": 20,
+                    "embedded_chunks": 20,
+                    "unembedded_chunks": 0,
+                    "cross_page_chunks": 4,
+                    "short_chunks": 1,
+                    "oversized_chunks": 0,
+                    "sections_count": 1,
+                },
+                "sections": [
+                    {
+                        "id": 10,
+                        "parent_id": None,
+                        "section_index": 0,
+                        "level": 1,
+                        "section_type": "chapter",
+                        "source": "toc",
+                        "title": "ئەدلىيە ۋە قانۇن بابى",
+                        "start_page": 5,
+                        "end_page": 18,
+                        "chunk_count": 20,
+                    }
+                ],
+                "total_matching": 1,
+                "chunks": [
+                    {
+                        "id": 501,
+                        "chunk_index": 1,
+                        "page_number": 8,
+                        "end_page_number": 9,
+                        "content_page_number": "4",
+                        "end_content_page_number": "5",
+                        "section_id": 10,
+                        "section_title": "ئەدلىيە ۋە قانۇن بابى",
+                        "text": (
+                            "ئادالەت بىلەن ئەلنى تۈزەش ھەققىدە بايان قىلىنىدۇ.\n\n"
+                            "بىلىگلىك كىشى ئەلگە نەپ يەتكۈزۈر."
+                        ),
+                        "char_count": 82,
+                        "text_hash": "hash501",
+                        "has_embedding": True,
+                        "prev_text": (
+                            "كىرىش سۆز جۈملىسى.\n\n"
+                            "ئادالەت بىلەن ئەلنى تۈزەش ھەققىدە بايان قىلىنىدۇ."
+                        ),
+                        "similarity": 0.8123,
+                    }
+                ],
+            }
+        )
+    )
+
+    with (
+        patch(
+            "api.endpoints.books_router.BooksRepository", return_value=mock_books_repo
+        ),
+        patch(
+            "api.endpoints.books_router.SystemConfigsRepository",
+            return_value=mock_configs_repo,
+        ),
+        patch(
+            "api.endpoints.books_router.GeminiEmbeddings", return_value=mock_embedder
+        ),
+        patch(
+            "api.endpoints.books_router.ChunksRepository", return_value=mock_chunks_repo
+        ),
+    ):
+        resp = await get_book_chunks_inspector(
+            "b1",
+            page=8,
+            section_id=10,
+            filter_type="all",
+            mode="semantic",
+            q="ئادالەت دېگەن نېمە؟",
+            rerank=False,
+            skip=0,
+            limit=50,
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    mock_embedder.aembed_query.assert_awaited_once_with("ئادالەت دېگەن نېمە؟")
+    mock_chunks_repo.inspect_for_book.assert_awaited_once_with(
+        "b1",
+        page=8,
+        section_id=10,
+        filter_type="all",
+        text_query=None,
+        query_embedding=[0.25, 0.5, 0.75],
+        skip=0,
+        limit=50,
+    )
+    from app.core.config import settings
+
+    assert resp["bookId"] == "b1"
+    assert resp["ragThreshold"] == settings.rag_score_threshold
+    assert resp["stats"]["totalChunks"] == 20
+    assert len(resp["chunks"]) == 1
+    c0 = resp["chunks"][0]
+    assert c0["embeddingPrefix"] == "قۇتادغۇ بىلىك — ئەدلىيە ۋە قانۇن بابى"
+    assert c0["overlapPrefix"] == "ئادالەت بىلەن ئەلنى تۈزەش ھەققىدە بايان قىلىنىدۇ."
+    assert c0["similarity"] == 0.8123
+    assert resp["reranked"] is False
+
+    # 3. Rerank mode promotes LLM-selected winner to rank #1 and marks rejected pool candidates
+    mock_chunks_repo_rerank = MagicMock(
+        inspect_for_book=AsyncMock(
+            return_value={
+                "stats": {
+                    "total_chunks": 2,
+                    "embedded_chunks": 2,
+                    "unembedded_chunks": 0,
+                    "cross_page_chunks": 0,
+                    "short_chunks": 0,
+                    "oversized_chunks": 0,
+                    "sections_count": 1,
+                },
+                "sections": [],
+                "total_matching": 2,
+                "chunks": [
+                    {
+                        "id": 601,
+                        "chunk_index": 0,
+                        "page_number": 367,
+                        "end_page_number": 367,
+                        "content_page_number": "356",
+                        "end_content_page_number": "356",
+                        "section_id": None,
+                        "section_title": None,
+                        "text": "شاھزادە ئۇۋەيسخان مەرھۇم تاغىسىنىڭ جىيەنى ئىدى.",
+                        "char_count": 48,
+                        "text_hash": "h601",
+                        "has_embedding": True,
+                        "prev_text": None,
+                        "similarity": 0.75,
+                    },
+                    {
+                        "id": 602,
+                        "chunk_index": 0,
+                        "page_number": 452,
+                        "end_page_number": 453,
+                        "content_page_number": "441",
+                        "end_content_page_number": "442",
+                        "section_id": None,
+                        "section_title": None,
+                        "text": "سۇلتان ئوۋەيسخان خاتا ئېتىلغان يا ئوقىدا ئۆلۈپ كەتتى.",
+                        "char_count": 53,
+                        "text_hash": "h602",
+                        "has_embedding": True,
+                        "prev_text": None,
+                        "similarity": 0.68,
+                    },
+                ],
+            }
+        )
+    )
+
+    async def _fake_rerank_docs(question, cand_docs, model, max_chunks=None):
+        # Reranker picks chunk 602 (cand_docs[1]) and drops false-positive chunk 601 (cand_docs[0])
+        return [cand_docs[1]]
+
+    with (
+        patch(
+            "api.endpoints.books_router.BooksRepository", return_value=mock_books_repo
+        ),
+        patch(
+            "api.endpoints.books_router.SystemConfigsRepository",
+            return_value=mock_configs_repo,
+        ),
+        patch(
+            "api.endpoints.books_router.GeminiEmbeddings", return_value=mock_embedder
+        ),
+        patch(
+            "api.endpoints.books_router.ChunksRepository",
+            return_value=mock_chunks_repo_rerank,
+        ),
+        patch(
+            "app.services.rag.agent.reranker.rerank_documents",
+            side_effect=_fake_rerank_docs,
+        ),
+    ):
+        reranked_resp = await get_book_chunks_inspector(
+            "b1",
+            page=None,
+            section_id=None,
+            filter_type="all",
+            mode="semantic",
+            q="ئۇۋەيسخان قانداق ۋاپات بولىدۇ؟",
+            rerank=True,
+            skip=0,
+            limit=50,
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert reranked_resp["reranked"] is True
+    assert reranked_resp["rerankSelectedCount"] == 1
+    assert reranked_resp["chunks"][0]["id"] == 602
+    assert reranked_resp["chunks"][0]["rerankRank"] == 1
+    assert reranked_resp["chunks"][0]["rerankDropped"] is False
+    assert reranked_resp["chunks"][1]["id"] == 601
+    assert reranked_resp["chunks"][1]["rerankRank"] is None
+    assert reranked_resp["chunks"][1]["rerankDropped"] is True

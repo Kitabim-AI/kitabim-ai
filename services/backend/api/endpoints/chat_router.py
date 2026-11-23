@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from app.db.repositories.conversation_repository import ConversationRepository
+from app.db.repositories.rag_evaluations_repository import RAGEvaluationsRepository
 from app.db.session import get_session
 from app.models.schemas import ChatRequest, ChatResponse, ChatUsageStatus
 from app.models.user import User
@@ -48,19 +49,29 @@ async def chat_with_book_api(
         user_id=current_user.id,
         book_id=req.book_id,
     )
-    # 1. Check if user is within their daily limit
+    # 1. Check if user is within their daily limit (allow cached sample question hits)
     usage_status = await chat_limit_service.get_user_usage_status(current_user, session)
     if usage_status["has_reached_limit"]:
-        log_json(
-            logger,
-            logging.WARNING,
-            "Chat limit reached for user",
-            user_id=current_user.id,
-            role=current_user.role,
-            usage=usage_status["usage"],
-            limit=usage_status["limit"],
-        )
-        raise HTTPException(status_code=429, detail=t("errors.daily_limit_reached"))
+        can_use_cached_sample = False
+        if req.from_sample_question:
+            cached_eval = await RAGEvaluationsRepository(
+                session
+            ).get_qualifying_sample_evaluation(
+                question=req.question,
+                eval_id=req.sample_eval_id,
+            )
+            can_use_cached_sample = cached_eval is not None
+        if not can_use_cached_sample:
+            log_json(
+                logger,
+                logging.WARNING,
+                "Chat limit reached for user",
+                user_id=current_user.id,
+                role=current_user.role,
+                usage=usage_status["usage"],
+                limit=usage_status["limit"],
+            )
+            raise HTTPException(status_code=429, detail=t("errors.daily_limit_reached"))
 
     try:
         # 2. Process chat request via the ADK orchestrator
@@ -80,6 +91,8 @@ async def chat_with_book_api(
             context_book_ids=req.context_book_ids,
             exact_phrase=req.exact_phrase,
             is_staff=is_staff,
+            from_sample_question=req.from_sample_question,
+            sample_eval_id=req.sample_eval_id,
         )
         adk_session_service = getattr(request.app.state, "adk_session_service", None)
         orchestrator = ChatOrchestrator(session_service=adk_session_service)
@@ -88,8 +101,9 @@ async def chat_with_book_api(
         # 2.5. Fix malformed citation references
         answer = fix_malformed_citations(result["answer"])
 
-        # 3. Increment usage on successful answer
-        await chat_limit_service.increment_usage(current_user, session)
+        # 3. Increment usage only when LLM ran (not for cached sample answers)
+        if not result.get("cached"):
+            await chat_limit_service.increment_usage(current_user, session)
         usage_status = await chat_limit_service.get_user_usage_status(
             current_user, session
         )
@@ -132,23 +146,33 @@ async def chat_with_book_stream(
         book_id=req.book_id,
     )
 
-    # Check if user is within their daily limit
+    # Check if user is within their daily limit (allow cached sample question hits)
     usage_status = await chat_limit_service.get_user_usage_status(current_user, session)
     if usage_status["has_reached_limit"]:
-        log_json(
-            logger,
-            logging.WARNING,
-            "Chat limit reached for user (stream)",
-            user_id=current_user.id,
-            role=current_user.role,
-            usage=usage_status["usage"],
-            limit=usage_status["limit"],
-        )
+        can_use_cached_sample = False
+        if req.from_sample_question:
+            cached_eval = await RAGEvaluationsRepository(
+                session
+            ).get_qualifying_sample_evaluation(
+                question=req.question,
+                eval_id=req.sample_eval_id,
+            )
+            can_use_cached_sample = cached_eval is not None
+        if not can_use_cached_sample:
+            log_json(
+                logger,
+                logging.WARNING,
+                "Chat limit reached for user (stream)",
+                user_id=current_user.id,
+                role=current_user.role,
+                usage=usage_status["usage"],
+                limit=usage_status["limit"],
+            )
 
-        async def error_stream():
-            yield f"data: {json.dumps({'error': t('errors.daily_limit_reached')})}\n\n"
+            async def error_stream():
+                yield f"data: {json.dumps({'error': t('errors.daily_limit_reached')})}\n\n"
 
-        return StreamingResponse(error_stream(), media_type="text/event-stream")
+            return StreamingResponse(error_stream(), media_type="text/event-stream")
 
     async def event_generator():
         try:
@@ -173,21 +197,35 @@ async def chat_with_book_stream(
                 context_book_ids=req.context_book_ids,
                 exact_phrase=req.exact_phrase,
                 is_staff=is_staff,
+                from_sample_question=req.from_sample_question,
+                sample_eval_id=req.sample_eval_id,
             )
 
             async for event in orchestrator.stream_response(dto, session):
                 if isinstance(event, dict):
                     if event.get("type") == "chunk":
                         yield f"data: {json.dumps({'chunk': event['text']})}\n\n"
+                    elif event.get("type") == "correction":
+                        yield f"data: {json.dumps({'correction': event['text']})}\n\n"
                     elif event.get("type") == "done":
-                        await chat_limit_service.increment_usage(current_user, session)
+                        is_cached = bool(event.get("cached"))
+                        if not is_cached:
+                            await chat_limit_service.increment_usage(
+                                current_user, session
+                            )
                         updated_usage = await chat_limit_service.get_user_usage_status(
                             current_user, session
+                        )
+                        usage_out = (
+                            ChatUsageStatus(**updated_usage).model_dump(by_alias=True)
+                            if isinstance(updated_usage, dict)
+                            else updated_usage
                         )
                         cost = event.get("cost") or {}
                         done_payload = {
                             "done": True,
-                            "usage": updated_usage,
+                            "cached": is_cached,
+                            "usage": usage_out,
                             "conversationId": event.get("conversation_id"),
                             "contextBookIds": event.get("used_book_ids", []),
                             "evalId": event.get("eval_id"),
@@ -383,6 +421,40 @@ async def list_conversations_endpoint(
     }
 
 
+def _extract_message_cost(m) -> Optional[dict]:
+    """Extract token/cost payload from a ConversationMessage's linked evaluation
+    or cached sample metadata stored in agent_steps."""
+    if m.evaluation and (
+        m.evaluation.input_tokens > 0
+        or m.evaluation.output_tokens > 0
+        or (m.evaluation.cost_usd and float(m.evaluation.cost_usd) > 0)
+    ):
+        return {
+            "inputTokens": m.evaluation.input_tokens,
+            "outputTokens": m.evaluation.output_tokens,
+            "costUsd": (
+                float(m.evaluation.cost_usd)
+                if m.evaluation.cost_usd is not None
+                else 0.0
+            ),
+        }
+
+    steps = m.agent_steps if isinstance(m.agent_steps, dict) else None
+    step_cost = steps.get("cost") if steps else None
+    if isinstance(step_cost, dict):
+        inp = int(step_cost.get("input_tokens") or 0)
+        out = int(step_cost.get("output_tokens") or 0)
+        usd = float(step_cost.get("cost_usd") or 0.0)
+        if inp > 0 or out > 0 or usd > 0 or "cached_sample_eval_id" in steps:
+            return {
+                "inputTokens": inp,
+                "outputTokens": out,
+                "costUsd": usd,
+            }
+
+    return None
+
+
 @router.get("/conversations/{conversation_id}/messages")
 async def list_conversation_messages_endpoint(
     conversation_id: str,
@@ -409,24 +481,7 @@ async def list_conversation_messages_endpoint(
                 "usedBookIds": m.used_book_ids,
                 "currentPage": m.current_page,
                 "evalId": m.eval_id,
-                "cost": (
-                    {
-                        "inputTokens": m.evaluation.input_tokens,
-                        "outputTokens": m.evaluation.output_tokens,
-                        "costUsd": (
-                            float(m.evaluation.cost_usd)
-                            if m.evaluation.cost_usd is not None
-                            else 0.0
-                        ),
-                    }
-                    if m.evaluation
-                    and (
-                        m.evaluation.input_tokens > 0
-                        or m.evaluation.output_tokens > 0
-                        or (m.evaluation.cost_usd and float(m.evaluation.cost_usd) > 0)
-                    )
-                    else None
-                ),
+                "cost": _extract_message_cost(m),
                 "feedback": m.evaluation.user_feedback if m.evaluation else None,
                 "createdAt": m.created_at.isoformat(),
             }

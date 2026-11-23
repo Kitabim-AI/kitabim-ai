@@ -87,6 +87,8 @@ export interface ChatStreamParams {
   characterId?: string;
   contextBookIds?: string[];
   conversationId?: string;
+  fromSampleQuestion?: boolean;
+  sampleEvalId?: number;
   signal?: AbortSignal;
 }
 
@@ -107,7 +109,7 @@ export const chatWithBookStream = async (
   params: ChatStreamParams,
   callbacks: ChatStreamCallbacks,
 ): Promise<void> => {
-  const { question, bookId, currentPage, history, characterId, contextBookIds, conversationId, signal } = params;
+  const { question, bookId, currentPage, history, characterId, contextBookIds, conversationId, fromSampleQuestion, sampleEvalId, signal } = params;
   const { onChunk, onComplete, onError, onCorrection, onUsageUpdate, onContextBookIds, onAgentEvent, onEvalId, onConversationId, onCostUpdate } = callbacks;
 
   try {
@@ -122,6 +124,8 @@ export const chatWithBookStream = async (
         character_id: characterId,
         contextBookIds: contextBookIds ?? [],
         conversationId,
+        ...(fromSampleQuestion ? { fromSampleQuestion: true } : {}),
+        ...(typeof sampleEvalId === 'number' ? { sampleEvalId } : {}),
       }),
       signal,
     });

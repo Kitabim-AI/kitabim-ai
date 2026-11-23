@@ -370,12 +370,51 @@ def clean_uyghur_text(text: str) -> str:
     return strip_page_numbers(cleaned)
 
 
+_COLOPHON_TOC_GUARD_MARKERS = (
+    "مەسئۇل مۇھەررىر",
+    "مەسئۇل كوررېكتور",
+    "مۇقاۋا لايىھەلىگۈچى",
+    "تەخنىك مۇھەررىر",
+    "پوچتا نومۇرى",
+    "تېلېفون نومۇرى",
+    "باسما تاۋىقى",
+    "باسما تاۋاقى",
+    "كەسلەم",
+    "نەشر قىلغۇچى",
+    "باسقۇچى",
+    "ساتقۇچى",
+    "باسما زاۋۇتى",
+    "تىراژى",
+    "كىتاب نومۇرى",
+    "isbn",
+    "图书在版编目",
+    "cip 数据",
+    "责任编辑",
+    "印张",
+    "定价",
+)
+
+
+def is_colophon_page(text: str) -> bool:
+    """Return True if a page is a publishing colophon / copyright / CIP page rather than a ToC."""
+    if not text:
+        return False
+    norm = normalize_uyghur_chars(text)
+    if "مۇندەرىجە" in norm:
+        return False
+    lowered = norm.lower()
+    return sum(1 for m in _COLOPHON_TOC_GUARD_MARKERS if m in lowered) >= 2
+
+
 def is_toc_page(text: str) -> bool:
     if not text:
         return False
 
     if "مۇندەرىجە" in text:
         return True
+
+    if is_colophon_page(text):
+        return False
 
     lines = [line.strip() for line in text.split("\n") if line.strip()]
     if not lines:

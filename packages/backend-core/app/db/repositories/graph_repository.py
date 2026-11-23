@@ -395,7 +395,9 @@ class GraphRepository:
         RETURN e.id AS entity_id, e.canonical_name AS entity_name, e.type AS entity_type,
                collect(CASE WHEN r IS NULL THEN NULL ELSE {
                    rel_type: r.rel_type, book_id: r.book_id, chunk_refs: r.chunk_refs,
-                   other_name: other.canonical_name, is_outgoing: startNode(r).id = e.id
+                   other_name: other.canonical_name, is_outgoing: startNode(r).id = e.id,
+                   evidence: r.evidence, year_hijri: r.year_hijri,
+                   year_gregorian: r.year_gregorian, parent_role: r.parent_role
                } END) AS facts
         """
         async with self._driver.session() as session:
@@ -426,6 +428,23 @@ class GraphRepository:
                     text = f"{entity_name} {f['rel_type']} {other_name}".strip()
                 else:
                     text = f"{other_name} {f['rel_type']} {entity_name}".strip()
+
+                qualifiers: List[str] = []
+                if f.get("parent_role"):
+                    qualifiers.append(f"role: {f['parent_role']}")
+                yr_parts = []
+                if f.get("year_gregorian") is not None:
+                    yr_parts.append(f"{f['year_gregorian']} CE")
+                if f.get("year_hijri") is not None:
+                    yr_parts.append(f"{f['year_hijri']} AH")
+                if yr_parts:
+                    qualifiers.append(" / ".join(yr_parts))
+                if qualifiers:
+                    text = f"{text} ({', '.join(qualifiers)})"
+                evidence = (f.get("evidence") or "").strip()
+                if evidence:
+                    text = f"{text} — {evidence}"
+
                 rows.append({"text": text, "book_id": book_id, "page": page})
 
             if not rows:

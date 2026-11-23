@@ -10,12 +10,14 @@ Administrative management console providing book pipeline milestone monitoring, 
 - `[ActionMenu.tsx:ActionMenu]` — Dropdown action menu triggering manual pipeline stages (OCR, Structure, Chunking, Embedding, Spell-check, Graph, Summary).
 - `[AdminQuestions.tsx:AdminQuestions]` — Table and filter manager for user questions and search queries.
 - `[AdminTabs.tsx:AdminTabs]` — Guarded tabs container allowing role-based access for editors and administrators.
-- `[ContactSubmissionsPanel.tsx:ContactSubmissionsPanel]` — Panel viewing volunteer submissions and contact inquiries.
+- `[ContactSubmissionsPanel.tsx:ContactSubmissionsPanel]` — Panel viewing, filtering, updating status/notes, and deleting volunteer submissions and contact inquiries.
+- `[ContactDetailModal.tsx:ContactDetailModal]` — Native modal `<dialog>` displaying full contact message details, status controls, admin notes editor, and delete confirmation.
 - `[ProgressBar.tsx:ProgressBar]` — Visual completion bar illustrating page milestone counts across pipeline stages.
 - `[QuestionDetailModal.tsx:QuestionDetailModal]` — Modal displaying question context, answered chunks, and curation status.
 - `[StatsPanel.tsx:StatsPanel]` — System-wide analytics and usage statistics dashboard.
 - `[TagEditor.tsx:TagEditor]` — Book genre, era, category, and subject tag editor component.
 - Subdirectories:
+  - `chunks`: Book-scoped Chunk Inspector (`ChunkInspectorView.tsx`) for inspecting `book_sections`, chunk boundaries, overlap/embedding prefixes, semantic question similarity scores, and source `pages.text`.
   - `config`: [./config/README.md](./config/README.md) - System configuration key-value CRUD panel and AI circuit breaker controls.
   - `dictionary`: [./dictionary/README.md](./dictionary/README.md) - Uyghur definition, proverbs, historical vocabulary, names, and English-Uyghur dictionaries.
   - `rules`: [./rules/README.md](./rules/README.md) - Global auto-correction spell-check rules CRUD management and activation toggle.

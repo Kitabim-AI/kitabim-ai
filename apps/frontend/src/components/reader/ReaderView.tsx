@@ -6,6 +6,7 @@ import {
   Download,
   Edit3,
   FileText,
+  Layers,
   Loader2,
   Maximize2, Minimize2,
   PanelLeftOpen,
@@ -34,6 +35,8 @@ const normalizeReaderCategory = (category: string) =>
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/^['"\s]+|['"\s]+$/g, '');
 
+const FULL_DOC_PAGE_BATCH_SIZE = 200;
+
 export const ReaderView: React.FC = () => {
   const { addNotification } = useNotification();
   const {
@@ -51,6 +54,7 @@ export const ReaderView: React.FC = () => {
     setIsReaderFullscreen,
     fontSize,
     setFontSize,
+    openChunkInspector,
   } = useAppContext();
 
   if (!selectedBook) return null;
@@ -154,18 +158,30 @@ export const ReaderView: React.FC = () => {
   useEffect(() => {
     if (!isFullDocumentMode) {
       setLoadedPages([]);
+      setHasMorePages(true);
     } else {
-      setLoadedPages(selectedBook.pages || []);
+      const initialPages = selectedBook.pages || [];
+      setLoadedPages(initialPages);
+      setHasMorePages(
+        initialPages.length === 0 || initialPages.length >= FULL_DOC_PAGE_BATCH_SIZE
+      );
     }
   }, [selectedBook.id, isFullDocumentMode]);
 
   useEffect(() => {
-    if (isFullDocumentMode && loadedPages.length === 0) {
+    if (isFullDocumentMode && loadedPages.length === 0 && hasMorePages) {
       const fetchFullDocPages = async () => {
         setIsLoadingMore(true);
         try {
-          const pages = await PersistenceService.getBookPages(selectedBook.id, 0, 10000);
+          const pages = await PersistenceService.getBookPages(
+            selectedBook.id,
+            0,
+            FULL_DOC_PAGE_BATCH_SIZE
+          );
           setLoadedPages(pages);
+          if (pages.length < FULL_DOC_PAGE_BATCH_SIZE) {
+            setHasMorePages(false);
+          }
         } catch (err) {
           console.error("Failed to fetch full document pages", err);
         } finally {
@@ -174,7 +190,7 @@ export const ReaderView: React.FC = () => {
       };
       fetchFullDocPages();
     }
-  }, [selectedBook.id, isFullDocumentMode, loadedPages.length]);
+  }, [selectedBook.id, isFullDocumentMode, loadedPages.length, hasMorePages]);
 
   useEffect(() => {
     if (currentPage !== null) {
@@ -285,11 +301,18 @@ export const ReaderView: React.FC = () => {
 
     try {
       const currentLength = loadedPages.length;
-      const newPages = await PersistenceService.getBookPages(selectedBook.id, currentLength, 10000);
+      const newPages = await PersistenceService.getBookPages(
+        selectedBook.id,
+        currentLength,
+        FULL_DOC_PAGE_BATCH_SIZE
+      );
 
       if (newPages.length === 0) {
         setHasMorePages(false);
       } else {
+        if (newPages.length < FULL_DOC_PAGE_BATCH_SIZE) {
+          setHasMorePages(false);
+        }
         setLoadedPages(prev => {
           const existingIds = new Set(prev.map(p => p.pageNumber));
           const uniqueNew = newPages.filter((p: any) => !existingIds.has(p.pageNumber));
@@ -534,6 +557,15 @@ export const ReaderView: React.FC = () => {
                       <button onClick={handleEnterGlobalEdit} className="flex items-center gap-2 px-2 sm:px-4 py-2 min-h-[36px] sm:min-h-[44px] bg-[#0369a1] text-white text-xs sm:text-sm rounded-xl sm:rounded-2xl hover:bg-[#0284c7] transition-all">
                         <Edit3 size={14} className="sm:w-4 sm:h-4" />
                         <span className="hidden sm:inline">{t('reader.editBook')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openChunkInspector(selectedBook, { page: currentPage || 1, from: 'reader' })}
+                        className="flex items-center justify-center p-1.5 sm:p-2 min-w-[32px] sm:min-w-[40px] min-h-[32px] sm:min-h-[40px] rounded-xl transition-all bg-white/60 dark:bg-slate-800/80 border border-[#0369a1]/20 dark:border-[#38bdf8]/20 text-[#0369a1] dark:text-[#38bdf8] hover:bg-[#0369a1]/10 dark:hover:bg-[#38bdf8]/10"
+                        title={t('reader.inspectChunksTitle')}
+                        aria-label={t('reader.inspectChunksTitle')}
+                      >
+                        <Layers size={18} className="sm:w-5 sm:h-5" />
                       </button>
                       {!isFullDocumentMode && (
                         <button
