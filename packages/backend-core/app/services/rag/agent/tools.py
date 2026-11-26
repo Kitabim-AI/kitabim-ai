@@ -1195,11 +1195,22 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
     result = books or []
 
     # Filter out single-word false positive matches if the query is a multi-word
-    # search — but only when the title is an everyday word (e.g. ھايات). A
-    # distinctive one-word title (e.g. قۇتادغۇبىلىك) is a real match.
+    # search — but only when the title is an everyday word (e.g. ھايات) AND was
+    # not explicitly signaled as a book title (quoted, followed by ناملىق/رومانى/
+    # كىتابى, or paired with the book's author). Distinctive one-word titles
+    # (e.g. قۇتادغۇبىلىك) and explicitly-signaled common-word titles (e.g. «ئىز»
+    # ناملىق رومانى) are real matches.
     if result and len(result) == 1 and len(result[0]["title"].split()) == 1:
+        from app.services.rag.utils import has_explicit_single_word_title_signal
+
         q_words = [w for w in question.strip().split() if len(w) >= 3]
-        if len(q_words) >= 3 and await _title_is_common_word(result[0]["title"]):
+        if (
+            len(q_words) >= 3
+            and not has_explicit_single_word_title_signal(
+                result[0]["title"], question, author=result[0].get("author")
+            )
+            and await _title_is_common_word(result[0]["title"])
+        ):
             result = []
 
     # Fallback to custom fuzzy keyword matching if strict title in question matching returned nothing
@@ -1210,7 +1221,9 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
         from app.services.rag.utils import (
             normalize_uyghur,
             fuzzy_token_similar,
+            short_token_matches,
             PUNCTUATION_STRIP_CHARS,
+            STRONG_TITLE_FOLLOWERS,
         )
 
         try:
@@ -1234,11 +1247,21 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
                 for r in db_res.fetchall()
             ]
 
-            q_words = [
+            raw_q_words = [
                 normalize_uyghur(w).strip(PUNCTUATION_STRIP_CHARS)
                 for w in question.strip().split()
             ]
-            q_words = [w for w in q_words if w and len(w) >= 3]
+            raw_q_words = [w for w in raw_q_words if w and len(w) >= 3]
+            # Strip bibliographic filler words (ناملىق، رومانى، كىتابى، ...) so
+            # queries like "ئابدۇرېھىم ئۆتكۈرنىڭ «ئىز» ناملىق رومانى" can match
+            # against title + author tokens, while keeping them if every word
+            # was a filler word.
+            content_q_words = [
+                w
+                for w in raw_q_words
+                if not any(w.startswith(ind) for ind in STRONG_TITLE_FOLLOWERS)
+            ]
+            q_words = content_q_words or raw_q_words
             if q_words:
                 matched = []
                 for b in books_list:
@@ -1251,11 +1274,25 @@ async def _run_find_books_by_title(args: dict, ctx: QueryContext) -> List[dict]:
                         word_found = False
                         for tw in title_norm.split() + author_norm.split():
                             tw_clean = tw.strip(PUNCTUATION_STRIP_CHARS)
+                            if not tw_clean:
+                                continue
                             alt = (
-                                tw_clean[:-1] + "ی" if tw_clean.endswith("ە") else None
+                                tw_clean[:-1] + "\u06cc"
+                                if tw_clean.endswith("ە")
+                                else None
                             )
-                            if tw_clean.startswith(qw) or (
-                                alt is not None and alt.startswith(qw)
+                            if len(tw_clean) < 4:
+                                if short_token_matches(tw_clean, qw):
+                                    word_found = True
+                                    break
+                                continue
+                            if (
+                                tw_clean.startswith(qw)
+                                or qw.startswith(tw_clean)
+                                or (
+                                    alt is not None
+                                    and (alt.startswith(qw) or qw.startswith(alt))
+                                )
                             ):
                                 word_found = True
                                 break

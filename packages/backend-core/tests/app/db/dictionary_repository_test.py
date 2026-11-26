@@ -46,3 +46,29 @@ def test_build_fuzzy_term_where_multi_word():
     clause_str = str(clause.compile(compile_kwargs={"literal_binds": True}))
     assert "قوقان خانلىقى" in clause_str
     assert "قوقان" in clause_str
+
+
+@pytest.mark.asyncio
+async def test_check_word_spelling_dynamic_morphology_recognizes_inflected_word():
+    session = AsyncMock()
+    repo = DictionaryRepository(session)
+
+    # 1st execute: exact `Word` lookup misses `ئاپتورلىرىڭىزنىڭ`
+    exact_res = MagicMock()
+    exact_res.first.return_value = None
+
+    # 2nd execute: probe lookup finds `ئاپتور`, `ئاپتورلار`, `ئاپتورى`
+    probe_res = MagicMock()
+    probe_res.scalars.return_value.all.return_value = [
+        "ئاپتور",
+        "ئاپتورلار",
+        "ئاپتورى",
+    ]
+    session.execute.side_effect = [exact_res, probe_res]
+
+    result = await repo.check_word_spelling("ئاپتورلىرىڭىزنىڭ")
+    assert result == {
+        "is_known": True,
+        "word": "ئاپتورلىرىڭىزنىڭ",
+        "suggestions": [],
+    }

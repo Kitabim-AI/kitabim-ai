@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import re
 from typing import Any, AsyncIterator, List, Optional
@@ -27,6 +28,7 @@ _OCR_LIMITER = RedisRateLimiter("gemini_ocr", limit=settings.gemini_ocr_rpm, win
 _EMBED_LIMITER = RedisRateLimiter(
     "gemini_embed", limit=settings.gemini_embed_rpm, window=60
 )
+_TTS_LIMITER = RedisRateLimiter("gemini_tts", limit=settings.gemini_tts_rpm, window=60)
 
 _TEXT_BREAKER = CircuitBreaker(
     "llm_generate",
@@ -61,19 +63,36 @@ _EMBED_BREAKER = CircuitBreaker(
 )
 
 
+_TTS_BREAKER = CircuitBreaker(
+    "llm_tts",
+    CircuitBreakerConfig(
+        failure_threshold=settings.llm_cb_failure_threshold,
+        recovery_timeout=float(settings.llm_cb_recovery_seconds),
+        half_open_max_calls=settings.llm_cb_half_open_max_calls,
+        cooling_period=float(settings.llm_cb_cooling_period),
+    ),
+)
+
+
 async def is_llm_available() -> bool:
     """Check if the LLM circuit breakers are fully available (closed)."""
     text_st = (await _TEXT_BREAKER._get_state()).get("state")
     ocr_st = (await _OCR_BREAKER._get_state()).get("state")
     embed_st = (await _EMBED_BREAKER._get_state()).get("state")
-    return text_st == "closed" and ocr_st == "closed" and embed_st == "closed"
+    tts_st = (await _TTS_BREAKER._get_state()).get("state")
+    return (
+        text_st == "closed"
+        and ocr_st == "closed"
+        and embed_st == "closed"
+        and tts_st == "closed"
+    )
 
 
 def update_breaker_config(
     failure_threshold: int | None = None, recovery_timeout: float | None = None
 ) -> None:
     """Update defaults for all circuit breakers."""
-    for breaker in [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]:
+    for breaker in [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER, _TTS_BREAKER]:
         if failure_threshold is not None:
             breaker.config.failure_threshold = failure_threshold
         if recovery_timeout is not None:
@@ -82,7 +101,7 @@ def update_breaker_config(
 
 async def reset_circuit_breakers(name: Optional[str] = None) -> dict:
     """Manually reset (close) circuit breakers. Admin control."""
-    breakers = [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]
+    breakers = [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER, _TTS_BREAKER]
     if name:
         breakers = [b for b in breakers if b.name == name]
 
@@ -94,7 +113,7 @@ async def reset_circuit_breakers(name: Optional[str] = None) -> dict:
 
 async def force_open_circuit_breakers(name: Optional[str] = None) -> dict:
     """Manually open circuit breakers. Admin control."""
-    breakers = [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER]
+    breakers = [_TEXT_BREAKER, _OCR_BREAKER, _EMBED_BREAKER, _TTS_BREAKER]
     if name:
         breakers = [b for b in breakers if b.name == name]
 
@@ -109,9 +128,15 @@ async def get_circuit_breaker_status() -> dict:
     text_info = await _TEXT_BREAKER.get_info()
     ocr_info = await _OCR_BREAKER.get_info()
     embed_info = await _EMBED_BREAKER.get_info()
+    tts_info = await _TTS_BREAKER.get_info()
 
     # Determine overall state
-    states = [text_info["state"], ocr_info["state"], embed_info["state"]]
+    states = [
+        text_info["state"],
+        ocr_info["state"],
+        embed_info["state"],
+        tts_info["state"],
+    ]
     if "open" in states:
         overall_state = "open"
     elif "half_open" in states:
@@ -123,6 +148,7 @@ async def get_circuit_breaker_status() -> dict:
         "text_breaker": text_info,
         "ocr_breaker": ocr_info,
         "embed_breaker": embed_info,
+        "tts_breaker": tts_info,
         "overall_available": overall_state == "closed",
         "overall_state": overall_state,
     }
@@ -130,6 +156,7 @@ async def get_circuit_breaker_status() -> dict:
 
 _text_client: genai.Client | None = None
 _ocr_client: genai.Client | None = None
+_tts_client: genai.Client | None = None
 
 
 def _get_text_client() -> genai.Client:
@@ -150,6 +177,16 @@ def _get_ocr_client() -> genai.Client:
             http_options=types.HttpOptions(timeout=int(_OCR_INVOKE_TIMEOUT * 1000)),
         )
     return _ocr_client
+
+
+def _get_tts_client() -> genai.Client:
+    global _tts_client
+    if _tts_client is None:
+        _tts_client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options={"api_version": "v1beta"},
+        )
+    return _tts_client
 
 
 def _record_usage(
@@ -238,6 +275,8 @@ async def _call_with_breaker(
         await _OCR_LIMITER.wait()
     elif breaker.name == "llm_embed":
         await _EMBED_LIMITER.wait()
+    elif breaker.name == "llm_tts":
+        await _TTS_LIMITER.wait()
     else:
         await _TEXT_LIMITER.wait()
     effective_timeout = timeout or _INVOKE_TIMEOUT
@@ -365,6 +404,7 @@ _BREAKER_TIMEOUT_CONFIGS = {
     "llm_ocr": ("ocr_gemini_timeout", 300.0),
     "llm_generate": ("rag_gemini_chat_timeout", 60.0),
     "llm_embed": ("embed_gemini_timeout", 45.0),
+    "llm_tts": ("tts_gemini_timeout", 90.0),
 }
 
 
@@ -615,6 +655,116 @@ class ProtectedLLM:
 def build_text_llm(model_name: str) -> ProtectedLLM:
     """Build a protected LLM instance."""
     return ProtectedLLM(model_name, _TEXT_BREAKER)
+
+
+def _extract_interaction_usage(usage_obj: Any) -> tuple[int, int]:
+    """Extract (input_tokens, output_tokens) from an Interactions API usage object."""
+    if usage_obj is None:
+        return 0, 0
+
+    def _get(obj: Any, *names: str) -> int:
+        for name in names:
+            val = obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+            if val is not None:
+                try:
+                    return int(val)
+                except (ValueError, TypeError):
+                    pass
+        return 0
+
+    inp = _get(
+        usage_obj,
+        "total_input_tokens",
+        "input_tokens",
+        "prompt_token_count",
+    )
+    out = _get(
+        usage_obj,
+        "total_output_tokens",
+        "output_tokens",
+        "candidates_token_count",
+    )
+    return inp, out
+
+
+async def stream_tts_pcm(
+    text: str,
+    *,
+    model_name: str,
+    voice: str,
+    style: str = "",
+    sample_rate: int = 24000,
+    timeout: float | None = None,
+    usage_out: dict[str, int] | None = None,
+) -> AsyncIterator[bytes]:
+    """Stream raw 16-bit signed little-endian mono PCM chunks from Gemini TTS.
+
+    Protected by `_TTS_LIMITER` and `_TTS_BREAKER`. Uses the Gemini Interactions API
+    (v1beta) with `store=False` and `stream=True` so playback can start in ~1-2s.
+    """
+    client = _get_tts_client()
+    model = (
+        model_name.replace("models/", "", 1)
+        if model_name.startswith("models/")
+        else model_name
+    )
+    effective_timeout = timeout or await get_system_config_timeout(
+        "tts_gemini_timeout", 90.0
+    )
+
+    content_item: dict[str, Any] = {"type": "text", "text": text}
+    if style:
+        content_item["annotations"] = [{"type": "speech_metadata", "style": style}]
+
+    await _TTS_LIMITER.wait()
+
+    async def _get_stream():
+        return await client.aio.interactions.create(
+            api_version="v1beta",
+            model=model,
+            store=False,
+            input=[{"type": "user_input", "content": [content_item]}],
+            response_format={
+                "type": "audio",
+                "mime_type": "audio/l16",
+                "sample_rate": sample_rate,
+            },
+            generation_config={"speech_config": [{"voice": voice}]},
+            stream=True,
+            timeout=effective_timeout,
+        )
+
+    chunk_count = 0
+    total_bytes = 0
+    async for event in _stream_with_breaker(_TTS_BREAKER, _get_stream):
+        event_type = getattr(event, "event_type", None)
+        if event_type == "step.delta":
+            delta = getattr(event, "delta", None)
+            if delta is not None and getattr(delta, "type", None) == "audio":
+                b64_data = getattr(delta, "data", None)
+                if b64_data:
+                    raw = base64.b64decode(b64_data)
+                    if raw:
+                        chunk_count += 1
+                        total_bytes += len(raw)
+                        yield raw
+        elif event_type == "interaction.completed":
+            interaction = getattr(event, "interaction", None)
+            usage = getattr(interaction, "usage", None) if interaction else None
+            inp, out = _extract_interaction_usage(usage)
+            if usage_out is not None:
+                usage_out["input_tokens"] = usage_out.get("input_tokens", 0) + inp
+                usage_out["output_tokens"] = usage_out.get("output_tokens", 0) + out
+
+    log_json(
+        _logger,
+        logging.INFO,
+        "Gemini TTS stream completed",
+        model=model,
+        voice=voice,
+        chunks=chunk_count,
+        pcm_bytes=total_bytes,
+    )
 
 
 _embed_http_sessions: dict[int, tuple[Any, Any]] = {}

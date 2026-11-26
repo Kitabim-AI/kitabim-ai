@@ -261,7 +261,7 @@ async def seed_system_configs(session: AsyncSession):
         },
         {
             "key": "sys_llm_model_pricing",
-            "value": '{"gemini-2.5-flash": {"input": 0.30, "output": 2.50}, "gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40}, "gemini-2.5-pro": {"input": 1.25, "output": 10.00}, "gemini-3.1-flash-lite": {"input": 0.10, "output": 0.40}, "gemini-3.5-flash-lite": {"input": 0.10, "output": 0.40}, "gemini-3.6-flash": {"input": 0.30, "output": 2.50}, "gemini-3.7-flash": {"input": 0.30, "output": 2.50}, "gemini-3.8-flash": {"input": 0.30, "output": 2.50}, "gemini-4-hydrogen": {"input": 0.25, "output": 1.50}, "gemini-4-argon": {"input": 0.50, "output": 3.00}, "gemini-4-carbon": {"input": 2.00, "output": 12.00}, "gemini-embedding-2": {"input": 0.15, "output": 0.0}, "_fallback": {"input": 0.30, "output": 2.50}}',
+            "value": '{"gemini-2.5-flash": {"input": 0.30, "output": 2.50}, "gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40}, "gemini-2.5-pro": {"input": 1.25, "output": 10.00}, "gemini-3.1-flash-lite": {"input": 0.10, "output": 0.40}, "gemini-3.5-flash-lite": {"input": 0.10, "output": 0.40}, "gemini-3.6-flash": {"input": 0.30, "output": 2.50}, "gemini-3.7-flash": {"input": 0.30, "output": 2.50}, "gemini-3.8-flash": {"input": 0.30, "output": 2.50}, "gemini-3.8-flash-tts": {"input": 0.50, "output": 9.00}, "gemini-4-hydrogen": {"input": 0.25, "output": 1.50}, "gemini-4-argon": {"input": 0.50, "output": 3.00}, "gemini-4-carbon": {"input": 2.00, "output": 12.00}, "gemini-embedding-2": {"input": 0.15, "output": 0.0}, "_fallback": {"input": 0.30, "output": 2.50}}',
             "description": "JSON dictionary of Gemini model pricing (USD per 1M tokens) for input and output tokens.",
         },
         {
@@ -283,6 +283,46 @@ async def seed_system_configs(session: AsyncSession):
             "key": "auth_blocked_email_domains",
             "value": "xintaitong.com",
             "description": "Comma-separated root email domains blocked from new OAuth signups (matches exact domain and subdomains)",
+        },
+        {
+            "key": "tts_enabled",
+            "value": "true",
+            "description": "Globally enable/disable Gemini TTS audio playback for question answers in Global and Reader chat (true/false).",
+        },
+        {
+            "key": "tts_gemini_model",
+            "value": "gemini-3.8-flash-tts",
+            "description": "Gemini TTS model used for synthesizing question answers. Required for Uyghur support (no fallback).",
+        },
+        {
+            "key": "tts_default_voice",
+            "value": "Sadaltager",
+            "description": "Default Gemini TTS prebuilt voice name (or custom voice_... ID) used for question answer narration.",
+        },
+        {
+            "key": "tts_default_style",
+            "value": "calm, clear, articulate narrator",
+            "description": "English speech_metadata.style delivery instruction passed to Gemini TTS.",
+        },
+        {
+            "key": "tts_gemini_timeout",
+            "value": "90",
+            "description": "Timeout in seconds for Gemini TTS streaming API calls.",
+        },
+        {
+            "key": "tts_max_chars",
+            "value": "5000",
+            "description": "Maximum normalized character length synthesized per question answer.",
+        },
+        {
+            "key": "tts_limit_reader",
+            "value": "15",
+            "description": "Daily uncached TTS synthesis limit for reader role (cached replays are free and unlimited).",
+        },
+        {
+            "key": "tts_limit_editor",
+            "value": "50",
+            "description": "Daily uncached TTS synthesis limit for editor role (cached replays are free and unlimited; admin is unlimited).",
         },
     ]
 

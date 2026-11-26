@@ -31,6 +31,8 @@ def test_normalize_uyghur():
     orig = "ئېيى"
     norm = normalize_uyghur(orig)
     assert norm == normalize_uyghur("ئىيى")
+    assert normalize_uyghur("ئ\u200dۆتكۈرنىڭ") == normalize_uyghur("ئۆتكۈرنىڭ")
+    assert normalize_uyghur("ئ\u200c\u200b\u0640\ufeffىز") == normalize_uyghur("ئىز")
 
 
 def test_is_author_or_catalog_query():
@@ -41,6 +43,49 @@ def test_is_author_or_catalog_query():
 def test_entity_matches_question():
     assert entity_matches_question("زوردۇن سابىر", "زوردۇن سابىرنىڭ ئەسىرى") is True
     assert entity_matches_question("زوردۇن سابىر", "يازغۇچى كىم؟") is False
+    # Zero-width joiner inside user input must not break author matching
+    assert (
+        entity_matches_question(
+            "ئابدۇرېھىم ئۆتكۈر",
+            "ئابدۇرېھىم ئ\u200dۆتكۈرنىڭ «ئىز» ناملىق رومانىنىڭ باشلىنىشىدىكى شېئىرنىڭ تولۇق تېكىستى نېمە؟",
+        )
+        is True
+    )
+
+
+def test_entity_matches_question_short_single_word_titles():
+    """Short (< 4 char) single-word titles like 'ئىز' and 'داغ' match when
+    explicitly signaled (quoted, strong title indicator, or bare query), while
+    rejecting unrelated words sharing the same prefix and lexical questions."""
+    prod_q = (
+        "ئابدۇرېھىم ئ\u200dۆتكۈرنىڭ «ئىز» ناملىق رومانىنىڭ باشلىنىشىدىكى "
+        "شېئىرنىڭ تولۇق تېكىستى نېمە؟"
+    )
+    assert entity_matches_question("ئىز", prod_q) is True
+    assert (
+        entity_matches_question("ئىز", "ئابدۇرېھىم ئۆتكۈرنىڭ ئىز ناملىق رومانى") is True
+    )
+    assert entity_matches_question("ئىز", "ئىز رومانىدا نېمە بايان قىلىنغان؟") is True
+    assert entity_matches_question("ئىز", "ئىزنىڭ ئاپتورى كىم؟") is True
+    assert entity_matches_question("ئىز", "«ئىز» دا قانداق ۋەقەلەر بولىدۇ؟") is True
+    assert entity_matches_question("ئىز", "ئىز") is True
+    assert entity_matches_question("داغ", "«داغ» ناملىق ئەسەر كىمنىڭ؟") is True
+
+    # Must NOT match longer words sharing the 3-char prefix
+    assert (
+        entity_matches_question("ئىز", "«ئىزدىنىش» ناملىق رومانىنىڭ ئاپتورى كىم؟")
+        is False
+    )
+    assert entity_matches_question("ئىز", "ئىزدىنىش رومانى كىمنىڭ؟") is False
+    assert entity_matches_question("ئىز", "«ئىزچىلار» كىتابى") is False
+
+    # Must NOT hijack lexical/general questions where the short word is not a title
+    assert entity_matches_question("ئىز", "ئىز دېگەن نېمە؟") is False
+    assert entity_matches_question("ئىز", "ئىز نېمە؟") is False
+    assert entity_matches_question("ئىز", "ئىزنىڭ مەنىسى نېمە؟") is False
+    assert (
+        entity_matches_question("ئىز", "ئىز قالدۇرغان تارىخىي شەخسلەر كىملەر؟") is False
+    )
 
 
 def test_entity_matches_question_quotes_grant_single_word_match():

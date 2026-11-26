@@ -405,3 +405,24 @@ def test_render_page_png_returns_placeholder_on_jbig2_decode_error():
 
     png_bytes = render_page_png(mock_doc, 374)
     assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_push_returns_401_on_auth_error_without_wiping_book_id(tmp_path: Path):
+    from kitabim_client.api import KitabimAuthError
+
+    wd = _workdir(tmp_path, book_id="existing_book_999")
+    mock_client = MagicMock()
+    mock_client.book_exists.side_effect = KitabimAuthError(
+        "401 from Kitabim API: Token expired"
+    )
+
+    app = create_app(wd, client=mock_client)
+    test_client = TestClient(app)
+
+    response = test_client.post("/api/push")
+
+    assert response.status_code == 401
+    assert "401" in response.json()["detail"]
+    # book_id must remain intact so the next push updates instead of creating a duplicate
+    assert wd.book_id == "existing_book_999"
+    assert wd.uploaded is False

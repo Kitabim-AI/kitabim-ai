@@ -392,7 +392,7 @@ class ChatOrchestrator:
         await db_session.commit()
 
         conv_repo = self.conversation_repo or ConversationRepository(db_session)
-        await conv_repo.save_turn(
+        _, model_msg = await conv_repo.save_turn(
             conversation_id=conv_id,
             question=request_dto.question,
             answer=refusal_text,
@@ -406,6 +406,7 @@ class ChatOrchestrator:
         yield {
             "type": "done",
             "eval_id": eval_id,
+            "message_id": getattr(model_msg, "id", None),
             "conversation_id": conv_id,
             "used_book_ids": [],
             "cost": cost,
@@ -490,7 +491,7 @@ class ChatOrchestrator:
                 yield {"type": "chunk", "text": fixed_text}
                 yield {"type": "answer_end"}
 
-                await conv_repo.save_turn(
+                _, model_msg = await conv_repo.save_turn(
                     conversation_id=conv_id,
                     question=request_dto.question,
                     answer=fixed_text,
@@ -509,6 +510,7 @@ class ChatOrchestrator:
                 yield {
                     "type": "done",
                     "eval_id": None,
+                    "message_id": getattr(model_msg, "id", None),
                     "conversation_id": conv_id,
                     "used_book_ids": used_book_ids,
                     "cost": cached_cost,
@@ -1356,7 +1358,7 @@ class ChatOrchestrator:
                 )
 
         # Save turn to ConversationRepository
-        await conv_repo.save_turn(
+        _, model_msg = await conv_repo.save_turn(
             conversation_id=conv_id,
             question=request_dto.question,
             answer=fixed_text,
@@ -1373,6 +1375,7 @@ class ChatOrchestrator:
         yield {
             "type": "done",
             "eval_id": eval_id,
+            "message_id": getattr(model_msg, "id", None),
             "conversation_id": conv_id,
             "used_book_ids": used_book_ids,
             "cost": cost,
@@ -1403,5 +1406,6 @@ class ChatOrchestrator:
             "conversation_id": done_meta.get("conversation_id"),
             "used_book_ids": done_meta.get("used_book_ids", []),
             "eval_id": done_meta.get("eval_id"),
+            "message_id": done_meta.get("message_id"),
             **({"cached": True} if done_meta.get("cached") else {}),
         }

@@ -108,6 +108,7 @@ class Settings:
     gemini_text_rpm: int = int(os.getenv("GEMINI_TEXT_RPM", "10"))
     gemini_ocr_rpm: int = int(os.getenv("GEMINI_OCR_RPM", "30"))
     gemini_embed_rpm: int = int(os.getenv("GEMINI_EMBED_RPM", "100"))
+    gemini_tts_rpm: int = int(os.getenv("GEMINI_TTS_RPM", "15"))
 
     # Queue / Workers
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")

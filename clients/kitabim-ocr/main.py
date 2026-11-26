@@ -17,8 +17,8 @@ from backfill import (
     unskip_book_locally,
 )
 from engine.workdir import OcrWorkDir
-from kitabim_client.api import KitabimClient
-from kitabim_client.auth import login_and_save
+from kitabim_client.api import KitabimClient, is_auth_failure
+from kitabim_client.auth import login_and_save, wait_for_reauth_sync
 from preview.app_server import serve_app
 from preview.server import serve
 
@@ -171,23 +171,42 @@ def cmd_preview(workdir_path: Path, base_url: str | None) -> None:
     serve(workdir, client=client)
 
 
+def _call_with_sync_auth_wait(client: KitabimClient, fn):
+    while True:
+        try:
+            return fn()
+        except Exception as exc:
+            if not is_auth_failure(exc):
+                raise
+            print(
+                f"Authentication expired ({exc}). Pausing push (not stopping) — "
+                "run 'python main.py login' in another terminal to resume automatically..."
+            )
+            wait_for_reauth_sync(client.base_url, client.config_path)
+
+
 def cmd_push(workdir_path: Path, base_url: str) -> None:
     workdir = OcrWorkDir.load(workdir_path)
     client = KitabimClient(base_url=base_url, config_path=DEFAULT_CONFIG_PATH)
     if (
         workdir.book_id is not None
         and hasattr(client, "book_exists")
-        and not client.book_exists(workdir.book_id)
+        and not _call_with_sync_auth_wait(
+            client, lambda: client.book_exists(workdir.book_id)
+        )
     ):
         workdir.book_id = None
         workdir.uploaded = False
         workdir.save_metadata()
 
     if workdir.book_id is None:
-        result = client.push_new_book(
-            workdir.source_pdf,
-            workdir.all_pages(),
-            filename=workdir.original_filename,
+        result = _call_with_sync_auth_wait(
+            client,
+            lambda: client.push_new_book(
+                workdir.source_pdf,
+                workdir.all_pages(),
+                filename=workdir.original_filename,
+            ),
         )
         if isinstance(result, dict) and result.get("bookId"):
             workdir.book_id = str(result["bookId"])
@@ -197,7 +216,10 @@ def cmd_push(workdir_path: Path, base_url: str) -> None:
             workdir.clear_images()
     else:
         for page in workdir.all_pages():
-            client.push_page_correction(workdir.book_id, page)
+            _call_with_sync_auth_wait(
+                client,
+                lambda _p=page: client.push_page_correction(workdir.book_id, _p),
+            )
         workdir.uploaded = True
         workdir.uploaded_at = time.time()
         workdir.save_metadata()

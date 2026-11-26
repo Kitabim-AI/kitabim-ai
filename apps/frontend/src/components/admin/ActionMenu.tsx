@@ -1,5 +1,5 @@
 import { Book } from '@shared/types';
-import { BookOpen, BookOpenCheck, Copy, Cuboid, FileText, Image, Layers, ListTree, Loader2, Network, RotateCcw, ScanText, Scissors, Trash2 } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Copy, Cuboid, FileText, Image, Layers, ListTree, Loader2, Network, RotateCcw, ScanText, Scissors, Trash2, Wand2 } from 'lucide-react';
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { REPROCESS_STEP } from '../../constants/milestones';
@@ -186,6 +186,18 @@ export const ActionMenu: React.FC<ActionMenuProps> = ({ book, close, anchorRect,
           {reprocessingStep === REPROCESS_STEP.SPELL_CHECK ? <Loader2 size={16} className="animate-spin" /> : <BookOpenCheck size={16} />}
           <span className="flex-1 text-right">{t('admin.table.reprocess.spell_check') || 'قايتا ئىملا تەكشۈرۈش'}</span>
         </button>
+
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => { bookActions.handleReprocessStep(book.id, REPROCESS_STEP.AUTO_CORRECT); close(); }}
+            disabled={book.pipelineStep === null || reprocessingStep === REPROCESS_STEP.AUTO_CORRECT}
+            className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 disabled:opacity-30 disabled:cursor-not-allowed rounded-xl transition-all active:scale-[0.98]"
+          >
+            {reprocessingStep === REPROCESS_STEP.AUTO_CORRECT ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Wand2 size={16} aria-hidden="true" />}
+            <span className="flex-1 text-right">{t('admin.table.reprocess.auto_correct') || 'ئاپتوماتىك تۈزىتىش'}</span>
+          </button>
+        )}
 
         {isAdmin && (
           <button

@@ -1189,3 +1189,51 @@ async def test_reprocess_book_step_structure_resets_structure_milestone():
     update_kwargs = mock_books_repo.update_one.call_args.kwargs
     assert update_kwargs["structure_milestone"] == "idle"
     assert update_kwargs["pipeline_step"] == PIPELINE_STEP_STRUCTURE
+
+
+@pytest.mark.asyncio
+async def test_trigger_book_auto_correct_enqueues_worker_job():
+    setup_paths()
+    from api.endpoints.books_router import trigger_book_auto_correct
+
+    mock_session = AsyncMock()
+    mock_user = MagicMock()
+    mock_user.email = "admin@example.com"
+
+    mock_book = MagicMock()
+    mock_book.id = "book123"
+
+    mock_books_repo = MagicMock()
+    mock_books_repo.get = AsyncMock(return_value=mock_book)
+    mock_books_repo.update_one = AsyncMock()
+
+    mock_pool = AsyncMock()
+
+    with (
+        patch(
+            "api.endpoints.books_router.BooksRepository", return_value=mock_books_repo
+        ),
+        patch("api.endpoints.books_router.cache_service") as mock_cache,
+        patch("arq.create_pool", AsyncMock(return_value=mock_pool)),
+    ):
+        mock_cache.delete = AsyncMock()
+        mock_cache.bump_namespace_version = AsyncMock()
+        res = await trigger_book_auto_correct(
+            book_id="book123",
+            current_user=mock_user,
+            session=mock_session,
+        )
+
+    assert res["status"] == "auto_correct_started"
+    assert res["bookId"] == "book123"
+    assert (
+        mock_books_repo.update_one.call_args.kwargs["auto_correct_milestone"]
+        == "in_progress"
+    )
+    mock_pool.enqueue_job.assert_awaited_once_with(
+        "book_auto_correct_job",
+        book_id="book123",
+        updated_by="admin@example.com",
+        _job_id="book_auto_correct:book123",
+    )
+    mock_pool.aclose.assert_awaited_once()

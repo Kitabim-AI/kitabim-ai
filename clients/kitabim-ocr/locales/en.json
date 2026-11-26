@@ -59,7 +59,9 @@
     "pages_error_stat": "({count} errors)",
     "btn_resume": "Resume",
     "btn_view_results": "View Results",
+    "btn_toggle_uploaded": "Toggle Uploaded Status",
     "btn_delete": "Delete",
+    "btn_actions": "Actions",
     "delete_confirm": "Delete this local OCR session and files?"
   },
   "library": {
@@ -177,9 +179,11 @@
     "status_pausing": "Pausing after current book finishes...",
     "status_on_demand": "On-demand processing active",
     "status_throttled": "Waiting for server index backlog...",
+    "status_waiting_for_auth": "Paused — waiting for sign-in...",
     "phase_downloading": "Downloading PDF...",
     "phase_ocr": "Recognizing pages with Surya OCR...",
     "phase_submitting": "Submitting OCR results to server (replace-ocr)...",
+    "phase_waiting_for_auth": "Session expired — paused safely without losing progress. Sign in to resume automatically.",
     "phase_completed": "Completed successfully",
     "stat_eligible": "Eligible remaining: {count}",
     "stat_backlog": "Server index backlog: {current} / {max}",
@@ -212,6 +216,15 @@
     "skipped_subtitle": "These books are untouched on the server and excluded only from local OCR on this computer.",
     "empty_skipped": "No locally skipped books",
     "btn_back_to_all": "Back to All Books",
+    "btn_open_monitor": "Open Live Monitor",
     "skip_tooltip": "Skip locally without modifying server data"
+  },
+  "auth": {
+    "banner_title": "Session expired — paused without losing progress",
+    "banner_subtitle": "Sign in to Kitabim to resume automatically (or run 'python main.py login' in a terminal).",
+    "btn_relogin": "Sign In & Resume",
+    "relogin_in_progress": "Opening browser to sign in...",
+    "relogin_success": "Signed in — resuming automatically!",
+    "relogin_failed": "Sign-in failed: {error}"
   }
 }

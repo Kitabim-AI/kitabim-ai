@@ -7,12 +7,12 @@ Provides application-wide immutable static datasets and pipeline enumeration con
 - `[characters.ts:Character]`: Interface defining assistant persona metadata (`id`, `name_uy`, `name_en`, `avatar_emoji`).
 - `[characters.ts:CHARACTERS]`: Array of system assistant personas (`religious_scholar`, `uyghurologist`, `historian`, `writer`, `librarian`).
 - `[characters.ts:DEFAULT_CHARACTER_ID]`: Fallback assistant persona identifier (`'librarian'`).
-- `[milestones.ts:PIPELINE_STEP]`: Pipeline execution step enum constants (`OCR`, `STRUCTURE`, `CHUNKING`, `EMBEDDING`, `SUMMARY`, `SPELL_CHECK`, `GRAPH`, `READY`, `ERROR`).
+- `[milestones.ts:PIPELINE_STEP]`: Pipeline execution step enum constants (`OCR`, `STRUCTURE`, `CHUNKING`, `EMBEDDING`, `SUMMARY`, `SPELL_CHECK`, `AUTO_CORRECT`, `GRAPH`, `READY`, `ERROR`).
 - `[milestones.ts:PipelineStep]`: Union type representing values of `PIPELINE_STEP`.
 - `[milestones.ts:PAGE_LEVEL_MILESTONE_STEPS]`: Readonly tuple of page-level pipeline milestone steps (`ocr`, `chunking`, `embedding`, `spell_check`).
 - `[milestones.ts:MILESTONE_FIELD_BY_STEP]`: Mapping from pipeline steps to book milestone field names.
 - `[milestones.ts:ADMIN_PIPELINE_STEPS]`: Array of pipeline steps paired with admin i18n translation label keys.
-- `[milestones.ts:REPROCESS_STEP]`: Reprocessing action step enum constants (`OCR`, `STRUCTURE`, `CHUNKING`, `EMBEDDING`, `SPELL_CHECK`, `GRAPH`, `SUMMARY`).
+- `[milestones.ts:REPROCESS_STEP]`: Reprocessing action step enum constants (`OCR`, `STRUCTURE`, `CHUNKING`, `EMBEDDING`, `SPELL_CHECK`, `AUTO_CORRECT`, `GRAPH`, `SUMMARY`).
 - `[milestones.ts:ReprocessStep]`: Union type representing values of `PIPELINE_STEP`.
 
 ## Invariants

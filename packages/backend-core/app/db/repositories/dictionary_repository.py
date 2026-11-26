@@ -15,6 +15,12 @@ from app.db.models import (
     Word,
 )
 from app.services.rag.utils import normalize_uyghur_spelling, is_who_is_query
+from app.services.uyghur_morphology import (
+    analyze_uyghur_word,
+    collect_lexicon_probes,
+    is_word_verified_by_lexicon,
+)
+from app.utils.text import normalize_uyghur_chars
 
 
 def _sql_normalize_uyghur(column):
@@ -227,7 +233,11 @@ class DictionaryRepository:
         if not word:
             return {"is_known": False, "suggestions": []}
 
-        exact_stmt = select(Word.id, Word.word).where(Word.word == word).limit(1)
+        norm_chars = normalize_uyghur_chars(word)
+        lookup_forms = list(dict.fromkeys([word, norm_chars]))
+        exact_stmt = (
+            select(Word.id, Word.word).where(Word.word.in_(lookup_forms)).limit(1)
+        )
         exact = await self.session.execute(exact_stmt)
         exact_row = exact.first()
         if exact_row:
@@ -236,6 +246,22 @@ class DictionaryRepository:
                 "word": exact_row._mapping["word"],
                 "suggestions": [],
             }
+
+        # Dynamic morphological check for valid agglutinative Uyghur inflections
+        reqs = analyze_uyghur_word(norm_chars)
+        if reqs:
+            probes = list(collect_lexicon_probes({norm_chars: reqs}))
+            if probes:
+                probe_res = await self.session.execute(
+                    select(Word.word).where(Word.word.in_(probes))
+                )
+                known_probes = set(probe_res.scalars().all())
+                if is_word_verified_by_lexicon(reqs, known_probes):
+                    return {
+                        "is_known": True,
+                        "word": norm_chars,
+                        "suggestions": [],
+                    }
 
         norm_word = normalize_uyghur_spelling(word)
         suggestions_stmt = (

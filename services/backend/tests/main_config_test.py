@@ -57,3 +57,27 @@ async def test_get_public_config_falls_back_to_40_when_config_missing():
         result = await get_public_config(session=mock_session)
 
     assert result["collectionPageSize"] == 40
+
+
+@pytest.mark.asyncio
+async def test_get_public_config_exposes_tts_enabled_switch():
+    setup_paths()
+    from main import get_public_config
+
+    mock_session = AsyncMock()
+    mock_repo = AsyncMock()
+
+    async def fake_get_value(key, default=None):
+        if key == "tts_enabled":
+            return "false"
+        return default
+
+    mock_repo.get_value = AsyncMock(side_effect=fake_get_value)
+
+    with patch(
+        "app.db.repositories.system_configs_repository.SystemConfigsRepository",
+        return_value=mock_repo,
+    ):
+        result = await get_public_config(session=mock_session)
+
+    assert result["ttsEnabled"] is False

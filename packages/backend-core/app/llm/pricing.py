@@ -42,6 +42,7 @@ DEFAULT_MODEL_PRICING: dict[str, ModelPrice] = {
     "gemini-3.6-flash": ModelPrice(input_per_million=0.30, output_per_million=2.50),
     "gemini-3.7-flash": ModelPrice(input_per_million=0.30, output_per_million=2.50),
     "gemini-3.8-flash": ModelPrice(input_per_million=0.30, output_per_million=2.50),
+    "gemini-3.8-flash-tts": ModelPrice(input_per_million=0.50, output_per_million=9.00),
     "gemini-4-hydrogen": ModelPrice(input_per_million=0.25, output_per_million=1.50),
     "gemini-4-argon": ModelPrice(input_per_million=0.50, output_per_million=3.00),
     "gemini-4-carbon": ModelPrice(input_per_million=2.00, output_per_million=12.00),

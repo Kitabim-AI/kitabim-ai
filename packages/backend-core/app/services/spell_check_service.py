@@ -17,6 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import AutoCorrectRule, Page, PageSpellIssue
 from app.services.book_structure_service import mark_structure_dirty
 from app.services.cache_service import cache_service
+from app.services.uyghur_morphology import (
+    analyze_uyghur_word,
+    collect_lexicon_probes,
+    is_word_verified_by_lexicon,
+)
 from app.utils.text import normalize_uyghur_chars
 from sqlalchemy import select
 
@@ -28,6 +33,7 @@ class SpellCheckCache(TypedDict, total=False):
 
     unknown_words: Dict[str, bool]  # word -> is_unknown
     ocr_corrections: Dict[str, list[str]]  # word -> corrections
+    lexicon_words: Dict[str, bool]  # word -> exists directly in `words` table
     _locks: Dict[str, asyncio.Lock]  # Internal locks for thread safety
     _stats: Dict[str, int]  # Cache hit/miss statistics
 
@@ -38,7 +44,12 @@ class ThreadSafeSpellCheckCache:
     def __init__(self):
         self.unknown_words: Dict[str, bool] = {}
         self.ocr_corrections: Dict[str, list[str]] = {}
-        self._locks = {"unknown": asyncio.Lock(), "ocr": asyncio.Lock()}
+        self.lexicon_words: Dict[str, bool] = {}
+        self._locks = {
+            "unknown": asyncio.Lock(),
+            "ocr": asyncio.Lock(),
+            "lexicon": asyncio.Lock(),
+        }
         self._stats = {
             "unknown_hits": 0,
             "unknown_misses": 0,
@@ -254,12 +265,97 @@ def score_confidence(original: str, candidate: str, candidate_count: int) -> flo
 # ── DB helpers ─────────────────────────────────────────────────────────────────
 
 
+async def _lookup_base_lexicon(
+    session: AsyncSession,
+    probes: set[str],
+    cache: SpellCheckCache | ThreadSafeSpellCheckCache | None = None,
+) -> set[str]:
+    """Return subset of `probes` that exist directly as rows in the `words` table."""
+    if not probes:
+        return set()
+
+    found: set[str] = set()
+    to_query: list[str] = []
+    is_thread_safe = isinstance(cache, ThreadSafeSpellCheckCache)
+
+    if cache is not None:
+        if is_thread_safe:
+            async with cache._locks["lexicon"]:
+                for p in probes:
+                    if p in cache.lexicon_words:
+                        if cache.lexicon_words[p]:
+                            found.add(p)
+                    else:
+                        to_query.append(p)
+        else:
+            lex_cache = cache.setdefault("lexicon_words", {})
+            for p in probes:
+                if p in lex_cache:
+                    if lex_cache[p]:
+                        found.add(p)
+                else:
+                    to_query.append(p)
+    else:
+        to_query = list(probes)
+
+    if not to_query:
+        return found
+
+    redis_results = await asyncio.gather(
+        *[cache_service.get(f"dict:word_base:{p}") for p in to_query]
+    )
+    db_needed: list[str] = []
+    redis_hits: dict[str, bool] = {}
+    for p, cached in zip(to_query, redis_results):
+        if cached is not None:
+            redis_hits[p] = bool(cached)
+            if cached:
+                found.add(p)
+        else:
+            db_needed.append(p)
+
+    if redis_hits and cache is not None:
+        if is_thread_safe:
+            async with cache._locks["lexicon"]:
+                cache.lexicon_words.update(redis_hits)
+        else:
+            cache["lexicon_words"].update(redis_hits)
+
+    if db_needed:
+        res = await session.execute(
+            text("SELECT word FROM words WHERE word = ANY(CAST(:probes AS text[]))"),
+            {"probes": db_needed},
+        )
+        db_found = {row[0] for row in res.fetchall()}
+        found.update(db_found)
+
+        await asyncio.gather(
+            *[
+                cache_service.set(
+                    f"dict:word_base:{p}", p in db_found, ttl=_DICT_CACHE_TTL
+                )
+                for p in db_needed
+            ]
+        )
+
+        if cache is not None:
+            if is_thread_safe:
+                async with cache._locks["lexicon"]:
+                    for p in db_needed:
+                        cache.lexicon_words[p] = p in db_found
+            else:
+                for p in db_needed:
+                    cache["lexicon_words"][p] = p in db_found
+
+    return found
+
+
 async def find_unknown_words(
     session: AsyncSession,
     words: list[str],
     cache: SpellCheckCache | ThreadSafeSpellCheckCache | None = None,
 ) -> set[str]:
-    """Find words not in dictionary. Uses parameterized query (safe from SQL injection)."""
+    """Find words not in dictionary (checking static `words` + dynamic Uyghur morphology)."""
     if not words:
         return set()
 
@@ -299,7 +395,7 @@ async def find_unknown_words(
 
     # Check Redis before hitting the DB
     redis_results = await asyncio.gather(
-        *[cache_service.get(f"dict:exists:{w}") for w in to_query]
+        *[cache_service.get(f"dict:exists:v2:{w}") for w in to_query]
     )
     db_needed: list[str] = []
     redis_hits: dict[str, bool] = {}
@@ -331,12 +427,40 @@ async def find_unknown_words(
             {"words": db_needed},
         )
         queried_unknown = {row[0] for row in result.fetchall()}
+
+        # Seed base-lexicon cache with words already confirmed directly in `words`
+        direct_known = set(db_needed) - queried_unknown
+        if direct_known and cache is not None:
+            if is_thread_safe:
+                async with cache._locks["lexicon"]:
+                    for kw in direct_known:
+                        cache.lexicon_words[kw] = True
+            else:
+                lex_cache = cache.setdefault("lexicon_words", {})
+                for kw in direct_known:
+                    lex_cache[kw] = True
+
+        # Dynamic Uyghur morphological fallback for agglutinative forms not materialized in `words`
+        if queried_unknown:
+            reqs_by_word = {
+                w: reqs for w in queried_unknown if (reqs := analyze_uyghur_word(w))
+            }
+            if reqs_by_word:
+                probes = collect_lexicon_probes(reqs_by_word)
+                if probes:
+                    known_probes = await _lookup_base_lexicon(
+                        session, probes, cache=cache
+                    )
+                    for w, reqs in reqs_by_word.items():
+                        if is_word_verified_by_lexicon(reqs, known_probes):
+                            queried_unknown.discard(w)
+
         unknown.update(queried_unknown)
 
         await asyncio.gather(
             *[
                 cache_service.set(
-                    f"dict:exists:{w}", w in queried_unknown, ttl=_DICT_CACHE_TTL
+                    f"dict:exists:v2:{w}", w in queried_unknown, ttl=_DICT_CACHE_TTL
                 )
                 for w in db_needed
             ]
@@ -362,7 +486,8 @@ async def get_ocr_corrections_batch(
     """
     Batch correction lookup combining substitution and insertion variants.
     Returns {unknown_word: [corrected_word, ...]} for words that have at least
-    one correction found in the dictionary.
+    one correction found in the dictionary (or verified dynamically via morphology
+    when no static `words` match exists).
     """
     corrections: dict[str, list[str]] = {}
     to_lookup_unknowns = set()
@@ -398,7 +523,7 @@ async def get_ocr_corrections_batch(
 
     # Check Redis before generating variants and hitting the DB
     redis_results = await asyncio.gather(
-        *[cache_service.get(f"dict:ocr:{w}") for w in to_lookup_unknowns]
+        *[cache_service.get(f"dict:ocr:v2:{w}") for w in to_lookup_unknowns]
     )
     db_needed: set[str] = set()
     redis_hits: dict[str, list[str]] = {}
@@ -430,7 +555,7 @@ async def get_ocr_corrections_batch(
     if not variant_to_originals:
         await asyncio.gather(
             *[
-                cache_service.set(f"dict:ocr:{w}", [], ttl=_DICT_CACHE_TTL)
+                cache_service.set(f"dict:ocr:v2:{w}", [], ttl=_DICT_CACHE_TTL)
                 for w in db_needed
             ]
         )
@@ -456,10 +581,33 @@ async def get_ocr_corrections_batch(
                 if variant not in corrections.setdefault(orig, []):
                     corrections[orig].append(variant)
 
+    # Dynamic morphological fallback ONLY for words that found zero static matches in `words`
+    unresolved_set = {w for w in db_needed if w not in corrections}
+    if unresolved_set:
+        dyn_variant_reqs = {
+            variant: reqs
+            for variant, originals in variant_to_originals.items()
+            if variant not in found
+            and any(o in unresolved_set for o in originals)
+            and (reqs := analyze_uyghur_word(variant))
+        }
+        if dyn_variant_reqs:
+            probes = collect_lexicon_probes(dyn_variant_reqs)
+            if probes:
+                known_probes = await _lookup_base_lexicon(session, probes, cache=cache)
+                for variant, reqs in dyn_variant_reqs.items():
+                    if is_word_verified_by_lexicon(reqs, known_probes):
+                        for orig in variant_to_originals[variant]:
+                            if (
+                                orig in unresolved_set
+                                and variant not in corrections.setdefault(orig, [])
+                            ):
+                                corrections[orig].append(variant)
+
     await asyncio.gather(
         *[
             cache_service.set(
-                f"dict:ocr:{w}", corrections.get(w, []), ttl=_DICT_CACHE_TTL
+                f"dict:ocr:v2:{w}", corrections.get(w, []), ttl=_DICT_CACHE_TTL
             )
             for w in db_needed
         ]
@@ -573,6 +721,17 @@ async def run_spell_check_for_page(
     unknown = await find_unknown_words(session, unique_words, cache=cache)
     ocr_cache = await get_ocr_corrections_batch(session, unknown, cache=cache)
 
+    # Preserve words previously marked 'ignored' by editors on this page
+    ignored_res = await session.execute(
+        select(PageSpellIssue.word).where(
+            PageSpellIssue.page_id == page.id,
+            PageSpellIssue.status == "ignored",
+        )
+    )
+    ignored_norms = {
+        normalize_uyghur_chars(row[0]) for row in ignored_res.fetchall() if row[0]
+    }
+
     # SIMPLIFIED LOGIC: Only create issues for words with OCR corrections
     # if a word has a valid
     # dictionary correction via OCR substitution/insertion, it's likely an error
@@ -587,11 +746,16 @@ async def run_spell_check_for_page(
             status="open",
         )
         for word_norm, word_raw, start, end in tokens
-        if word_norm in ocr_cache and ocr_cache[word_norm]  # Only if corrections exist
+        if word_norm not in ignored_norms
+        and word_norm in ocr_cache
+        and ocr_cache[word_norm]  # Only if corrections exist
     ]
 
     await session.execute(
-        delete(PageSpellIssue).where(PageSpellIssue.page_id == page.id)
+        delete(PageSpellIssue).where(
+            PageSpellIssue.page_id == page.id,
+            PageSpellIssue.status.in_(["open", "processing"]),
+        )
     )
     session.add_all(issues)
 

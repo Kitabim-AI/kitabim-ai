@@ -83,16 +83,25 @@ async def test_run_spell_check_for_page_with_issues():
     mock_unknown_res = MagicMock()
     mock_unknown_res.fetchall.return_value = [("نامەلۇم",)]
 
+    # 2b. dynamic morphology probe lookup for "نامەلۇم" -> no base stem found
+    mock_morph_probe_res = MagicMock()
+    mock_morph_probe_res.fetchall.return_value = []
+
     # 3. get_ocr_corrections_batch for ["نامەلۇم"] -> returns {"نامەلۇم": ["پىلان"]}
     mock_ocr_db_res = MagicMock()
     mock_ocr_db_res.fetchall.return_value = [("پىلان",)]
+
+    mock_ignored_res = MagicMock()
+    mock_ignored_res.fetchall.return_value = []
 
     session.execute.side_effect = [
         mock_rules_res,  # fetch rules
         MagicMock(),  # update Book.structure_milestone = 'idle' on text_changed
         mock_unknown_res,  # find unknown words
+        mock_morph_probe_res,  # dynamic morphology probe lookup
         mock_ocr_db_res,  # dict lookup for ocr variants
-        MagicMock(),  # delete
+        mock_ignored_res,  # fetch ignored words on page
+        MagicMock(),  # delete open/processing issues
         MagicMock(),  # update
     ]
 
@@ -171,3 +180,54 @@ async def test_run_spell_check_for_page_no_tokens():
 
     count = await run_spell_check_for_page(session, page)
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_find_unknown_words_dynamic_morphology_accepts_valid_and_rejects_invalid():
+    session = AsyncMock()
+    cache = ThreadSafeSpellCheckCache()
+
+    valid_extended = "ئاپتورلىرىڭىزنىڭ"  # Pl + 2sgPolPoss + Gen on `ئاپتور`
+    invalid_imla = "كىتابلېرى"  # Wrong polysyllabic `ې` instead of `ى`
+
+    # Both are absent from static `words` table
+    mock_static_res = MagicMock()
+    mock_static_res.fetchall.return_value = [(valid_extended,), (invalid_imla,)]
+
+    # Base lexicon contains `ئاپتور`, `ئاپتورلار`, `ئاپتورى`, `كىتاب`, `كىتابلار`, `كىتابى`
+    mock_probe_res = MagicMock()
+    mock_probe_res.fetchall.return_value = [
+        ("ئاپتور",),
+        ("ئاپتورلار",),
+        ("ئاپتورى",),
+        ("كىتاب",),
+        ("كىتابلار",),
+        ("كىتابى",),
+    ]
+    session.execute.side_effect = [mock_static_res, mock_probe_res]
+
+    unknown = await find_unknown_words(
+        session, [valid_extended, invalid_imla], cache=cache
+    )
+    assert valid_extended not in unknown
+    assert invalid_imla in unknown
+
+
+@pytest.mark.asyncio
+async def test_get_ocr_corrections_batch_dynamic_morphology_fallback():
+    session = AsyncMock()
+    cache = ThreadSafeSpellCheckCache()
+
+    ocr_typo = "ئاپتورلىرىكىزغا"  # OCR misread `ڭ` as `ك` in `ئاپتورلىرىڭىزغا`
+
+    # Static `words` table does not contain any variant of `ئاپتورلىرىكىزغا`
+    mock_static_variants = MagicMock()
+    mock_static_variants.fetchall.return_value = []
+
+    # Dynamic morphology probe check finds `ئاپتور` and `ئاپتورلار`
+    mock_probe_res = MagicMock()
+    mock_probe_res.fetchall.return_value = [("ئاپتور",), ("ئاپتورلار",), ("ئاپتورى",)]
+    session.execute.side_effect = [mock_static_variants, mock_probe_res]
+
+    res = await get_ocr_corrections_batch(session, {ocr_typo}, cache=cache)
+    assert res.get(ocr_typo) == ["ئاپتورلىرىڭىزغا"]

@@ -11,7 +11,9 @@ Houses core business logic and domain processing pipelines for Kitabim AI, inclu
 - `[book_structure_service.py:BookStructureService]` — Deterministic printed-page alignment (`solve_content_page_numbers`) and two-tier section extraction (`extract_book_sections`).
 - `[chunking_service.py:ChunkingService]` — Splits book sections into overlapping semantic chunks (`chunk_book_sections`) with page-local footnotes, cross-page prose stitching, and `text_hash` computation.
 - `[batch_embedding_service.py:submit_batch_embedding_job]` / `[batch_embedding_service.py:poll_and_process_batch_embedding_jobs]` — Book-scoped and page-scoped Gemini Batch embedding pipeline.
-- `[spell_check_service.py:run_spell_check_for_page]` — Uyghur spell checker identifying unknown words and calculating correction confidences.
+- `[spell_check_service.py:run_spell_check_for_page]` — Uyghur spell checker identifying unknown words and calculating OCR correction confidences, backed by exact dictionary lookup plus dynamic Uyghur morphological validation and variant fallback.
+- `[uyghur_morphology.py:analyze_uyghur_word]` / `[uyghur_morphology.py:is_word_verified_by_lexicon]` — Strip-and-reinflect Uyghur morphological analyzer enforcing *Imla* vowel harmony, labial rounding, open-syllable vowel raising, devoicing, and velar dissimilation against root/anchor probes.
+- `[ocr_auto_heal_service.py:UyghurOcrAutoHealer]` / `[ocr_auto_heal_service.py:auto_heal_book_pages]` — High-precision per-book Uyghur OCR auto-healer combining active `AutoCorrectRule`s, 32-letter 1-edit uniqueness veto, honorific proper-name protection, and `PipelineEvent` line-level audit logging.
 - `[auto_correct_service.py:apply_auto_corrections_to_page]` — Applies deterministic auto-correction rules to page text.
 - `[entity_resolution_service.py:resolve_entity]` / `[entity_resolution_service.py:execute_merge]` — Entity deduplication, vector similarity matching, and alias management.
 - `[storage_service.py:StorageProvider]` / `[storage_service.py:storage]` — Unified file storage provider abstraction (`FileSystemStorageProvider`, `GCSStorageProvider`).

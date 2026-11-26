@@ -306,6 +306,39 @@ def test_entity_matches_question_variations():
         "جالالىد\u06d1ن بەھرام", "جالالىد\u0649ن بەھرامنىڭ ئەسەرلىرى بار؟"
     )
 
+    # 4. Zero-width joiners in user input must not break author/title matching
+    assert _entity_matches_question(
+        "ئابدۇرېھىم ئۆتكۈر",
+        "ئابدۇرېھىم ئ\u200dۆتكۈرنىڭ «ئىز» ناملىق رومانىنىڭ باشلىنىشىدىكى شېئىر",
+    )
+
+    # 5. Short (< 4 char) titles match only when explicitly signaled, never on prefix collisions
+    assert _entity_matches_question("ئىز", "«ئىز» كىمنىڭ ئەسىرى؟")
+    assert _entity_matches_question("ئىز", "ئىزنىڭ ئاپتورى كىم؟")
+    assert not _entity_matches_question("ئىز", "«ئىزدىنىش» كىمنىڭ ئەسىرى؟")
+    assert not _entity_matches_question("ئىز", "ئىز دېگەن نېمە؟")
+
+
+@pytest.mark.asyncio
+async def test_find_author_by_title_prefers_longer_title_over_short_subset():
+    session = AsyncMock()
+    repo = BooksRepository(session)
+    mock_res = MagicMock()
+    # Shorter title listed before longer title containing it
+    mock_res.fetchall.return_value = [
+        ("ئىز", "ئابدۇرېھىم ئۆتكۈر"),
+        ("قانلىق ئىز", "مۇھەممەتئېلى ھېلىم"),
+    ]
+    session.execute.return_value = mock_res
+
+    result = await repo.find_author_by_title_in_question("قانلىق ئىز رومانى كىمنىڭ؟")
+    assert result == ("قانلىق ئىز", "مۇھەممەتئېلى ھېلىم")
+
+    result_iz = await repo.find_author_by_title_in_question(
+        "«ئىز» ناملىق رومانى كىمنىڭ؟"
+    )
+    assert result_iz == ("ئىز", "ئابدۇرېھىم ئۆتكۈر")
+
 
 @pytest.mark.asyncio
 async def test_find_titles_by_ids_returns_metadata():

@@ -1283,3 +1283,69 @@ async def test_title_is_common_word_uses_cache():
     ):
         assert await agent_tools._title_is_common_word("قۇتادغۇبىلىك") is False
     mentioning.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "question",
+    [
+        "ئابدۇرېھىم ئۆتكۈرنىڭ «ئىز» ناملىق رومانى",
+        "ئابدۇرېھىم ئ\u200dۆتكۈرنىڭ «ئىز» ناملىق رومانىنىڭ باشلىنىشىدىكى شېئىرنىڭ تولۇق تېكىستى نېمە؟",
+        "«ئىز» دا قانداق ۋەقەلەر بولىدۇ؟",
+        "ئىز رومانىنىڭ باشلىنىشىدىكى شېئىر قايسى؟",
+    ],
+)
+async def test_explicitly_signaled_common_one_word_title_not_dropped(question):
+    """Common single-word titles like 'ئىز' must NOT be dropped when explicitly
+    signaled via quotes, a strong title indicator, or the book's author."""
+    from app.services.rag.agent import tools as agent_tools
+
+    book = {
+        "id": "5c60c5a06848",
+        "title": "ئىز",
+        "author": "ئابدۇرېھىم ئۆتكۈر",
+        "volume": None,
+    }
+    common_check = AsyncMock(return_value=True)
+    with (
+        patch.object(
+            agent_tools,
+            "find_books_by_title_in_question",
+            AsyncMock(return_value=[book]),
+        ),
+        patch.object(agent_tools, "_title_is_common_word", common_check),
+    ):
+        result = await agent_tools._run_find_books_by_title(
+            {"question": question}, _title_ctx()
+        )
+
+    assert len(result) == 1
+    assert result[0]["id"] == "5c60c5a06848"
+    common_check.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_find_books_by_title_fuzzy_fallback_handles_filler_suffix_and_zwj():
+    """Fallback matching in _run_find_books_by_title ignores bibliographic filler
+    words (ناملىق، رومانى), matches suffixed Uyghur author/title tokens (ئۆتكۈرنىڭ),
+    strips ZWJ, and does not falsely match prefix collisions like 'ئىزدىنىش'."""
+    from app.services.rag.agent import tools as agent_tools
+
+    ctx = _global_ctx()
+    res = MagicMock()
+    res.fetchall.return_value = [
+        ("5c60c5a06848", "ئىز", "ئابدۇرېھىم ئۆتكۈر", None),
+        ("376a0059097a", "ئويغانغان زېمىن", "ئابدۇرېھىم ئۆتكۈر", 1),
+        ("b9323a069c0e", "ئىزدىنىش", "زوردۇن سابىر", 1),
+        ("b508dd2437c9", "قانلىق ئىز", "مۇھەممەتئېلى ھېلىم", None),
+    ]
+    ctx.session.execute = AsyncMock(return_value=res)
+
+    with patch.object(
+        agent_tools, "find_books_by_title_in_question", AsyncMock(return_value=None)
+    ):
+        result = await agent_tools._run_find_books_by_title(
+            {"question": "ئابدۇرېھىم ئ\u200dۆتكۈرنىڭ «ئىز» ناملىق رومانى"}, ctx
+        )
+
+    assert [b["id"] for b in result] == ["5c60c5a06848"]

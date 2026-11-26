@@ -28,7 +28,8 @@ from engine.recognize import (
 )
 from engine.text_cleanup import is_toc_page
 from engine.workdir import OcrWorkDir
-from kitabim_client.api import KitabimAPIError
+from kitabim_client.api import KitabimAPIError, KitabimAuthError
+from kitabim_client.auth import AuthError
 
 FONTS_DIR = Path(__file__).parent / "static" / "fonts"
 
@@ -945,6 +946,8 @@ def push_response(workdir: OcrWorkDir, client) -> dict:
             workdir.save_metadata()
             workdir.clear_images()
         return {"status": "corrections_pushed", "count": len(results)}
+    except (AuthError, KitabimAuthError) as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
     except KitabimAPIError as exc:
         if "404 from Kitabim API" in str(exc) and workdir.book_id is not None:
             if hasattr(client, "book_exists") and not client.book_exists(

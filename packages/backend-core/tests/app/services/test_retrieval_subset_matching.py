@@ -139,3 +139,41 @@ async def test_find_books_by_title_orders_by_volume():
     compiled = str(executed_stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "ORDER BY" in compiled
     assert "volume" in compiled.lower()
+
+
+@pytest.mark.asyncio
+async def test_find_books_by_title_short_title_iz_without_prefix_collisions():
+    session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = [
+        ("5c60c5a06848", "ئىز", "ئابدۇرېھىم ئۆتكۈر", None),
+        ("b9323a069c0e", "ئىزدىنىش", "زوردۇن سابىر", 1),
+        ("ad5913bbde8b", "ئىزدىنىش", "زوردۇن سابىر", 2),
+        ("b508dd2437c9", "قانلىق ئىز", "مۇھەممەتئېلى ھېلىم", None),
+        ("fa66235c352e", "كىروراندىكى ئىزچىلار", "مۆيدىن سايىت بوستان", 1),
+        ("744e60976f37", "داغ", "ئەبەيدۇللا ئىبراھىم", None),
+    ]
+    session.execute.return_value = mock_result
+
+    # Production query must resolve strictly to "ئىز"
+    prod_q = (
+        "ئابدۇرېھىم ئ\u200dۆتكۈرنىڭ «ئىز» ناملىق رومانىنىڭ باشلىنىشىدىكى "
+        "شېئىرنىڭ تولۇق تېكىستى نېمە؟"
+    )
+    res_iz = await find_books_by_title_in_question(prod_q, session)
+    assert res_iz is not None
+    assert {r["id"] for r in res_iz} == {"5c60c5a06848"}
+
+    # Query for "ئىزدىنىش" must NOT match "ئىز"
+    res_izdinish = await find_books_by_title_in_question(
+        "«ئىزدىنىش» ناملىق رومانىنىڭ ئاپتورى كىم؟", session
+    )
+    assert res_izdinish is not None
+    assert {r["id"] for r in res_izdinish} == {"b9323a069c0e", "ad5913bbde8b"}
+
+    # Query for "قانلىق ئىز" must filter out the strict subset "ئىز"
+    res_qanliq = await find_books_by_title_in_question(
+        "قانلىق ئىز رومانى ھەققىدە ئېيتىپ بەر", session
+    )
+    assert res_qanliq is not None
+    assert {r["id"] for r in res_qanliq} == {"b508dd2437c9"}

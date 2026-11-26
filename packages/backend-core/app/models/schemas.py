@@ -238,6 +238,9 @@ class Book(BaseModel):
     spell_check_milestone: str = (
         "idle"  # DB: spell_check_milestone, API: spellCheckMilestone
     )
+    auto_correct_milestone: str = (
+        "idle"  # DB: auto_correct_milestone, API: autoCorrectMilestone
+    )
 
 
 class PaginatedBooks(BaseModel):

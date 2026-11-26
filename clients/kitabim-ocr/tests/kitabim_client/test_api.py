@@ -357,3 +357,169 @@ def test_replace_book_ocr_posts_gzip_compressed_json(tmp_path: Path):
     assert decompressed["ocrVersion"] == "surya-2.5-v2"
     assert decompressed["pages"][0]["detectedPageNumber"] == 3
     assert decompressed["pages"][0]["skipped"] is False
+
+
+def test_push_new_book_retries_on_401_after_refresh_and_rewinds_pdf(tmp_path: Path):
+    client = _client(tmp_path)
+    pdf_path = tmp_path / "book.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\nbody-bytes")
+    pages = [
+        PageState(
+            page_number=1, text="hi", is_toc=False, confidence=0.9, status="reviewed"
+        )
+    ]
+
+    resp_401 = MagicMock(status_code=401, text="Token expired")
+    resp_200 = MagicMock(status_code=200)
+    resp_200.json.return_value = {"bookId": "new-123"}
+    uploaded_payloads: list[bytes] = []
+
+    def _fake_post(url, **kwargs):
+        file_obj = kwargs["files"]["file"][1]
+        uploaded_payloads.append(file_obj.read())
+        return resp_401 if len(uploaded_payloads) == 1 else resp_200
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="old_tok"),
+        patch(
+            "kitabim_client.api.refresh_access_token", return_value="fresh_tok"
+        ) as mock_ref,
+        patch("kitabim_client.api.httpx.post", side_effect=_fake_post) as mock_post,
+    ):
+        result = client.push_new_book(pdf_path, pages)
+
+    assert result == {"bookId": "new-123"}
+    assert mock_ref.call_count == 1
+    assert mock_post.call_count == 2
+    assert uploaded_payloads == [b"%PDF-1.4\nbody-bytes", b"%PDF-1.4\nbody-bytes"]
+    assert (
+        mock_post.call_args_list[1].kwargs["headers"]["Authorization"]
+        == "Bearer fresh_tok"
+    )
+
+
+def test_push_page_correction_and_get_book_pages_and_list_books_retry_on_401(
+    tmp_path: Path,
+):
+    client = _client(tmp_path)
+    page = PageState(
+        page_number=2, text="fixed", is_toc=True, confidence=1.0, status="reviewed"
+    )
+
+    r401 = MagicMock(status_code=401, text="expired")
+    r200_ok = MagicMock(status_code=200)
+    r200_ok.json.return_value = {"status": "ok"}
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="old_tok"),
+        patch("kitabim_client.api.refresh_access_token", return_value="fresh_tok"),
+        patch(
+            "kitabim_client.api.httpx.post",
+            side_effect=[r401, r200_ok, r401, r200_ok],
+        ) as mock_post,
+    ):
+        assert client.push_page_correction("b1", page) == {"status": "ok"}
+    assert mock_post.call_count == 4
+
+    batch1 = MagicMock(status_code=200)
+    batch1.json.return_value = [{"pageNumber": i} for i in range(1, 101)]
+    batch2 = MagicMock(status_code=200)
+    batch2.json.return_value = [{"pageNumber": 101}]
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="old_tok"),
+        patch("kitabim_client.api.refresh_access_token", return_value="fresh_tok"),
+        patch(
+            "kitabim_client.api.httpx.get",
+            side_effect=[batch1, r401, batch2],
+        ) as mock_get,
+    ):
+        pages = client.get_book_pages("b1")
+    assert len(pages) == 101
+    assert mock_get.call_count == 3
+
+
+def test_book_exists_retries_on_401_and_never_returns_false_on_persistent_401(
+    tmp_path: Path,
+):
+    from kitabim_client.api import KitabimAuthError
+
+    client = KitabimClient(
+        base_url="http://localhost:8000",
+        config_path=tmp_path / "token.json",
+        app_id="test-app-id",
+        headless=True,
+    )
+    r401 = MagicMock(status_code=401, text="expired")
+    r200 = MagicMock(status_code=200)
+
+    # Recovers on 401 after refresh
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="old_tok"),
+        patch("kitabim_client.api.refresh_access_token", return_value="fresh_tok"),
+        patch("kitabim_client.api.httpx.get", side_effect=[r401, r200]),
+    ):
+        assert client.book_exists("b1") is True
+
+    # On persistent 401, raises KitabimAuthError instead of falsely returning False
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="old_tok"),
+        patch("kitabim_client.api.refresh_access_token", return_value=None),
+        patch("kitabim_client.api.httpx.get", return_value=r401),
+    ):
+        with pytest.raises(KitabimAuthError):
+            client.book_exists("b1")
+
+
+def test_download_book_pdf_remints_expired_download_ticket_on_401(tmp_path: Path):
+    client = _client(tmp_path)
+    dest = tmp_path / "book.pdf"
+
+    ticket_1 = MagicMock(status_code=200)
+    ticket_1.json.return_value = {"download_url": "https://gcs.example/expired"}
+    ticket_2 = MagicMock(status_code=200)
+    ticket_2.json.return_value = {"download_url": "https://gcs.example/fresh"}
+
+    dl_403 = MagicMock(status_code=403, text="Signature expired")
+    dl_200 = MagicMock(status_code=200, content=b"%PDF-1.4\nok")
+
+    with (
+        patch("kitabim_client.api.get_valid_token", return_value="tok123"),
+        patch(
+            "kitabim_client.api.httpx.post", side_effect=[ticket_1, ticket_2]
+        ) as mock_post,
+        patch("kitabim_client.api.httpx.get", side_effect=[dl_403, dl_200]) as mock_get,
+    ):
+        out = client.download_book_pdf("book123", dest)
+
+    assert out == dest
+    assert dest.read_bytes() == b"%PDF-1.4\nok"
+    assert mock_post.call_count == 2
+    assert mock_get.call_count == 2
+
+
+def test_interactive_client_relogs_in_on_401_when_refresh_fails(tmp_path: Path):
+    client = _client(tmp_path)
+    assert client.headless is False
+    assert client.as_headless().headless is True
+
+    r401 = MagicMock(status_code=401, text="expired")
+    r200 = MagicMock(status_code=200)
+    r200.json.return_value = {"books": [], "total": 0}
+
+    with (
+        patch(
+            "kitabim_client.api.get_valid_token",
+            side_effect=["old_tok", "relogged_tok"],
+        ) as mock_tok,
+        patch("kitabim_client.api.refresh_access_token", return_value=None),
+        patch("kitabim_client.api.httpx.get", side_effect=[r401, r200]) as mock_get,
+    ):
+        res = client.list_books()
+
+    assert res == {"books": [], "total": 0}
+    assert mock_tok.call_count == 2
+    assert (
+        mock_get.call_args_list[1].kwargs["headers"]["Authorization"]
+        == "Bearer relogged_tok"
+    )

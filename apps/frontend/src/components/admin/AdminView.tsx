@@ -1,4 +1,4 @@
-import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, ListTree, MoreVertical, Network, RefreshCw, Save, ScanText, Scissors, Search, Shield, TableOfContents, User, Wand2, X } from 'lucide-react';
+import { BookOpen, BookOpenCheck, Cuboid, Database, Edit2, Globe, Hash, ListTree, MoreVertical, Network, RefreshCw, Save, ScanText, Scissors, Search, Shield, Sparkles, TableOfContents, User, Wand2, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -50,30 +50,37 @@ const getPipelineIconClass = (
   // For page-level steps, use the aggregate counts to determine if finished
   const isPageLevel = PAGE_LEVEL_MILESTONE_STEPS.includes(stepKey as typeof PAGE_LEVEL_MILESTONE_STEPS[number]);
 
-  // Special case: Summary, Graph, and Structure are book-level milestones
+  // Special case: Summary, Graph, Auto-Correct, and Structure are book-level milestones
+  const acMilestone = book.autoCorrectMilestone || book.auto_correct_milestone || 'idle';
   const isComplete = stepKey === 'summary'
     ? !!book.hasSummary
     : stepKey === 'graph'
       ? !!(book.hasGraph || book.has_graph)
-      : stepKey === 'structure'
-        ? book.structureMilestone === 'complete' || book.structure_milestone === 'complete' || book.status === 'ready'
-        : isPageLevel
-          ? (total > 0 && doneCount + failedCount === total)
-          : isCompleteParam;
+      : stepKey === 'auto_correct'
+        ? acMilestone === 'complete'
+        : stepKey === 'structure'
+          ? book.structureMilestone === 'complete' || book.structure_milestone === 'complete' || book.status === 'ready'
+          : isPageLevel
+            ? (total > 0 && doneCount + failedCount === total)
+            : isCompleteParam;
 
-  const isFailed = stepKey === 'structure'
-    ? (book.structureMilestone === 'failed' || book.structure_milestone === 'failed')
-    : isPageLevel
-      ? failedCount > 0
-      : isFailedParam;
+  const isFailed = stepKey === 'auto_correct'
+    ? acMilestone === 'failed'
+    : stepKey === 'structure'
+      ? (book.structureMilestone === 'failed' || book.structure_milestone === 'failed')
+      : isPageLevel
+        ? failedCount > 0
+        : isFailedParam;
 
   // A step is considered "In Progress" (orange/blinking) if:
   // 1. It's not complete AND
   // 2. It has either started (doneCount > 0) or is currently being worked on (activeCount > 0)
   const isInProgress = !isComplete && (
-    stepKey === 'structure'
-      ? (book.structureMilestone === 'in_progress' || book.structure_milestone === 'in_progress')
-      : (doneCount > 0 || activeCount > 0)
+    stepKey === 'auto_correct'
+      ? acMilestone === 'in_progress'
+      : stepKey === 'structure'
+        ? (book.structureMilestone === 'in_progress' || book.structure_milestone === 'in_progress')
+        : (doneCount > 0 || activeCount > 0)
   );
 
   // Order matters: In Progress (blinking) takes precedence over a partial error
@@ -435,6 +442,7 @@ export const AdminView: React.FC = () => {
                                   { key: PIPELINE_STEP.EMBEDDING, icon: Cuboid },
                                   { key: PIPELINE_STEP.SUMMARY, icon: Wand2 },
                                   { key: PIPELINE_STEP.SPELL_CHECK, icon: BookOpenCheck },
+                                  { key: PIPELINE_STEP.AUTO_CORRECT, icon: Sparkles },
                                   { key: PIPELINE_STEP.GRAPH, icon: Network }
                                 ].map(({ key, icon: Icon }) => {
                                   // Use the same refined color logic as desktop view
@@ -510,7 +518,8 @@ export const AdminView: React.FC = () => {
                               { ...ADMIN_PIPELINE_STEPS[3], icon: Cuboid },
                               { ...ADMIN_PIPELINE_STEPS[4], icon: Wand2 },
                               { ...ADMIN_PIPELINE_STEPS[5], icon: BookOpenCheck },
-                              { ...ADMIN_PIPELINE_STEPS[6], icon: Network }
+                              { ...ADMIN_PIPELINE_STEPS[6], icon: Sparkles },
+                              { ...ADMIN_PIPELINE_STEPS[7], icon: Network }
                             ].map(({ key, icon: Icon, label }) => {
                               const cacheKey = `${book.id}:${key}`;
                               const stats = detailedStats[cacheKey];
@@ -519,7 +528,7 @@ export const AdminView: React.FC = () => {
 
                               const colorClass = isLoaded
                                 ? getPipelineIconClass(
-                                    { ...book, pipelineStats: stats.pipeline_stats, hasSummary: stats.has_summary, hasGraph: stats.has_graph, totalPages: stats.total_pages },
+                                    { ...book, pipelineStats: stats.pipeline_stats, hasSummary: stats.has_summary, hasGraph: stats.has_graph, autoCorrectMilestone: stats.auto_correct_milestone || book.autoCorrectMilestone, totalPages: stats.total_pages },
                                     key,
                                     false, // handled inside getPipelineIconClass for page levels
                                     false  // handled inside getPipelineIconClass for page levels
@@ -546,6 +555,16 @@ export const AdminView: React.FC = () => {
                                             <span>{stats.has_summary ? t('common.done') : t('common.pending')}</span>
                                           ) : key === 'graph' ? (
                                             <span>{(stats.has_graph || stats.hasGraph) ? t('common.done') : t('common.pending')}</span>
+                                          ) : key === 'auto_correct' ? (
+                                            <span>
+                                              {(stats.auto_correct_milestone || book.autoCorrectMilestone) === 'complete'
+                                                ? t('common.done')
+                                                : (stats.auto_correct_milestone || book.autoCorrectMilestone) === 'in_progress'
+                                                  ? t('common.processing')
+                                                  : (stats.auto_correct_milestone || book.autoCorrectMilestone) === 'failed'
+                                                    ? t('common.error')
+                                                    : t('common.pending')}
+                                            </span>
                                           ) : key === 'structure' ? (
                                             <span>{(book.structureMilestone === 'complete' || book.structure_milestone === 'complete' || book.status === 'ready') ? t('common.done') : t('common.pending')}</span>
                                           ) : (

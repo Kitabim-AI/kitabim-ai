@@ -90,6 +90,9 @@ class Book(Base):
     spell_check_milestone: Mapped[str] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=False
     )
+    auto_correct_milestone: Mapped[str] = mapped_column(
+        String(20), default="idle", server_default="idle", nullable=False
+    )
     graph_milestone: Mapped[str] = mapped_column(
         String(20), default="idle", server_default="idle", nullable=False
     )
@@ -940,6 +943,83 @@ class UserChatUsage(Base):
         UniqueConstraint(
             "user_id", "usage_date", name="user_chat_usage_user_id_date_key"
         ),
+    )
+
+
+class UserTtsUsage(Base):
+    """Daily uncached TTS synthesis counter per user"""
+
+    __tablename__ = "user_tts_usage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    usage_date: Mapped[datetime.date] = mapped_column(
+        Date,
+        default=func.current_date(),
+        server_default=func.current_date(),
+        index=True,
+        nullable=False,
+    )
+    count: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "usage_date", name="user_tts_usage_user_id_date_key"
+        ),
+    )
+
+
+class TtsAudioCache(Base):
+    """Content-addressed cache for synthesized TTS audio files"""
+
+    __tablename__ = "tts_audio_cache"
+
+    content_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[str] = mapped_column(
+        String(64), default="audio/mpeg", server_default="audio/mpeg", nullable=False
+    )
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    voice: Mapped[str] = mapped_column(String(100), nullable=False)
+    style: Mapped[str] = mapped_column(
+        Text, default="", server_default="", nullable=False
+    )
+    text_chars: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    duration_sec: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    size_bytes: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    input_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    output_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    cost_usd: Mapped[float] = mapped_column(
+        Numeric(12, 6), default=0, server_default="0", nullable=False
+    )
+    hit_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        nullable=False,
+    )
+    last_accessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=func.now(),
+        server_default=func.now(),
+        index=True,
+        nullable=False,
     )
 
 

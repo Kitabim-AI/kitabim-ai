@@ -656,6 +656,8 @@ async def get_books(
             "chunking_milestone": b.chunking_milestone,
             "embedding_milestone": b.embedding_milestone,
             "spell_check_milestone": b.spell_check_milestone,
+            "auto_correct_milestone": getattr(b, "auto_correct_milestone", "idle")
+            or "idle",
         }
         books_data.append(BookSchema.model_validate(b_dict))
 
@@ -1478,6 +1480,8 @@ async def get_book(
         or "idle",
         "spell_check_milestone": getattr(book_model, "spell_check_milestone", "idle")
         or "idle",
+        "auto_correct_milestone": getattr(book_model, "auto_correct_milestone", "idle")
+        or "idle",
     }
 
     # Convert SQLAlchemy models to Pydantic (automatic camelCase conversion)
@@ -1523,6 +1527,10 @@ async def get_book_pipeline_stats(
         "pipeline_stats": stats.get("pipeline_stats", {}),
         "has_summary": stats.get("has_summary", False),
         "has_graph": stats.get("has_graph", False),
+        "auto_correct_milestone": getattr(
+            stats["book"], "auto_correct_milestone", "idle"
+        )
+        or "idle",
         "total_pages": stats["book"].total_pages,
     }
 
@@ -2371,6 +2379,7 @@ async def replace_book_ocr(
             gcs_ocr_backup_uri=backup_uri,
             ocr_milestone=BOOK_MILESTONE_COMPLETE,
             spell_check_milestone=next_spell_milestone,
+            auto_correct_milestone=BOOK_MILESTONE_IDLE,
             last_updated=now,
             updated_by=current_user.email,
         ),
@@ -2441,6 +2450,7 @@ async def reprocess_ocr(
         book_id,
         **structure_dirty_values(
             ocr_milestone=PAGE_MILESTONE_IDLE,
+            auto_correct_milestone=PAGE_MILESTONE_IDLE,
             chunking_milestone=PAGE_MILESTONE_IDLE,
             chunking_retry_count=0,
             chunking_claimed_at=preserve_active_chunking_claim(),
@@ -2855,6 +2865,79 @@ async def reprocess_summary(
     return {
         "status": "summary_reprocess_started",
         "message": "Summary generation queued.",
+    }
+
+
+@router.post("/{book_id}/auto-correct")
+async def trigger_book_auto_correct(
+    book_id: str,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually trigger high-precision OCR auto-correction for a single book (Admin only)."""
+    books_repo = BooksRepository(session)
+    book = await books_repo.get(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail=t("errors.book_not_found"))
+
+    now = datetime.now(timezone.utc)
+    await books_repo.update_one(
+        book_id,
+        auto_correct_milestone="in_progress",
+        last_updated=now,
+        updated_by=current_user.email,
+    )
+    await session.commit()
+    await cache_service.delete(f"book:{book_id}")
+    await cache_service.bump_namespace_version("books:list")
+
+    try:
+        import arq
+
+        redis_pool = await arq.create_pool(
+            arq.connections.RedisSettings.from_dsn(settings.redis_url)
+        )
+        try:
+            await redis_pool.enqueue_job(
+                "book_auto_correct_job",
+                book_id=book_id,
+                updated_by=current_user.email,
+                _job_id=f"book_auto_correct:{book_id}",
+            )
+        finally:
+            await redis_pool.aclose()
+        log_json(
+            logger,
+            logging.INFO,
+            "manually enqueued book_auto_correct_job",
+            book_id=book_id,
+            user=current_user.email,
+        )
+    except Exception as exc:
+        log_json(
+            logger,
+            logging.ERROR,
+            "failed to enqueue book_auto_correct_job",
+            book_id=book_id,
+            error=str(exc),
+        )
+        await books_repo.update_one(
+            book_id,
+            auto_correct_milestone="idle",
+            last_updated=datetime.now(timezone.utc),
+            updated_by=current_user.email,
+        )
+        await session.commit()
+        await cache_service.delete(f"book:{book_id}")
+        await cache_service.bump_namespace_version("books:list")
+        raise HTTPException(
+            status_code=500, detail=t("errors.auto_correct_enqueue_failed")
+        )
+
+    return {
+        "status": "auto_correct_started",
+        "bookId": book_id,
+        "message": "Book OCR auto-correction queued.",
     }
 
 

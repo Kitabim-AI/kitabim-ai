@@ -14,8 +14,10 @@ vi.mock('@/src/components/admin/SpellCheckConfigPanel', () => ({
   SpellCheckConfigPanel: () => <div>spell-config</div>,
 }));
 
+const mockUseIsAdmin = vi.fn(() => true);
+
 vi.mock('@/src/hooks/useAuth', () => ({
-  useIsAdmin: () => true,
+  useIsAdmin: () => mockUseIsAdmin(),
   useIsEditor: () => true,
 }));
 
@@ -222,4 +224,88 @@ test('ActionMenu shows reprocess structure option and fires handler', () => {
   fireEvent.click(structureButton);
 
   expect(handleReprocessStep).toHaveBeenCalledWith(mockBooks[0].id, 'structure');
+});
+
+test('ActionMenu shows auto-correct option for admin and hides for non-admin', () => {
+  const handleReprocessStep = vi.fn();
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    ...mockAppContextValue,
+    bookActions: {
+      handleReprocessStep,
+      reprocessingBooks: new Map(),
+    },
+  } as any);
+
+  const dummyRect = { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 } as DOMRect;
+  const menuRef = { current: null } as React.RefObject<HTMLDivElement>;
+
+  mockUseIsAdmin.mockReturnValue(true);
+  const { unmount } = render(
+    <I18nContext.Provider value={i18nMockValue}>
+      <ActionMenu
+        book={mockBooks[0]}
+        close={vi.fn()}
+        anchorRect={dummyRect}
+        menuRef={menuRef}
+      />
+    </I18nContext.Provider>
+  );
+
+  const autoCorrectBtn = screen.getByText('admin.table.reprocess.auto_correct');
+  fireEvent.click(autoCorrectBtn);
+  expect(handleReprocessStep).toHaveBeenCalledWith(mockBooks[0].id, 'auto-correct');
+  unmount();
+
+  mockUseIsAdmin.mockReturnValue(false);
+  render(
+    <I18nContext.Provider value={i18nMockValue}>
+      <ActionMenu
+        book={mockBooks[0]}
+        close={vi.fn()}
+        anchorRect={dummyRect}
+        menuRef={menuRef}
+      />
+    </I18nContext.Provider>
+  );
+  expect(screen.queryByText('admin.table.reprocess.auto_correct')).toBeNull();
+  mockUseIsAdmin.mockReturnValue(true);
+});
+
+test('AdminView lights up Auto-Correct Sparkles icon for in_progress and complete states', () => {
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    ...mockAppContextValue,
+    books: [{ ...mockBooks[0], pipelineStats: {}, autoCorrectMilestone: 'in_progress' }],
+    bookActions: {
+      reprocessingBooks: new Map(),
+    },
+  } as any);
+
+  const { unmount } = render(
+    <I18nContext.Provider value={i18nMockValue}>
+      <AdminView />
+    </I18nContext.Provider>
+  );
+
+  const inProgressIcons = document.querySelectorAll('svg[class*="lucide-sparkles"]');
+  expect(inProgressIcons.length).toBeGreaterThan(0);
+  inProgressIcons.forEach((icon) => expect(icon).toHaveClass('animate-pulse'));
+  unmount();
+
+  vi.mocked(AppContextModule.useAppContext).mockReturnValue({
+    ...mockAppContextValue,
+    books: [{ ...mockBooks[0], pipelineStats: {}, autoCorrectMilestone: 'complete' }],
+    bookActions: {
+      reprocessingBooks: new Map(),
+    },
+  } as any);
+
+  render(
+    <I18nContext.Provider value={i18nMockValue}>
+      <AdminView />
+    </I18nContext.Provider>
+  );
+
+  const completeIcons = document.querySelectorAll('svg[class*="lucide-sparkles"]');
+  expect(completeIcons.length).toBeGreaterThan(0);
+  completeIcons.forEach((icon) => expect(icon).toHaveClass('text-emerald-500'));
 });

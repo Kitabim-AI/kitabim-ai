@@ -5,6 +5,7 @@ export const PIPELINE_STEP = {
   EMBEDDING: 'embedding',
   SUMMARY: 'summary',
   SPELL_CHECK: 'spell_check',
+  AUTO_CORRECT: 'auto_correct',
   GRAPH: 'graph',
   READY: 'ready',
   ERROR: 'error',
@@ -25,6 +26,7 @@ export const MILESTONE_FIELD_BY_STEP = {
   [PIPELINE_STEP.CHUNKING]: 'chunkingMilestone',
   [PIPELINE_STEP.EMBEDDING]: 'embeddingMilestone',
   [PIPELINE_STEP.SPELL_CHECK]: 'spellCheckMilestone',
+  [PIPELINE_STEP.AUTO_CORRECT]: 'autoCorrectMilestone',
   [PIPELINE_STEP.SUMMARY]: 'hasSummary',
   [PIPELINE_STEP.GRAPH]: 'hasGraph',
 } as const;
@@ -36,6 +38,7 @@ export const ADMIN_PIPELINE_STEPS = [
   { key: PIPELINE_STEP.EMBEDDING, label: 'admin.pipeline.embedding' },
   { key: PIPELINE_STEP.SUMMARY, label: 'admin.pipeline.summary' },
   { key: PIPELINE_STEP.SPELL_CHECK, label: 'admin.pipeline.spellCheck' },
+  { key: PIPELINE_STEP.AUTO_CORRECT, label: 'admin.pipeline.autoCorrect' },
   { key: PIPELINE_STEP.GRAPH, label: 'admin.pipeline.graph' },
 ] as const;
 
@@ -45,6 +48,7 @@ export const REPROCESS_STEP = {
   CHUNKING: 'chunking',
   EMBEDDING: 'embedding',
   SPELL_CHECK: 'spell-check',
+  AUTO_CORRECT: 'auto-correct',
   GRAPH: 'graph',
   SUMMARY: 'summary',
 } as const;

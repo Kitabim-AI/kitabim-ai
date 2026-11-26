@@ -670,3 +670,138 @@ async def test_backfill_single_book_isolates_jbig2_render_error_and_completes_bo
     assert "cannot decode jbig2 globals" in (sent_pages[2].error or "")
     assert sent_pages[2].text == "[OCR Error: code=3: cannot decode jbig2 globals]"
     assert sent_pages[3].skipped is False and "يېڭى تېكىست" in sent_pages[3].text
+
+
+@pytest.mark.asyncio
+async def test_backfill_single_book_pauses_and_resumes_on_auth_expiry_before_submit(
+    tmp_path: Path,
+):
+    import asyncio
+    import base64
+    import time
+    from kitabim_client.auth import AuthError, _save_token_config
+
+    def _jwt(exp: float) -> str:
+        h = base64.urlsafe_b64encode(b'{"alg":"none"}').rstrip(b"=").decode()
+        p = (
+            base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode())
+            .rstrip(b"=")
+            .decode()
+        )
+        return f"{h}.{p}.sig"
+
+    token_path = tmp_path / "token.json"
+    token_path.write_text(json.dumps({"access_token": _jwt(time.time() - 60)}))
+
+    client = MagicMock()
+    client.base_url = "http://localhost:8000"
+    client.config_path = token_path
+    client.download_book_pdf.side_effect = lambda b, dest: _create_sample_pdf(
+        dest, num_pages=2
+    )
+    client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "Cover", "isToc": False},
+        {"pageNumber": 2, "text": "Old p2", "isToc": False},
+    ]
+
+    submit_attempts = {"n": 0}
+    waiting_seen = asyncio.Event()
+
+    def _replace_ocr(*args, **kwargs):
+        submit_attempts["n"] += 1
+        if submit_attempts["n"] == 1:
+            raise AuthError("Token expired in headless mode")
+        return {"pagesUpdated": 1, "pagesUnchanged": 1}
+
+    client.replace_book_ocr.side_effect = _replace_ocr
+
+    phases: list[str] = []
+
+    def _on_progress(evt: dict):
+        ph = evt.get("phase")
+        if ph:
+            phases.append(str(ph))
+        if ph == "waiting_for_auth":
+            waiting_seen.set()
+
+    async def _fake_ocr(fitz_page, predictor, **kwargs):
+        return PageOcrResult(
+            text="Fresh OCR text",
+            detected_page_number=1,
+            ended_with_hyphen=False,
+        )
+
+    wake_evt = asyncio.Event()
+
+    async def _simulate_external_relogin():
+        await asyncio.wait_for(waiting_seen.wait(), timeout=2.0)
+        _save_token_config(token_path, _jwt(time.time() + 3600), refresh_token="ref_ok")
+        wake_evt.set()
+
+    with (
+        patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_fake_ocr),
+        ),
+    ):
+        relogin_task = asyncio.create_task(_simulate_external_relogin())
+        entry = await backfill.backfill_single_book(
+            "book-auth-resume",
+            client,
+            tmp_path,
+            on_progress=_on_progress,
+            auth_poll_interval=0.05,
+            auth_wake_event=wake_evt,
+        )
+        await relogin_task
+
+    assert entry["book_id"] == "book-auth-resume"
+    assert entry["ocrd_pages"] == 1
+    assert entry["failed_pages"] == 0
+    assert submit_attempts["n"] == 2
+    assert "waiting_for_auth" in phases
+    assert phases[-1] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_run_backfill_pauses_on_auth_expiry_fetching_candidates_and_resumes(
+    tmp_path: Path,
+):
+    from kitabim_client.api import KitabimAuthError
+
+    client = MagicMock()
+    calls = {"n": 0}
+    wait_calls = {"n": 0}
+
+    def _get_candidates(**kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise KitabimAuthError("401 from Kitabim API: Token expired")
+        if calls["n"] == 2:
+            return {
+                "candidates": [{"id": "b1", "title": "Book 1", "totalPages": 5}],
+                "pending_index_books": 0,
+            }
+        return {"candidates": [], "pending_index_books": 0}
+
+    client.get_backfill_candidates.side_effect = _get_candidates
+
+    async def _fake_wait(exc):
+        wait_calls["n"] += 1
+
+    with patch(
+        "backfill.backfill_single_book",
+        new=AsyncMock(return_value={"book_id": "b1", "ocrd_pages": 4}),
+    ) as mock_single:
+        results = await backfill.run_backfill(
+            client,
+            tmp_path,
+            on_auth_wait=_fake_wait,
+        )
+
+    assert len(results) == 1
+    assert results[0]["book_id"] == "b1"
+    assert wait_calls["n"] == 1
+    assert calls["n"] == 3
+    mock_single.assert_awaited_once()

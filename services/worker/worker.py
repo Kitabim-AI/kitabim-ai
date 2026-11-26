@@ -54,6 +54,7 @@ from jobs.embedding_job import embedding_job
 from jobs.spell_check_job import spell_check_job
 from jobs.summary_job import summary_job
 from jobs.auto_correct_job import auto_correct_job
+from jobs.book_auto_correct_job import book_auto_correct_job
 from jobs.knowledge_graph_job import knowledge_graph_job
 from jobs.graph_resolution_job import graph_resolution_job
 from jobs.rag_eval_job import rag_eval_job
@@ -70,6 +71,7 @@ class WorkerSettings:
         spell_check_job,
         summary_job,
         auto_correct_job,
+        book_auto_correct_job,
         knowledge_graph_job,
         graph_resolution_job,
         rag_eval_job,
