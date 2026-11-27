@@ -525,6 +525,7 @@ export const useBookActions = (
       [REPROCESS_STEP.CHUNKING]: t('modal.reprocessChunking.title') || 'پارچىلاشنى قايتا ئىشلەش',
       [REPROCESS_STEP.EMBEDDING]: t('modal.reprocessEmbedding.title') || 'ۋېكتورلاشتۇرۇشنى قايتا ئىشلەش',
       [REPROCESS_STEP.SPELL_CHECK]: t('modal.reprocessSpellCheck.title') || 'ئىملا تەكشۈرۈشنى قايتا ئىشلەش',
+      [REPROCESS_STEP.AUTO_CORRECT]: t('modal.autoCorrectBook.title') || 'كىتابنى ئاپتوماتىك تۈزىتىش',
       [REPROCESS_STEP.GRAPH]: t('modal.reprocessGraph.title') || 'بىلىم گىرافىنى قايتا ئىشلەش',
       [REPROCESS_STEP.SUMMARY]: t('modal.reprocessSummary.title') || 'قىسقىچە مەزمۇننى قايتا ھاسىللاش',
     };
@@ -548,12 +549,18 @@ export const useBookActions = (
             case REPROCESS_STEP.CHUNKING: await PersistenceService.reprocessChunking(bookId); break;
             case REPROCESS_STEP.EMBEDDING: await PersistenceService.reprocessEmbedding(bookId); break;
             case REPROCESS_STEP.SPELL_CHECK: await PersistenceService.reprocessSpellCheck(bookId); break;
+            case REPROCESS_STEP.AUTO_CORRECT: await PersistenceService.autoCorrectBook(bookId); break;
             case REPROCESS_STEP.GRAPH: await PersistenceService.reprocessGraph(bookId, graphScope ?? 'nonfiction'); break;
             case REPROCESS_STEP.SUMMARY: await PersistenceService.reprocessSummary(bookId); break;
           }
           await refreshLibrary();
           setModal((prev: any) => ({ ...prev, isOpen: false }));
-          addNotification(t('common.reprocessStarted'), "success");
+          addNotification(
+            step === REPROCESS_STEP.AUTO_CORRECT
+              ? (t('common.autoCorrectStarted') || 'كىتابنى ئاپتوماتىك تۈزىتىش باشلاندى.')
+              : t('common.reprocessStarted'),
+            "success"
+          );
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Unknown error';
           addNotification(t('common.error') + ': ' + errorMessage, 'error');

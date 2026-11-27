@@ -229,6 +229,7 @@ async def chat_with_book_stream(
                             "conversationId": event.get("conversation_id"),
                             "contextBookIds": event.get("used_book_ids", []),
                             "evalId": event.get("eval_id"),
+                            "messageId": event.get("message_id"),
                             "cost": {
                                 "inputTokens": cost.get("input_tokens", 0),
                                 "outputTokens": cost.get("output_tokens", 0),
@@ -423,13 +424,14 @@ async def list_conversations_endpoint(
 
 def _extract_message_cost(m) -> Optional[dict]:
     """Extract token/cost payload from a ConversationMessage's linked evaluation
-    or cached sample metadata stored in agent_steps."""
+    or cached sample metadata stored in agent_steps, including any attached TTS cost."""
+    base_cost: Optional[dict] = None
     if m.evaluation and (
         m.evaluation.input_tokens > 0
         or m.evaluation.output_tokens > 0
         or (m.evaluation.cost_usd and float(m.evaluation.cost_usd) > 0)
     ):
-        return {
+        base_cost = {
             "inputTokens": m.evaluation.input_tokens,
             "outputTokens": m.evaluation.output_tokens,
             "costUsd": (
@@ -440,19 +442,32 @@ def _extract_message_cost(m) -> Optional[dict]:
         }
 
     steps = m.agent_steps if isinstance(m.agent_steps, dict) else None
-    step_cost = steps.get("cost") if steps else None
-    if isinstance(step_cost, dict):
-        inp = int(step_cost.get("input_tokens") or 0)
-        out = int(step_cost.get("output_tokens") or 0)
-        usd = float(step_cost.get("cost_usd") or 0.0)
-        if inp > 0 or out > 0 or usd > 0 or "cached_sample_eval_id" in steps:
-            return {
-                "inputTokens": inp,
-                "outputTokens": out,
-                "costUsd": usd,
-            }
+    if base_cost is None:
+        step_cost = steps.get("cost") if steps else None
+        if isinstance(step_cost, dict):
+            inp = int(step_cost.get("input_tokens") or 0)
+            out = int(step_cost.get("output_tokens") or 0)
+            usd = float(step_cost.get("cost_usd") or 0.0)
+            if inp > 0 or out > 0 or usd > 0 or "cached_sample_eval_id" in steps:
+                base_cost = {
+                    "inputTokens": inp,
+                    "outputTokens": out,
+                    "costUsd": usd,
+                }
 
-    return None
+    tts_cost = steps.get("tts_cost") if steps else None
+    if isinstance(tts_cost, dict):
+        tts_inp = int(tts_cost.get("input_tokens") or 0)
+        tts_out = int(tts_cost.get("output_tokens") or 0)
+        tts_usd = float(tts_cost.get("cost_usd") or 0.0)
+        if tts_inp > 0 or tts_out > 0 or tts_usd > 0:
+            if base_cost is None:
+                base_cost = {"inputTokens": 0, "outputTokens": 0, "costUsd": 0.0}
+            base_cost["ttsInputTokens"] = tts_inp
+            base_cost["ttsOutputTokens"] = tts_out
+            base_cost["ttsCostUsd"] = tts_usd
+
+    return base_cost
 
 
 @router.get("/conversations/{conversation_id}/messages")

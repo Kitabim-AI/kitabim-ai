@@ -55,6 +55,8 @@ export interface Book extends Omit<
   chunkingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   embeddingMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
   spellCheckMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
+  autoCorrectMilestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
+  auto_correct_milestone?: 'idle' | 'in_progress' | 'complete' | 'partial_failure' | 'failed';
 }
 
 export type PaginatedBooksSchema = components['schemas']['PaginatedBooks'];
@@ -63,6 +65,8 @@ export interface PaginatedBooks extends Omit<PaginatedBooksSchema, 'books'> {
 }
 
 export interface Message {
+  /** Persisted ConversationMessage.id when saved on the backend. */
+  id?: string;
   role: 'user' | 'model';
   text: string;
   characterId?: string;
@@ -77,7 +81,16 @@ export interface Message {
     inputTokens: number;
     outputTokens: number;
     costUsd: number;
+    ttsInputTokens?: number;
+    ttsOutputTokens?: number;
+    ttsCostUsd?: number;
   };
+}
+
+export interface TtsUsageStatus {
+  usage: number;
+  limit: number | null;
+  hasReachedLimit: boolean;
 }
 
 export interface Conversation {
@@ -104,6 +117,9 @@ export interface ConversationMessage {
     inputTokens: number;
     outputTokens: number;
     costUsd: number;
+    ttsInputTokens?: number;
+    ttsOutputTokens?: number;
+    ttsCostUsd?: number;
   } | null;
   feedback?: 'positive' | 'negative' | null;
   createdAt: string;
@@ -124,6 +140,9 @@ export interface FeaturedQuestionAnswerResponse {
     inputTokens: number;
     outputTokens: number;
     costUsd: number;
+    ttsInputTokens?: number;
+    ttsOutputTokens?: number;
+    ttsCostUsd?: number;
   } | null;
 }
 

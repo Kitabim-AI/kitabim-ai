@@ -9,16 +9,20 @@ import {
   Globe,
   HelpCircle,
   Loader,
+  Loader2,
   MessageSquare,
   Share2,
   Sparkles,
   User,
+  Volume2,
   X,
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useAnswerTts } from '../../hooks/useAnswerTts';
 import { useI18n } from '../../i18n/I18nContext';
 import { formatAnswerCost } from '../../utils/costUtils';
+import { AnswerAudioPlayer } from '../chat/AnswerAudioPlayer';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ReferenceModal } from '../chat/ReferenceModal';
 import { ShareChatModal } from '../share/ShareChatModal';
@@ -44,6 +48,8 @@ export interface RagQuestionDetail {
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
+  hasCachedAudio?: boolean;
+  ttsDurationSec?: number | null;
 }
 
 interface QuestionDetailModalProps {
@@ -77,6 +83,8 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const ttsKey = `admin-eval:${question.id}`;
+  const tts = useAnswerTts(ttsKey);
   // Citation clicked in the answer — opens the same reference viewer as chat.
   const [selectedReference, setSelectedReference] = useState<{
     bookId: string;
@@ -232,6 +240,41 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
 
               {question.answer && (
                 <div className="flex items-center gap-1.5">
+                  {question.hasCachedAudio && (() => {
+                    const isActiveTts = tts.activeKey === ttsKey;
+                    const isLoadingTts = isActiveTts && tts.status === 'loading';
+                    const isPlayingTts = isActiveTts && (tts.status === 'playing' || tts.status === 'streaming');
+                    return (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          tts.playOrToggle({
+                            key: ttsKey,
+                            evalId: question.id,
+                            adminCachedOnly: true,
+                          })
+                        }
+                        title={isPlayingTts ? t('chat.tts.pause') : t('chat.tts.listen')}
+                        aria-label={isPlayingTts ? t('chat.tts.pause') : t('chat.tts.listen')}
+                        data-testid="admin-tts-listen-button"
+                        className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
+                          isActiveTts
+                            ? 'text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/15'
+                            : 'text-slate-500 hover:text-[#0369a1] dark:hover:text-[#38bdf8] hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        {isLoadingTts ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <Volume2 size={13} className={isPlayingTts ? 'animate-pulse' : ''} />
+                        )}
+                        <span className="uyghur-text">
+                          {isPlayingTts ? t('chat.tts.pause') : t('chat.tts.listen')}
+                        </span>
+                      </button>
+                    );
+                  })()}
+
                   <button
                     onClick={() => setShowShare(true)}
                     title={t('share.shareQA')}
@@ -265,12 +308,29 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
             </div>
 
             {question.answer ? (
-              <div className="bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4 sm:p-6 text-slate-800 dark:text-slate-100 text-sm sm:text-base uyghur-text leading-relaxed select-text shadow-xs">
-                <MarkdownContent
-                  content={question.answer}
-                  onReferenceClick={handleReferenceClick}
-                />
-              </div>
+              <>
+                <div className="bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4 sm:p-6 text-slate-800 dark:text-slate-100 text-sm sm:text-base uyghur-text leading-relaxed select-text shadow-xs">
+                  <MarkdownContent
+                    content={question.answer}
+                    onReferenceClick={handleReferenceClick}
+                  />
+                </div>
+                {question.hasCachedAudio && tts.activeKey === ttsKey && (
+                  <AnswerAudioPlayer
+                    status={tts.status}
+                    currentTime={tts.currentTime}
+                    duration={tts.duration}
+                    playbackRate={tts.playbackRate}
+                    canSeek={tts.canSeek}
+                    truncated={tts.truncated}
+                    errorMessage={tts.errorMessage}
+                    onTogglePauseResume={tts.togglePauseResume}
+                    onSeek={tts.seek}
+                    onCycleSpeed={tts.cyclePlaybackRate}
+                    onStop={tts.stop}
+                  />
+                )}
+              </>
             ) : (
               <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-950/30 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 dark:text-slate-500 text-sm uyghur-text">
                 {t('admin.questions.noAnswer')}

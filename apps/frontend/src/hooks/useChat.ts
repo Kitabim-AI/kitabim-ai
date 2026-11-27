@@ -47,6 +47,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const contextBookIdsRef = useRef<string[]>([]);
   const pendingEvalIdRef = useRef<number | null>(null);
+  const pendingMessageIdRef = useRef<string | null>(null);
   const pendingCostRef = useRef<Message['cost']>(undefined);
   const pendingSampleQuestionRef = useRef<{ question: string; evalId?: number } | null>(null);
   const streamUpdateTimerRef = useRef<number | null>(null);
@@ -226,6 +227,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
             setConversationId(latestConv.id);
             const msgs = await getConversationMessages(latestConv.id);
             const formatted: Message[] = msgs.map(m => ({
+              id: m.id,
               role: m.role,
               text: m.content,
               evalId: m.evalId ?? undefined,
@@ -272,6 +274,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     try {
       const msgs = await getConversationMessages(convId);
       const formatted: Message[] = msgs.map(m => ({
+        id: m.id,
         role: m.role,
         text: m.content,
         evalId: m.evalId ?? undefined,
@@ -418,9 +421,12 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
             const finalMessage = streamingMessageRef.current;
             const evalId = pendingEvalIdRef.current ?? undefined;
             pendingEvalIdRef.current = null;
+            const messageId = pendingMessageIdRef.current ?? undefined;
+            pendingMessageIdRef.current = null;
             const cost = pendingCostRef.current;
             pendingCostRef.current = undefined;
             setChatMessages(prev => [...prev, {
+              id: messageId,
               role: 'model',
               text: finalMessage,
               characterId: selectedCharacterId,
@@ -455,6 +461,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
           onContextBookIds: view === 'global-chat' ? (ids: string[]) => { contextBookIdsRef.current = ids; } : undefined,
           onAgentEvent: handleAgentEvent,
           onEvalId: (evalId: number) => { pendingEvalIdRef.current = evalId; },
+          onMessageId: (messageId: string) => { pendingMessageIdRef.current = messageId; },
           onConversationId: (convId: string) => { setConversationId(convId); },
           onCostUpdate: (cost) => { pendingCostRef.current = cost; },
         },
@@ -480,6 +487,7 @@ export const useChat = (view: string, selectedBook: Book | null, currentPage: nu
     setChatMessages([]);
     contextBookIdsRef.current = [];
     pendingEvalIdRef.current = null;
+    pendingMessageIdRef.current = null;
     pendingCostRef.current = undefined;
   };
 

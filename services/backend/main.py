@@ -37,6 +37,7 @@ from api.endpoints import (
     proverbs_router,
     quran_router,
     graph_admin_router,
+    tts_router,
 )
 from app.core.config import settings
 from app.db.session import (
@@ -348,6 +349,7 @@ async def add_security_headers(request: Request, call_next):
             "style-src 'self' 'unsafe-inline' https:; "
             "img-src 'self' data: https:; "
             "font-src 'self' data: https:; "
+            "media-src 'self' blob:; "
             "connect-src 'self' https://accounts.google.com https://graph.facebook.com; "
             "frame-src 'self' https://accounts.google.com; "
             "object-src 'none';"
@@ -516,7 +518,17 @@ app.add_middleware(
         "X-Request-ID",
         "X-Kitabim-App-Id",
     ],
-    expose_headers=["X-Request-ID"],
+    expose_headers=[
+        "X-Request-ID",
+        "X-TTS-Cache",
+        "X-TTS-Sample-Rate",
+        "X-TTS-Duration-Sec",
+        "X-TTS-Truncated",
+        "X-TTS-Content-Hash",
+        "X-TTS-Cost-Usd",
+        "X-TTS-Input-Tokens",
+        "X-TTS-Output-Tokens",
+    ],
 )
 
 
@@ -584,6 +596,7 @@ app.include_router(quran_router.router, prefix="/api", tags=["quran"])
 app.include_router(
     graph_admin_router.router, prefix="/api/admin/graph", tags=["graph-admin"]
 )
+app.include_router(tts_router.router, prefix="/api/tts", tags=["tts"])
 
 
 @app.get("/api/config")
@@ -601,6 +614,13 @@ async def get_public_config(session: AsyncSession = Depends(get_session)):
     show_chat_cost_str = await repo.get_value("rag_chat_cost_enabled", "true")
     show_chat_cost = show_chat_cost_str.lower() in ("true", "1", "yes")
 
+    tts_enabled_str = await repo.get_value("tts_enabled", "true")
+    tts_enabled = str(tts_enabled_str or "false").strip().lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+
     max_upload_mb_str = await repo.get_value(
         "sys_max_book_upload_mb", str(settings.max_book_upload_bytes // (1024 * 1024))
     )
@@ -612,6 +632,7 @@ async def get_public_config(session: AsyncSession = Depends(get_session)):
     return {
         "collectionPageSize": collection_page_size,
         "showChatCost": show_chat_cost,
+        "ttsEnabled": tts_enabled,
         "maxUploadMb": max_upload_mb,
     }
 

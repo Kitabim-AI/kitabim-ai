@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 from app.db.models import Word
 from app.models.user import User
+from app.services.cache_service import cache_service
 from auth.dependencies import require_admin
 
 router = APIRouter()
@@ -110,4 +111,5 @@ async def delete_word(
     if not result.fetchone():
         raise HTTPException(status_code=404, detail="Word not found")
     await session.commit()
+    await cache_service.bump_namespace_version("words")
     return None

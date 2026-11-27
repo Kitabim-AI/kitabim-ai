@@ -1979,3 +1979,206 @@ async def test_backfill_local_skip_and_unskip_routes_without_server_writes(
 
         cand_after = (await ac.get("/api/backfill/candidates")).json()
         assert [c["id"] for c in cand_after["candidates"]] == ["skip-b1"]
+
+
+@pytest.mark.asyncio
+async def test_backfill_auto_loop_pauses_on_token_expiry_and_resumes_via_auth_login(
+    tmp_path: Path,
+):
+    import base64
+    import json
+    import time
+    from engine.recognize import PageOcrResult
+    from kitabim_client.auth import AuthError, _save_token_config
+
+    def _jwt(exp: float) -> str:
+        h = base64.urlsafe_b64encode(b'{"alg":"none"}').rstrip(b"=").decode()
+        p = (
+            base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode())
+            .rstrip(b"=")
+            .decode()
+        )
+        return f"{h}.{p}.sig"
+
+    work_root = tmp_path / "work"
+    token_path = tmp_path / "token.json"
+    token_path.write_text(json.dumps({"access_token": _jwt(time.time() - 60)}))
+
+    mock_client = MagicMock()
+    mock_client.base_url = "http://localhost:8000"
+    mock_client.config_path = token_path
+    mock_client.provider = "google"
+
+    cand_calls = {"n": 0}
+    waiting_triggered = asyncio.Event()
+
+    def _get_candidates(ocr_version="surya-2.5-v2", limit=100):
+        cand_calls["n"] += 1
+        if cand_calls["n"] == 1:
+            waiting_triggered.set()
+            raise AuthError("Token expired")
+        if cand_calls["n"] == 2:
+            return {
+                "candidates": [
+                    {
+                        "id": "b-auth-1",
+                        "title": "Auth Resume Book",
+                        "totalPages": 2,
+                        "uploadDate": "2026-01-01T00:00:00Z",
+                    }
+                ],
+                "pending_index_books": 0,
+            }
+        return {"candidates": [], "pending_index_books": 0}
+
+    mock_client.get_backfill_candidates.side_effect = _get_candidates
+    mock_client.list_books.return_value = {"books": []}
+    mock_client.download_book_pdf.side_effect = (
+        lambda book_id, dest: dest.write_bytes(_minimal_pdf_bytes(2)) or dest
+    )
+    mock_client.get_book_pages.return_value = [
+        {"pageNumber": 1, "text": "Cover", "isToc": False},
+        {"pageNumber": 2, "text": "Old p2", "isToc": False},
+    ]
+    mock_client.replace_book_ocr.return_value = {
+        "pagesUpdated": 1,
+        "pagesUnchanged": 1,
+    }
+
+    app = create_landing_app(mock_client, work_root)
+    state = app.state.app_state
+    state.backfill_manager.auth_poll_interval = 0.05
+
+    async def _fast_ocr(fitz_page, predictor, **kwargs):
+        return PageOcrResult(
+            text="Recognized after re-login",
+            detected_page_number=1,
+            ended_with_hyphen=False,
+        )
+
+    def _fake_login_and_save(base_url, config_path, provider="google", timeout=120.0):
+        fresh = _jwt(time.time() + 3600)
+        _save_token_config(config_path, fresh, refresh_token="ref_fresh")
+        return {"access_token": fresh, "refresh_token": "ref_fresh"}
+
+    with (
+        patch("backfill.get_recognition_predictor", new=AsyncMock(return_value="pred")),
+        patch(
+            "backfill.ocr_prepared_wave_with_meta",
+            side_effect=_make_wave_ocr_mock(_fast_ocr),
+        ),
+        patch(
+            "preview.app_server.login_and_save", side_effect=_fake_login_and_save
+        ) as mock_login,
+    ):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            start_res = await ac.post("/api/backfill/start")
+            assert start_res.status_code == 200
+
+            await asyncio.wait_for(waiting_triggered.wait(), timeout=2.0)
+            # Wait briefly for BackfillManager to enter waiting_for_auth
+            for _ in range(40):
+                st = (await ac.get("/api/backfill/status")).json()
+                if st["authRequired"]:
+                    break
+                await asyncio.sleep(0.02)
+
+            assert st["authRequired"] is True
+            assert st["mode"] == "waiting_for_auth"
+            assert st["autoRunning"] is True
+            assert st["failedBookIds"] == []
+
+            state_payload = (await ac.get("/api/state")).json()
+            assert state_payload["authRequired"] is True
+
+            # Trigger re-login through the web API; backfill must resume immediately
+            login_res = await ac.post("/api/auth/login")
+            assert login_res.status_code == 200
+            assert login_res.json()["authenticated"] is True
+            mock_login.assert_called_once()
+
+            if state.backfill_manager._task:
+                await asyncio.wait_for(state.backfill_manager._task, timeout=5.0)
+
+            final_st = (await ac.get("/api/backfill/status")).json()
+            assert final_st["authRequired"] is False
+            assert final_st["sessionProcessedCount"] == 1
+            assert final_st["failedBookIds"] == []
+            assert final_st["lastCompletedBook"]["book_id"] == "b-auth-1"
+            assert mock_client.replace_book_ocr.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_local_ocr_endpoints_return_401_on_auth_expiry_without_corrupting_stage(
+    tmp_path: Path,
+):
+    from kitabim_client.api import KitabimAuthError
+    from kitabim_client.auth import AuthError
+
+    work_root = tmp_path / "work"
+    mock_client = MagicMock()
+    mock_client.config_path = tmp_path / "token.json"
+    mock_client.list_books.side_effect = AuthError("Token expired")
+    mock_client.download_book_pdf.side_effect = KitabimAuthError("401 from Kitabim API")
+    mock_client.get_backfill_candidates.side_effect = KitabimAuthError(
+        "401 from Kitabim API"
+    )
+
+    app = create_landing_app(mock_client, work_root)
+    state = app.state.app_state
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        books_res = await ac.get("/api/books")
+        assert books_res.status_code == 401
+
+        cand_res = await ac.get("/api/backfill/candidates")
+        assert cand_res.status_code == 401
+
+        start_res = await ac.post("/api/start/existing", json={"bookId": "b1"})
+        assert start_res.status_code == 401
+        # Must NOT corrupt landing stage to "error" on transient auth expiry
+        assert state.stage == "landing"
+
+        auth_status = await ac.get("/api/auth/status")
+        assert auth_status.status_code == 200
+        assert auth_status.json()["authenticated"] is False
+
+
+def test_landing_html_uses_accessible_action_menus_for_local_ocr_and_backfill(
+    tmp_path: Path,
+):
+    app = create_landing_app(MagicMock(), tmp_path / "work")
+    client = TestClient(app)
+
+    html = client.get("/").text
+
+    # Shared accessible popover menu primitives & fallbacks
+    assert 'command="toggle-popover"' in html
+    assert 'focusgroup="menu nomemory"' in html
+    assert 'popover="auto"' in html
+    assert "position-area: block-end span-inline-end" in html
+    assert (
+        "position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline"
+        in html
+    )
+    assert "setupActionMenuSystem()" in html
+    assert "renderActionMenuHtml(" in html
+    assert "hydrateActionMenus(" in html
+
+    # Used across Local OCR sessions and Backfill tables (queue, completed, skipped)
+    assert "prefix: 'session-actions'" in html
+    assert "prefix: 'library-actions'" in html
+    assert "prefix: 'completed-actions'" in html
+    assert "prefix: 'skipped-actions'" in html
+
+    # Inline row action buttons replaced by action menus
+    assert 'onclick="viewResults(' not in html
+    assert 'onclick="resumeSession(' not in html
+    assert 'onclick="deleteSession(' not in html
+    assert 'onclick="runBackfillOnDemand(' not in html
+    assert 'onclick="skipBackfillBook(' not in html
+    assert 'onclick="unskipBackfillBook(' not in html

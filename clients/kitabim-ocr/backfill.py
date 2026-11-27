@@ -37,7 +37,8 @@ from engine.recognize import (
 )
 from engine.text_cleanup import is_title_cover_page, is_toc_page
 from engine.workdir import PageState
-from kitabim_client.api import KitabimClient
+from kitabim_client.api import KitabimClient, is_auth_failure
+from kitabim_client.auth import _load_token_config, wait_for_reauth_async
 
 logger = logging.getLogger("kitabim_ocr_client.backfill")
 
@@ -67,6 +68,9 @@ async def prefetch_book_assets_async(
     book_id: str, client: KitabimClient, work_root: Path
 ) -> bool:
     """Speculatively download next book's PDF and existing pages while GPU is busy."""
+    prefetch_client = (
+        client.as_headless() if isinstance(client, KitabimClient) else client
+    )
     try:
         async with _get_book_download_lock(book_id):
             tmp_dir = work_root / f"backfill-{book_id}"
@@ -78,14 +82,16 @@ async def prefetch_book_assets_async(
                 if _is_valid_pdf(pdf_path):
                     return
                 part_pdf = tmp_dir / "book.pdf.part"
-                await asyncio.to_thread(client.download_book_pdf, book_id, part_pdf)
+                await asyncio.to_thread(
+                    prefetch_client.download_book_pdf, book_id, part_pdf
+                )
                 if part_pdf.exists():
                     part_pdf.replace(pdf_path)
 
             async def _dl_pages() -> None:
                 if pages_cache_path.exists() and pages_cache_path.stat().st_size > 0:
                     return
-                pages = await asyncio.to_thread(client.get_book_pages, book_id)
+                pages = await asyncio.to_thread(prefetch_client.get_book_pages, book_id)
                 if isinstance(pages, list):
                     part_pages = tmp_dir / "existing_pages.json.part"
                     part_pages.write_text(
@@ -98,6 +104,75 @@ async def prefetch_book_assets_async(
     except Exception as exc:
         logger.debug("Prefetch skipped for book=%s: %s", book_id, exc)
         return False
+
+
+async def _call_with_auth_recovery(
+    client: KitabimClient,
+    fn: Callable[[], Any],
+    *,
+    wait_on_auth_error: bool = True,
+    auth_poll_interval: float = 3.0,
+    auth_wake_event: Optional[asyncio.Event] = None,
+    should_stop_auth_wait: Optional[Callable[[], bool]] = None,
+    on_auth_wait: Optional[Callable[[BaseException], Any]] = None,
+    on_waiting_state: Optional[Callable[[bool, Optional[str]], None]] = None,
+    context_label: str = "Kitabim API request",
+) -> Any:
+    """Run blocking ``fn()`` in a worker thread, pausing for re-auth instead of failing on token expiry."""
+    config_path = getattr(client, "config_path", None)
+    base_url = getattr(client, "base_url", None)
+    can_wait_on_disk = (
+        isinstance(config_path, Path) and isinstance(base_url, str) and bool(base_url)
+    )
+
+    while True:
+        rejected_token: Optional[str] = None
+        if can_wait_on_disk:
+            tok = _load_token_config(config_path).get("access_token")
+            if isinstance(tok, str):
+                rejected_token = tok
+        try:
+            return await asyncio.to_thread(fn)
+        except Exception as exc:
+            if not wait_on_auth_error or not is_auth_failure(exc):
+                raise
+            if on_auth_wait is None and not can_wait_on_disk:
+                raise
+
+            logger.warning(
+                "Authentication token expired during %s (%s). Pausing (not stopping) "
+                "until a fresh login is saved — run 'python main.py login' in another "
+                "terminal or sign in via the web UI to resume automatically.",
+                context_label,
+                exc,
+            )
+            if on_waiting_state is not None:
+                try:
+                    on_waiting_state(True, str(exc))
+                except Exception:
+                    pass
+            try:
+                if on_auth_wait is not None:
+                    res = on_auth_wait(exc)
+                    if asyncio.iscoroutine(res):
+                        await res
+                else:
+                    assert isinstance(config_path, Path) and isinstance(base_url, str)
+                    await wait_for_reauth_async(
+                        base_url,
+                        config_path,
+                        poll_interval=auth_poll_interval,
+                        should_stop=should_stop_auth_wait,
+                        wake_event=auth_wake_event,
+                        rejected_token=rejected_token,
+                    )
+            finally:
+                if on_waiting_state is not None:
+                    try:
+                        on_waiting_state(False, None)
+                    except Exception:
+                        pass
+            logger.info("Authentication restored; resuming %s", context_label)
 
 
 def cleanup_unstarted_prefetch_dir(book_id: str, work_root: Path) -> None:
@@ -466,6 +541,11 @@ async def backfill_single_book(
     pages_sink: Optional[dict[int, PageState]] = None,
     user_edits: Optional[dict[int, dict[str, Any]]] = None,
     install_signal_handlers: bool = True,
+    wait_on_auth_error: bool = True,
+    auth_poll_interval: float = 3.0,
+    auth_wake_event: Optional[asyncio.Event] = None,
+    should_stop_auth_wait: Optional[Callable[[], bool]] = None,
+    on_auth_wait: Optional[Callable[[BaseException], Any]] = None,
 ) -> dict[str, Any]:
     """Download, Surya-2.5 re-OCR, dehyphenate, and bulk-replace one PDF book."""
     t0 = time.time()
@@ -480,6 +560,23 @@ async def backfill_single_book(
                 on_progress(event)
             except Exception:
                 pass
+
+    def _make_auth_state_cb(resume_phase: str) -> Callable[[bool, Optional[str]], None]:
+        def _on_waiting_state(waiting: bool, err: Optional[str]) -> None:
+            if waiting:
+                _emit(
+                    {
+                        "phase": "waiting_for_auth",
+                        "previous_phase": resume_phase,
+                        "book_id": book_id,
+                        "title": title,
+                        "error": err,
+                    }
+                )
+            else:
+                _emit({"phase": resume_phase, "book_id": book_id, "title": title})
+
+        return _on_waiting_state
 
     work_root.mkdir(parents=True, exist_ok=True)
     # Clean up any legacy random-suffix temp dirs for this book
@@ -512,13 +609,22 @@ async def backfill_single_book(
         pages_cache_path = tmp_dir / "existing_pages.json"
 
         async with _get_book_download_lock(book_id):
+            download_auth_cb = _make_auth_state_cb("downloading")
 
             async def _ensure_pdf() -> None:
                 if _is_valid_pdf(pdf_path):
                     return
                 part_pdf_path = tmp_dir / "book.pdf.part"
-                await asyncio.to_thread(
-                    client.download_book_pdf, book_id, part_pdf_path
+                await _call_with_auth_recovery(
+                    client,
+                    lambda: client.download_book_pdf(book_id, part_pdf_path),
+                    wait_on_auth_error=wait_on_auth_error,
+                    auth_poll_interval=auth_poll_interval,
+                    auth_wake_event=auth_wake_event,
+                    should_stop_auth_wait=should_stop_auth_wait,
+                    on_auth_wait=on_auth_wait,
+                    on_waiting_state=download_auth_cb,
+                    context_label=f"downloading PDF for book {book_id}",
                 )
                 if part_pdf_path.exists():
                     part_pdf_path.replace(pdf_path)
@@ -527,7 +633,14 @@ async def backfill_single_book(
                 if title or not hasattr(client, "get_book"):
                     return title
                 try:
-                    book_meta = await asyncio.to_thread(client.get_book, book_id) or {}
+                    meta_client = (
+                        client.as_headless()
+                        if isinstance(client, KitabimClient)
+                        else client
+                    )
+                    book_meta = (
+                        await asyncio.to_thread(meta_client.get_book, book_id) or {}
+                    )
                     if isinstance(book_meta, dict):
                         return book_meta.get("title")
                 except Exception:
@@ -545,7 +658,17 @@ async def backfill_single_book(
                             return cached
                     except Exception:
                         pages_cache_path.unlink(missing_ok=True)
-                return await asyncio.to_thread(client.get_book_pages, book_id)
+                return await _call_with_auth_recovery(
+                    client,
+                    lambda: client.get_book_pages(book_id),
+                    wait_on_auth_error=wait_on_auth_error,
+                    auth_poll_interval=auth_poll_interval,
+                    auth_wake_event=auth_wake_event,
+                    should_stop_auth_wait=should_stop_auth_wait,
+                    on_auth_wait=on_auth_wait,
+                    on_waiting_state=download_auth_cb,
+                    context_label=f"fetching pages for book {book_id}",
+                )
 
             _, resolved_title, existing_pages = await asyncio.gather(
                 _ensure_pdf(), _ensure_title(), _ensure_existing_pages()
@@ -894,21 +1017,32 @@ async def backfill_single_book(
 
         _emit({"phase": "submitting", "book_id": book_id, "title": title})
 
-        try:
-            replace_res = await asyncio.to_thread(
-                client.replace_book_ocr,
-                book_id,
-                ordered_pages,
-                ocr_version=ocr_version,
-                force_overwrite_manual=force_overwrite_manual,
-            )
-        except TypeError:
-            replace_res = await asyncio.to_thread(
-                client.replace_book_ocr,
-                book_id,
-                ordered_pages,
-                ocr_version=ocr_version,
-            )
+        def _submit_replace_ocr() -> dict[str, Any]:
+            try:
+                return client.replace_book_ocr(
+                    book_id,
+                    ordered_pages,
+                    ocr_version=ocr_version,
+                    force_overwrite_manual=force_overwrite_manual,
+                )
+            except TypeError:
+                return client.replace_book_ocr(
+                    book_id,
+                    ordered_pages,
+                    ocr_version=ocr_version,
+                )
+
+        replace_res = await _call_with_auth_recovery(
+            client,
+            _submit_replace_ocr,
+            wait_on_auth_error=wait_on_auth_error,
+            auth_poll_interval=auth_poll_interval,
+            auth_wake_event=auth_wake_event,
+            should_stop_auth_wait=should_stop_auth_wait,
+            on_auth_wait=on_auth_wait,
+            on_waiting_state=_make_auth_state_cb("submitting"),
+            context_label=f"submitting replace-ocr for book {book_id}",
+        )
         completed = failed_count == 0
         elapsed_s = round(time.time() - t0, 2)
 
@@ -963,6 +1097,9 @@ async def run_backfill(
     poll_interval: float = 30.0,
     ocr_version: str = OCR_ENGINE_VERSION,
     skip_book_ids: Optional[Sequence[str]] = None,
+    wait_on_auth_error: bool = True,
+    auth_poll_interval: float = 3.0,
+    on_auth_wait: Optional[Callable[[BaseException], Any]] = None,
 ) -> list[dict[str, Any]]:
     """Run sequential headless OCR backfill with server backlog throttling and GPU lock."""
     effective_audit_log = audit_log_path or (work_root / "backfill_audit.jsonl")
@@ -970,6 +1107,7 @@ async def run_backfill(
     extra_skipped: set[str] = {
         str(bid).strip() for bid in (skip_book_ids or []) if str(bid).strip()
     }
+    should_wait_auth = bool(wait_on_auth_error and not dry_run)
 
     if book_id:
         if dry_run:
@@ -994,6 +1132,9 @@ async def run_backfill(
                 concurrency=concurrency,
                 audit_log_path=effective_audit_log,
                 ocr_version=ocr_version,
+                wait_on_auth_error=should_wait_auth,
+                auth_poll_interval=auth_poll_interval,
+                on_auth_wait=on_auth_wait,
             )
             results.append(res)
         return results
@@ -1012,8 +1153,15 @@ async def run_backfill(
                 excluded_ids
             )
             batch_limit = min(500, max(1, desired_batch))
-            cand_resp = client.get_backfill_candidates(
-                ocr_version=ocr_version, limit=batch_limit
+            cand_resp = await _call_with_auth_recovery(
+                client,
+                lambda _bl=batch_limit: client.get_backfill_candidates(
+                    ocr_version=ocr_version, limit=_bl
+                ),
+                wait_on_auth_error=should_wait_auth,
+                auth_poll_interval=auth_poll_interval,
+                on_auth_wait=on_auth_wait,
+                context_label="fetching backfill candidates",
             )
             pending_backlog = int(
                 cand_resp.get(
@@ -1083,6 +1231,9 @@ async def run_backfill(
                         concurrency=concurrency,
                         audit_log_path=effective_audit_log,
                         ocr_version=ocr_version,
+                        wait_on_auth_error=should_wait_auth,
+                        auth_poll_interval=auth_poll_interval,
+                        on_auth_wait=on_auth_wait,
                     )
                     results.append(res)
                     processed += 1

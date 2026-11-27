@@ -39,11 +39,18 @@ interface CircuitBreakerStatus {
     recovery_timeout: number;
     failure_threshold: number;
   };
+  tts_breaker?: {
+    state: string;
+    failure_count: number;
+    time_since_opened_seconds: number;
+    recovery_timeout: number;
+    failure_threshold: number;
+  };
   overall_available: boolean;
   overall_state: string;
 }
 
-type FeatureGroup = 'all' | 'ocr' | 'rag' | 'embed' | 'kg' | 'summary' | 'spell' | 'auth' | 'sys';
+type FeatureGroup = 'all' | 'ocr' | 'rag' | 'tts' | 'embed' | 'kg' | 'summary' | 'spell' | 'auth' | 'sys';
 
 interface FeatureGroupInfo {
   id: FeatureGroup;
@@ -58,6 +65,7 @@ const FEATURE_GROUPS: FeatureGroupInfo[] = [
   { id: 'all', label: 'All', prefix: '', badgeBg: 'bg-slate-100 dark:bg-slate-800', badgeText: 'text-slate-600 dark:text-slate-400', badgeBorder: 'border-slate-200 dark:border-slate-700' },
   { id: 'ocr', label: 'OCR', prefix: 'ocr_', badgeBg: 'bg-amber-50 dark:bg-amber-950/40', badgeText: 'text-amber-700 dark:text-amber-400', badgeBorder: 'border-amber-200 dark:border-amber-900/40' },
   { id: 'rag', label: 'RAG', prefix: 'rag_', badgeBg: 'bg-blue-50 dark:bg-blue-950/40', badgeText: 'text-blue-700 dark:text-blue-400', badgeBorder: 'border-blue-200 dark:border-blue-900/40' },
+  { id: 'tts', label: 'TTS', prefix: 'tts_', badgeBg: 'bg-rose-50 dark:bg-rose-950/40', badgeText: 'text-rose-700 dark:text-rose-400', badgeBorder: 'border-rose-200 dark:border-rose-900/40' },
   { id: 'embed', label: 'Embeddings', prefix: 'embed_', badgeBg: 'bg-emerald-50 dark:bg-emerald-950/40', badgeText: 'text-emerald-700 dark:text-emerald-400', badgeBorder: 'border-emerald-200 dark:border-emerald-900/40' },
   { id: 'kg', label: 'Knowledge Graph', prefix: 'kg_', badgeBg: 'bg-purple-50 dark:bg-purple-950/40', badgeText: 'text-purple-700 dark:text-purple-400', badgeBorder: 'border-purple-200 dark:border-purple-900/40' },
   { id: 'summary', label: 'Summary', prefix: 'summary_', badgeBg: 'bg-indigo-50 dark:bg-indigo-950/40', badgeText: 'text-indigo-700 dark:text-indigo-400', badgeBorder: 'border-indigo-200 dark:border-indigo-900/40' },
@@ -354,7 +362,7 @@ export function SystemConfigPanel() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8 mb-4 md:mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-4 md:mb-6">
             {/* Text Model Box */}
             <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.text_breaker.state === 'closed' ? 'bg-green-50/40 dark:bg-green-950/10 border-green-200 dark:border-green-900/30' : cbStatus.text_breaker.state === 'open' ? 'bg-red-50/40 dark:bg-red-950/10 border-red-200 dark:border-red-900/30' : 'bg-yellow-50/40 dark:bg-yellow-950/10 border-yellow-200 dark:border-yellow-900/30'}`}>
               <div>
@@ -456,6 +464,42 @@ export function SystemConfigPanel() {
                 </div>
               )}
             </div>
+
+            {/* TTS Model Box */}
+            {cbStatus.tts_breaker && (
+              <div className={`glass-panel p-6 md:p-8 rounded-[32px] border-2 transition-all hover:scale-[1.01] flex flex-col justify-between ${cbStatus.tts_breaker.state === 'closed' ? 'bg-green-50/40 dark:bg-green-950/10 border-green-200 dark:border-green-900/30' : cbStatus.tts_breaker.state === 'open' ? 'bg-red-50/40 dark:bg-red-950/10 border-red-200 dark:border-red-900/30' : 'bg-yellow-50/40 dark:bg-yellow-950/10 border-yellow-200 dark:border-yellow-900/30'}`}>
+                <div>
+                  <div className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">{t('admin.systemConfig.circuitBreaker.ttsLlm')}</div>
+                  <div className={`text-xl md:text-2xl font-normal ${cbStatus.tts_breaker.state === 'closed' ? 'text-green-600 dark:text-green-400' : cbStatus.tts_breaker.state === 'open' ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+                    {cbStatus.tts_breaker.state === 'closed' ? `✓ ${t('admin.systemConfig.circuitBreaker.states.closed')}` : cbStatus.tts_breaker.state === 'open' ? `✗ ${t('admin.systemConfig.circuitBreaker.states.open')}` : `⚠ ${t('admin.systemConfig.circuitBreaker.states.half_open')}`}
+                  </div>
+                  <div className="text-xs md:text-sm text-slate-400 dark:text-slate-500 mt-2">
+                    {t('admin.systemConfig.circuitBreaker.failures')}: <span className="text-slate-700 dark:text-slate-300 font-normal">{cbStatus.tts_breaker.failure_count}/{cbStatus.tts_breaker.failure_threshold}</span>
+                  </div>
+                </div>
+
+                {isAdmin && (
+                  <div className="grid grid-cols-2 gap-3 mt-8">
+                    <button
+                      onClick={() => resetCircuitBreaker('llm_tts')}
+                      disabled={cbStatus.tts_breaker.state === 'closed' || cbLoading}
+                      className="flex items-center justify-center gap-2 py-3 bg-green-600 dark:bg-green-950/40 text-white dark:text-green-400 dark:border dark:border-green-900/30 rounded-xl hover:bg-green-700 dark:hover:bg-green-900/30 transition-all font-normal text-sm shadow-lg shadow-green-600/10 dark:shadow-none disabled:opacity-30"
+                    >
+                      <RefreshCw size={14} />
+                      {t('admin.systemConfig.circuitBreaker.reset')}
+                    </button>
+                    <button
+                      onClick={() => forceOpenCircuitBreaker('llm_tts')}
+                      disabled={cbStatus.tts_breaker.state === 'open' || cbLoading}
+                      className="flex items-center justify-center gap-2 py-3 bg-red-600 dark:bg-red-950/40 text-white dark:text-red-400 dark:border dark:border-red-900/30 rounded-xl hover:bg-red-700 dark:hover:bg-red-900/30 transition-all font-normal text-sm shadow-lg shadow-red-600/10 dark:shadow-none disabled:opacity-30"
+                    >
+                      <X size={14} />
+                      {t('admin.systemConfig.circuitBreaker.forceOpen')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

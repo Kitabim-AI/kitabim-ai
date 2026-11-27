@@ -47,7 +47,19 @@ from engine.recognize import (
 )
 from engine.text_cleanup import is_toc_page
 from engine.workdir import OcrWorkDir, PageState
-from kitabim_client.api import KitabimClient
+from kitabim_client.api import (
+    KitabimAPIError,
+    KitabimAuthError,
+    KitabimClient,
+    is_auth_failure,
+)
+from kitabim_client.auth import (
+    AuthError,
+    _load_token_config,
+    get_token_status,
+    login_and_save,
+    wait_for_reauth_async,
+)
 from locales.i18n import get_translations, get_translations_json
 from preview.server import (
     RedoRequest,
@@ -966,6 +978,179 @@ _APP_HTML = """<!doctype html>
       background: var(--slate-300);
       border-radius: 4px;
     }
+
+    /* Accessible Popover Action Menus */
+    .action-menu-wrap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.45rem;
+    }
+    .action-menu-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--slate-500);
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    .action-menu-trigger:hover {
+      background: rgba(3, 105, 161, 0.1);
+      color: var(--primary);
+    }
+    .action-menu-trigger[aria-expanded="true"] {
+      background: rgba(3, 105, 161, 0.12);
+      border-color: rgba(3, 105, 161, 0.22);
+      color: var(--primary);
+    }
+    .action-menu-trigger:focus {
+      outline: none;
+    }
+    .action-menu-trigger:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+      background: rgba(3, 105, 161, 0.08);
+      color: var(--primary);
+    }
+
+    @supports not selector(:popover-open) {
+      [popover]:not(.\\:popover-open) {
+        display: none;
+      }
+    }
+
+    [popover]:has(> [focusgroup~="menu"]) {
+      min-inline-size: 215px;
+      max-inline-size: min(290px, calc(100vw - 16px));
+      padding: 0.4rem;
+      border: 1px solid rgba(3, 105, 161, 0.16);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.97);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 18px 40px -10px rgba(15, 23, 42, 0.2), 0 6px 14px -4px rgba(3, 105, 161, 0.1);
+      color: var(--slate-800);
+      overflow: visible;
+    }
+    [popover]:has(> [focusgroup~="menu"]):is(:popover-open, .\\:popover-open) {
+      display: block;
+    }
+
+    @supports (position-area: block-end) {
+      [popover]:has(> [focusgroup~="menu"]) {
+        position-area: block-end span-inline-end;
+        position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+        inset: auto;
+        margin: 0;
+        margin-block-start: 6px;
+      }
+    }
+    @supports not (position-area: block-end) {
+      [popover]:has(> [focusgroup~="menu"]) {
+        position: fixed;
+        inset: auto;
+        margin: 0;
+      }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      [popover]:has(> [focusgroup~="menu"]) {
+        opacity: 0;
+        transition: opacity, translate, display, overlay;
+        transition-duration: 0.15s;
+        transition-behavior: allow-discrete;
+      }
+      @supports selector(:popover-open) {
+        [popover]:has(> [focusgroup~="menu"]) {
+          translate: 0 -0.25rem;
+        }
+        [popover]:has(> [focusgroup~="menu"]):popover-open {
+          opacity: 1;
+          translate: 0 0;
+          transition-duration: 0.1s;
+          @starting-style {
+            opacity: 0;
+            translate: 0 -0.25rem;
+          }
+        }
+      }
+    }
+
+    [focusgroup~="menu"] {
+      --menu-icon-size: 1.125rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+    [focusgroup~="menu"] > button {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.52rem 0.75rem;
+      border: none;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--slate-700);
+      font-size: 0.88rem;
+      font-weight: 600;
+      text-align: start;
+      cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease;
+    }
+    [focusgroup~="menu"] > button:hover:not(:disabled) {
+      background: rgba(3, 105, 161, 0.08);
+    }
+    [focusgroup~="menu"] > button:focus {
+      outline: none;
+    }
+    [focusgroup~="menu"] > button:focus-visible {
+      background: rgba(3, 105, 161, 0.1);
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
+    }
+    [focusgroup~="menu"] > button:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+    }
+    [focusgroup~="menu"] > button.menu-item-primary {
+      color: var(--primary);
+    }
+    [focusgroup~="menu"] > button.menu-item-success {
+      color: #047857;
+    }
+    [focusgroup~="menu"] > button.menu-item-success:hover:not(:disabled) {
+      background: rgba(16, 185, 129, 0.1);
+    }
+    [focusgroup~="menu"] > button.menu-item-danger {
+      color: #dc2626;
+    }
+    [focusgroup~="menu"] > button.menu-item-danger:hover:not(:disabled) {
+      background: rgba(244, 63, 94, 0.1);
+    }
+    [focusgroup~="menu"] .action-menu-icon {
+      flex: none;
+      inline-size: var(--menu-icon-size);
+      block-size: var(--menu-icon-size);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    [focusgroup~="menu"] .action-menu-label {
+      flex: 1;
+    }
+    [focusgroup~="menu"] > hr.action-menu-divider {
+      border: 0;
+      height: 1px;
+      background: var(--slate-200);
+      margin: 0.3rem 0.5rem;
+    }
   </style>
 </head>
 <body>
@@ -1005,6 +1190,18 @@ _APP_HTML = """<!doctype html>
 
   <!-- Main Container -->
   <main class="main-container">
+    <div id="authExpiredBanner" style="display: none; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 0.9rem 1.25rem; margin-bottom: 1rem; border-radius: 14px; background: #fffbeb; border: 1.5px solid #f59e0b; color: #92400e; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.14);">
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>
+          <div id="authBannerTitle" style="font-weight: 800; font-size: 0.98rem;" data-i18n="auth.banner_title">توكېن ۋاقتى توشتى — خىزمەت بىخەتەر ۋاقىتلىق توختىتىلدى</div>
+          <div id="authBannerSubtitle" style="font-size: 0.84rem; color: #b45309;" data-i18n="auth.banner_subtitle">قايتا كىرسىڭىز خىزمەت قالغان يەردىن ئاپتوماتىك داۋاملىشىدۇ (ياكى تېرمىنالدا 'python main.py login' نى ئىجرا قىلىڭ).</div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-warning btn-sm" id="authReloginBtn" onclick="triggerRelogin()">
+        <span id="authReloginBtnLabel" data-i18n="auth.btn_relogin">قايتا كىرىپ داۋاملاشتۇرۇش</span>
+      </button>
+    </div>
 
     <!-- 1. LANDING SECTION -->
     <section id="landing">
@@ -1539,6 +1736,340 @@ _APP_HTML = """<!doctype html>
       searchBooks(bookSearchQuery, true);
     }
 
+    // --- Accessible Popover Action Menu System ---
+    if (!Object.hasOwn(HTMLElement.prototype, 'popover')) {
+      import('https://unpkg.com/@oddbird/popover-polyfill@latest/dist/popover.min.js').catch(() => {});
+    }
+
+    const _supportsInvokerCommands = typeof HTMLButtonElement !== 'undefined' && 'commandForElement' in HTMLButtonElement.prototype;
+    const _supportsFocusgroup = typeof HTMLElement !== 'undefined' && 'focusGroup' in HTMLElement.prototype;
+    const _supportsPositionArea = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('position-area: block-end');
+    const _actionMenuEnterOnOpen = new WeakSet();
+    let _actionMenuPointerTrigger = null;
+    let _actionMenuSystemReady = false;
+
+    const ACTION_MENU_ICONS = {
+      more: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/></svg>',
+      eye: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
+      play: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+      edit: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>',
+      skip: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></svg>',
+      unskip: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>',
+      upload: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+      trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+      monitor: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+    };
+
+    function safeActionMenuDomId(prefix, rawId) {
+      const slug = Array.from(String(rawId || ''))
+        .map(ch => /[a-zA-Z0-9_-]/.test(ch) ? ch : '_' + ch.codePointAt(0).toString(16))
+        .join('');
+      return `${prefix}-${slug || 'item'}`;
+    }
+
+    function isPopoverOpen(el) {
+      if (!el) return false;
+      try {
+        if (el.matches(':popover-open')) return true;
+      } catch (_) {}
+      return el.classList.contains(':popover-open');
+    }
+
+    function getEnabledMenuItems(menuEl) {
+      const group = menuEl ? menuEl.querySelector('[focusgroup~="menu"]') : null;
+      if (!group) return [];
+      return Array.from(group.querySelectorAll('button')).filter(
+        btn => btn.closest('[focusgroup]') === group && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true'
+      );
+    }
+
+    function getActionMenuTrigger(menuEl) {
+      if (!menuEl || !menuEl.id) return null;
+      const prev = menuEl.previousElementSibling;
+      if (prev && prev.classList && prev.classList.contains('action-menu-trigger')) {
+        return prev;
+      }
+      return document.querySelector(`.action-menu-trigger[commandfor="${CSS.escape(menuEl.id)}"]`);
+    }
+
+    function getActionMenuForTrigger(trigger) {
+      if (!trigger) return null;
+      const targetId = trigger.getAttribute('commandfor') || trigger.getAttribute('popovertarget');
+      return targetId ? document.getElementById(targetId) : null;
+    }
+
+    function positionActionMenuFallback(trigger, menuEl) {
+      if (!trigger || !menuEl || _supportsPositionArea) return;
+      const rect = trigger.getBoundingClientRect();
+      const menuRect = menuEl.getBoundingClientRect();
+      const gap = 6;
+      const pad = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const isRtl = getComputedStyle(document.documentElement).direction === 'rtl';
+
+      let top = rect.bottom + gap;
+      if (top + menuRect.height > vh - pad && rect.top - gap - menuRect.height >= pad) {
+        top = rect.top - gap - menuRect.height;
+      }
+      top = Math.max(pad, Math.min(top, vh - menuRect.height - pad));
+
+      let left = isRtl ? rect.left : rect.right - menuRect.width;
+      if (left + menuRect.width > vw - pad) {
+        left = rect.right - menuRect.width;
+      }
+      if (left < pad) {
+        left = rect.left;
+      }
+      left = Math.max(pad, Math.min(left, vw - menuRect.width - pad));
+
+      menuEl.style.top = `${Math.round(top)}px`;
+      menuEl.style.left = `${Math.round(left)}px`;
+    }
+
+    function renderActionMenuHtml({ prefix, key, items, triggerLabel, badgeHtml = '' }) {
+      const baseId = safeActionMenuDomId(prefix, key);
+      const triggerId = `${baseId}-trigger`;
+      const menuId = `${baseId}-menu`;
+      const labelText = triggerLabel || t('sessions.th_action') || 'Actions';
+
+      const itemsHtml = items.map(item => {
+        if (item.type === 'divider') {
+          return '<hr class="action-menu-divider">';
+        }
+        const variantCls = item.variant ? ` menu-item-${item.variant}` : '';
+        const iconHtml = item.icon && ACTION_MENU_ICONS[item.icon] ? ACTION_MENU_ICONS[item.icon] : '';
+        const idAttr = item.id ? ` id="${escapeHtml(item.id)}"` : '';
+        const titleAttr = item.title ? ` title="${escapeHtml(item.title)}"` : '';
+        const disabledAttr = item.disabled ? ' disabled' : '';
+        return `
+          <button
+            type="button"
+            class="action-menu-item${variantCls}"${idAttr}${titleAttr}${disabledAttr}
+            data-menu-action="${escapeHtml(item.action)}"
+            data-menu-arg="${escapeHtml(item.arg || '')}"
+          >
+            <span class="action-menu-icon">${iconHtml}</span>
+            <span class="action-menu-label">${escapeHtml(item.label)}</span>
+          </button>
+        `;
+      }).join('');
+
+      return `
+        <div class="action-menu-wrap">
+          ${badgeHtml}
+          <button
+            id="${escapeHtml(triggerId)}"
+            type="button"
+            class="action-menu-trigger"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-label="${escapeHtml(labelText)}"
+            title="${escapeHtml(labelText)}"
+            commandfor="${escapeHtml(menuId)}"
+            command="toggle-popover"
+          >
+            ${ACTION_MENU_ICONS.more}
+          </button>
+          <div id="${escapeHtml(menuId)}" popover="auto" class="action-menu-popover">
+            <div focusgroup="menu nomemory" aria-labelledby="${escapeHtml(triggerId)}" class="action-menu-list">
+              ${itemsHtml}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function hydrateActionMenus(root) {
+      if (!root) return;
+      root.querySelectorAll('.action-menu-trigger[commandfor]').forEach(trigger => {
+        if (!_supportsInvokerCommands) {
+          const targetId = trigger.getAttribute('commandfor');
+          if (targetId && !trigger.hasAttribute('popovertarget')) {
+            trigger.setAttribute('popovertarget', targetId);
+          }
+        }
+      });
+
+      root.querySelectorAll('.action-menu-popover').forEach(menuEl => {
+        const group = menuEl.querySelector('[focusgroup~="menu"]');
+        if (group && !_supportsFocusgroup) {
+          group.setAttribute('role', 'menu');
+          group.querySelectorAll('button:not([role])').forEach(btn => {
+            btn.setAttribute('role', 'menuitem');
+          });
+        }
+        if (menuEl.dataset.menuBound === '1') return;
+        menuEl.dataset.menuBound = '1';
+        menuEl.addEventListener('toggle', event => {
+          const trigger = getActionMenuTrigger(menuEl);
+          const opened = event.newState === 'open' || isPopoverOpen(menuEl);
+          if (trigger) {
+            trigger.setAttribute('aria-expanded', opened ? 'true' : 'false');
+          }
+          if (opened) {
+            positionActionMenuFallback(trigger, menuEl);
+            if (_actionMenuEnterOnOpen.has(menuEl)) {
+              _actionMenuEnterOnOpen.delete(menuEl);
+              const items = getEnabledMenuItems(menuEl);
+              if (items.length) items[0].focus({ preventScroll: true });
+            } else if (trigger) {
+              trigger.focus({ preventScroll: true });
+            }
+          } else {
+            _actionMenuEnterOnOpen.delete(menuEl);
+          }
+        });
+      });
+    }
+
+    function executeActionMenuCommand(action, arg) {
+      switch (action) {
+        case 'viewResults':
+          return viewResults(arg);
+        case 'resumeSession':
+          return resumeSession(arg);
+        case 'toggleUploaded':
+          return toggleUploaded(arg);
+        case 'deleteSession':
+          return deleteSession(arg);
+        case 'runBackfillOnDemand':
+          return runBackfillOnDemand(arg);
+        case 'skipBackfillBook':
+          return skipBackfillBook(arg);
+        case 'unskipBackfillBook':
+          return unskipBackfillBook(arg);
+        case 'startExisting':
+          return startExisting(arg);
+        case 'openActiveProcessingMonitor':
+          return openActiveProcessingMonitor();
+        default:
+          return null;
+      }
+    }
+
+    function setupActionMenuSystem() {
+      if (_actionMenuSystemReady) return;
+      _actionMenuSystemReady = true;
+
+      document.addEventListener('pointerdown', event => {
+        const trigger = event.target.closest('.action-menu-trigger');
+        if (trigger) {
+          _actionMenuPointerTrigger = trigger;
+          setTimeout(() => {
+            if (_actionMenuPointerTrigger === trigger) _actionMenuPointerTrigger = null;
+          }, 0);
+        }
+      });
+
+      document.addEventListener('click', event => {
+        const trigger = event.target.closest('.action-menu-trigger');
+        if (trigger && !_supportsInvokerCommands) {
+          const menuEl = getActionMenuForTrigger(trigger);
+          if (menuEl && _actionMenuPointerTrigger !== trigger && !isPopoverOpen(menuEl)) {
+            _actionMenuEnterOnOpen.add(menuEl);
+          }
+          return;
+        }
+
+        const item = event.target.closest('.action-menu-item');
+        if (!item || item.disabled) return;
+        const menuEl = item.closest('.action-menu-popover');
+        const triggerBtn = getActionMenuTrigger(menuEl);
+        const action = item.dataset.menuAction;
+        const arg = item.dataset.menuArg || '';
+        if (menuEl && typeof menuEl.hidePopover === 'function' && isPopoverOpen(menuEl)) {
+          try { menuEl.hidePopover(); } catch (_) {}
+        }
+        if (triggerBtn) {
+          triggerBtn.focus({ preventScroll: true });
+        }
+        if (action) {
+          executeActionMenuCommand(action, arg);
+        }
+      });
+
+      document.addEventListener('keydown', event => {
+        const trigger = event.target.closest('.action-menu-trigger');
+        if (trigger) {
+          const menuEl = getActionMenuForTrigger(trigger);
+          if (!menuEl) return;
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            if (isPopoverOpen(menuEl)) {
+              const items = getEnabledMenuItems(menuEl);
+              if (items.length) items[0].focus({ preventScroll: true });
+            } else {
+              _actionMenuEnterOnOpen.add(menuEl);
+              trigger.click();
+            }
+          } else if (event.key === 'Enter' || event.key === ' ') {
+            if (!isPopoverOpen(menuEl)) {
+              _actionMenuEnterOnOpen.add(menuEl);
+            }
+          }
+          return;
+        }
+
+        const menuEl = event.target.closest('.action-menu-popover');
+        if (!menuEl || !isPopoverOpen(menuEl)) return;
+
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          const triggerBtn = getActionMenuTrigger(menuEl);
+          try { menuEl.hidePopover(); } catch (_) {}
+          if (triggerBtn) triggerBtn.focus({ preventScroll: true });
+          return;
+        }
+
+        if (event.key === 'Tab') {
+          try { menuEl.hidePopover(); } catch (_) {}
+          return;
+        }
+
+        const isNavKey = event.key === 'Home' || event.key === 'End' ||
+          (!_supportsFocusgroup && (event.key === 'ArrowDown' || event.key === 'ArrowUp'));
+        if (isNavKey) {
+          const items = getEnabledMenuItems(menuEl);
+          if (!items.length) return;
+          const current = items.indexOf(document.activeElement);
+          let nextIdx = 0;
+          if (event.key === 'Home') {
+            nextIdx = 0;
+          } else if (event.key === 'End') {
+            nextIdx = items.length - 1;
+          } else {
+            const delta = event.key === 'ArrowUp' ? -1 : 1;
+            nextIdx = current < 0 ? 0 : (current + delta + items.length) % items.length;
+          }
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          items[nextIdx].focus({ preventScroll: true });
+        }
+      }, true);
+
+      document.addEventListener('pointermove', event => {
+        const item = event.target.closest('.action-menu-item');
+        if (!item || item.disabled) return;
+        const hit = document.elementFromPoint(event.clientX, event.clientY);
+        if (!hit || !item.contains(hit)) return;
+        if (document.activeElement !== item) {
+          item.focus({ preventScroll: true });
+        }
+      });
+
+      document.addEventListener('focusin', event => {
+        document.querySelectorAll('.action-menu-popover').forEach(menuEl => {
+          if (!isPopoverOpen(menuEl)) return;
+          const triggerBtn = getActionMenuTrigger(menuEl);
+          if (menuEl.contains(event.target) || (triggerBtn && triggerBtn.contains(event.target))) {
+            return;
+          }
+          try { menuEl.hidePopover(); } catch (_) {}
+        });
+      });
+    }
+
     let searchTimer = null;
     document.getElementById('bookSearch').addEventListener('input', (e) => {
       clearTimeout(searchTimer);
@@ -1593,6 +2124,11 @@ _APP_HTML = """<!doctype html>
         const pageToFetch = reset ? 1 : bookCurrentPage + 1;
         const url = `/api/books?q=${encodeURIComponent(bookSearchQuery)}&page=${pageToFetch}&pageSize=${BOOK_PAGE_SIZE}&sortBy=uploadDate&order=${bookSortOrder}`;
         const res = await fetch(url);
+        if (res.status === 401) {
+          setAuthExpiredBanner(true);
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Authentication required');
+        }
         if (!res.ok) throw new Error(await res.text());
         const body = await res.json();
 
@@ -1703,16 +2239,9 @@ _APP_HTML = """<!doctype html>
             </div>
           </td>
           <td style="text-align: left;">
-            <div style="display: flex; align-items: center; gap: 0.45rem; justify-content: flex-end; flex-wrap: wrap;">
-              <span id="backfill-action-slot-${b.id}"></span>
-              <button class="btn btn-primary btn-sm" id="btn-start-${b.id}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                ${t('library.btn_download_correct')}
-              </button>
-            </div>
+            <span id="backfill-action-slot-${b.id}"></span>
           </td>
         `;
-        tr.querySelector(`#btn-start-${b.id}`).onclick = () => startExisting(b.id);
         tbody.appendChild(tr);
       }
       syncLibraryBackfillRows();
@@ -1752,10 +2281,13 @@ _APP_HTML = """<!doctype html>
 
     async function startExisting(bookId) {
       const btn = document.getElementById(`btn-start-${bookId}`);
+      const labelEl = btn ? btn.querySelector('.action-menu-label') : null;
+      const originalLabel = labelEl ? labelEl.textContent : t('library.btn_download_correct');
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span style="display:inline-block; animation: spin 1s infinite linear;">⚙️</span> يۈكلىنىۋاتىدۇ...';
+        if (labelEl) labelEl.textContent = t('library.loading_more');
       }
+      showToast(t('library.loading_more'));
       try {
         const res = await fetch('/api/start/existing', {
           method: 'POST',
@@ -1763,11 +2295,21 @@ _APP_HTML = """<!doctype html>
           body: JSON.stringify({bookId: bookId}),
         });
         if (!res.ok) {
+          if (res.status === 401) {
+            setAuthExpiredBanner(true);
+          }
           showLandingError(await res.text());
-          if (btn) { btn.disabled = false; btn.textContent = 'تەھرىرلەش / تۈزىتىش'; }
+          if (btn) {
+            btn.disabled = false;
+            if (labelEl) labelEl.textContent = originalLabel;
+          }
           return;
         }
         const body = await res.json();
+        if (btn) {
+          btn.disabled = false;
+          if (labelEl) labelEl.textContent = originalLabel;
+        }
         if (body.stage === 'review') {
           showSection('review');
           loadPages();
@@ -1775,14 +2317,16 @@ _APP_HTML = """<!doctype html>
           showSection('processing');
           pollProgress();
         } else {
-          if (btn) { btn.disabled = false; btn.textContent = 'نۆۋەتتە'; }
           switchLandingTab('sessions');
           loadLocalSessions();
           showToast(t('upload.toast_queued', {pos: body.queuePosition || 1}));
         }
       } catch (err) {
         showLandingError(err.message);
-        if (btn) { btn.disabled = false; btn.textContent = 'تەھرىرلەش / تۈزىتىش'; }
+        if (btn) {
+          btn.disabled = false;
+          if (labelEl) labelEl.textContent = originalLabel;
+        }
       }
     }
 
@@ -2024,7 +2568,9 @@ _APP_HTML = """<!doctype html>
         if (isBackfill) {
           const subLabel = document.getElementById('progressSubLabel');
           if (subLabel) {
-            if (state.backfillPhase === 'downloading') {
+            if (state.backfillPhase === 'waiting_for_auth' || state.authRequired) {
+              subLabel.textContent = t('backfill.phase_waiting_for_auth');
+            } else if (state.backfillPhase === 'downloading') {
               subLabel.textContent = t('backfill.phase_downloading');
             } else if (state.backfillPhase === 'submitting') {
               subLabel.textContent = t('backfill.phase_submitting');
@@ -2033,6 +2579,7 @@ _APP_HTML = """<!doctype html>
             }
           }
         }
+        setAuthExpiredBanner(Boolean(state.authRequired));
 
         let isDone = false;
         const res = await fetch('/api/pages');
@@ -2612,6 +3159,9 @@ _APP_HTML = """<!doctype html>
       try {
         const res = await fetch('/api/push', {method: 'POST'});
         if (!res.ok) {
+          if (res.status === 401) {
+            setAuthExpiredBanner(true);
+          }
           const err = await res.json().catch(() => ({}));
           throw new Error(err.detail || `Push failed (HTTP ${res.status})`);
         }
@@ -2638,7 +3188,9 @@ _APP_HTML = """<!doctype html>
       sessionsAutoRefreshTimer = setInterval(() => {
         const isLanding = sections.landing && sections.landing.classList.contains('active');
         const isSessionsTab = document.getElementById('tabSessionsContent') && document.getElementById('tabSessionsContent').style.display !== 'none';
-        if (isLanding && (isSessionsTab || window._hasQueuedOrProcessing)) {
+        const sessionsBody = document.getElementById('sessionsTableBody');
+        const hasOpenMenu = sessionsBody && Array.from(sessionsBody.querySelectorAll('.action-menu-popover')).some(isPopoverOpen);
+        if (isLanding && !hasOpenMenu && (isSessionsTab || window._hasQueuedOrProcessing)) {
           loadLocalSessions();
         }
       }, 60000);
@@ -2707,27 +3259,48 @@ _APP_HTML = """<!doctype html>
               <td>${statusBadge}</td>
               <td>${uploadedBadge}</td>
               <td style="font-size: 0.82rem; color: var(--slate-500);">${escapeHtml(dateStr)}</td>
-              <td>
-                <div style="display: flex; align-items: center; gap: 0.4rem;">
-                  ${s.isComplete ? `
-                  <button class="btn btn-primary" onclick="viewResults('${escapeHtml(s.id)}')" style="padding: 0.35rem 0.85rem; font-size: 0.85rem;">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                    ${t('sessions.btn_view_results')}
-                  </button>
-                  ` : `
-                  <button class="btn btn-primary" onclick="resumeSession('${escapeHtml(s.id)}')" style="padding: 0.35rem 0.85rem; font-size: 0.85rem;">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                    ${t('sessions.btn_resume')}
-                  </button>
-                  `}
-                  <button class="btn btn-secondary" onclick="deleteSession('${escapeHtml(s.id)}')" title="${t('sessions.btn_delete')}" style="padding: 0.35rem 0.6rem; color: var(--accent-rose);">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  </button>
-                </div>
+              <td style="text-align: left;">
+                ${renderActionMenuHtml({
+                  prefix: 'session-actions',
+                  key: s.id,
+                  triggerLabel: t('sessions.btn_actions'),
+                  items: [
+                    s.isComplete
+                      ? {
+                          label: t('sessions.btn_view_results'),
+                          icon: 'eye',
+                          variant: 'primary',
+                          action: 'viewResults',
+                          arg: s.id,
+                        }
+                      : {
+                          label: t('sessions.btn_resume'),
+                          icon: 'play',
+                          variant: 'primary',
+                          action: 'resumeSession',
+                          arg: s.id,
+                        },
+                    {
+                      label: t('sessions.btn_toggle_uploaded'),
+                      icon: 'upload',
+                      action: 'toggleUploaded',
+                      arg: s.id,
+                    },
+                    { type: 'divider' },
+                    {
+                      label: t('sessions.btn_delete'),
+                      icon: 'trash',
+                      variant: 'danger',
+                      action: 'deleteSession',
+                      arg: s.id,
+                    },
+                  ],
+                })}
               </td>
             </tr>
           `;
         }).join('');
+        hydrateActionMenus(tbody);
 
         return sessions;
       } catch (err) {
@@ -2855,6 +3428,11 @@ _APP_HTML = """<!doctype html>
     async function loadBackfillCandidates(force = false) {
       try {
         const res = await fetch('/api/backfill/candidates');
+        if (res.status === 401) {
+          setAuthExpiredBanner(true);
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Authentication required');
+        }
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         backfillCandidates = data.candidates || [];
@@ -2885,6 +3463,39 @@ _APP_HTML = """<!doctype html>
         if (force) {
           showBackfillError(err.message || String(err));
         }
+      }
+    }
+
+    function setAuthExpiredBanner(visible) {
+      const banner = document.getElementById('authExpiredBanner');
+      if (!banner) return;
+      banner.style.display = visible ? 'flex' : 'none';
+    }
+
+    async function triggerRelogin() {
+      const btn = document.getElementById('authReloginBtn');
+      const label = document.getElementById('authReloginBtnLabel');
+      if (btn) btn.disabled = true;
+      if (label) label.textContent = t('auth.relogin_in_progress');
+      try {
+        const res = await fetch('/api/auth/login', {method: 'POST'});
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        setAuthExpiredBanner(false);
+        showBackfillError('');
+        showToast(t('auth.relogin_success'));
+        pollBackfillStatus();
+        loadBackfillCandidates(false);
+        if (isLibraryTabVisible()) {
+          searchBooks(bookSearchQuery, true);
+        }
+      } catch (err) {
+        showToast(t('auth.relogin_failed', {error: err.message || err}), true);
+      } finally {
+        if (btn) btn.disabled = false;
+        if (label) label.textContent = t('auth.btn_relogin');
       }
     }
 
@@ -2977,6 +3588,7 @@ _APP_HTML = """<!doctype html>
       const tbody = document.getElementById('backfillCompletedTableBody');
       const badge = document.getElementById('backfillCompletedCountBadge');
       if (!tbody) return;
+      if (Array.from(tbody.querySelectorAll('.action-menu-popover')).some(isPopoverOpen)) return;
       const items = getBackfillCompletedBooks();
       if (badge) {
         badge.textContent = String(items.length);
@@ -3019,13 +3631,26 @@ _APP_HTML = """<!doctype html>
             </td>
             <td style="font-size: 0.82rem; color: var(--slate-500);">${escapeHtml(tsStr)}</td>
             <td style="text-align: left;">
-              <button type="button" class="btn btn-primary btn-sm" onclick="startExisting('${escapeHtml(bid)}')">
-                ${escapeHtml(t('library.btn_download_correct'))}
-              </button>
+              ${renderActionMenuHtml({
+                prefix: 'completed-actions',
+                key: bid,
+                triggerLabel: t('backfill.th_action'),
+                items: [
+                  {
+                    label: t('library.btn_download_correct'),
+                    icon: 'edit',
+                    variant: 'primary',
+                    disabled: Boolean(backfillStatus.isBusy),
+                    action: 'startExisting',
+                    arg: bid,
+                  },
+                ],
+              })}
             </td>
           </tr>
         `;
       }).join('');
+      hydrateActionMenus(tbody);
     }
 
     function getBackfillSkippedBooks() {
@@ -3039,6 +3664,7 @@ _APP_HTML = """<!doctype html>
       const tbody = document.getElementById('backfillSkippedTableBody');
       const badge = document.getElementById('backfillSkippedCountBadge');
       if (!tbody) return;
+      if (Array.from(tbody.querySelectorAll('.action-menu-popover')).some(isPopoverOpen)) return;
       const items = getBackfillSkippedBooks();
       if (badge) {
         badge.textContent = String(items.length);
@@ -3072,13 +3698,33 @@ _APP_HTML = """<!doctype html>
             </td>
             <td style="font-size: 0.82rem; color: var(--slate-500);">${escapeHtml(tsStr)}</td>
             <td style="text-align: left;">
-              <button type="button" class="btn btn-secondary btn-sm" onclick="unskipBackfillBook('${escapeHtml(bid)}')">
-                ${escapeHtml(t('backfill.btn_unskip_book'))}
-              </button>
+              ${renderActionMenuHtml({
+                prefix: 'skipped-actions',
+                key: bid,
+                triggerLabel: t('backfill.th_action'),
+                items: [
+                  {
+                    label: t('backfill.btn_unskip_book'),
+                    icon: 'unskip',
+                    variant: 'success',
+                    action: 'unskipBackfillBook',
+                    arg: bid,
+                  },
+                  {
+                    label: t('library.btn_download_correct'),
+                    icon: 'edit',
+                    variant: 'primary',
+                    disabled: Boolean(backfillStatus.isBusy),
+                    action: 'startExisting',
+                    arg: bid,
+                  },
+                ],
+              })}
             </td>
           </tr>
         `;
       }).join('');
+      hydrateActionMenus(tbody);
     }
 
     async function setLibraryViewMode(mode) {
@@ -3302,13 +3948,21 @@ _APP_HTML = """<!doctype html>
       } else {
         showBackfillError('');
       }
+      setAuthExpiredBanner(Boolean(backfillStatus.authRequired || backfillStatus.mode === 'waiting_for_auth'));
 
       // Update Mode Pill & Auto Toggle Button
       const dot = document.getElementById('backfillModeDot');
       const modeText = document.getElementById('backfillModeText');
       const toggleBtn = document.getElementById('backfillAutoToggleBtn');
 
-      if (backfillStatus.autoRunning) {
+      if (backfillStatus.mode === 'waiting_for_auth' || backfillStatus.authRequired) {
+        if (dot) dot.className = 'status-dot pulsing';
+        if (modeText) modeText.textContent = t('backfill.status_waiting_for_auth');
+        if (toggleBtn && backfillStatus.autoRunning) {
+          toggleBtn.className = 'btn btn-warning';
+          toggleBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg><span>${escapeHtml(t('backfill.btn_pause_auto'))}</span>`;
+        }
+      } else if (backfillStatus.autoRunning) {
         if (dot) dot.className = 'status-dot active';
         if (modeText) {
           modeText.textContent = backfillStatus.mode === 'throttled'
@@ -3398,22 +4052,69 @@ _APP_HTML = """<!doctype html>
 
         const actionSlot = document.getElementById(`backfill-action-slot-${bid}`);
         if (actionSlot) {
-          if (isCurrent) {
-            actionSlot.innerHTML = `<span class="milestone-badge milestone-in_progress">⚡ ${escapeHtml(t('processing.status_processing'))}</span>`;
-          } else if (isUpgraded || isSkipped) {
-            actionSlot.innerHTML = '';
+          const existingPopover = actionSlot.querySelector('.action-menu-popover');
+          if (existingPopover && isPopoverOpen(existingPopover)) {
+            // Preserve open menu during background polling; just sync disabled state in place
+            const procItem = existingPopover.querySelector('[data-menu-action="runBackfillOnDemand"]');
+            if (procItem) procItem.disabled = !canRunOnDemand;
+            const dlItem = existingPopover.querySelector('[data-menu-action="startExisting"]');
+            if (dlItem) dlItem.disabled = Boolean(backfillStatus.isBusy);
+          } else if (isCurrent) {
+            actionSlot.innerHTML = renderActionMenuHtml({
+              prefix: 'library-actions',
+              key: bid,
+              triggerLabel: t('backfill.th_action'),
+              badgeHtml: `<span class="milestone-badge milestone-in_progress">⚡ ${escapeHtml(t('processing.status_processing'))}</span>`,
+              items: [
+                {
+                  label: t('backfill.btn_open_monitor'),
+                  icon: 'monitor',
+                  variant: 'primary',
+                  action: 'openActiveProcessingMonitor',
+                },
+              ],
+            });
+            hydrateActionMenus(actionSlot);
           } else {
-            actionSlot.innerHTML = `
-              <span style="display: inline-flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
-                <button type="button" class="btn btn-success btn-sm" id="btn-backfill-${escapeHtml(bid)}" onclick="runBackfillOnDemand('${escapeHtml(bid)}')" ${canRunOnDemand ? '' : 'disabled'}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                  ${escapeHtml(t('backfill.btn_process_now'))}
-                </button>
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-skip-backfill-${escapeHtml(bid)}" onclick="skipBackfillBook('${escapeHtml(bid)}')" title="${escapeHtml(t('backfill.skip_tooltip'))}">
-                  ${escapeHtml(t('backfill.btn_skip_book'))}
-                </button>
-              </span>
-            `;
+            const menuItems = [];
+            if (!isUpgraded && !isSkipped) {
+              menuItems.push({
+                id: `btn-backfill-${bid}`,
+                label: t('backfill.btn_process_now'),
+                icon: 'play',
+                variant: 'success',
+                disabled: !canRunOnDemand,
+                action: 'runBackfillOnDemand',
+                arg: bid,
+              });
+            }
+            menuItems.push({
+              id: `btn-start-${bid}`,
+              label: t('library.btn_download_correct'),
+              icon: 'edit',
+              variant: 'primary',
+              disabled: Boolean(backfillStatus.isBusy),
+              action: 'startExisting',
+              arg: bid,
+            });
+            if (!isUpgraded && !isSkipped) {
+              menuItems.push({ type: 'divider' });
+              menuItems.push({
+                id: `btn-skip-backfill-${bid}`,
+                label: t('backfill.btn_skip_book'),
+                icon: 'skip',
+                title: t('backfill.skip_tooltip'),
+                action: 'skipBackfillBook',
+                arg: bid,
+              });
+            }
+            actionSlot.innerHTML = renderActionMenuHtml({
+              prefix: 'library-actions',
+              key: bid,
+              triggerLabel: t('backfill.th_action'),
+              items: menuItems,
+            });
+            hydrateActionMenus(actionSlot);
           }
         }
       });
@@ -3448,6 +4149,7 @@ _APP_HTML = """<!doctype html>
 
     async function init() {
       applyStaticI18n();
+      setupActionMenuSystem();
       ensureSessionsAutoRefresh();
       const res = await fetch('/api/state');
       const state = await res.json();
@@ -3843,10 +4545,94 @@ class BackfillManager:
     pending_index_books: int = 0
     _baseline_server_backlog: Optional[int] = None
     error: Optional[str] = None
+    auth_required: bool = False
+    auth_message: Optional[str] = None
+    auth_poll_interval: float = 3.0
     seen_book_ids: set[str] = field(default_factory=set)
     failed_book_ids: set[str] = field(default_factory=set)
     _task: Optional[asyncio.Task] = None
     _wake_event: Optional[asyncio.Event] = None
+    _auth_wake_event: Optional[asyncio.Event] = None
+    _loop: Optional[asyncio.AbstractEventLoop] = None
+
+    @property
+    def _bg_client(self) -> KitabimClient:
+        """Non-interactive client for background backfill so expired tokens pause instead of timing out."""
+        return (
+            self.client.as_headless()
+            if isinstance(self.client, KitabimClient)
+            else self.client
+        )
+
+    def notify_auth_updated(self) -> None:
+        """Wake any paused backfill task immediately after fresh credentials are saved."""
+        self.auth_required = False
+        self.auth_message = None
+        evt = self._auth_wake_event
+        if evt is not None:
+            loop = self._loop
+            if loop is not None and loop.is_running():
+                loop.call_soon_threadsafe(evt.set)
+            else:
+                evt.set()
+
+    def _can_wait_for_auth(self) -> bool:
+        config_path = getattr(self.client, "config_path", None)
+        base_url = getattr(self.client, "base_url", None)
+        return (
+            isinstance(config_path, Path)
+            and isinstance(base_url, str)
+            and bool(base_url)
+        )
+
+    async def _wait_for_auth_recovery(
+        self,
+        exc: BaseException,
+        *,
+        resume_mode: str,
+        allow_pause_abort: bool = True,
+    ) -> bool:
+        """Pause backfill safely until valid credentials are available.
+
+        Returns True if authentication was restored, False if paused/cancelled by the user.
+        """
+        if not self._can_wait_for_auth():
+            raise exc
+        self._loop = asyncio.get_running_loop()
+        if self._auth_wake_event is None:
+            self._auth_wake_event = asyncio.Event()
+        self.auth_required = True
+        self.auth_message = str(exc)
+        self.mode = "waiting_for_auth"
+        self.error = None
+
+        config_path = getattr(self.client, "config_path")
+        base_url = getattr(self.client, "base_url")
+        tok = _load_token_config(config_path).get("access_token")
+        rejected_token = tok if isinstance(tok, str) else None
+
+        def _should_stop() -> bool:
+            if not allow_pause_abort:
+                return False
+            return bool(self.pause_requested or not self.auto_running)
+
+        try:
+            await wait_for_reauth_async(
+                base_url,
+                config_path,
+                poll_interval=self.auth_poll_interval,
+                should_stop=_should_stop,
+                wake_event=self._auth_wake_event,
+                rejected_token=rejected_token,
+            )
+            self.auth_required = False
+            self.auth_message = None
+            self.mode = "pausing" if self.pause_requested else resume_mode
+            return True
+        except AuthError:
+            self.auth_required = False
+            self.auth_message = None
+            return False
 
     @property
     def audit_log_path(self) -> Path:
@@ -3911,6 +4697,8 @@ class BackfillManager:
             "autoRunning": self.auto_running,
             "pauseRequested": self.pause_requested,
             "isBusy": bool(active_id is not None or self.auto_running),
+            "authRequired": self.auth_required,
+            "authMessage": self.auth_message,
             "activeBook": active_book_payload,
             "lastCompletedBook": self.last_completed_book,
             "completedBooks": completed_books,
@@ -3925,8 +4713,11 @@ class BackfillManager:
             "error": self.error,
         }
 
-    def fetch_candidates_and_history(self, limit: int = 500) -> dict[str, Any]:
-        cand_resp = self.client.get_backfill_candidates(
+    def fetch_candidates_and_history(
+        self, limit: int = 500, *, use_bg_client: bool = False
+    ) -> dict[str, Any]:
+        api_client = self._bg_client if use_bg_client else self.client
+        cand_resp = api_client.get_backfill_candidates(
             ocr_version=self.ocr_version, limit=limit
         )
         pending_backlog = int(
@@ -3990,7 +4781,7 @@ class BackfillManager:
         if self._server_backfilled_cache is None:
             server_backfilled: list[dict[str, Any]] = []
             try:
-                books_resp = self.client.list_books(
+                books_resp = api_client.list_books(
                     page=1, page_size=50, sort_by="uploadDate", order=1
                 )
                 for b in (
@@ -4044,6 +4835,9 @@ class BackfillManager:
         author: Optional[str] = None,
         upload_date: Optional[str] = None,
     ) -> dict[str, Any]:
+        self._loop = asyncio.get_running_loop()
+        if self._auth_wake_event is None:
+            self._auth_wake_event = asyncio.Event()
         self.active_book_id = book_id
         self.active_book_title = title or book_id
         self.active_book_author = author or ""
@@ -4054,11 +4848,27 @@ class BackfillManager:
         self.active_user_edits.clear()
         self.latest_completed_page = None
         completed_cleanly = False
+        prior_mode = self.mode
 
         def _on_progress(evt: dict[str, Any]) -> None:
             phase = evt.get("phase")
             if phase:
                 self.active_phase = str(phase)
+                if phase == "waiting_for_auth":
+                    self.auth_required = True
+                    self.auth_message = str(
+                        evt.get("error") or "Authentication expired"
+                    )
+                    self.mode = "waiting_for_auth"
+                elif self.auth_required:
+                    self.auth_required = False
+                    self.auth_message = None
+                    if self.pause_requested:
+                        self.mode = "pausing"
+                    elif self.auto_running:
+                        self.mode = "auto"
+                    else:
+                        self.mode = prior_mode
             if evt.get("title"):
                 self.active_book_title = str(evt["title"])
             if evt.get("total_pages"):
@@ -4073,7 +4883,7 @@ class BackfillManager:
             async with acquire_surya_gpu_lock_async(self.work_root):
                 entry = await backfill_single_book(
                     book_id,
-                    self.client,
+                    self._bg_client,
                     self.work_root,
                     title=title,
                     engine=self.engine,
@@ -4084,6 +4894,9 @@ class BackfillManager:
                     pages_sink=self.active_pages,
                     user_edits=self.active_user_edits,
                     install_signal_handlers=False,
+                    wait_on_auth_error=True,
+                    auth_poll_interval=self.auth_poll_interval,
+                    auth_wake_event=self._auth_wake_event,
                 )
             completed_cleanly = int(entry.get("failed_pages", 0) or 0) == 0
             self.seen_book_ids.add(book_id)
@@ -4093,6 +4906,8 @@ class BackfillManager:
             self.session_processed_count += 1
             return entry
         finally:
+            self.auth_required = False
+            self.auth_message = None
             self.active_book_id = None
             self.active_book_title = None
             self.active_book_author = None
@@ -4108,14 +4923,35 @@ class BackfillManager:
                 )
 
     async def _auto_loop(self) -> None:
+        self._loop = asyncio.get_running_loop()
+        if self._auth_wake_event is None:
+            self._auth_wake_event = asyncio.Event()
         last_prefetched_id: Optional[str] = None
         prefetch_task: Optional[asyncio.Task] = None
         try:
             with prevent_macos_sleep():
                 while self.auto_running and not self.pause_requested:
-                    data = await asyncio.to_thread(
-                        self.fetch_candidates_and_history, 100
-                    )
+                    try:
+                        data = await asyncio.to_thread(
+                            self.fetch_candidates_and_history,
+                            100,
+                            use_bg_client=True,
+                        )
+                    except Exception as fetch_exc:
+                        if is_auth_failure(fetch_exc) and self._can_wait_for_auth():
+                            logger.warning(
+                                "Auto backfill paused while fetching candidates due to expired token: %s",
+                                fetch_exc,
+                            )
+                            restored = await self._wait_for_auth_recovery(
+                                fetch_exc,
+                                resume_mode="auto",
+                                allow_pause_abort=True,
+                            )
+                            if restored:
+                                continue
+                            break
+                        raise
                     if not self.auto_running or self.pause_requested:
                         break
                     candidates = data.get("candidates") or []
@@ -4143,7 +4979,7 @@ class BackfillManager:
                         last_prefetched_id = str(candidates[1]["id"])
                         prefetch_task = asyncio.create_task(
                             prefetch_book_assets_async(
-                                last_prefetched_id, self.client, self.work_root
+                                last_prefetched_id, self._bg_client, self.work_root
                             )
                         )
                     else:
@@ -4158,6 +4994,20 @@ class BackfillManager:
                             upload_date=target.get("uploadDate"),
                         )
                     except Exception as book_exc:
+                        if is_auth_failure(book_exc) and self._can_wait_for_auth():
+                            logger.warning(
+                                "Auto backfill paused on book %s due to expired token (not marking failed): %s",
+                                target_id,
+                                book_exc,
+                            )
+                            restored = await self._wait_for_auth_recovery(
+                                book_exc,
+                                resume_mode="auto",
+                                allow_pause_abort=True,
+                            )
+                            if restored:
+                                continue
+                            break
                         logger.warning(
                             "Auto backfill failed on book %s (recording failure and continuing): %s",
                             target_id,
@@ -4194,6 +5044,8 @@ class BackfillManager:
                 and last_prefetched_id not in self.failed_book_ids
             ):
                 cleanup_unstarted_prefetch_dir(last_prefetched_id, self.work_root)
+            self.auth_required = False
+            self.auth_message = None
             self.auto_running = False
             self.pause_requested = False
             self.mode = "idle"
@@ -4207,6 +5059,9 @@ class BackfillManager:
         author: Optional[str] = None,
         upload_date: Optional[str] = None,
     ) -> None:
+        self._loop = asyncio.get_running_loop()
+        if self._auth_wake_event is None:
+            self._auth_wake_event = asyncio.Event()
         try:
             await self._process_book(
                 book_id, title=title, author=author, upload_date=upload_date
@@ -4215,10 +5070,13 @@ class BackfillManager:
                 await self._auto_loop()
         except Exception as exc:
             logger.exception("On-demand backfill failed for book %s: %s", book_id, exc)
-            self.failed_book_ids.add(book_id)
+            if not is_auth_failure(exc):
+                self.failed_book_ids.add(book_id)
             self.error = str(exc)
         finally:
             if not self.auto_running:
+                self.auth_required = False
+                self.auth_message = None
                 self.pause_requested = False
                 self.mode = "idle"
                 if self.on_idle is not None:
@@ -4234,12 +5092,13 @@ class BackfillManager:
         self.auto_running = True
         self.pause_requested = False
         if self._task is not None and not self._task.done():
-            self.mode = "auto"
+            self.mode = "waiting_for_auth" if self.auth_required else "auto"
             if self._wake_event is not None:
                 self._wake_event.set()
             return self.get_status()
         self.mode = "auto"
         self._wake_event = asyncio.Event()
+        self._auth_wake_event = asyncio.Event()
         self._task = _start_background_task(self._auto_loop())
         return self.get_status()
 
@@ -4247,10 +5106,12 @@ class BackfillManager:
         self.auto_running = False
         if self.active_book_id is not None:
             self.pause_requested = True
-            self.mode = "pausing"
+            self.mode = "waiting_for_auth" if self.auth_required else "pausing"
         else:
             self.pause_requested = False
             self.mode = "idle"
+            if self._auth_wake_event is not None:
+                self._auth_wake_event.set()
         if self._wake_event is not None:
             self._wake_event.set()
         return self.get_status()
@@ -4284,6 +5145,7 @@ class BackfillManager:
         self.pause_requested = False
         self.mode = "on_demand"
         self._wake_event = asyncio.Event()
+        self._auth_wake_event = asyncio.Event()
         self._task = _start_background_task(
             self._on_demand_then_maybe_auto(
                 book_id, title=title, author=author, upload_date=upload_date
@@ -4602,7 +5464,55 @@ def create_landing_app(
             "backfillAutoRunning": bool(bm and bm.auto_running),
             "backfillMode": bm.mode if bm else "idle",
             "backfillPhase": bm.active_phase if bm else None,
+            "authRequired": bool(bm and bm.auth_required),
+            "authMessage": bm.auth_message if bm else None,
         }
+
+    @app.get("/api/auth/status")
+    def get_auth_status():
+        config_path = getattr(state.client, "config_path", None)
+        status = (
+            get_token_status(config_path)
+            if isinstance(config_path, Path)
+            else {
+                "hasAccessToken": False,
+                "accessValid": False,
+                "accessExpiresIn": None,
+                "hasRefreshToken": False,
+                "refreshValid": False,
+                "refreshExpiresIn": None,
+                "authenticated": False,
+            }
+        )
+        bm = state.backfill_manager
+        status["authRequired"] = bool(bm and bm.auth_required)
+        status["authMessage"] = bm.auth_message if bm else None
+        return status
+
+    @app.post("/api/auth/login")
+    async def trigger_auth_login():
+        config_path = getattr(state.client, "config_path", None)
+        base_url = getattr(state.client, "base_url", None)
+        provider = getattr(state.client, "provider", "google")
+        if (
+            not isinstance(config_path, Path)
+            or not isinstance(base_url, str)
+            or not base_url
+        ):
+            raise HTTPException(
+                status_code=400, detail="KitabimClient auth configuration not available"
+            )
+        try:
+            await asyncio.to_thread(
+                login_and_save, base_url, config_path, provider=provider
+            )
+        except AuthError as exc:
+            raise HTTPException(status_code=401, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        if state.backfill_manager is not None:
+            state.backfill_manager.notify_auth_updated()
+        return {"status": "ok", **get_token_status(config_path)}
 
     @app.post("/api/concurrency")
     def set_concurrency(payload: dict):
@@ -4808,13 +5718,18 @@ def create_landing_app(
         sortBy: str = "uploadDate",
         order: int = -1,
     ):
-        return state.client.list_books(
-            q=q,
-            page=page,
-            page_size=pageSize,
-            sort_by=sortBy,
-            order=order,
-        )
+        try:
+            return state.client.list_books(
+                q=q,
+                page=page,
+                page_size=pageSize,
+                sort_by=sortBy,
+                order=order,
+            )
+        except (AuthError, KitabimAuthError) as exc:
+            raise HTTPException(status_code=401, detail=str(exc))
+        except KitabimAPIError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
 
     @app.post("/api/start/existing")
     async def start_existing(body: StartExistingRequest):
@@ -4829,6 +5744,8 @@ def create_landing_app(
         state.manual_review_session_id = None
         try:
             workdir = _start_existing_book(body.bookId, state.client, state.work_root)
+        except (AuthError, KitabimAuthError) as exc:
+            raise HTTPException(status_code=401, detail=str(exc))
         except Exception as exc:
             state.stage = "error"
             state.error = str(exc)
@@ -4967,6 +5884,8 @@ def create_landing_app(
     def get_backfill_candidates_route(limit: int = 500):
         try:
             return state.backfill_manager.fetch_candidates_and_history(limit=limit)
+        except (AuthError, KitabimAuthError) as exc:
+            raise HTTPException(status_code=401, detail=str(exc))
         except Exception as exc:
             raise HTTPException(status_code=502, detail=str(exc))
 

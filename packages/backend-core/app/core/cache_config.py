@@ -31,6 +31,7 @@ KEY_STATS = "stats:system"
 
 KEY_CONFIG = "config:{key}"
 KEY_CHAT_USAGE = "chat:usage:{user_id}:{date}"
+KEY_TTS_USAGE = "tts:usage:{user_id}:{date}"
 KEY_RAG_REWRITE = "rag:rewrite:{hash}"
 KEY_OCR_FREQUENT_CORRECTIONS = "ocr:frequent_corrections"
 # Pre-computed by entity_resolution_service after every merge/split/unmerge and resolution

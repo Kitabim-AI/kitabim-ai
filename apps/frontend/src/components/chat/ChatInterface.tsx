@@ -21,21 +21,24 @@ import {
   ThumbsUp,
   Trash2,
   User,
+  Volume2,
   X,
 } from 'lucide-react';
 import { ShareChatModal } from '../share/ShareChatModal';
 import React, { useEffect, useRef, useState } from 'react';
 import { CHARACTERS, DEFAULT_CHARACTER_ID } from '../../constants/characters';
 import { useAppContext } from '../../context/AppContext';
+import { useAnswerTts } from '../../hooks/useAnswerTts';
 import { useAuth } from '../../hooks/useAuth';
 import { AgentStep } from '../../hooks/useChat';
 import { useI18n } from '../../i18n/I18nContext';
 import { translations } from '../../i18n/i18n';
-import { getShowChatCost, initAppConfig } from '../../services/authService';
-import { formatAnswerCost } from '../../utils/costUtils';
+import { getShowChatCost, getTtsEnabled, initAppConfig } from '../../services/authService';
+import { formatAnswerCost, formatCostBreakdownTooltip } from '../../utils/costUtils';
 import { OAuthButtonGroup } from '../auth/AuthButton';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { AgentThinkingSteps } from './AgentThinkingSteps';
+import { AnswerAudioPlayer } from './AnswerAudioPlayer';
 import { ReferenceModal } from './ReferenceModal';
 
 const CHAR_INTERVAL = 55;   // ms per character
@@ -164,12 +167,44 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [shareMsg, setShareMsg] = useState<{ question: string; answer: string } | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : false);
   const [showChatCost, setShowChatCost] = useState(() => getShowChatCost());
+  const [ttsEnabled, setTtsEnabled] = useState(() => getTtsEnabled());
+  const tts = useAnswerTts(`${type}:${bookId || ''}:${conversationId || ''}`);
   const inputRef = useRef<HTMLInputElement>(null);
   const readerOuterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    initAppConfig().then(() => setShowChatCost(getShowChatCost()));
+    initAppConfig().then(() => {
+      setShowChatCost(getShowChatCost());
+      setTtsEnabled(getTtsEnabled());
+    });
   }, []);
+
+  const getAnswerTtsKey = (msg: Message): string | null => {
+    if (msg.id) return `msg:${msg.id}`;
+    if (typeof msg.evalId === 'number') return `eval:${msg.evalId}`;
+    return null;
+  };
+
+  const getCombinedMessageCost = (msg: Message) => {
+    const ttsKey = getAnswerTtsKey(msg);
+    const liveTts = ttsKey ? tts.ttsCostsByKey[ttsKey] : undefined;
+    const chatCostUsd = msg.cost?.costUsd ?? 0;
+    const chatTokens = (msg.cost?.inputTokens ?? 0) + (msg.cost?.outputTokens ?? 0);
+    const ttsCostUsd = liveTts?.costUsd ?? msg.cost?.ttsCostUsd ?? 0;
+    const ttsTokens = liveTts
+      ? liveTts.inputTokens + liveTts.outputTokens
+      : (msg.cost?.ttsInputTokens ?? 0) + (msg.cost?.ttsOutputTokens ?? 0);
+    const hasTtsCost = ttsCostUsd > 0 || ttsTokens > 0;
+    const hasAnyCost = Boolean(msg.cost) || hasTtsCost;
+    if (!hasAnyCost) return null;
+    return {
+      totalCostUsd: chatCostUsd + ttsCostUsd,
+      totalTokens: chatTokens + ttsTokens,
+      tooltip: hasTtsCost
+        ? formatCostBreakdownTooltip(chatCostUsd, ttsCostUsd, t)
+        : (t('chat.costTooltip') || 'سۈنئىي ئەقىل مودېلىنىڭ مۇشۇ جاۋابقا سەرپ قىلغان تەننەرقى'),
+    };
+  };
 
 
   const focusInput = React.useCallback(() => {
@@ -355,17 +390,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     {msg.role === 'model' && (!isChatting || idx < chatMessages.length - 1) && (
                       <div className="w-full flex items-center justify-between gap-1 sm:gap-2 mt-1.5 px-0.5 sm:px-1">
                         <div className="flex items-center shrink-0">
-                          {showChatCost && msg.cost ? (
-                            <div
-                              title={t('chat.costTooltip') || 'سۈنئىي ئەقىل مودېلىنىڭ مۇشۇ جاۋابقا سەرپ قىلغان تەننەرقى'}
-                              className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 rounded-full bg-amber-500/10 dark:bg-amber-400/10 border border-amber-500/20 dark:border-amber-400/20 text-amber-800 dark:text-amber-300 text-[10px] sm:text-xs font-semibold select-none shadow-xs uyghur-text whitespace-nowrap shrink-0 transition-all hover:bg-amber-500/15 dark:hover:bg-amber-400/15"
-                            >
-                              <Coins size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                              <span className="whitespace-nowrap">{formatAnswerCost(msg.cost.costUsd, msg.cost.inputTokens + msg.cost.outputTokens, t)}</span>
-                            </div>
-                          ) : (
-                            <div />
-                          )}
+                          {showChatCost && (() => {
+                            const combinedCost = getCombinedMessageCost(msg);
+                            return combinedCost ? (
+                              <div
+                                title={combinedCost.tooltip}
+                                className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 rounded-full bg-amber-500/10 dark:bg-amber-400/10 border border-amber-500/20 dark:border-amber-400/20 text-amber-800 dark:text-amber-300 text-[10px] sm:text-xs font-semibold select-none shadow-xs uyghur-text whitespace-nowrap shrink-0 transition-all hover:bg-amber-500/15 dark:hover:bg-amber-400/15"
+                              >
+                                <Coins size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span className="whitespace-nowrap">{formatAnswerCost(combinedCost.totalCostUsd, combinedCost.totalTokens, t)}</span>
+                              </div>
+                            ) : (
+                              <div />
+                            );
+                          })()}
                         </div>
 
                         <div className="flex items-center justify-center shrink-0">
@@ -374,15 +412,49 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             target="_blank"
                             rel="noopener noreferrer"
                             title={t('chat.donateTooltip') || 'كىتابىم سىستېمىسىنى داۋاملىق ھەقسىز تەمىنلەشكە ياردەم بېرىڭ'}
-                            className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 hover:border-rose-300 dark:hover:border-rose-700 transition-all shadow-xs active:scale-95 group shrink-0 whitespace-nowrap"
+                            aria-label={t('chat.donate') || t('app.footer.donate') || 'ئىئانە قىلىڭ'}
+                            className="inline-flex items-center justify-center lg:gap-1.5 p-1.5 lg:px-3 lg:py-1 rounded-full text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 hover:border-rose-300 dark:hover:border-rose-700 transition-all shadow-xs active:scale-95 group shrink-0 whitespace-nowrap"
                           >
-                            <Heart size={11} className="text-rose-500 fill-rose-500 group-hover:scale-110 transition-transform shrink-0" />
-                            <span className="uyghur-text whitespace-nowrap">{t('chat.donate') || t('app.footer.donate') || 'ئىئانە قىلىڭ'}</span>
+                            <Heart size={13} className="lg:w-[11px] lg:h-[11px] text-rose-500 fill-rose-500 group-hover:scale-110 transition-transform shrink-0" />
+                            <span className="hidden lg:inline uyghur-text whitespace-nowrap">{t('chat.donate') || t('app.footer.donate') || 'ئىئانە قىلىڭ'}</span>
                           </a>
                         </div>
 
                         <div className="flex items-center justify-end shrink-0">
                           <div dir="ltr" className="flex items-center gap-0.5">
+                            {isAuthenticated && ttsEnabled && getAnswerTtsKey(msg) && (() => {
+                              const ttsKey = getAnswerTtsKey(msg)!;
+                              const isActiveTts = tts.activeKey === ttsKey;
+                              const isLoadingTts = isActiveTts && tts.status === 'loading';
+                              const isPlayingTts = isActiveTts && (tts.status === 'playing' || tts.status === 'streaming');
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    tts.playOrToggle({
+                                      key: ttsKey,
+                                      messageId: msg.id,
+                                      evalId: msg.evalId,
+                                    });
+                                  }}
+                                  title={isPlayingTts ? t('chat.tts.pause') : t('chat.tts.listen')}
+                                  aria-label={isPlayingTts ? t('chat.tts.pause') : t('chat.tts.listen')}
+                                  data-testid="tts-listen-button"
+                                  className={`p-1 sm:p-1.5 rounded-lg transition-all ${
+                                    isActiveTts
+                                      ? 'text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/15'
+                                      : 'text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10'
+                                  }`}
+                                >
+                                  {isLoadingTts ? (
+                                    <Loader2 size={16} className="sm:w-[18px] sm:h-[18px] animate-spin" />
+                                  ) : (
+                                    <Volume2 size={16} className={`sm:w-[18px] sm:h-[18px] ${isPlayingTts ? 'animate-pulse' : ''}`} strokeWidth={2} />
+                                  )}
+                                </button>
+                              );
+                            })()}
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -420,6 +492,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                           </div>
                         </div>
                       </div>
+                    )}
+                    {msg.role === 'model' && isAuthenticated && ttsEnabled && getAnswerTtsKey(msg) && tts.activeKey === getAnswerTtsKey(msg) && (
+                      <AnswerAudioPlayer
+                        status={tts.status}
+                        currentTime={tts.currentTime}
+                        duration={tts.duration}
+                        playbackRate={tts.playbackRate}
+                        canSeek={tts.canSeek}
+                        truncated={tts.truncated}
+                        errorMessage={tts.errorMessage}
+                        onTogglePauseResume={tts.togglePauseResume}
+                        onSeek={tts.seek}
+                        onCycleSpeed={tts.cyclePlaybackRate}
+                        onStop={tts.stop}
+                      />
                     )}
                   </div>
                 </div>
@@ -850,17 +937,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               {msg.role === 'model' && (!isChatting || idx < chatMessages.length - 1) && (
                 <div className="w-full flex items-center justify-between gap-1 sm:gap-2 mt-1.5 px-0.5 sm:px-1">
                   <div className="flex items-center shrink-0">
-                    {showChatCost && msg.cost ? (
-                      <div
-                        title={t('chat.costTooltip') || 'سۈنئىي ئەقىل مودېلىنىڭ مۇشۇ جاۋابقا سەرپ قىلغان تەننەرقى'}
-                        className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 rounded-full bg-amber-500/10 dark:bg-amber-400/10 border border-amber-500/20 dark:border-amber-400/20 text-amber-800 dark:text-amber-300 text-[10px] sm:text-xs font-semibold select-none shadow-xs uyghur-text whitespace-nowrap shrink-0 transition-all hover:bg-amber-500/15 dark:hover:bg-amber-400/15"
-                      >
-                        <Coins size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                        <span className="whitespace-nowrap">{formatAnswerCost(msg.cost.costUsd, msg.cost.inputTokens + msg.cost.outputTokens, t)}</span>
-                      </div>
-                    ) : (
-                      <div />
-                    )}
+                    {showChatCost && (() => {
+                      const combinedCost = getCombinedMessageCost(msg);
+                      return combinedCost ? (
+                        <div
+                          title={combinedCost.tooltip}
+                          className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 rounded-full bg-amber-500/10 dark:bg-amber-400/10 border border-amber-500/20 dark:border-amber-400/20 text-amber-800 dark:text-amber-300 text-[10px] sm:text-xs font-semibold select-none shadow-xs uyghur-text whitespace-nowrap shrink-0 transition-all hover:bg-amber-500/15 dark:hover:bg-amber-400/15"
+                        >
+                          <Coins size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                          <span className="whitespace-nowrap">{formatAnswerCost(combinedCost.totalCostUsd, combinedCost.totalTokens, t)}</span>
+                        </div>
+                      ) : (
+                        <div />
+                      );
+                    })()}
                   </div>
 
                   <div className="flex items-center justify-center shrink-0">
@@ -869,15 +959,49 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       title={t('chat.donateTooltip') || 'كىتابىم سىستېمىسىنى داۋاملىق ھەقسىز تەمىنلەشكە ياردەم بېرىڭ'}
-                      className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 hover:border-rose-300 dark:hover:border-rose-700 transition-all shadow-xs active:scale-95 group shrink-0 whitespace-nowrap"
+                      aria-label={t('chat.donate') || t('app.footer.donate') || 'ئىئانە قىلىڭ'}
+                      className="inline-flex items-center justify-center lg:gap-1.5 p-1.5 lg:px-3 lg:py-1 rounded-full text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 hover:border-rose-300 dark:hover:border-rose-700 transition-all shadow-xs active:scale-95 group shrink-0 whitespace-nowrap"
                     >
-                      <Heart size={11} className="text-rose-500 fill-rose-500 group-hover:scale-110 transition-transform shrink-0" />
-                      <span className="uyghur-text whitespace-nowrap">{t('chat.donate') || t('app.footer.donate') || 'ئىئانە قىلىڭ'}</span>
+                      <Heart size={13} className="lg:w-[11px] lg:h-[11px] text-rose-500 fill-rose-500 group-hover:scale-110 transition-transform shrink-0" />
+                      <span className="hidden lg:inline uyghur-text whitespace-nowrap">{t('chat.donate') || t('app.footer.donate') || 'ئىئانە قىلىڭ'}</span>
                     </a>
                   </div>
 
                   <div className="flex items-center justify-end shrink-0">
                     <div dir="ltr" className="flex items-center gap-0.5">
+                      {isAuthenticated && ttsEnabled && getAnswerTtsKey(msg) && (() => {
+                        const ttsKey = getAnswerTtsKey(msg)!;
+                        const isActiveTts = tts.activeKey === ttsKey;
+                        const isLoadingTts = isActiveTts && tts.status === 'loading';
+                        const isPlayingTts = isActiveTts && (tts.status === 'playing' || tts.status === 'streaming');
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              tts.playOrToggle({
+                                key: ttsKey,
+                                messageId: msg.id,
+                                evalId: msg.evalId,
+                              });
+                            }}
+                            title={isPlayingTts ? t('chat.tts.pause') : t('chat.tts.listen')}
+                            aria-label={isPlayingTts ? t('chat.tts.pause') : t('chat.tts.listen')}
+                            data-testid="tts-listen-button"
+                            className={`p-1 sm:p-1.5 rounded-lg transition-all ${
+                              isActiveTts
+                                ? 'text-[#0369a1] dark:text-[#38bdf8] bg-[#0369a1]/10 dark:bg-[#38bdf8]/15'
+                                : 'text-slate-400 dark:text-slate-400 hover:text-[#0369a1] hover:bg-[#0369a1]/10 dark:hover:text-[#38bdf8] dark:hover:bg-[#38bdf8]/10'
+                            }`}
+                          >
+                            {isLoadingTts ? (
+                              <Loader2 size={16} className="sm:w-[18px] sm:h-[18px] animate-spin" />
+                            ) : (
+                              <Volume2 size={16} className={`sm:w-[18px] sm:h-[18px] ${isPlayingTts ? 'animate-pulse' : ''}`} strokeWidth={2} />
+                            )}
+                          </button>
+                        );
+                      })()}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -915,6 +1039,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     </div>
                   </div>
                 </div>
+              )}
+              {msg.role === 'model' && isAuthenticated && ttsEnabled && getAnswerTtsKey(msg) && tts.activeKey === getAnswerTtsKey(msg) && (
+                <AnswerAudioPlayer
+                  status={tts.status}
+                  currentTime={tts.currentTime}
+                  duration={tts.duration}
+                  playbackRate={tts.playbackRate}
+                  canSeek={tts.canSeek}
+                  truncated={tts.truncated}
+                  errorMessage={tts.errorMessage}
+                  onTogglePauseResume={tts.togglePauseResume}
+                  onSeek={tts.seek}
+                  onCycleSpeed={tts.cyclePlaybackRate}
+                  onStop={tts.stop}
+                />
               )}
             </div>
           </div>

@@ -313,6 +313,18 @@ export const PersistenceService = {
     }
   },
 
+  async autoCorrectBook(bookId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE}/books/${bookId}/auto-correct`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error("Permission denied: Admin access required");
+      }
+      throw new Error("Failed to start book auto-correction");
+    }
+  },
+
   async reprocessGraph(bookId: string, scope: 'fiction' | 'nonfiction'): Promise<void> {
     const response = await authFetch(`${API_BASE}/books/${bookId}/reprocess/graph`, {
       method: 'POST',

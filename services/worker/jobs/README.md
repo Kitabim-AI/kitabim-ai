@@ -5,6 +5,7 @@ Asynchronous ARQ task handlers executing Kitabim.AI's document processing and en
 
 ## Interface
 - `[auto_correct_job.py:auto_correct_job]`: `async def auto_correct_job(ctx, page_ids: List[int]) -> None`
+- `[book_auto_correct_job.py:book_auto_correct_job]`: `async def book_auto_correct_job(ctx, book_id: str, updated_by: Optional[str] = None) -> None`
 - `[structure_job.py:structure_job]`: `async def structure_job(ctx, book_id: str) -> None`
 - `[chunking_job.py:chunking_job]`: `async def chunking_job(ctx, book_id: Optional[str] = None, page_ids: Optional[List[int]] = None) -> None`
 - `[embedding_job.py:embedding_job]`: `async def embedding_job(ctx, book_id: Optional[str] = None, page_ids: Optional[List[int]] = None) -> None`

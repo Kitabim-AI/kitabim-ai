@@ -854,10 +854,12 @@ class BooksRepository(BaseRepository[Book]):
 
         q = question.strip()
 
-        # `«...»` no longer signals a quoted title (it now means phrase-search
-        # intent elsewhere in the RAG pipeline) — fuzzy word-prefix matching
-        # resolves the title the same way whether quoted or not.
-        for title, author in rows:
+        # Prefer longer / multi-word titles first so a shorter title (e.g. "ئىز")
+        # never shadows a longer title containing it (e.g. "قانلىق ئىز").
+        sorted_rows = sorted(
+            rows, key=lambda r: (len(r[0].split()), len(r[0])), reverse=True
+        )
+        for title, author in sorted_rows:
             if _entity_matches_question(title, q):
                 return title, author
         return None
@@ -1000,11 +1002,13 @@ class BooksRepository(BaseRepository[Book]):
 
         q = question.strip()
 
-        # `«...»` no longer signals a quoted title (it now means phrase-search
-        # intent elsewhere in the RAG pipeline) — fuzzy word-prefix matching
-        # resolves the title the same way whether quoted or not.
+        # Prefer longer / multi-word titles first so a shorter title never
+        # shadows a longer title containing it.
+        sorted_titles = sorted(
+            titles, key=lambda t: (len(t.split()), len(t)), reverse=True
+        )
         matched_title = next(
-            (t for t in titles if _entity_matches_question(t, q)), None
+            (t for t in sorted_titles if _entity_matches_question(t, q)), None
         )
         if not matched_title:
             return []
@@ -1030,7 +1034,12 @@ class BooksRepository(BaseRepository[Book]):
 
 def _normalize_uyghur(text: str) -> str:
     return (
-        text.replace("\u06d0", "\u06cc")
+        text.replace("\u200b", "")
+        .replace("\u200c", "")
+        .replace("\u200d", "")
+        .replace("\u0640", "")
+        .replace("\ufeff", "")
+        .replace("\u06d0", "\u06cc")
         .replace("\u06d1", "\u06cc")
         .replace("\u0649", "\u06cc")
         .replace("\u064a", "\u06cc")
@@ -1058,7 +1067,10 @@ def _collapse_duplicates(text: str) -> str:
 def _entity_matches_question(entity: str, question: str) -> bool:
     """Word-prefix match handling Uyghur agglutinative suffixes and spelling variants.
 
-    Single-word entities are allowed when at least 4 characters long.
+    Single-word entities shorter than 4 characters (e.g. 'ئىز', 'داغ') are
+    allowed only when explicitly signaled (quoted, followed by a strong title
+    indicator, or a bare single-word query) using strict stem+case-suffix
+    matching.
     Leading/trailing punctuation (e.g. «») is stripped from question tokens
     so that quoted titles are matched correctly.
 
@@ -1069,14 +1081,16 @@ def _entity_matches_question(entity: str, question: str) -> bool:
     if not entity_words:
         return False
     if len(entity_words) == 1 and len(entity_words[0]) < 4:
-        return False
+        from app.services.rag.utils import entity_matches_question
+
+        return entity_matches_question(entity, question)
     q_words = [_normalize_uyghur(w).strip(_PUNCT) for w in question.strip().split()]
 
     def _word_matches(e_word: str) -> bool:
         e_norm = _collapse_duplicates(e_word)
         alt = None
         if e_word.endswith("ە"):
-            alt = _collapse_duplicates(e_word[:-1] + "ی")
+            alt = _collapse_duplicates(e_word[:-1] + "\u06cc")
 
         for q_word in q_words:
             q_norm = _collapse_duplicates(q_word)

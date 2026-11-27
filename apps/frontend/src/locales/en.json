@@ -75,6 +75,7 @@
     "visibilityUpdated": "Book made {{visibility}}.",
     "retryStartedSuccess": "{{count}} page(s) retry started.",
     "reprocessStarted": "Reprocessing started.",
+    "autoCorrectStarted": "Book auto-correction started.",
     "enterContent": "Enter content..."
   },
   "book": {
@@ -276,6 +277,20 @@
     "donate": "Donate",
     "donateTooltip": "Support Kitabim to keep the service free and running",
     "costTooltip": "AI model cost spent on this answer",
+    "costBreakdownTooltip": "Chat: {chatCost} + Voice: {ttsCost}",
+    "tts": {
+      "listen": "Listen to answer",
+      "play": "Play",
+      "pause": "Pause",
+      "close": "Close audio player",
+      "speed": "Playback speed",
+      "seek": "Seek audio",
+      "generating": "Preparing audio...",
+      "streaming": "Playing audio...",
+      "playerLabel": "Answer audio player",
+      "truncatedNotice": "This long answer was truncated for audio playback.",
+      "errorGeneric": "Failed to play audio. Please try again."
+    },
     "referenceTitle": "Reference Content",
     "bookSummary": "Book Summary",
     "noContentFound": "No content found.",
@@ -477,6 +492,7 @@
       "embedding": "Vector Indices",
       "summary": "AI Summary",
       "spellCheck": "Spell check",
+      "autoCorrect": "Auto-Correct",
       "graph": "Knowledge Graph"
     },
     "table": {
@@ -504,6 +520,7 @@
         "chunking": "Reprocess Chunking",
         "embedding": "Reprocess Embedding",
         "spell_check": "Reprocess Spell Check",
+        "auto_correct": "Auto-Correct OCR",
         "graph": "Reprocess Knowledge Graph",
         "summary": "Rebuild AI Summary"
       },
@@ -596,6 +613,7 @@
         "textLlm": "Text LLM",
         "ocrLlm": "OCR Model",
         "embeddings": "Embeddings",
+        "ttsLlm": "TTS Model",
         "failures": "Failures",
         "opensFor": "Opens for",
         "openedFor": "Opened for",
@@ -953,6 +971,9 @@
     "reprocessSpellCheck": {
       "title": "Reprocess Spell Check"
     },
+    "autoCorrectBook": {
+      "title": "Auto-Correct Book OCR"
+    },
     "reprocessLlmSpellCheck": {
       "title": "Reprocess LLM Spell Check"
     },
@@ -980,6 +1001,9 @@
       },
       "spell-check": {
         "message": "Are you sure you want to re-run Spell Check?"
+      },
+      "auto-correct": {
+        "message": "Automatically fix unambiguous OCR character errors and apply active correction rules across this book? Modified pages will be re-indexed automatically."
       },
       "llm-spell-check": {
         "message": "Are you sure you want to run the LLM-based spell check pass on this book? This uses the Gemini API and may take a while."

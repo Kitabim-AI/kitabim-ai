@@ -285,3 +285,41 @@ def test_cli_skip_unskip_and_backfill_skip_flags(monkeypatch, tmp_path: Path):
     assert args.skip_book == ["book-c"]
     assert args.unskip_book == ["book-b"]
     assert args.list_skipped is True
+
+
+def test_cmd_push_waits_for_reauth_instead_of_stopping_on_token_expiry(tmp_path: Path):
+    from kitabim_client.auth import AuthError
+
+    workdir_path = tmp_path / "work_reauth"
+    wd = main.OcrWorkDir.create(
+        workdir_path,
+        source_pdf=workdir_path / "book.pdf",
+        total_pages=2,
+        book_id="cloud_book_1",
+        original_filename="book.pdf",
+    )
+    (workdir_path / "book.pdf").write_bytes(b"%PDF-1.4")
+    wd.set_page(1, text="p1", is_toc=False, confidence=1.0, status="reviewed")
+    wd.set_page(2, text="p2", is_toc=False, confidence=1.0, status="reviewed")
+    wd.save()
+
+    attempts = {"p2": 0}
+
+    def _push_corr(book_id, page):
+        if page.page_number == 2 and attempts["p2"] == 0:
+            attempts["p2"] += 1
+            raise AuthError("Login timed out")
+        return {"status": "ok"}
+
+    with (
+        patch.object(main.KitabimClient, "book_exists", return_value=True),
+        patch.object(
+            main.KitabimClient, "push_page_correction", side_effect=_push_corr
+        ) as mock_corr,
+        patch("main.wait_for_reauth_sync", return_value="fresh_tok") as mock_wait,
+    ):
+        main.cmd_push(workdir_path, "http://localhost:8000")
+
+    mock_wait.assert_called_once()
+    assert mock_corr.call_count == 3  # page 1, page 2 (expired), page 2 (resumed)
+    assert main.OcrWorkDir.load(workdir_path).uploaded is True

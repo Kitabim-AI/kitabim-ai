@@ -15,6 +15,7 @@ let _configLoaded = false;
 const DEFAULT_COLLECTION_PAGE_SIZE = 40;
 let _collectionPageSize = DEFAULT_COLLECTION_PAGE_SIZE;
 let _showChatCost = true;
+let _ttsEnabled = true;
 const DEFAULT_MAX_UPLOAD_MB = 500;
 let _maxUploadMb = DEFAULT_MAX_UPLOAD_MB;
 
@@ -33,6 +34,10 @@ export async function initAppConfig(): Promise<void> {
           _showChatCost =
             typeof data.showChatCost === 'boolean'
               ? data.showChatCost
+              : true;
+          _ttsEnabled =
+            typeof data.ttsEnabled === 'boolean'
+              ? data.ttsEnabled
               : true;
           _maxUploadMb =
             typeof data.maxUploadMb === 'number'
@@ -56,6 +61,10 @@ export function getCollectionPageSize(): number {
 
 export function getShowChatCost(): boolean {
   return _showChatCost;
+}
+
+export function getTtsEnabled(): boolean {
+  return _ttsEnabled;
 }
 
 export function getMaxUploadMb(): number {

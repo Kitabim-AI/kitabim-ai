@@ -17,13 +17,22 @@ from app.core.i18n import t
 
 
 def normalize_uyghur(text: str) -> str:
-    """Normalize Uyghur character variants for reliable keyword matching.
+    """Normalize Uyghur character variants and strip invisible joiners/formatters.
 
-    ې (U+06D0) and ي (U+064A) are often used interchangeably with
-    ى (U+06CC) depending on keyboard/input method.
+    ې (U+06D0), ۑ (U+06D1), ى (U+0649), and ي (U+064A) are often used
+    interchangeably with ی (U+06CC) depending on keyboard/input method.
+    Zero-width joiners/spaces (U+200B/C/D), tatweel (U+0640), and BOM (U+FEFF)
+    frequently appear inside Uyghur words from keyboards/copy-paste (e.g.
+    ``ئ\\u200dۆتكۈرنىڭ``) and must be stripped before matching.
     """
     return (
-        text.replace("\u06d0", "\u06cc")
+        text.replace("\u200b", "")
+        .replace("\u200c", "")
+        .replace("\u200d", "")
+        .replace("\u0640", "")
+        .replace("\ufeff", "")
+        .replace("\u06d0", "\u06cc")
+        .replace("\u06d1", "\u06cc")
         .replace("\u0649", "\u06cc")
         .replace("\u064a", "\u06cc")
     )
@@ -44,6 +53,127 @@ def normalize_uyghur_spelling(text: str) -> str:
 # before word-level matching (quotes, brackets, sentence punctuation).
 PUNCTUATION_STRIP_CHARS = "«»،؟!()[]{}\"''"
 
+_QUOTE_PATTERN = re.compile(r'"([^"]+)"|«([^»]+)»|“([^”]+)”')
+
+# Explicit literary/bibliographic words that strongly mark the preceding word
+# as a book/work title (used for both short-title gating and exempting
+# explicitly-signaled single-word titles from common-word suppression).
+STRONG_TITLE_FOLLOWERS = tuple(
+    normalize_uyghur(w)
+    for w in (
+        "كىتاب",
+        "ناملىق",
+        "رومان",
+        "ئەسەر",
+        "داستان",
+        "ھېكايە",
+        "پوۋېست",
+        "ژۇرنال",
+        "ئاپتور",
+        "يازغۇچى",
+    )
+)
+
+# Softer topic/postposition followers accepted for >= 4-char single-word titles.
+_TOPIC_TITLE_FOLLOWERS = tuple(
+    normalize_uyghur(w)
+    for w in (
+        "ھەققىدە",
+        "تۆغرىسىدا",
+        "توغرىسىدا",
+        "بىلەن",
+        "ئۈستىدە",
+        "دەپ",
+    )
+)
+
+# Uyghur case/locative suffixes allowed on short (< 4 char) single-word titles
+# (e.g. ئىز → ئىزنىڭ / ئىزدا / ئىزدىكى) without matching unrelated stems that
+# merely share a 2–3 char prefix (e.g. ئىزدىنىش, ئىزچىلار, ئىزاھات).
+_SHORT_TITLE_CASE_SUFFIXES = tuple(
+    normalize_uyghur(s)
+    for s in (
+        "",
+        "نىڭ",
+        "نى",
+        "دا",
+        "دە",
+        "تا",
+        "تە",
+        "دىكى",
+        "تىكى",
+        "دىن",
+        "تىن",
+        "غا",
+        "گە",
+        "قا",
+        "كە",
+    )
+)
+
+
+def short_token_matches(e_word: str, q_word: str) -> bool:
+    """Strict stem+case-suffix match for short (< 4 char) normalized tokens."""
+    if not e_word or not q_word:
+        return False
+    stems = [e_word]
+    if e_word.endswith("ە"):
+        stems.append(e_word[:-1] + "\u06cc")
+    for stem in stems:
+        if (
+            q_word.startswith(stem)
+            and q_word[len(stem) :] in _SHORT_TITLE_CASE_SUFFIXES
+        ):
+            return True
+    return False
+
+
+def _extract_normalized_quotes(question: str) -> List[str]:
+    return [
+        normalize_uyghur(g.strip())
+        for match in _QUOTE_PATTERN.finditer(question)
+        for g in match.groups()
+        if g is not None and g.strip()
+    ]
+
+
+def has_explicit_single_word_title_signal(
+    title: str, question: str, author: str | None = None
+) -> bool:
+    """Return True when a single-word *title* is explicitly signaled as a book
+    title in *question* — via quotation marks, a strong literary/bibliographic
+    follower (e.g. ناملىق, رومانى, كىتابى, ئاپتورى), or co-occurrence with the
+    book's *author* name.
+    """
+    title_words = normalize_uyghur(title.strip()).split()
+    if len(title_words) != 1:
+        return False
+    e_word = title_words[0]
+    is_short = len(e_word) < 4
+    alt = e_word[:-1] + "\u06cc" if e_word.endswith("ە") else None
+
+    def _matches_tok(tok: str) -> bool:
+        if is_short:
+            return short_token_matches(e_word, tok)
+        return tok.startswith(e_word) or (alt is not None and tok.startswith(alt))
+
+    extracted_quotes = _extract_normalized_quotes(question)
+    if any(_matches_tok(q) for q in extracted_quotes):
+        return True
+
+    norm_q = normalize_uyghur(question)
+    q_words = [w.strip(PUNCTUATION_STRIP_CHARS) for w in norm_q.strip().split()]
+    for idx, w in enumerate(q_words[:-1]):
+        if _matches_tok(w):
+            next_w = q_words[idx + 1]
+            if any(next_w.startswith(ind) for ind in STRONG_TITLE_FOLLOWERS):
+                return True
+
+    if author and author.strip() and entity_matches_question(author, question):
+        return True
+
+    return False
+
 
 def fuzzy_token_similar(a: str, b: str, threshold: float = 0.85) -> bool:
     """True if two normalized words are near-identical (spelling-tolerant match).
@@ -61,9 +191,13 @@ def entity_matches_question(entity: str, question: str) -> bool:
 
     Handles Uyghur agglutinative suffixes (e.g. 'سابىر' matches 'سابىرنىڭ').
     Each word of the entity must appear as a prefix of at least one word in
-    the question.  Single-word entities are allowed when they are at least 4
-    characters long (avoids false positives on short tokens).  Normalizes
-    ى/ې/ي variants before comparison.
+    the question.  Single-word entities shorter than 4 characters (e.g. 'ئىز',
+    'داغ') are allowed only when explicitly signaled (quoted as a standalone
+    span, followed by a strong title indicator such as ناملىق/رومانى/كىتابى, or
+    passed as a bare single-word query) and use strict stem+case-suffix
+    matching so unrelated words sharing a prefix (e.g. 'ئىزدىنىش') do not
+    match.  Normalizes ى/ې/ي variants and strips zero-width joiners before
+    comparison.
 
     Also handles the ە → ى alternation before case suffixes
     (e.g. 'بابۇرنامە' matches 'بابۇرنامىنىڭ').
@@ -71,13 +205,35 @@ def entity_matches_question(entity: str, question: str) -> bool:
     entity_words = normalize_uyghur(entity.strip()).split()
     if not entity_words:
         return False
-    if len(entity_words) == 1 and len(entity_words[0]) < 4:
-        return False
-    _PUNCT = "«»،؟!()[]{}\"''"
     norm_q = normalize_uyghur(question)
-    q_words = [w.strip(_PUNCT) for w in norm_q.strip().split()]
+    q_words = [
+        w.strip(PUNCTUATION_STRIP_CHARS)
+        for w in norm_q.strip().split()
+        if w.strip(PUNCTUATION_STRIP_CHARS)
+    ]
+    if not q_words:
+        return False
 
-    # Structural rule for single-word titles in multi-word questions (>= 3 words):
+    if len(entity_words) == 1 and len(entity_words[0]) < 4:
+        e_word = entity_words[0]
+        if len(e_word) < 2:
+            return False
+        # Bare 1-word query (e.g. find_books_by_title("ئىز"))
+        if len(q_words) == 1 and short_token_matches(e_word, q_words[0]):
+            return True
+        # Explicitly quoted (e.g. «ئىز», «ئىزنى») — must match the whole span
+        extracted_quotes = _extract_normalized_quotes(question)
+        if any(short_token_matches(e_word, q) for q in extracted_quotes):
+            return True
+        # Followed immediately by a strong literary/title indicator
+        for idx, w in enumerate(q_words[:-1]):
+            if short_token_matches(e_word, w):
+                next_w = q_words[idx + 1]
+                if any(next_w.startswith(ind) for ind in STRONG_TITLE_FOLLOWERS):
+                    return True
+        return False
+
+    # Structural rule for single-word titles (>= 4 chars) in multi-word questions (>= 3 words):
     # Single-word titles are matched if:
     # 1. Enclosed in quotation marks («...», "...", “...”), OR
     # 2. Positioned at sentence start (subject position), OR
@@ -85,37 +241,16 @@ def entity_matches_question(entity: str, question: str) -> bool:
     if len(q_words) >= 3 and len(entity_words) == 1:
         e_word = entity_words[0]
         is_sentence_start = q_words[0].startswith(e_word) or (
-            e_word.endswith("ە") and q_words[0].startswith(e_word[:-1] + "ی")
+            e_word.endswith("ە") and q_words[0].startswith(e_word[:-1] + "\u06cc")
         )
-        quote_pattern = re.compile(r'"([^"]+)"|«([^»]+)»|“([^”]+)”')
-        extracted_quotes = [
-            normalize_uyghur(g.strip())
-            for match in quote_pattern.finditer(question)
-            for g in match.groups()
-            if g is not None and g.strip()
-        ]
+        extracted_quotes = _extract_normalized_quotes(question)
         is_quoted = any(q.startswith(e_word) for q in extracted_quotes)
         if not (is_sentence_start or is_quoted):
-            valid_followers = (
-                "كىتاب",
-                "ناملىق",
-                "رومان",
-                "ئەسەر",
-                "داستان",
-                "ھېكايە",
-                "پوۋېست",
-                "ژۇرنال",
-                "ھەققىدە",
-                "تۆغرىسىدا",
-                "توغرىسىدا",
-                "بىلەن",
-                "ئۈستىدە",
-                "دەپ",
-            )
+            valid_followers = STRONG_TITLE_FOLLOWERS + _TOPIC_TITLE_FOLLOWERS
             followed_by_indicator = False
             for idx, w in enumerate(q_words[:-1]):
                 if w.startswith(e_word) or (
-                    e_word.endswith("ە") and w.startswith(e_word[:-1] + "ی")
+                    e_word.endswith("ە") and w.startswith(e_word[:-1] + "\u06cc")
                 ):
                     next_w = q_words[idx + 1]
                     if any(next_w.startswith(ind) for ind in valid_followers):
@@ -125,7 +260,7 @@ def entity_matches_question(entity: str, question: str) -> bool:
                 return False
 
     def _word_matches(e_word: str) -> bool:
-        alt = e_word[:-1] + "ی" if e_word.endswith("ە") else None
+        alt = e_word[:-1] + "\u06cc" if e_word.endswith("ە") else None
         if any(
             q_word.startswith(e_word) or (alt is not None and q_word.startswith(alt))
             for q_word in q_words
