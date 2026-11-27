@@ -388,6 +388,8 @@ class RagQuestionAdmin(BaseModel):
     cost_usd: Optional[float] = 0.0
     answer: Optional[str] = None
     retrieved_context: Optional[str] = None
+    has_cached_audio: bool = False
+    tts_duration_sec: Optional[float] = None
 
 
 class RagQuestionsPage(BaseModel):

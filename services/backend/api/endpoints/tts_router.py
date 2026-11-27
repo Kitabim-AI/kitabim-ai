@@ -24,7 +24,7 @@ from app.services.tts_service import (
 )
 from app.utils.circuit_breaker import CircuitBreakerOpen
 from app.utils.observability import log_json
-from auth.dependencies import require_reader
+from auth.dependencies import require_admin, require_reader
 
 router = APIRouter()
 logger = logging.getLogger("app.tts.router")
@@ -165,3 +165,36 @@ async def get_tts_cache_cost(
             "durationSec": None,
         }
     return cost_info
+
+
+@router.get("/admin/eval/{eval_id}/audio")
+async def get_admin_cached_eval_audio(
+    eval_id: int,
+    current_user: User = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    """Admin-only, strictly cache-only MP3 playback for reviewing answers ($0 cost).
+
+    Never triggers Gemini TTS synthesis. Returns 404 if no cached audio exists.
+    """
+    try:
+        prepared = await tts_service.get_cached_audio_for_eval_admin(eval_id, session)
+    except TtsNotFoundError:
+        raise HTTPException(status_code=404, detail=t("errors.tts.answer_not_found"))
+
+    headers = {
+        "X-TTS-Cache": "hit",
+        "X-TTS-Content-Hash": prepared.content_hash,
+        "X-TTS-Truncated": "true" if prepared.truncated else "false",
+        "X-TTS-Cost-Usd": f"{prepared.cost_usd:.6f}",
+        "X-TTS-Input-Tokens": str(prepared.input_tokens),
+        "X-TTS-Output-Tokens": str(prepared.output_tokens),
+        "Cache-Control": "private, max-age=86400",
+    }
+    if prepared.duration_sec is not None:
+        headers["X-TTS-Duration-Sec"] = str(prepared.duration_sec)
+    return Response(
+        content=prepared.audio_bytes or b"",
+        media_type="audio/mpeg",
+        headers=headers,
+    )

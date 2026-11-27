@@ -282,6 +282,113 @@ class TtsService:
                 error=str(exc),
             )
 
+    async def get_cache_lookup_config(
+        self, session: AsyncSession
+    ) -> Optional[TtsRuntimeConfig]:
+        """Load TTS model/voice/style/max_chars for cache-only lookups (no API call)."""
+        repo = SystemConfigsRepository(session)
+        model = (await repo.get_value("tts_gemini_model") or "").strip()
+        if not model:
+            return None
+
+        voice = (
+            await repo.get_value("tts_default_voice", "Sadaltager") or "Sadaltager"
+        ).strip()
+        style = (
+            await repo.get_value(
+                "tts_default_style", "calm, clear, articulate narrator"
+            )
+            or ""
+        ).strip()
+
+        max_chars_raw = await repo.get_value("tts_max_chars", "5000")
+        try:
+            max_chars = max(100, int(max_chars_raw or 5000))
+        except (ValueError, TypeError):
+            max_chars = 5000
+
+        return TtsRuntimeConfig(
+            enabled=True,
+            model=model,
+            voice=voice,
+            style=style,
+            timeout=90.0,
+            max_chars=max_chars,
+        )
+
+    async def find_cached_entries_for_answers(
+        self,
+        answers_by_id: dict[int, Optional[str]],
+        session: AsyncSession,
+    ) -> dict[int, object]:
+        """Batch-check which RAGEvaluation answers already have cached MP3 audio ($0 cost)."""
+        cfg = await self.get_cache_lookup_config(session)
+        if cfg is None or not answers_by_id:
+            return {}
+
+        id_to_hash: dict[int, str] = {}
+        for eval_id, raw_answer in answers_by_id.items():
+            if not raw_answer or not raw_answer.strip():
+                continue
+            spoken_text, _ = prepare_answer_for_tts(raw_answer, max_chars=cfg.max_chars)
+            if not spoken_text:
+                continue
+            id_to_hash[eval_id] = compute_tts_content_hash(
+                spoken_text=spoken_text,
+                model=cfg.model,
+                voice=cfg.voice,
+                style=cfg.style,
+            )
+
+        if not id_to_hash:
+            return {}
+
+        cache_repo = TtsCacheRepository(session)
+        entries_by_hash = await cache_repo.get_by_hashes(list(set(id_to_hash.values())))
+        return {
+            eval_id: entries_by_hash[h]
+            for eval_id, h in id_to_hash.items()
+            if h in entries_by_hash
+        }
+
+    async def get_cached_audio_for_eval_admin(
+        self, eval_id: int, session: AsyncSession
+    ) -> TtsPreparedResponse:
+        """Return already-cached MP3 audio for an evaluation (admin review, strictly $0 cost).
+
+        Never invokes Gemini TTS or consumes quota. Raises TtsNotFoundError if not cached.
+        """
+        eval_record = await session.get(RAGEvaluation, eval_id)
+        if (
+            eval_record is None
+            or not eval_record.answer
+            or not eval_record.answer.strip()
+        ):
+            raise TtsNotFoundError("Answer not found")
+
+        cfg = await self.get_cache_lookup_config(session)
+        if cfg is None:
+            raise TtsNotFoundError("Cached audio not found")
+
+        spoken_text, was_truncated = prepare_answer_for_tts(
+            eval_record.answer, max_chars=cfg.max_chars
+        )
+        if not spoken_text:
+            raise TtsNotFoundError("Cached audio not found")
+
+        content_hash = compute_tts_content_hash(
+            spoken_text=spoken_text,
+            model=cfg.model,
+            voice=cfg.voice,
+            style=cfg.style,
+        )
+        cached = await self._try_load_cached(
+            content_hash, session, truncated=was_truncated
+        )
+        if cached is None:
+            raise TtsNotFoundError("Cached audio not found")
+        return cached
+
     async def get_cached_cost(
         self, content_hash: str, session: AsyncSession
     ) -> Optional[dict]:

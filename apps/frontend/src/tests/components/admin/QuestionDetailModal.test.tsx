@@ -164,5 +164,23 @@ describe('QuestionDetailModal', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('shows the cached-audio listen button only when hasCachedAudio is true', () => {
+    const { rerender } = render(
+      <QuestionDetailModal
+        question={{ ...mockQuestion, hasCachedAudio: false }}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.queryByTestId('admin-tts-listen-button')).not.toBeInTheDocument();
+
+    rerender(
+      <QuestionDetailModal
+        question={{ ...mockQuestion, hasCachedAudio: true, ttsDurationSec: 18.4 }}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.getByTestId('admin-tts-listen-button')).toBeInTheDocument();
+  });
 });
 

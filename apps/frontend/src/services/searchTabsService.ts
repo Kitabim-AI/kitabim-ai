@@ -151,9 +151,12 @@ export const SearchTabsService = {
     }));
   },
 
-  async checkSpelling(word: string): Promise<SpellingCheckResult | null> {
+  async checkSpelling(word: string, signal?: AbortSignal): Promise<SpellingCheckResult | null> {
     try {
-      const response = await authFetch(`${API_BASE}/dictionary/check-spelling?word=${encodeURIComponent(word)}`);
+      const response = await authFetch(
+        `${API_BASE}/dictionary/check-spelling?word=${encodeURIComponent(word)}`,
+        signal ? { signal } : undefined
+      );
       if (!response.ok) return null;
       const data = await response.json();
       return { isKnown: data.is_known, word: data.word, suggestions: data.suggestions || [] };

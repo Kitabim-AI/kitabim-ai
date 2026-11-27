@@ -3,6 +3,7 @@ import {
   encodePcm16ToWavBlob,
   fetchTtsCacheCost,
   parseTtsCostFromHeaders,
+  requestAdminCachedTts,
   requestAnswerTts,
   TtsApiError,
   TtsCostInfo,
@@ -22,6 +23,8 @@ export interface AnswerTtsTarget {
   key: string;
   messageId?: string;
   evalId?: number;
+  /** When true, fetches exclusively from admin cache-only endpoint ($0 cost). */
+  adminCachedOnly?: boolean;
 }
 
 export interface UseAnswerTtsResult {
@@ -457,11 +460,14 @@ export function useAnswerTts(resetDep?: string): UseAnswerTtsResult {
 
       (async () => {
         try {
-          const response = await requestAnswerTts({
-            messageId: target.messageId,
-            evalId: target.evalId,
-            signal: controller.signal,
-          });
+          const response =
+            target.adminCachedOnly && typeof target.evalId === 'number'
+              ? await requestAdminCachedTts(target.evalId, controller.signal)
+              : await requestAnswerTts({
+                  messageId: target.messageId,
+                  evalId: target.evalId,
+                  signal: controller.signal,
+                });
           if (myRunId !== runIdRef.current) return;
 
           const contentType = (response.headers.get('Content-Type') || '').toLowerCase();

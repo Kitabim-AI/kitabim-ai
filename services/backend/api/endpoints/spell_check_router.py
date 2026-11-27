@@ -468,6 +468,11 @@ async def apply_spell_corrections(
     if processed_auto_corrections:
         await invalidate_frequent_corrections_cache()
 
+    if processed_dict_additions:
+        from app.services.cache_service import cache_service
+
+        await cache_service.bump_namespace_version("words")
+
     return {"applied": len(applied_ids)}
 
 

@@ -20,16 +20,20 @@ export function useSpellingCheck(word: string): UseSpellingCheckReturn {
     }
 
     const requestId = ++requestIdRef.current;
+    const controller = new AbortController();
     setIsLoading(true);
     const timer = setTimeout(async () => {
-      const data = await SearchTabsService.checkSpelling(trimmed);
-      if (requestIdRef.current === requestId) {
+      const data = await SearchTabsService.checkSpelling(trimmed, controller.signal);
+      if (!controller.signal.aborted && requestIdRef.current === requestId) {
         setResult(data);
         setIsLoading(false);
       }
     }, 300);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [word]);
 
   return { result, isLoading };

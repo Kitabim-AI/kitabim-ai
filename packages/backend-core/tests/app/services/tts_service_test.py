@@ -226,3 +226,33 @@ async def test_prepare_answer_tts_cache_miss_enforces_quota():
             await svc.prepare_answer_tts(
                 user=user, session=mock_session, message_id="msg-1"
             )
+
+
+@pytest.mark.asyncio
+async def test_get_cached_audio_for_eval_admin_raises_404_when_uncached():
+    svc = TtsService()
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(
+        return_value=SimpleNamespace(id=77, answer="بۇ بىر جاۋاب.")
+    )
+
+    mock_cfg_repo = AsyncMock()
+    mock_cfg_repo.get_value = AsyncMock(
+        side_effect=lambda key, default=None: "gemini-3.8-flash-tts"
+        if key == "tts_gemini_model"
+        else default
+    )
+    mock_cache_repo = AsyncMock()
+    mock_cache_repo.get_by_hash = AsyncMock(return_value=None)
+
+    with (
+        patch(
+            "app.services.tts_service.SystemConfigsRepository",
+            return_value=mock_cfg_repo,
+        ),
+        patch(
+            "app.services.tts_service.TtsCacheRepository", return_value=mock_cache_repo
+        ),
+    ):
+        with pytest.raises(TtsNotFoundError):
+            await svc.get_cached_audio_for_eval_admin(77, mock_session)

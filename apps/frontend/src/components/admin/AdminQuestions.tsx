@@ -2,7 +2,7 @@
  * Admin Questions Panel — shows all RAG questions with a home-page visibility toggle.
  */
 
-import { AlertCircle, BookOpen, Globe, Loader, MessageSquare, RefreshCw, Search, X } from 'lucide-react';
+import { AlertCircle, BookOpen, Globe, Loader, MessageSquare, RefreshCw, Search, Volume2, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 import { authFetch } from '../../services/authService';
@@ -32,6 +32,8 @@ interface RagQuestion {
   inputTokens?: number;
   outputTokens?: number;
   costUsd?: number;
+  hasCachedAudio?: boolean;
+  ttsDurationSec?: number | null;
 }
 
 interface QuestionsPage {
@@ -259,15 +261,26 @@ export function AdminQuestions() {
                     {/* Question text */}
                     <td className="px-2.5 sm:px-6 py-4 md:py-6">
                       <div className="flex items-start gap-2.5">
-                        <div
-                          title={q.isGlobal ? t('admin.questions.scopeGlobal') : t('admin.questions.scopeBook')}
-                          className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${
-                            q.isGlobal
-                              ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400'
-                              : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
-                          }`}
-                        >
-                          {q.isGlobal ? <Globe size={14} /> : <BookOpen size={14} />}
+                        <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5">
+                          <div
+                            title={q.isGlobal ? t('admin.questions.scopeGlobal') : t('admin.questions.scopeBook')}
+                            className={`p-1.5 rounded-lg ${
+                              q.isGlobal
+                                ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400'
+                                : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+                            }`}
+                          >
+                            {q.isGlobal ? <Globe size={14} /> : <BookOpen size={14} />}
+                          </div>
+                          {q.hasCachedAudio && (
+                            <div
+                              title={t('chat.tts.listen')}
+                              data-testid="admin-question-has-audio"
+                              className="p-1 rounded-md bg-sky-50 dark:bg-sky-950/40 text-[#0369a1] dark:text-[#38bdf8]"
+                            >
+                              <Volume2 size={12} />
+                            </div>
+                          )}
                         </div>
                         <div
                           className="flex-1 min-w-0 flex flex-col gap-1 text-right cursor-pointer group/title"

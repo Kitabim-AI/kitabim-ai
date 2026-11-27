@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 from app.db.repositories.rag_evaluations_repository import RAGEvaluationsRepository
+from app.services.tts_service import tts_service
 from app.models.schemas import (
     ChatCostInfo,
     FeaturedQuestionAnswerResponse,
@@ -41,6 +42,18 @@ async def get_admin_questions(
     items, total = await repo.get_questions_paginated(
         limit=limit, offset=offset, query=query
     )
+    try:
+        cached_tts = await tts_service.find_cached_entries_for_answers(
+            {item.id: item.answer for item in items}, session
+        )
+    except Exception:
+        cached_tts = {}
+
+    for item in items:
+        entry = cached_tts.get(item.id)
+        item.has_cached_audio = entry is not None  # type: ignore[attr-defined]
+        item.tts_duration_sec = getattr(entry, "duration_sec", None) if entry else None  # type: ignore[attr-defined]
+
     return RagQuestionsPage(
         items=[RagQuestionAdmin.model_validate(item) for item in items],
         total=total,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Text, func, literal, select
+from sqlalchemy import Text, func, literal, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -24,12 +24,22 @@ from app.utils.text import normalize_uyghur_chars
 
 
 def _sql_normalize_uyghur(column):
-    # Standard replacement: ې (\u06d0) -> ى (\u06cc), ى arabic (\u0649) -> ى (\u06cc), ي (\u064a) -> ى (\u06cc)
-    normalized = func.replace(column, "\u06d0", "\u06cc")
-    normalized = func.replace(normalized, "\u0649", "\u06cc")
-    normalized = func.replace(normalized, "\u064a", "\u06cc")
-    # Collapse double-y: ىى -> ى
-    normalized = func.replace(normalized, "\u06cc\u06cc", "\u06cc")
+    # Standard replacement: ې (\u06d0) -> ی (\u06cc), ى arabic (\u0649) -> ی (\u06cc), ي (\u064a) -> ی (\u06cc)
+    # Use inline SQL string literals (not bind parameters) so PostgreSQL matches
+    # expression indexes like idx_words_norm_trgm even under asyncpg prepared plans.
+    normalized = func.replace(
+        column, literal_column("'\u06d0'"), literal_column("'\u06cc'")
+    )
+    normalized = func.replace(
+        normalized, literal_column("'\u0649'"), literal_column("'\u06cc'")
+    )
+    normalized = func.replace(
+        normalized, literal_column("'\u064a'"), literal_column("'\u06cc'")
+    )
+    # Collapse double-y: یی -> ی
+    normalized = func.replace(
+        normalized, literal_column("'\u06cc\u06cc'"), literal_column("'\u06cc'")
+    )
     return normalized
 
 
@@ -264,24 +274,59 @@ class DictionaryRepository:
                     }
 
         norm_word = normalize_uyghur_spelling(word)
-        suggestions_stmt = (
-            select(
-                Word.id,
-                Word.word,
-                func.similarity(_sql_normalize_uyghur(Word.word), norm_word).label(
-                    "score"
-                ),
-            )
-            .where(
-                _sql_normalize_uyghur(Word.word).ilike(f"%{norm_word}%")
-                | (func.similarity(_sql_normalize_uyghur(Word.word), norm_word) > 0.3)
-            )
-            .order_by(
-                func.similarity(_sql_normalize_uyghur(Word.word), norm_word).desc(),
-                func.length(Word.word),
-            )
-            .limit(limit)
+        if not norm_word:
+            return {
+                "is_known": False,
+                "word": word,
+                "suggestions": [],
+            }
+
+        escaped_norm = (
+            norm_word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         )
+        norm_col = _sql_normalize_uyghur(Word.word)
+        if len(norm_word) < 3:
+            # 1–2 char `%q%` substrings cannot extract pg_trgm trigrams and force a
+            # sequential scan over 1.4M+ rows. Use a bounded prefix match (`q%`) that
+            # hits idx_words_norm_trgm for 2-char prefixes and stops early for 1-char.
+            candidates = (
+                select(Word.id, Word.word)
+                .where(norm_col.like(f"{escaped_norm}%", escape="\\"))
+                .limit(200)
+                .subquery()
+            )
+            cand_norm_col = _sql_normalize_uyghur(candidates.c.word)
+            suggestions_stmt = (
+                select(
+                    candidates.c.id,
+                    candidates.c.word,
+                    func.similarity(cand_norm_col, norm_word).label("score"),
+                )
+                .order_by(
+                    func.similarity(cand_norm_col, norm_word).desc(),
+                    func.length(candidates.c.word),
+                )
+                .limit(limit)
+            )
+        else:
+            # Use pg_trgm's `%` operator (not `similarity(...) > 0.3`) so PostgreSQL
+            # uses the idx_words_norm_trgm GIN expression index for both branches.
+            suggestions_stmt = (
+                select(
+                    Word.id,
+                    Word.word,
+                    func.similarity(norm_col, norm_word).label("score"),
+                )
+                .where(
+                    norm_col.ilike(f"%{escaped_norm}%", escape="\\")
+                    | norm_col.op("%")(norm_word)
+                )
+                .order_by(
+                    func.similarity(norm_col, norm_word).desc(),
+                    func.length(Word.word),
+                )
+                .limit(limit)
+            )
         suggestions = await self.session.execute(suggestions_stmt)
         return {
             "is_known": False,

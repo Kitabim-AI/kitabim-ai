@@ -16,6 +16,7 @@ from app.db.session import get_session
 from app.db.models import Dictionary, Word
 from app.db.repositories.dictionary_repository import DictionaryRepository
 from app.models.user import User
+from app.services.cache_service import cache_service
 from auth.dependencies import require_admin
 
 router = APIRouter()
@@ -52,6 +53,9 @@ class SpellingCheckOut(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
+_SPELL_CHECK_CACHE_TTL = 3600
+
+
 @router.get("/dictionary/check-spelling", response_model=SpellingCheckOut)
 async def check_spelling(
     word: str,
@@ -62,8 +66,19 @@ async def check_spelling(
     Public read-only lookup used by the home search box's "Spell Check" tab
     and the equivalent `check_word_spelling` chat tool.
     """
+    trimmed = word.strip()
+    if not trimmed:
+        return SpellingCheckOut(is_known=False, word=None, suggestions=[])
+
+    version = await cache_service.get_namespace_version("words")
+    cache_key = f"dict:check_spelling:v{version}:{trimmed}"
+    cached = await cache_service.get(cache_key)
+    if cached is not None:
+        return SpellingCheckOut(**cached)
+
     repo = DictionaryRepository(session)
-    result = await repo.check_word_spelling(word)
+    result = await repo.check_word_spelling(trimmed)
+    await cache_service.set(cache_key, result, ttl=_SPELL_CHECK_CACHE_TTL)
     return SpellingCheckOut(**result)
 
 

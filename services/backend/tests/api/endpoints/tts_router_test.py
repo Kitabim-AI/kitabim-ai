@@ -237,3 +237,45 @@ async def test_get_tts_usage_returns_status():
     assert res.usage == 3
     assert res.limit == 15
     assert res.has_reached_limit is False
+
+
+@pytest.mark.asyncio
+async def test_get_admin_cached_eval_audio_returns_mp3_or_404():
+    setup_paths()
+    from api.endpoints.tts_router import get_admin_cached_eval_audio
+    from app.services.tts_service import TtsNotFoundError, TtsPreparedResponse
+
+    prepared = TtsPreparedResponse(
+        kind="cached_mp3",
+        content_hash="f" * 64,
+        truncated=False,
+        duration_sec=18.5,
+        audio_bytes=b"ID3-cached-admin",
+        input_tokens=150,
+        output_tokens=462,
+        cost_usd=0.004233,
+    )
+    with patch(
+        "api.endpoints.tts_router.tts_service.get_cached_audio_for_eval_admin",
+        AsyncMock(return_value=prepared),
+    ):
+        resp = await get_admin_cached_eval_audio(
+            eval_id=55,
+            current_user=_make_user(),
+            session=AsyncMock(),
+        )
+    assert resp.media_type == "audio/mpeg"
+    assert resp.headers["X-TTS-Cache"] == "hit"
+    assert resp.body == b"ID3-cached-admin"
+
+    with patch(
+        "api.endpoints.tts_router.tts_service.get_cached_audio_for_eval_admin",
+        AsyncMock(side_effect=TtsNotFoundError("not cached")),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await get_admin_cached_eval_audio(
+                eval_id=56,
+                current_user=_make_user(),
+                session=AsyncMock(),
+            )
+    assert exc_info.value.status_code == 404

@@ -24,6 +24,17 @@ class TtsCacheRepository(BaseRepository[TtsAudioCache]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_hashes(
+        self, content_hashes: list[str]
+    ) -> dict[str, TtsAudioCache]:
+        if not content_hashes:
+            return {}
+        stmt = select(TtsAudioCache).where(
+            TtsAudioCache.content_hash.in_(content_hashes)
+        )
+        result = await self.session.execute(stmt)
+        return {row.content_hash: row for row in result.scalars().all()}
+
     async def upsert_entry(
         self,
         *,

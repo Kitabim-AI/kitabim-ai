@@ -25,16 +25,23 @@ async def test_check_spelling_known_word():
     from api.endpoints.dictionary_router import check_spelling
 
     mock_session = AsyncMock()
-    with patch(
-        "app.db.repositories.dictionary_repository.DictionaryRepository.check_word_spelling",
-        new_callable=AsyncMock,
-        return_value={"is_known": True, "word": "كىتاب", "suggestions": []},
+    mock_cache = AsyncMock()
+    mock_cache.get_namespace_version.return_value = "1"
+    mock_cache.get.return_value = None
+    with (
+        patch("api.endpoints.dictionary_router.cache_service", mock_cache),
+        patch(
+            "app.db.repositories.dictionary_repository.DictionaryRepository.check_word_spelling",
+            new_callable=AsyncMock,
+            return_value={"is_known": True, "word": "كىتاب", "suggestions": []},
+        ),
     ):
         result = await check_spelling(word="كىتاب", session=mock_session)
 
     assert result.is_known is True
     assert result.word == "كىتاب"
     assert result.suggestions == []
+    mock_cache.set.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -43,20 +50,55 @@ async def test_check_spelling_unknown_word_returns_suggestions():
     from api.endpoints.dictionary_router import check_spelling
 
     mock_session = AsyncMock()
-    with patch(
-        "app.db.repositories.dictionary_repository.DictionaryRepository.check_word_spelling",
-        new_callable=AsyncMock,
-        return_value={
-            "is_known": False,
-            "word": "كىتاپ",
-            "suggestions": [{"id": 1, "word": "كىتاب", "score": 0.8}],
-        },
+    mock_cache = AsyncMock()
+    mock_cache.get_namespace_version.return_value = "1"
+    mock_cache.get.return_value = None
+    with (
+        patch("api.endpoints.dictionary_router.cache_service", mock_cache),
+        patch(
+            "app.db.repositories.dictionary_repository.DictionaryRepository.check_word_spelling",
+            new_callable=AsyncMock,
+            return_value={
+                "is_known": False,
+                "word": "كىتاپ",
+                "suggestions": [{"id": 1, "word": "كىتاب", "score": 0.8}],
+            },
+        ),
     ):
         result = await check_spelling(word="كىتاپ", session=mock_session)
 
     assert result.is_known is False
     assert len(result.suggestions) == 1
     assert result.suggestions[0].word == "كىتاب"
+    mock_cache.set.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_check_spelling_returns_cached_result_without_db_query():
+    setup_paths()
+    from api.endpoints.dictionary_router import check_spelling
+
+    mock_session = AsyncMock()
+    mock_cache = AsyncMock()
+    mock_cache.get_namespace_version.return_value = "3"
+    mock_cache.get.return_value = {
+        "is_known": False,
+        "word": "كىتاپ",
+        "suggestions": [{"id": 1, "word": "كىتاب", "score": 0.5}],
+    }
+    with (
+        patch("api.endpoints.dictionary_router.cache_service", mock_cache),
+        patch(
+            "app.db.repositories.dictionary_repository.DictionaryRepository.check_word_spelling",
+            new_callable=AsyncMock,
+        ) as mock_check,
+    ):
+        result = await check_spelling(word="كىتاپ", session=mock_session)
+
+    assert result.is_known is False
+    assert result.suggestions[0].word == "كىتاب"
+    mock_check.assert_not_called()
+    mock_cache.set.assert_not_called()
 
 
 @pytest.mark.asyncio

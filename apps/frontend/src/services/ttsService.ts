@@ -114,6 +114,35 @@ export async function requestAnswerTts(params: AnswerTtsParams): Promise<Respons
   return response;
 }
 
+/**
+ * Admin-only, strictly cache-only MP3 fetch for reviewing answers ($0 cost).
+ * Never triggers Gemini TTS synthesis; throws 404 TtsApiError if uncached.
+ */
+export async function requestAdminCachedTts(
+  evalId: number,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const response = await authFetch(`${API_BASE}/admin/eval/${evalId}/audio`, {
+    method: 'GET',
+    signal,
+  });
+
+  if (!response.ok) {
+    let detail = `Cached TTS audio unavailable (${response.status})`;
+    try {
+      const data = await response.json();
+      if (typeof data?.detail === 'string' && data.detail.trim()) {
+        detail = data.detail;
+      }
+    } catch {
+      // ignore non-JSON error bodies
+    }
+    throw new TtsApiError(response.status, detail);
+  }
+
+  return response;
+}
+
 export async function getTtsUsage(): Promise<TtsUsageStatus> {
   try {
     const response = await authFetch(`${API_BASE}/usage`);

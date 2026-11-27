@@ -42,6 +42,7 @@ Provides sequential SQL migration scripts and rollbacks for the Kitabim AI Postg
 - `[101_add_book_structure_and_section_chunking.sql:book_sections]` — Adds `book_sections` hierarchy, `books.structure_milestone` and backfill provenance columns, `pages.detected_page_number`, and `chunks` section/page-span/hash columns.
 - `[102_drop_llm_spell_check_and_history_staging.sql:pages]` — Drops retired LLM spell-check and history concept extraction/staging tables, columns, and system configs.
 - `[103_strip_hypothetical_queries_from_book_summaries.sql:book_summaries]` — Strips retired Section 6 (`Hypothetical Queries`) and renumbers Section 7 (`Keywords`) to Section 6 in `book_summaries.summary`.
+- `[106_add_normalized_trgm_index_on_words.sql:words]` — Adds GIN trigram expression index `idx_words_norm_trgm` on normalized `words.word` for fast spell-check suggestions and drops duplicate `idx_words_trgm`.
 
 ## Invariants
 - `[001_initial_baseline.sql:books]` — Migrations `002`-`033` are squashed into `001_initial_baseline.sql`; active sequential numbering begins at `034`.
